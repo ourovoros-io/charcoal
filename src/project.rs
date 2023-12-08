@@ -1,4 +1,4 @@
-use crate::{errors::Error, Options, sway_ir::{self, GenericParameterList}};
+use crate::{errors::Error, Options, sway::{self, GenericParameterList}};
 use convert_case::{Casing, Case};
 use solang_parser::pt::{SourceUnit, SourceUnitPart, ContractDefinition, ContractTy, ContractPart, VariableAttribute, Visibility, FunctionAttribute, FunctionTy};
 use std::{
@@ -10,7 +10,7 @@ use std::{
 pub struct Project {
     line_ranges: HashMap<PathBuf, Vec<(usize, usize)>>,
     solidity_source_units: Rc<RefCell<HashMap<PathBuf, SourceUnit>>>,
-    sway_modules: HashMap<String, sway_ir::Module>,
+    sway_modules: HashMap<String, sway::Module>,
 }
 
 impl TryFrom<&Options> for Project {
@@ -142,21 +142,21 @@ impl Project {
     }
 
     fn translate_contract_definition(&mut self, contract_definition: &ContractDefinition) -> Result<(), Error> {
-        let mut module = sway_ir::Module::new(match &contract_definition.ty {
+        let mut module = sway::Module::new(match &contract_definition.ty {
             ContractTy::Abstract(_) => todo!("Determine how to handle abstract contract generation"),
-            ContractTy::Contract(_) => sway_ir::ModuleKind::Contract,
+            ContractTy::Contract(_) => sway::ModuleKind::Contract,
             ContractTy::Interface(_) => todo!("Create ABI for interface"),
-            ContractTy::Library(_) => sway_ir::ModuleKind::Library,
+            ContractTy::Library(_) => sway::ModuleKind::Library,
         });
 
         let contract_name = contract_definition.name.as_ref().unwrap().name.clone();
 
-        fn canonicalize_type_name(type_name: &str) -> sway_ir::TypeName {
+        fn canonicalize_type_name(type_name: &str) -> sway::TypeName {
             //
             // TODO: check mapping for previously canonicalized user type names?
             //
 
-            sway_ir::TypeName {
+            sway::TypeName {
                 name: match type_name {
                     "uint" | "uint256" => "u64".into(),
                     "address" | "address payable" => "Address".into(),
@@ -169,7 +169,7 @@ impl Project {
         for part in contract_definition.parts.iter() {
             match part {
                 ContractPart::StructDefinition(struct_definition) => {
-                    let mut struct_item = sway_ir::Struct {
+                    let mut struct_item = sway::Struct {
                         is_public: true,
                         name: struct_definition.name.as_ref().unwrap().name.clone(),
                         generic_parameters: GenericParameterList::default(),
@@ -184,14 +184,14 @@ impl Project {
                         // * make note of original type vs canonicalized type
                         //
 
-                        struct_item.fields.push(sway_ir::StructField {
+                        struct_item.fields.push(sway::StructField {
                             is_public: true,
                             name: field.name.as_ref().unwrap().name.to_case(Case::Snake),
                             type_name: canonicalize_type_name(field.ty.to_string().as_str()),
                         });
                     }
 
-                    module.items.push(sway_ir::ModuleItem::Struct(struct_item));
+                    module.items.push(sway::ModuleItem::Struct(struct_item));
                 }
 
                 ContractPart::EventDefinition(_) => {
@@ -220,14 +220,14 @@ impl Project {
 
                     // Handle constant variable definitions
                     if variable_definition.attrs.iter().any(|x| matches!(x, VariableAttribute::Constant(_))) {
-                        module.items.push(sway_ir::ModuleItem::Constant(sway_ir::Constant {
+                        module.items.push(sway::ModuleItem::Constant(sway::Constant {
                             is_public,
                             name: variable_definition.name.as_ref().unwrap().name.to_case(Case::UpperSnake),
                             type_name: canonicalize_type_name(variable_definition.ty.to_string().as_str()),
     
                             // TODO: proper value constructors
-                            value: Some(sway_ir::Expression::FunctionCall(Box::new(sway_ir::FunctionCall {
-                                function: sway_ir::Expression::Identifier("todo!".into()),
+                            value: Some(sway::Expression::FunctionCall(Box::new(sway::FunctionCall {
+                                function: sway::Expression::Identifier("todo!".into()),
                                 generic_parameters: None,
                                 parameters: vec![],
                             }))),
@@ -241,13 +241,13 @@ impl Project {
                     else {
                         let storage = module.get_or_create_storage();
     
-                        storage.fields.push(sway_ir::StorageField {
+                        storage.fields.push(sway::StorageField {
                             name: variable_definition.name.as_ref().unwrap().name.to_case(Case::Snake),
                             type_name: canonicalize_type_name(variable_definition.ty.to_string().as_str()),
     
                             // TODO: proper value constructors
-                            value: sway_ir::Expression::FunctionCall(Box::new(sway_ir::FunctionCall {
-                                function: sway_ir::Expression::Identifier("todo!".into()),
+                            value: sway::Expression::FunctionCall(Box::new(sway::FunctionCall {
+                                function: sway::Expression::Identifier("todo!".into()),
                                 generic_parameters: None,
                                 parameters: vec![],
                             })),
@@ -283,15 +283,15 @@ impl Project {
                     } else if is_public || is_constructor {
                         let abi = module.get_or_create_abi(contract_name.as_str());
                         
-                        let mut function = sway_ir::Function {
+                        let mut function = sway::Function {
                             is_public: false,
                             name: if is_constructor {
                                 "constructor".into() // TODO: multiple constructors?
                             } else {
                                 function_definition.name.as_ref().unwrap().name.to_case(Case::Snake)
                             },
-                            generic_parameters: sway_ir::GenericParameterList::default(),
-                            parameters: sway_ir::ParameterList {
+                            generic_parameters: sway::GenericParameterList::default(),
+                            parameters: sway::ParameterList {
                                 entries: vec![
                                     // TODO
                                 ],
@@ -308,10 +308,10 @@ impl Project {
                         // * convert the function's body code
                         //
 
-                        function.body = Some(sway_ir::Block {
+                        function.body = Some(sway::Block {
                             statements: vec![],
-                            final_expr: Some(sway_ir::Expression::FunctionCall(Box::new(sway_ir::FunctionCall {
-                                function: sway_ir::Expression::Identifier("todo!".into()),
+                            final_expr: Some(sway::Expression::FunctionCall(Box::new(sway::FunctionCall {
+                                function: sway::Expression::Identifier("todo!".into()),
                                 generic_parameters: None,
                                 parameters: vec![],
                             }))),
@@ -319,7 +319,7 @@ impl Project {
 
                         // Add the function to its ABI impl block
                         let impl_for = module.get_or_create_impl_for(contract_name.as_str(), "Contract");
-                        impl_for.items.push(sway_ir::ImplItem::Function(function));
+                        impl_for.items.push(sway::ImplItem::Function(function));
                     } else {
                         //
                         // TODO:
@@ -330,9 +330,9 @@ impl Project {
 
                 ContractPart::TypeDefinition(type_definition) => {
                     // TODO: check if this is OK
-                    module.items.push(sway_ir::ModuleItem::TypeDefinition(sway_ir::TypeDefinition {
+                    module.items.push(sway::ModuleItem::TypeDefinition(sway::TypeDefinition {
                         is_public: true,
-                        name: sway_ir::TypeName {
+                        name: sway::TypeName {
                             name: type_definition.name.to_string(),
                             generic_parameters: GenericParameterList::default(),
                         },
@@ -350,7 +350,7 @@ impl Project {
             }
         }
 
-        println!("{}", sway_ir::TabbedDisplayer(&module));
+        println!("{}", sway::TabbedDisplayer(&module));
         self.sway_modules.insert(contract_name, module);
 
         Ok(())

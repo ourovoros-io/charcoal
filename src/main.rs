@@ -1,6 +1,6 @@
 pub mod errors;
 pub mod project;
-pub mod sway_ir;
+pub mod sway;
 
 use errors::Error;
 use project::Project;

@@ -770,6 +770,11 @@ pub enum Expression {
     FunctionCall(Box<FunctionCall>),
     Block(Box<Block>),
     Return(Option<Box<Expression>>),
+    ArrayAccess(Box<ArrayAccess>),
+    MemberAccess(Box<MemberAccess>),
+    Tuple(Vec<Expression>),
+    UnaryExpression(Box<UnaryExpression>),
+    BinaryExpression(Box<BinaryExpression>),
     // TODO: finish
 }
 
@@ -788,6 +793,20 @@ impl TabbedDisplay for Expression {
                 }
                 Ok(())
             }
+            Expression::ArrayAccess(x) => x.tabbed_fmt(depth, f),
+            Expression::MemberAccess(x) => x.tabbed_fmt(depth, f),
+            Expression::Tuple(x) => {
+                "(".tabbed_fmt(depth, f)?;
+                for (i, expr) in x.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    expr.tabbed_fmt(0, f)?;
+                }
+                write!(f, ")")
+            }
+            Expression::UnaryExpression(x) => x.tabbed_fmt(depth, f),
+            Expression::BinaryExpression(x) => x.tabbed_fmt(depth, f),
         }
     }
 }
@@ -820,6 +839,70 @@ impl TabbedDisplay for FunctionCall {
         }
 
         write!(f, ")")
+    }
+}
+
+// -------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+#[derive(Clone)]
+pub struct ArrayAccess {
+    pub expression: Expression,
+    pub index: Expression,
+}
+
+impl Display for ArrayAccess {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.expression.tabbed_fmt(0, f)?;
+        write!(f, "[")?;
+        self.index.tabbed_fmt(0, f)?;
+        write!(f, "]")
+    }
+}
+
+// -------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+#[derive(Clone)]
+pub struct MemberAccess {
+    pub expression: Expression,
+    pub member: String,
+}
+
+impl Display for MemberAccess {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.expression.tabbed_fmt(0, f)?;
+        write!(f, ".{}", self.member)
+    }
+}
+
+// -------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+#[derive(Clone)]
+pub struct UnaryExpression {
+    pub operator: String,
+    pub expression: Expression,
+}
+
+impl Display for UnaryExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.operator)?;
+        self.expression.tabbed_fmt(0, f)
+    }
+}
+
+// -------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+#[derive(Clone)]
+pub struct BinaryExpression {
+    pub operator: String,
+    pub lhs: Expression,
+    pub rhs: Expression,
+}
+
+impl Display for BinaryExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.lhs.tabbed_fmt(0, f)?;
+        write!(f, " {} ", self.operator)?;
+        self.rhs.tabbed_fmt(0, f)
     }
 }
 
