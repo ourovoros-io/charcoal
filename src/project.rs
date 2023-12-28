@@ -111,11 +111,11 @@ impl Project {
         }
     }
 
-    fn create_conversion_queue(&self) -> Result<Vec<PathBuf>, Error> {
-        let mut conversion_queue: Vec<PathBuf> = vec![];
+    fn create_translation_queue(&mut self) -> Result<Vec<PathBuf>, Error> {
+        let mut translation_queue: Vec<PathBuf> = vec![];
+        let mut source_unit_paths = self.solidity_source_units.borrow().keys().cloned().collect::<Vec<_>>();
 
-        // Create conversion queue from import directives
-        for (source_unit_path, source_unit) in self.solidity_source_units.borrow().iter() {
+        while let Some(source_unit_path) = source_unit_paths.pop() {
             let source_unit_directory = source_unit_path.parent().unwrap();
 
             let mut queue_import_path = |import_path: &ImportPath| -> Result<(), Error> {
@@ -123,15 +123,16 @@ impl Project {
                     ImportPath::Filename(filename) => {
                         // Get the canonical path of the imported source unit
                         let import_path = source_unit_directory.join(filename.string.clone()).canonicalize().map_err(|e| Error::Wrapped(Box::new(e)))?;
+                        source_unit_paths.push(import_path.clone());
                         
                         // If a source unit is already queued, move it to the top of the queue
-                        if let Some((index, _)) = conversion_queue.iter().enumerate().find(|(_, p)| import_path.to_string_lossy() == p.to_string_lossy()) {
-                            conversion_queue.remove(index);
-                            conversion_queue.insert(0, import_path);
+                        if let Some((index, _)) = translation_queue.iter().enumerate().find(|(_, p)| import_path.to_string_lossy() == p.to_string_lossy()) {
+                            translation_queue.remove(index);
+                            translation_queue.insert(0, import_path);
                         }
                         // If a source unit is not queued, add it to the end of the queue
                         else {
-                            conversion_queue.push(import_path);
+                            translation_queue.push(import_path);
                         }
                     }
 
@@ -141,11 +142,19 @@ impl Project {
                 Ok(())
             };
             
+            // Parse the source unit if it has not been parsed already
+            if !self.solidity_source_units.borrow().contains_key(&source_unit_path) {
+                self.parse_solidity_source_unit(&source_unit_path)?;
+            }
+
+            // Get the parsed source unit
+            let source_unit = self.solidity_source_units.borrow().get(&source_unit_path).unwrap().clone();
+
             for source_unit_part in source_unit.0.iter() {
                 // Only check import directives
                 let SourceUnitPart::ImportDirective(import_directive) = source_unit_part else { continue };
 
-                // Queue the imported source unit for conversion
+                // Queue the imported source unit for translation
                 match import_directive {
                     Import::Plain(import_path, _) => queue_import_path(import_path)?,
                     Import::GlobalSymbol(import_path, _, _) => queue_import_path(import_path)?,
@@ -154,7 +163,7 @@ impl Project {
             }
         }
 
-        Ok(conversion_queue)
+        Ok(translation_queue)
     }
 
     fn translate_type_name(&mut self, source_unit_path: &Path, type_name: &str) -> sway::TypeName {
@@ -174,15 +183,10 @@ impl Project {
 
     pub fn translate(&mut self) -> Result<(), Error> {
         let solidity_source_units = self.solidity_source_units.clone();
-        let conversion_queue = self.create_conversion_queue()?;
+        let translation_queue = self.create_translation_queue()?;
 
-        // Translate source units through conversion queue
-        for source_unit_path in conversion_queue.iter() {
-            // Parse the source unit if it has not been parsed already
-            if !self.solidity_source_units.borrow().contains_key(source_unit_path) {
-                self.parse_solidity_source_unit(source_unit_path)?;
-            }
-
+        // Translate source units through translation queue
+        for source_unit_path in translation_queue.iter() {
             // Get the parsed source unit
             let source_unit = solidity_source_units.borrow().get(source_unit_path).unwrap().clone();
 
