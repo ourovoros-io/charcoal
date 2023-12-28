@@ -1,10 +1,45 @@
-use crate::{errors::Error, Options, sway::{self, GenericParameterList}};
-use convert_case::{Casing, Case};
-use solang_parser::pt::{SourceUnit, SourceUnitPart, ContractDefinition, ContractTy, ContractPart, VariableAttribute, Visibility, FunctionAttribute, FunctionTy};
-use std::{
-    collections::HashMap,
-    path::{Path, PathBuf}, rc::Rc, cell::RefCell,
+use crate::{
+    errors::Error,
+    sway::{self, GenericParameterList},
+    Options,
 };
+use convert_case::{Case, Casing};
+use solang_parser::pt::{
+    ContractDefinition, ContractPart, ContractTy, FunctionAttribute, FunctionTy, Import,
+    ImportPath, SourceUnit, SourceUnitPart, VariableAttribute, Visibility,
+};
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    path::{Path, PathBuf},
+    rc::Rc,
+};
+
+pub struct TranslatedDefinition {
+    /// The path to the file that the original definition is located in.
+    pub path: PathBuf,
+
+    /// The data of the translated definition.
+    pub data: TranslatedDefinitionData,
+}
+
+pub struct TranslatedIdentifier {
+    pub old: String,
+    pub new: String,
+}
+
+pub enum TranslatedDefinitionData {
+    Contract {
+        is_abstract: bool,
+        name: String,
+        inherits: Vec<(String, PathBuf)>,
+        functions: Vec<sway::Function>,
+    }
+}
+
+pub struct TranslatedFunction {
+    pub name: String,
+}
 
 #[derive(Default)]
 pub struct Project {
@@ -72,14 +107,54 @@ impl Project {
     }
 
     pub fn translate(&mut self) -> Result<(), Error> {
-        //
-        // TODO: create dependency lookup tree and convert commonly-used source units first
-        //
-
         let solidity_source_units = self.solidity_source_units.clone();
+        let mut conversion_queue: Vec<PathBuf> = vec![];
 
-        for (_path, source_unit) in solidity_source_units.borrow().iter() {
-            println!("Translating \"{}\"...", _path.to_string_lossy());
+        // Create conversion queue from import directives
+        for (source_unit_path, source_unit) in solidity_source_units.borrow().iter() {
+
+            for source_unit_part in source_unit.0.iter() {
+                let SourceUnitPart::ImportDirective(import_directive) = source_unit_part else { continue };
+
+                let mut queue_import_path = |import_path: &ImportPath| -> Result<(), Error> {
+                    match import_path {
+                        ImportPath::Filename(filename) => {
+                            let directory = source_unit_path.parent().unwrap();
+                            let file_path: PathBuf = filename.string.clone().into();
+                            let import_path = directory.join(file_path).canonicalize().map_err(|e| Error::Wrapped(Box::new(e)))?;
+                            
+                            if let Some((index, _)) = conversion_queue.iter().enumerate().find(|(_, p)| import_path.to_string_lossy() == p.to_string_lossy()) {
+                                conversion_queue.remove(index);
+                                conversion_queue.insert(0, import_path);
+                            } else {
+                                conversion_queue.push(import_path);
+                            }
+                        }
+
+                        ImportPath::Path(path) => todo!("Experimental solidity import path: {path}"),
+                    }
+
+                    Ok(())
+                };
+                
+                match import_directive {
+                    Import::Plain(import_path, _) => queue_import_path(import_path)?,
+                    Import::GlobalSymbol(import_path, _, _) => queue_import_path(import_path)?,
+                    Import::Rename(import_path, _, _) => queue_import_path(import_path)?,
+                }
+            }
+        }
+
+        // Translate source units through conversion queue
+        for source_unit_path in conversion_queue.iter() {
+            // Check if the source unit has been parsed
+            if !self.solidity_source_units.borrow().contains_key(source_unit_path) {
+                println!("Parsing \"{}\"", source_unit_path.to_string_lossy());
+                self.parse_solidity_source_unit(source_unit_path)?;
+            }
+
+            let source_unit = solidity_source_units.borrow().get(source_unit_path).unwrap().clone();
+            println!("Translating \"{}\"...", source_unit_path.to_string_lossy());
 
             for source_unit_part in source_unit.0.iter() {
                 match source_unit_part {
@@ -134,9 +209,9 @@ impl Project {
                     SourceUnitPart::StraySemicolon(_) => {}
                 }
             }
-        }
 
-        println!("Done.");
+            println!("Done.");
+        }
 
         Ok(())
     }

@@ -5,9 +5,10 @@ pub mod sway;
 use errors::Error;
 use project::Project;
 use std::path::PathBuf;
-use structopt::StructOpt;
+use structopt::{clap::AppSettings, StructOpt};
 
 #[derive(Default, StructOpt)]
+#[structopt(global_settings = &[AppSettings::ColoredHelp, AppSettings::ArgRequiredElseHelp])]
 pub struct Options {
     #[structopt(long)]
     pub contract_files: Vec<PathBuf>,
