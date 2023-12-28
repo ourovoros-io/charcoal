@@ -29,12 +29,15 @@ pub struct TranslatedIdentifier {
 }
 
 pub enum TranslatedDefinitionData {
-    Contract {
-        is_abstract: bool,
-        name: String,
-        inherits: Vec<(String, PathBuf)>,
-        functions: Vec<sway::Function>,
-    }
+    Interface(TranslatedInterface),
+}
+
+pub struct TranslatedInterface {
+    pub name: String,
+    pub events: sway::Enum,
+    pub errors: sway::Enum,
+    pub abi: sway::Abi,
+    pub functions: Vec<sway::Function>,
 }
 
 pub struct TranslatedFunction {
@@ -45,6 +48,7 @@ pub struct TranslatedFunction {
 pub struct Project {
     line_ranges: HashMap<PathBuf, Vec<(usize, usize)>>,
     solidity_source_units: Rc<RefCell<HashMap<PathBuf, SourceUnit>>>,
+    translated_definitions: Vec<TranslatedDefinition>,
 }
 
 impl TryFrom<&Options> for Project {
@@ -252,23 +256,27 @@ impl Project {
     }
 
     pub fn translate_interface(&mut self, source_unit_path: &Path, contract_definition: &ContractDefinition) -> Result<(), Error> {
-        let mut sway_abi = sway::Abi {
-            name: contract_definition.name.as_ref().unwrap().name.clone(),
+        let interface_name = contract_definition.name.as_ref().unwrap().name.clone();
+
+        let mut sway_interface = TranslatedInterface {
+            name: interface_name.clone(),
+            events: sway::Enum {
+                is_public: true,
+                name: format!("{interface_name}Event"),
+                generic_parameters: sway::GenericParameterList::default(),
+                variants: vec![],
+            },
+            errors: sway::Enum {
+                is_public: true,
+                name: format!("{interface_name}Error"),
+                generic_parameters: sway::GenericParameterList::default(),
+                variants: vec![],
+            },
+            abi: sway::Abi {
+                name: interface_name.clone(),
+                functions: vec![],
+            },
             functions: vec![],
-        };
-
-        let mut sway_events = sway::Enum {
-            is_public: true,
-            name: format!("{}Event", sway_abi.name),
-            generic_parameters: sway::GenericParameterList::default(),
-            variants: vec![],
-        };
-
-        let mut sway_errors = sway::Enum {
-            is_public: true,
-            name: format!("{}Error", sway_abi.name),
-            generic_parameters: sway::GenericParameterList::default(),
-            variants: vec![],
         };
 
         for part in contract_definition.parts.iter() {
@@ -278,7 +286,7 @@ impl Project {
                 ContractPart::EnumDefinition(_) => println!("TODO: interface enum definition"),
                 
                 ContractPart::EventDefinition(event_definition) => {
-                    sway_events.variants.push(sway::EnumVariant {
+                    sway_interface.events.variants.push(sway::EnumVariant {
                         name: event_definition.name.as_ref().unwrap().name.clone(),
                         type_name: sway::TypeName {
                             name: format!(
@@ -293,7 +301,7 @@ impl Project {
                 }
 
                 ContractPart::ErrorDefinition(error_definition) => {
-                    sway_errors.variants.push(sway::EnumVariant {
+                    sway_interface.errors.variants.push(sway::EnumVariant {
                         name: error_definition.name.as_ref().unwrap().name.clone(),
                         type_name: sway::TypeName {
                             name: format!(
@@ -308,7 +316,7 @@ impl Project {
                 }
 
                 ContractPart::FunctionDefinition(function_definition) => {
-                    sway_abi.functions.push(sway::Function {
+                    sway_interface.abi.functions.push(sway::Function {
                         is_public: false,
                         name: function_definition.name.as_ref().unwrap().name.clone().to_case(Case::Snake),
                         generic_parameters: sway::GenericParameterList::default(),
@@ -351,14 +359,25 @@ impl Project {
                 ContractPart::StraySemicolon(_) => {}
             }
         }
+
+        println!("First translation pass of \"{}\":", source_unit_path.to_string_lossy());
     
-        if !sway_events.variants.is_empty() {
-            println!("{}", sway::TabbedDisplayer(&sway_events));
+        if !sway_interface.events.variants.is_empty() {
+            println!("{}", sway::TabbedDisplayer(&sway_interface.events));
+        }
+
+        if !sway_interface.errors.variants.is_empty() {
+            println!("{}", sway::TabbedDisplayer(&sway_interface.errors));
         }
         
-        if !sway_abi.functions.is_empty() {
-            println!("{}", sway::TabbedDisplayer(&sway_abi));
+        if !sway_interface.abi.functions.is_empty() {
+            println!("{}", sway::TabbedDisplayer(&sway_interface.abi));
         }
+
+        self.translated_definitions.push(TranslatedDefinition {
+            path: source_unit_path.into(),
+            data: TranslatedDefinitionData::Interface(sway_interface),
+        });
         
         Ok(())
     }
