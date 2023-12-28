@@ -45,7 +45,6 @@ pub struct TranslatedFunction {
 pub struct Project {
     line_ranges: HashMap<PathBuf, Vec<(usize, usize)>>,
     solidity_source_units: Rc<RefCell<HashMap<PathBuf, SourceUnit>>>,
-    sway_modules: HashMap<String, sway::Module>,
 }
 
 impl TryFrom<&Options> for Project {
@@ -154,6 +153,21 @@ impl Project {
         Ok(conversion_queue)
     }
 
+    fn translate_type_name(&mut self, source_unit_path: &Path, type_name: &str) -> sway::TypeName {
+        //
+        // TODO: check mapping for previously canonicalized user type names?
+        //
+
+        sway::TypeName {
+            name: match type_name {
+                "uint" | "uint256" => "u64".into(),
+                "address" | "address payable" => "Address".into(),
+                _ => type_name.into(),
+            },
+            generic_parameters: GenericParameterList::default(),
+        }
+    }
+
     pub fn translate(&mut self) -> Result<(), Error> {
         let solidity_source_units = self.solidity_source_units.clone();
         let conversion_queue = self.create_conversion_queue()?;
@@ -162,13 +176,11 @@ impl Project {
         for source_unit_path in conversion_queue.iter() {
             // Parse the source unit if it has not been parsed already
             if !self.solidity_source_units.borrow().contains_key(source_unit_path) {
-                println!("Parsing \"{}\"", source_unit_path.to_string_lossy());
                 self.parse_solidity_source_unit(source_unit_path)?;
             }
 
             // Get the parsed source unit
             let source_unit = solidity_source_units.borrow().get(source_unit_path).unwrap().clone();
-            println!("Translating \"{}\"...", source_unit_path.to_string_lossy());
 
             // Handle the first translation pass
             for source_unit_part in source_unit.0.iter() {
@@ -178,83 +190,192 @@ impl Project {
                     }
         
                     SourceUnitPart::ImportDirective(_) => {
-                        // TODO: import and translate the file
+                        // NOTE: we don't need to handle this because we did already for the conversion queue
                     }
         
                     SourceUnitPart::ContractDefinition(contract_definition) => {
-                        self.translate_contract_definition(contract_definition)?;
+                        match &contract_definition.ty {                            
+                            ContractTy::Interface(_) => {
+                                self.translate_interface(&source_unit_path, contract_definition)?;
+                            }
+
+                            ContractTy::Library(_) => {
+                                self.translate_library(&source_unit_path, contract_definition)?;
+                            }
+
+                            ContractTy::Abstract(_) | ContractTy::Contract(_) => {
+                                self.translate_contract_definition(&source_unit_path, contract_definition)?;
+                            }
+                        }
                     }
         
                     SourceUnitPart::EnumDefinition(_) => {
-                        // TODO: create the enum
+                        todo!("toplevel enums")
                     }
         
                     SourceUnitPart::StructDefinition(_) => {
-                        // TODO: create the struct
+                        todo!("toplevel structs")
                     }
         
                     SourceUnitPart::EventDefinition(_) => {
-                        // TODO: determine how to handle custom events
+                        unimplemented!("toplevel custom events")
                     }
         
                     SourceUnitPart::ErrorDefinition(_) => {
-                        // TODO: determine how to handle custom errors
+                        unimplemented!("toplevel custom errors")
                     }
         
                     SourceUnitPart::FunctionDefinition(_) => {
-                        // TODO: translate the function
+                        unimplemented!("toplevel functions")
                     }
         
                     SourceUnitPart::VariableDefinition(_) => {
-                        // TODO: is this actually used?
+                        unimplemented!("toplevel variable definitions")
                     }
         
                     SourceUnitPart::TypeDefinition(_) => {
-                        // TODO: create the type definition (?)
+                        unimplemented!("toplevel type definitions")
                     }
         
-                    SourceUnitPart::Annotation(_) => {
-                        // TODO: is this actually used?
-                    }
+                    SourceUnitPart::Annotation(_) => {}
         
                     SourceUnitPart::Using(_) => {
-                        // TODO: determine if this needs special handling
+                        unimplemented!("toplevel using-for statements")
                     }
         
                     SourceUnitPart::StraySemicolon(_) => {}
                 }
             }
-
-            println!("Done.");
         }
 
         Ok(())
     }
 
-    fn translate_contract_definition(&mut self, contract_definition: &ContractDefinition) -> Result<(), Error> {
+    pub fn translate_interface(&mut self, source_unit_path: &Path, contract_definition: &ContractDefinition) -> Result<(), Error> {
+        let mut sway_abi = sway::Abi {
+            name: contract_definition.name.as_ref().unwrap().name.clone(),
+            functions: vec![],
+        };
+
+        let mut sway_events = sway::Enum {
+            is_public: true,
+            name: format!("{}Event", sway_abi.name),
+            generic_parameters: sway::GenericParameterList::default(),
+            variants: vec![],
+        };
+
+        let mut sway_errors = sway::Enum {
+            is_public: true,
+            name: format!("{}Error", sway_abi.name),
+            generic_parameters: sway::GenericParameterList::default(),
+            variants: vec![],
+        };
+
+        for part in contract_definition.parts.iter() {
+            match part {
+                ContractPart::TypeDefinition(_) => println!("TODO: interface type definition"),
+                ContractPart::StructDefinition(_) => println!("TODO: interface struct definition"),
+                ContractPart::EnumDefinition(_) => println!("TODO: interface enum definition"),
+                
+                ContractPart::EventDefinition(event_definition) => {
+                    sway_events.variants.push(sway::EnumVariant {
+                        name: event_definition.name.as_ref().unwrap().name.clone(),
+                        type_name: sway::TypeName {
+                            name: format!(
+                                "({})", // TODO: proper tuple typenames
+                                event_definition.fields.iter().map(|f| {
+                                    self.translate_type_name(source_unit_path, f.ty.to_string().as_str()).name // TODO: handle tuple typenames
+                                }).collect::<Vec<_>>().join(", ")
+                            ),
+                            generic_parameters: sway::GenericParameterList::default(),
+                        },
+                    });
+                }
+
+                ContractPart::ErrorDefinition(error_definition) => {
+                    sway_errors.variants.push(sway::EnumVariant {
+                        name: error_definition.name.as_ref().unwrap().name.clone(),
+                        type_name: sway::TypeName {
+                            name: format!(
+                                "({})", // TODO: proper tuple typenames
+                                error_definition.fields.iter().map(|f| {
+                                    self.translate_type_name(source_unit_path, f.ty.to_string().as_str()).name // TODO: handle tuple typenames
+                                }).collect::<Vec<_>>().join(", ")
+                            ),
+                            generic_parameters: sway::GenericParameterList::default(),
+                        },
+                    });
+                }
+
+                ContractPart::FunctionDefinition(function_definition) => {
+                    sway_abi.functions.push(sway::Function {
+                        is_public: false,
+                        name: function_definition.name.as_ref().unwrap().name.clone().to_case(Case::Snake),
+                        generic_parameters: sway::GenericParameterList::default(),
+
+                        parameters: sway::ParameterList {
+                            entries: function_definition.params.iter().map(|(_, p)| {
+                                sway::Parameter {
+                                    name: p.as_ref().unwrap().name.as_ref().unwrap().name.clone().to_case(Case::Snake),
+                                    type_name: self.translate_type_name(source_unit_path, p.as_ref().unwrap().ty.to_string().as_str()), // TODO: handle tuple typenames
+                                }
+                            }).collect(),
+                        },
+
+                        return_type: if function_definition.returns.is_empty() {
+                            None
+                        } else {
+                            Some(if function_definition.returns.len() == 1 {
+                                self.translate_type_name(source_unit_path, function_definition.returns[0].1.as_ref().unwrap().ty.to_string().as_str()) // TODO: handle tuple typenames
+                            } else {
+                                sway::TypeName {
+                                    name: format!(
+                                        "({})", // TODO: proper tuple typenames
+                                        function_definition.returns.iter().map(|(_, p)| {
+                                            self.translate_type_name(source_unit_path, p.as_ref().unwrap().ty.to_string().as_str()).name // TODO: handle tuple typenames
+                                        }).collect::<Vec<_>>().join(", ")
+                                    ),
+                                    generic_parameters: sway::GenericParameterList::default(),
+                                }
+                            })
+                        },
+
+                        body: None,
+                    });
+                }
+                
+                ContractPart::VariableDefinition(_) => unimplemented!("interface variable declarations"),
+                ContractPart::Using(_) => unimplemented!("interface using-for declarations"),
+                
+                ContractPart::Annotation(_) => {}
+                ContractPart::StraySemicolon(_) => {}
+            }
+        }
+    
+        if !sway_events.variants.is_empty() {
+            println!("{}", sway::TabbedDisplayer(&sway_events));
+        }
+        
+        if !sway_abi.functions.is_empty() {
+            println!("{}", sway::TabbedDisplayer(&sway_abi));
+        }
+        
+        Ok(())
+    }
+
+    fn translate_library(&mut self, source_unit_path: &Path, contract_definition: &ContractDefinition) -> Result<(), Error> {
+        todo!()
+    }
+
+    fn translate_contract_definition(&mut self, source_unit_path: &Path, contract_definition: &ContractDefinition) -> Result<(), Error> {
         let mut module = sway::Module::new(match &contract_definition.ty {
-            ContractTy::Abstract(_) => todo!("Determine how to handle abstract contract generation"),
+            ContractTy::Abstract(_) => todo!("abstract contracts"),
             ContractTy::Contract(_) => sway::ModuleKind::Contract,
-            ContractTy::Interface(_) => todo!("Create ABI for interface"),
-            ContractTy::Library(_) => sway::ModuleKind::Library,
+            ContractTy::Interface(_) => unreachable!("interfaces should be handled by translate_interface"),
+            ContractTy::Library(_) => unreachable!("libraries should be handled by translate_library"),
         });
 
         let contract_name = contract_definition.name.as_ref().unwrap().name.clone();
-
-        fn canonicalize_type_name(type_name: &str) -> sway::TypeName {
-            //
-            // TODO: check mapping for previously canonicalized user type names?
-            //
-
-            sway::TypeName {
-                name: match type_name {
-                    "uint" | "uint256" => "u64".into(),
-                    "address" | "address payable" => "Address".into(),
-                    _ => type_name.into(),
-                },
-                generic_parameters: GenericParameterList::default(),
-            }
-        }
 
         for part in contract_definition.parts.iter() {
             match part {
@@ -277,7 +398,7 @@ impl Project {
                         struct_item.fields.push(sway::StructField {
                             is_public: true,
                             name: field.name.as_ref().unwrap().name.to_case(Case::Snake),
-                            type_name: canonicalize_type_name(field.ty.to_string().as_str()),
+                            type_name: self.translate_type_name(source_unit_path, field.ty.to_string().as_str()),
                         });
                     }
 
@@ -313,7 +434,7 @@ impl Project {
                         module.items.push(sway::ModuleItem::Constant(sway::Constant {
                             is_public,
                             name: variable_definition.name.as_ref().unwrap().name.to_case(Case::UpperSnake),
-                            type_name: canonicalize_type_name(variable_definition.ty.to_string().as_str()),
+                            type_name: self.translate_type_name(source_unit_path, variable_definition.ty.to_string().as_str()),
     
                             // TODO: proper value constructors
                             value: Some(sway::Expression::FunctionCall(Box::new(sway::FunctionCall {
@@ -333,7 +454,7 @@ impl Project {
     
                         storage.fields.push(sway::StorageField {
                             name: variable_definition.name.as_ref().unwrap().name.to_case(Case::Snake),
-                            type_name: canonicalize_type_name(variable_definition.ty.to_string().as_str()),
+                            type_name: self.translate_type_name(source_unit_path, variable_definition.ty.to_string().as_str()),
     
                             // TODO: proper value constructors
                             value: sway::Expression::FunctionCall(Box::new(sway::FunctionCall {
@@ -426,7 +547,7 @@ impl Project {
                             name: type_definition.name.to_string(),
                             generic_parameters: GenericParameterList::default(),
                         },
-                        underlying_type: Some(canonicalize_type_name(type_definition.ty.to_string().as_str())),
+                        underlying_type: Some(self.translate_type_name(source_unit_path, type_definition.ty.to_string().as_str())),
                     }));
                 }
 
@@ -441,7 +562,6 @@ impl Project {
         }
 
         println!("{}", sway::TabbedDisplayer(&module));
-        self.sway_modules.insert(contract_name, module);
 
         Ok(())
     }

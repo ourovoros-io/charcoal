@@ -67,7 +67,6 @@ impl Module {
             abi.name == abi_name
         }) {
             self.items.push(ModuleItem::Abi(Abi {
-                is_public: false,
                 name: abi_name.into(),
                 functions: vec![],
             }));
@@ -172,6 +171,7 @@ pub enum ModuleItem {
     TypeDefinition(TypeDefinition),
     Constant(Constant),
     Struct(Struct),
+    Enum(Enum),
     Abi(Abi),
     Trait(Trait),
     Storage(Storage),
@@ -187,6 +187,7 @@ impl TabbedDisplay for ModuleItem {
             ModuleItem::TypeDefinition(x) => x.tabbed_fmt(depth, f),
             ModuleItem::Constant(x) => x.tabbed_fmt(depth, f),
             ModuleItem::Struct(x) => x.tabbed_fmt(depth, f),
+            ModuleItem::Enum(x) => x.tabbed_fmt(depth, f),
             ModuleItem::Abi(x) => x.tabbed_fmt(depth, f),
             ModuleItem::Trait(x) => x.tabbed_fmt(depth, f),
             ModuleItem::Storage(x) => x.tabbed_fmt(depth, f),
@@ -421,18 +422,54 @@ impl Display for StructField {
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 #[derive(Clone)]
-pub struct Abi {
+pub struct Enum {
     pub is_public: bool,
+    pub name: String,
+    pub generic_parameters: GenericParameterList,
+    pub variants: Vec<EnumVariant>,
+}
+
+impl TabbedDisplay for Enum {
+    fn tabbed_fmt(&self, depth: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.is_public {
+            write!(f, "pub ")?;
+        }
+
+        writeln!(f, "enum {}{} {{", self.name, self.generic_parameters)?;
+
+        for field in self.variants.iter() {
+            field.tabbed_fmt(depth + 1, f)?;
+            writeln!(f, ",")?;
+        }
+
+        "}".tabbed_fmt(depth, f)
+    }
+}
+
+// -------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+#[derive(Clone)]
+pub struct EnumVariant {
+    pub name: String,
+    pub type_name: TypeName,
+}
+
+impl Display for EnumVariant {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {}", self.name, self.type_name)
+    }
+}
+
+// -------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+#[derive(Clone)]
+pub struct Abi {
     pub name: String,
     pub functions: Vec<Function>,
 }
 
 impl TabbedDisplay for Abi {
     fn tabbed_fmt(&self, depth: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.is_public {
-            write!(f, "pub ")?;
-        }
-
         writeln!(f, "abi {} {{", self.name)?;
 
         for function in self.functions.iter() {
