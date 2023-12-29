@@ -185,7 +185,9 @@ impl Project {
                     generic_parameters: sway::GenericParameterList::default(),
                 },
 
-                solidity::Type::String => todo!("string types"),
+                solidity::Type::String => sway::TypeName::String {
+                    length: 32, // TODO: is using a fixed 32-character string ok?
+                },
 
                 solidity::Type::Int(bits) => todo!("signed integer types"),
 
@@ -200,7 +202,13 @@ impl Project {
                     generic_parameters: sway::GenericParameterList::default(),
                 },
 
-                solidity::Type::Bytes(length) => todo!("fixed-length bytes types"),
+                solidity::Type::Bytes(length) => sway::TypeName::Array {
+                    type_name: Box::new(sway::TypeName::Identifier {
+                        name: "u8".into(),
+                        generic_parameters: sway::GenericParameterList::default(),
+                    }),
+                    length: *length as usize,
+                },
 
                 solidity::Type::Rational => todo!("rational types"),
 

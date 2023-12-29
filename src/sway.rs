@@ -303,7 +303,10 @@ pub enum TypeName {
     },
     Tuple {
         type_names: Vec<TypeName>,
-    }
+    },
+    String {
+        length: usize,
+    },
 }
 
 impl Display for TypeName {
@@ -312,6 +315,7 @@ impl Display for TypeName {
             TypeName::Identifier { name, generic_parameters } => write!(f, "{name}{generic_parameters}"),
             TypeName::Array { type_name, length } => write!(f, "[{type_name}; {length}]"),
             TypeName::Tuple { type_names } => write!(f, "({})", type_names.iter().map(|t| format!("{t}")).collect::<Vec<_>>().join(", ")),
+            TypeName::String { length } => write!(f, "str[{length}]"),
         }
     }
 }
