@@ -68,6 +68,7 @@ impl Module {
         }) {
             self.items.push(ModuleItem::Abi(Abi {
                 name: abi_name.into(),
+                inherits: vec![],
                 functions: vec![],
             }));
         }
@@ -86,16 +87,17 @@ impl Module {
     pub fn get_or_create_impl_for(&mut self, impl_name: &str, for_name: &str) -> &mut Impl {
         if !self.items.iter().any(|x| {
             let ModuleItem::Impl(x) = x else { return false };
-            let Some(for_type_name) = x.for_type_name.as_ref() else { return false };
-            x.type_name.name == impl_name && for_type_name.name == for_name
+            let TypeName::Identifier { name: impl_type_name, .. } = &x.type_name else { return false };
+            let Some(TypeName::Identifier { name: for_type_name, .. }) = x.for_type_name.as_ref() else { return false };
+            impl_type_name == impl_name && for_type_name == for_name
         }) {
             self.items.push(ModuleItem::Impl(Impl {
                 generic_parameters: GenericParameterList::default(),
-                type_name: TypeName {
+                type_name: TypeName::Identifier {
                     name: impl_name.into(),
                     generic_parameters: GenericParameterList::default(),
                 },
-                for_type_name: Some(TypeName {
+                for_type_name: Some(TypeName::Identifier {
                     name: for_name.into(),
                     generic_parameters: GenericParameterList::default(),
                 }),
@@ -105,8 +107,9 @@ impl Module {
 
         let Some(ModuleItem::Impl(result)) = self.items.iter_mut().find(|x| {
             let ModuleItem::Impl(x) = x else { return false };
-            let Some(for_type_name) = x.for_type_name.as_ref() else { return false };
-            x.type_name.name == impl_name && for_type_name.name == for_name
+            let TypeName::Identifier { name: impl_type_name, .. } = &x.type_name else { return false };
+            let Some(TypeName::Identifier { name: for_type_name, .. }) = x.for_type_name.as_ref() else { return false };
+            impl_type_name == impl_name && for_type_name == for_name
         }) else {
             panic!("Failed to find impl item in module");
         };
@@ -289,14 +292,27 @@ impl Display for GenericParameterList {
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 #[derive(Clone)]
-pub struct TypeName {
-    pub name: String,
-    pub generic_parameters: GenericParameterList,
+pub enum TypeName {
+    Identifier {
+        name: String,
+        generic_parameters: GenericParameterList,
+    },
+    Array {
+        type_name: Box<TypeName>,
+        length: usize,
+    },
+    Tuple {
+        type_names: Vec<TypeName>,
+    }
 }
 
 impl Display for TypeName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}{}", self.name, self.generic_parameters)
+        match self {
+            TypeName::Identifier { name, generic_parameters } => write!(f, "{name}{generic_parameters}"),
+            TypeName::Array { type_name, length } => write!(f, "[{type_name}; {length}]"),
+            TypeName::Tuple { type_names } => write!(f, "({})", type_names.iter().map(|t| format!("{t}")).collect::<Vec<_>>().join(", ")),
+        }
     }
 }
 
@@ -465,12 +481,19 @@ impl Display for EnumVariant {
 #[derive(Clone)]
 pub struct Abi {
     pub name: String,
+    pub inherits: Vec<String>,
     pub functions: Vec<Function>,
 }
 
 impl TabbedDisplay for Abi {
     fn tabbed_fmt(&self, depth: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "abi {} {{", self.name)?;
+        write!(f, "abi {}", self.name)?;
+
+        if !self.inherits.is_empty() {
+            write!(f, ": {}", self.inherits.join(" + "))?;
+        }
+
+        writeln!(f, " {{")?;
 
         for function in self.functions.iter() {
             "".tabbed_fmt(depth + 1, f)?;
