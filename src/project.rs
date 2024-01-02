@@ -322,6 +322,8 @@ impl Project {
         for part in solidity_definition.parts.iter() {
             let solidity::ContractPart::VariableDefinition(variable_definition) = part else { continue };
 
+            let variable_type_name = self.translate_type_name(source_unit_path, &variable_definition.ty);
+
             // Handle constant variable definitions
             if variable_definition.attrs.iter().any(|x| matches!(x, solidity::VariableAttribute::Constant(_))) {
                 todo!("contract constants")
@@ -343,12 +345,8 @@ impl Project {
                 // Add the storage field to the storage block
                 sway_definition.storage.as_mut().unwrap().fields.push(sway::StorageField {
                     name: variable_name.clone(), // TODO: keep track of original name
-                    type_name: self.translate_type_name(source_unit_path, &variable_definition.ty),
-                    value: sway::Expression::FunctionCall(Box::new(sway::FunctionCall { // TODO: generate valid value expression
-                        function: sway::Expression::Identifier("todo!".into()),
-                        generic_parameters: None,
-                        parameters: vec![],
-                    })),
+                    type_name: variable_type_name.clone(),
+                    value: sway::Expression::create_value_expression(&variable_type_name),
                 });
 
                 let is_public = variable_definition.attrs.iter().any(|x| matches!(x, solidity::VariableAttribute::Visibility(solidity::Visibility::External(_) | solidity::Visibility::Public(_))));
@@ -360,7 +358,7 @@ impl Project {
                         name: variable_name.clone(), // TODO: keep track of original name
                         generic_parameters: sway::GenericParameterList::default(),
                         parameters: sway::ParameterList::default(), // TODO: create parameters for StorageMap getter functions
-                        return_type: Some(self.translate_type_name(source_unit_path, &variable_definition.ty)), // TODO: get proper return type for StorageMap getter functions
+                        return_type: Some(variable_type_name.clone()), // TODO: get proper return type for StorageMap getter functions
                         body: None,
                     };
 

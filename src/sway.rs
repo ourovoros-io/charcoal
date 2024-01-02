@@ -834,18 +834,20 @@ pub enum Expression {
     FunctionCall(Box<FunctionCall>),
     Block(Box<Block>),
     Return(Option<Box<Expression>>),
+    Array(Array),
     ArrayAccess(Box<ArrayAccess>),
     MemberAccess(Box<MemberAccess>),
     Tuple(Vec<Expression>),
     UnaryExpression(Box<UnaryExpression>),
     BinaryExpression(Box<BinaryExpression>),
+    Constructor(Box<Constructor>),
     // TODO: finish
 }
 
 impl TabbedDisplay for Expression {
     fn tabbed_fmt(&self, depth: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Expression::Literal(x) => x.tabbed_fmt(depth, f),
+            Expression::Literal(x) => write!(f, "{x}"),
             Expression::Identifier(x) => write!(f, "{x}"),
             Expression::FunctionCall(x) => x.tabbed_fmt(depth, f),
             Expression::Block(x) => x.tabbed_fmt(depth, f),
@@ -857,6 +859,7 @@ impl TabbedDisplay for Expression {
                 }
                 Ok(())
             }
+            Expression::Array(x) => write!(f, "{x}"),
             Expression::ArrayAccess(x) => x.tabbed_fmt(depth, f),
             Expression::MemberAccess(x) => x.tabbed_fmt(depth, f),
             Expression::Tuple(x) => {
@@ -871,6 +874,47 @@ impl TabbedDisplay for Expression {
             }
             Expression::UnaryExpression(x) => x.tabbed_fmt(depth, f),
             Expression::BinaryExpression(x) => x.tabbed_fmt(depth, f),
+            Expression::Constructor(x) => x.tabbed_fmt(depth, f),
+        }
+    }
+}
+
+impl Expression {
+    pub fn create_value_expression(type_name: &TypeName) -> Expression {
+        match type_name {
+            TypeName::Identifier { name, generic_parameters } => match name.as_str() {
+                "u8" | "u16" | "u32" | "u64" => Expression::Literal(Literal::DecInt(0)),
+
+                "StorageMap" => Expression::Constructor(Box::new(Constructor {
+                    type_name: TypeName::Identifier {
+                        name: "StorageMap".into(),
+                        generic_parameters: GenericParameterList::default(),
+                    },
+                    fields: vec![],
+                })),
+
+                _ => Expression::FunctionCall(Box::new(FunctionCall { // TODO: generate valid value expression
+                    function: Expression::Identifier("todo!".into()),
+                    generic_parameters: None,
+                    parameters: vec![],
+                })),
+            },
+
+            TypeName::Array { type_name, length } => Expression::Array(Array {
+                elements: (0..*length).into_iter().map(|_| Self::create_value_expression(type_name)).collect(),
+            }),
+
+            TypeName::Tuple { type_names } => Expression::Tuple(
+                type_names.iter().map(|type_name| Self::create_value_expression(type_name)).collect()
+            ),
+
+            TypeName::String { length } => Expression::FunctionCall(Box::new(FunctionCall {
+                function: Expression::Identifier("__to_str_array".into()),
+                generic_parameters: None,
+                parameters: vec![
+                    Expression::Literal(Literal::String((0..*length).into_iter().map(|_| " ").collect())),
+                ],
+            })),
         }
     }
 }
@@ -903,6 +947,29 @@ impl TabbedDisplay for FunctionCall {
         }
 
         write!(f, ")")
+    }
+}
+
+// -------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+#[derive(Clone, Default)]
+pub struct Array {
+    pub elements: Vec<Expression>,
+}
+
+impl Display for Array {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "[")?;
+
+        for (i, element) in self.elements.iter().enumerate() {
+            if i > 0 {
+                write!(f, ", ")?;
+            }
+
+            element.tabbed_fmt(0, f)?;
+        }
+
+        write!(f, "]")
     }
 }
 
@@ -967,6 +1034,48 @@ impl Display for BinaryExpression {
         self.lhs.tabbed_fmt(0, f)?;
         write!(f, " {} ", self.operator)?;
         self.rhs.tabbed_fmt(0, f)
+    }
+}
+
+// -------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+#[derive(Clone)]
+pub struct Constructor {
+    pub type_name: TypeName,
+    pub fields: Vec<ConstructorField>,
+}
+
+impl TabbedDisplay for Constructor {
+    fn tabbed_fmt(&self, depth: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} {{", self.type_name)?;
+
+        if !self.fields.is_empty() {
+            writeln!(f)?;
+        }
+
+        for field in self.fields.iter() {
+            "".tabbed_fmt(depth + 1, f)?;
+            field.tabbed_fmt(depth + 1, f)?;
+            writeln!(f)?;
+        }
+
+        write!(f, "}}")
+    }
+}
+
+// -------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+#[derive(Clone)]
+pub struct ConstructorField {
+    pub name: String,
+    pub type_name: TypeName,
+    pub value: Expression,
+}
+
+impl TabbedDisplay for ConstructorField {
+    fn tabbed_fmt(&self, depth: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {} = ", self.name, self.type_name)?;
+        self.value.tabbed_fmt(depth, f)
     }
 }
 
