@@ -1068,13 +1068,12 @@ impl TabbedDisplay for Constructor {
 #[derive(Clone)]
 pub struct ConstructorField {
     pub name: String,
-    pub type_name: TypeName,
     pub value: Expression,
 }
 
 impl TabbedDisplay for ConstructorField {
     fn tabbed_fmt(&self, depth: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}: {} = ", self.name, self.type_name)?;
+        write!(f, "{}: ", self.name)?;
         self.value.tabbed_fmt(depth, f)
     }
 }
