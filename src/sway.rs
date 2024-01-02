@@ -335,7 +335,7 @@ impl Display for TypeDefinition {
             write!(f, "pub ")?;
         }
 
-        write!(f, "{}", self.name)?;
+        write!(f, "type {}", self.name)?;
 
         if let Some(underlying_type) = self.underlying_type.as_ref() {
             write!(f, " = {underlying_type}")?;
