@@ -168,6 +168,10 @@ impl Project {
             let mut queue_import_path = |import_path: &solidity::ImportPath| -> Result<(), Error> {
                 match import_path {
                     solidity::ImportPath::Filename(filename) => {
+                        if filename.string.starts_with("@") {
+                            todo!("handle global import paths (i.e: node_modules)")
+                        }
+
                         // Get the canonical path of the imported source unit
                         let import_path = source_unit_directory.join(filename.string.clone()).canonicalize().map_err(|e| Error::Wrapped(Box::new(e)))?;
                         source_unit_paths.push(import_path.clone());
@@ -422,7 +426,7 @@ impl Project {
             let mut contract_impl = sway_definition.impls.iter_mut().find(|i| {
                 let sway::TypeName::Identifier { name: type_name, .. } = &i.type_name else { return false };
                 let Some(sway::TypeName::Identifier { name: for_type_name, .. }) = i.for_type_name.as_ref() else { return false };
-                *type_name == sway_definition.name && for_type_name == "Contract"
+                *type_name == definition_name && for_type_name == "Contract"
             });
 
             // Create the contract impl if it doesn't exist
