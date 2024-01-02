@@ -208,6 +208,11 @@ impl Project {
                     solidity::Import::Rename(import_path, _, _) => queue_import_path(import_path)?,
                 }
             }
+
+            // Add the source unit path to the end of the translation queue
+            if !translation_queue.contains(&source_unit_path) {
+                translation_queue.push(source_unit_path);
+            }
         }
 
         Ok(translation_queue)
@@ -629,7 +634,7 @@ impl Project {
             }
         }
 
-        println!("First translation pass of \"{}\":", source_unit_path.to_string_lossy());
+        println!("First translation pass of \"{}\" in \"{}\":", sway_definition.name, source_unit_path.to_string_lossy());
 
         for x in sway_definition.type_definitions.iter() {
             println!("{}", sway::TabbedDisplayer(x));
