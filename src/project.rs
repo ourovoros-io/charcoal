@@ -323,114 +323,128 @@ impl Project {
             let solidity::ContractPart::VariableDefinition(variable_definition) = part else { continue };
 
             let variable_type_name = self.translate_type_name(source_unit_path, &variable_definition.ty);
+            let is_public = variable_definition.attrs.iter().any(|x| matches!(x, solidity::VariableAttribute::Visibility(solidity::Visibility::External(_) | solidity::Visibility::Public(_))));
+            let is_constant = variable_definition.attrs.iter().any(|x| matches!(x, solidity::VariableAttribute::Constant(_)));
+            let is_immutable = variable_definition.attrs.iter().any(|x| matches!(x, solidity::VariableAttribute::Immutable(_)));
 
             // Handle constant variable definitions
-            if variable_definition.attrs.iter().any(|x| matches!(x, solidity::VariableAttribute::Constant(_))) {
-                todo!("contract constants")
+            if is_constant {
+                let variable_name = variable_definition.name.as_ref().unwrap().name.to_case(Case::ScreamingSnake); // TODO: keep track of original name
+
+                todo!("contract constants");
+                continue;
             }
+            
             // Handle immutable variable definitions
-            else if variable_definition.attrs.iter().any(|x| matches!(x, solidity::VariableAttribute::Immutable(_))) {
-                todo!("immutable variables")
+            if is_immutable {
+                let variable_name = variable_definition.name.as_ref().unwrap().name.to_case(Case::Snake); // TODO: keep track of original name
+
+                todo!("immutable variables");
+                continue;
             }
+            
             // Handle all other variable definitions
-            else {
-                let variable_name = variable_definition.name.as_ref().unwrap().name.to_case(Case::Snake);
+            let variable_name = variable_definition.name.as_ref().unwrap().name.to_case(Case::Snake); // TODO: keep track of original name
 
-                if sway_definition.storage.is_none() {
-                    sway_definition.storage = Some(sway::Storage {
-                        fields: vec![],
-                    });
-                }
+            // Create the storage block if it doesn't exist
+            if sway_definition.storage.is_none() {
+                sway_definition.storage = Some(sway::Storage {
+                    fields: vec![],
+                });
+            }
 
-                // Add the storage field to the storage block
-                sway_definition.storage.as_mut().unwrap().fields.push(sway::StorageField {
-                    name: variable_name.clone(), // TODO: keep track of original name
-                    type_name: variable_type_name.clone(),
-                    value: sway::Expression::create_value_expression(&variable_type_name),
+            // Add the storage field to the storage block
+            sway_definition.storage.as_mut().unwrap().fields.push(sway::StorageField {
+                name: variable_name.clone(), // TODO: keep track of original name
+                type_name: variable_type_name.clone(),
+                value: sway::Expression::create_value_expression(&variable_type_name),
+            });
+
+            // Generate a getter function if the storage field is public
+            if !is_public {
+                continue;
+            }
+        
+            // Create the abi if it doesn't exist
+            if sway_definition.abi.is_none() {
+                sway_definition.abi = Some(sway::Abi {
+                    name: definition_name.clone(),
+                    inherits: inherits.clone(),
+                    functions: vec![],
+                });
+            }
+
+            // Create the function declaration for the abi
+            let mut function_definition = sway::Function {
+                is_public: false,
+                name: variable_name.clone(), // TODO: keep track of original name
+                generic_parameters: sway::GenericParameterList::default(),
+                parameters: sway::ParameterList::default(), // TODO: create parameters for StorageMap getter functions
+                return_type: Some(variable_type_name.clone()), // TODO: get proper return type for StorageMap getter functions
+                body: None,
+            };
+
+            // Add the function to the abi
+            sway_definition.abi.as_mut().unwrap().functions.push(function_definition.clone());
+
+            // Create the body for the toplevel function
+            function_definition.body = Some(sway::Block {
+                statements: vec![],
+                // TODO: change for StorageMap getter functions
+                final_expr: Some(sway::Expression::FunctionCall(Box::new(sway::FunctionCall {
+                    function: sway::Expression::MemberAccess(Box::new(sway::MemberAccess {
+                        expression: sway::Expression::MemberAccess(Box::new(sway::MemberAccess {
+                            expression: sway::Expression::Identifier("storage".into()),
+                            member: variable_name.clone(),
+                        })),
+                        member: "read".into(),
+                    })),
+                    generic_parameters: None,
+                    parameters: vec![],
+                }))),
+            });
+
+            // Add the toplevel function
+            sway_definition.functions.push(function_definition.clone());
+
+            // Create the body for the contract impl's function wrapper
+            function_definition.body = Some(sway::Block {
+                statements: vec![],
+                // TODO: change for StorageMap getter functions
+                final_expr: Some(sway::Expression::FunctionCall(Box::new(sway::FunctionCall {
+                    function: sway::Expression::Identifier(format!("::{}", function_definition.name)),
+                    generic_parameters: None,
+                    parameters: vec![],
+                }))),
+            });
+
+            // Attempt to get the contract impl
+            let mut contract_impl = sway_definition.impls.iter_mut().find(|i| {
+                let sway::TypeName::Identifier { name: type_name, .. } = &i.type_name else { return false };
+                let Some(sway::TypeName::Identifier { name: for_type_name, .. }) = i.for_type_name.as_ref() else { return false };
+                *type_name == sway_definition.name && for_type_name == "Contract"
+            });
+
+            // Create the contract impl if it doesn't exist
+            if contract_impl.is_none() {
+                sway_definition.impls.push(sway::Impl {
+                    generic_parameters: sway::GenericParameterList::default(),
+                    type_name: sway::TypeName::Identifier {
+                        name: sway_definition.name.clone(),
+                        generic_parameters: sway::GenericParameterList::default(),
+                    },
+                    for_type_name: Some(sway::TypeName::Identifier {
+                        name: "Contract".into(),
+                        generic_parameters: sway::GenericParameterList::default(),
+                    }),
+                    items: vec![],
                 });
 
-                let is_public = variable_definition.attrs.iter().any(|x| matches!(x, solidity::VariableAttribute::Visibility(solidity::Visibility::External(_) | solidity::Visibility::Public(_))));
-
-                // Generate a getter function if the storage field is public
-                if is_public {
-                    let mut function_definition = sway::Function {
-                        is_public: false,
-                        name: variable_name.clone(), // TODO: keep track of original name
-                        generic_parameters: sway::GenericParameterList::default(),
-                        parameters: sway::ParameterList::default(), // TODO: create parameters for StorageMap getter functions
-                        return_type: Some(variable_type_name.clone()), // TODO: get proper return type for StorageMap getter functions
-                        body: None,
-                    };
-
-                    if sway_definition.abi.is_none() {
-                        sway_definition.abi = Some(sway::Abi {
-                            name: definition_name.clone(),
-                            inherits: inherits.clone(),
-                            functions: vec![],
-                        });
-                    }
-
-                    // Add the function to the abi
-                    sway_definition.abi.as_mut().unwrap().functions.push(function_definition.clone());
-
-                    // Create the body for the toplevel function
-                    function_definition.body = Some(sway::Block {
-                        statements: vec![],
-                        // TODO: change for StorageMap getter functions
-                        final_expr: Some(sway::Expression::FunctionCall(Box::new(sway::FunctionCall {
-                            function: sway::Expression::MemberAccess(Box::new(sway::MemberAccess {
-                                expression: sway::Expression::MemberAccess(Box::new(sway::MemberAccess {
-                                    expression: sway::Expression::Identifier("storage".into()),
-                                    member: variable_name.clone(),
-                                })),
-                                member: "read".into(),
-                            })),
-                            generic_parameters: None,
-                            parameters: vec![],
-                        }))),
-                    });
-
-                    // Add the toplevel function
-                    sway_definition.functions.push(function_definition.clone());
-
-                    // Create the body for the contract impl's function wrapper
-                    function_definition.body = Some(sway::Block {
-                        statements: vec![],
-                        // TODO: change for StorageMap getter functions
-                        final_expr: Some(sway::Expression::FunctionCall(Box::new(sway::FunctionCall {
-                            function: sway::Expression::Identifier(format!("::{}", function_definition.name)),
-                            generic_parameters: None,
-                            parameters: vec![],
-                        }))),
-                    });
-
-                    // Get or create the contract impl
-                    let mut contract_impl = sway_definition.impls.iter_mut().find(|i| {
-                        let Some(sway::TypeName::Identifier { name, .. }) = i.for_type_name.as_ref() else { return false };
-                        name == "Contract"
-                    });
-
-                    if contract_impl.is_none() {
-                        sway_definition.impls.push(sway::Impl {
-                            generic_parameters: sway::GenericParameterList::default(),
-                            type_name: sway::TypeName::Identifier {
-                                name: sway_definition.name.clone(),
-                                generic_parameters: sway::GenericParameterList::default(),
-                            },
-                            for_type_name: Some(sway::TypeName::Identifier {
-                                name: "Contract".into(),
-                                generic_parameters: sway::GenericParameterList::default(),
-                            }),
-                            items: vec![],
-                        });
-
-                        contract_impl = sway_definition.impls.last_mut();
-                    }
-
-                    // Add the function wrapper to the contract impl
-                    contract_impl.as_mut().unwrap().items.push(sway::ImplItem::Function(function_definition));
-                }
+                contract_impl = sway_definition.impls.last_mut();
             }
+
+            // Add the function wrapper to the contract impl
+            contract_impl.as_mut().unwrap().items.push(sway::ImplItem::Function(function_definition));
         }
         
         for part in solidity_definition.parts.iter() {
