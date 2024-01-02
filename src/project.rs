@@ -274,7 +274,10 @@ impl Project {
 
                 solidity::Type::Rational => todo!("rational types"),
 
-                solidity::Type::DynamicBytes => todo!("dynamically-sized bytes types"),
+                solidity::Type::DynamicBytes => sway::TypeName::Identifier {
+                    name: "std::bytes::Bytes".into(), // TODO: is this ok?
+                    generic_parameters: sway::GenericParameterList::default(),
+                },
 
                 solidity::Type::Mapping { key, value, .. } => sway::TypeName::Identifier {
                     name: "StorageMap".into(),
@@ -379,7 +382,7 @@ impl Project {
             }
 
             // Create the function declaration for the abi
-            let mut function_definition = sway::Function {
+            let mut sway_function = sway::Function {
                 is_public: false,
                 name: variable_name.clone(), // TODO: keep track of original name
                 generic_parameters: sway::GenericParameterList::default(),
@@ -389,10 +392,10 @@ impl Project {
             };
 
             // Add the function to the abi
-            sway_definition.abi.as_mut().unwrap().functions.push(function_definition.clone());
+            sway_definition.abi.as_mut().unwrap().functions.push(sway_function.clone());
 
             // Create the body for the toplevel function
-            function_definition.body = Some(sway::Block {
+            sway_function.body = Some(sway::Block {
                 statements: vec![],
                 // TODO: change for StorageMap getter functions
                 final_expr: Some(sway::Expression::FunctionCall(Box::new(sway::FunctionCall {
@@ -409,14 +412,14 @@ impl Project {
             });
 
             // Add the toplevel function
-            sway_definition.functions.push(function_definition.clone());
+            sway_definition.functions.push(sway_function.clone());
 
             // Create the body for the contract impl's function wrapper
-            function_definition.body = Some(sway::Block {
+            sway_function.body = Some(sway::Block {
                 statements: vec![],
                 // TODO: change for StorageMap getter functions
                 final_expr: Some(sway::Expression::FunctionCall(Box::new(sway::FunctionCall {
-                    function: sway::Expression::Identifier(format!("::{}", function_definition.name)),
+                    function: sway::Expression::Identifier(format!("::{}", sway_function.name)),
                     generic_parameters: None,
                     parameters: vec![],
                 }))),
@@ -448,7 +451,7 @@ impl Project {
             }
 
             // Add the function wrapper to the contract impl
-            contract_impl.as_mut().unwrap().items.push(sway::ImplItem::Function(function_definition));
+            contract_impl.as_mut().unwrap().items.push(sway::ImplItem::Function(sway_function));
         }
         
         for part in solidity_definition.parts.iter() {
@@ -539,61 +542,56 @@ impl Project {
                     let is_receive = matches!(function_definition.ty, solidity::FunctionTy::Receive);
                     let is_modifier = matches!(function_definition.ty, solidity::FunctionTy::Modifier);
 
-                    // if is_modifier {
-                    //     //
-                    //     // TODO:
-                    //     // * translate the modifier code 
-                    //     // * generate functions for modifier pre and post code
-                    //     // * keep track of pre and post code functions for inserting into functions that use the modifier
-                    //     //
-                    // } else if is_public || is_constructor {
-                    //     let abi = module.get_or_create_abi(contract_name.as_str());
-                        
-                    //     let mut function = sway::Function {
-                    //         is_public: false,
-                    //         name: if is_constructor {
-                    //             "constructor".into() // TODO: multiple constructors?
-                    //         } else {
-                    //             function_definition.name.as_ref().unwrap().name.to_case(Case::Snake) // TODO: keep track of original name
-                    //         },
-                    //         generic_parameters: sway::GenericParameterList::default(),
-                    //         parameters: sway::ParameterList {
-                    //             entries: vec![
-                    //                 // TODO
-                    //             ],
-                    //         },
-                    //         return_type: None, // TODO
-                    //         body: None,
-                    //     };
+                    let function_name = if is_constructor {
+                        "constructor".to_string()
+                    } else if is_fallback {
+                        "fallback".to_string()
+                    } else if is_receive {
+                        "receive".to_string()
+                    } else {
+                        function_definition.name.as_ref().unwrap().name.to_case(Case::Snake)
+                    };
 
-                    //     // Create the function declaration in the contract's ABI
-                    //     abi.functions.push(function.clone());
-
-                    //     //
-                    //     // TODO:
-                    //     // * convert the function's body code
-                    //     //
-
-                    //     function.body = Some(sway::Block {
-                    //         statements: vec![],
-                    //         final_expr: Some(sway::Expression::FunctionCall(Box::new(sway::FunctionCall {
-                    //             function: sway::Expression::Identifier("todo!".into()),
-                    //             generic_parameters: None,
-                    //             parameters: vec![],
-                    //         }))),
-                    //     });
-
-                    //     // Add the function to its ABI impl block
-                    //     let impl_for = module.get_or_create_impl_for(contract_name.as_str(), "Contract");
-                    //     impl_for.items.push(sway::ImplItem::Function(function));
-                    // } else {
-                    //     //
-                    //     // TODO:
-                    //     // * create toplevel function (?)
-                    //     //
-                    // }
+                    if is_modifier {
+                        println!("WARNING: modifiers not yet implemented");
+                        continue;
+                    }
                     
+                    // Create the function declaration
+                    let mut sway_function = sway::Function {
+                        is_public: false,
+                        name: function_name.clone(), // TODO: keep track of original name
+                        generic_parameters: sway::GenericParameterList::default(),
+
+                        parameters: sway::ParameterList {
+                            entries: function_definition.params.iter().map(|(_, p)| {
+                                sway::Parameter {
+                                    name: p.as_ref().unwrap().name.as_ref().unwrap().name.to_case(Case::Snake), // TODO: keep track of original name
+                                    type_name: self.translate_type_name(source_unit_path, &p.as_ref().unwrap().ty),
+                                }
+                            }).collect(),
+                        },
+
+                        return_type: if function_definition.returns.is_empty() {
+                            None
+                        } else {
+                            Some(if function_definition.returns.len() == 1 {
+                                self.translate_type_name(source_unit_path, &function_definition.returns[0].1.as_ref().unwrap().ty)
+                            } else {
+                                sway::TypeName::Tuple {
+                                    type_names: function_definition.returns.iter().map(|(_, p)| {
+                                        self.translate_type_name(source_unit_path, &p.as_ref().unwrap().ty)
+                                    }).collect(),
+                                }
+                            })
+                        },
+
+                        body: None,
+                    };
+
+                    // Add the function declaration to the abi if it's public
                     if is_public {
+                        // Create the abi if it doesn't exist
                         if sway_definition.abi.is_none() {
                             sway_definition.abi = Some(sway::Abi {
                                 name: definition_name.clone(),
@@ -602,41 +600,66 @@ impl Project {
                             });
                         }
     
-                        sway_definition.abi.as_mut().unwrap().functions.push(sway::Function {
-                            is_public: false,
-                            name: function_definition.name.as_ref().unwrap().name.to_case(Case::Snake), // TODO: keep track of original name
-                            generic_parameters: sway::GenericParameterList::default(),
-    
-                            parameters: sway::ParameterList {
-                                entries: function_definition.params.iter().map(|(_, p)| {
-                                    sway::Parameter {
-                                        name: p.as_ref().unwrap().name.as_ref().unwrap().name.to_case(Case::Snake), // TODO: keep track of original name
-                                        type_name: self.translate_type_name(source_unit_path, &p.as_ref().unwrap().ty),
-                                    }
-                                }).collect(),
-                            },
-    
-                            return_type: if function_definition.returns.is_empty() {
-                                None
-                            } else {
-                                Some(if function_definition.returns.len() == 1 {
-                                    self.translate_type_name(source_unit_path, &function_definition.returns[0].1.as_ref().unwrap().ty)
-                                } else {
-                                    sway::TypeName::Tuple {
-                                        type_names: function_definition.returns.iter().map(|(_, p)| {
-                                            self.translate_type_name(source_unit_path, &p.as_ref().unwrap().ty)
-                                        }).collect(),
-                                    }
-                                })
-                            },
-    
-                            body: None,
-                        });
+                        // Add the function declaration to the abi
+                        sway_definition.abi.as_mut().unwrap().functions.push(sway_function.clone());
                     }
 
-                    //
-                    // TODO: translate function body where available
-                    //
+                    if function_definition.body.is_none() {
+                        continue;
+                    }
+
+                    // Create the body for the toplevel function
+                    sway_function.body = Some(sway::Block { // TODO: actually translate function body
+                        statements: vec![],
+                        final_expr: Some(sway::Expression::FunctionCall(Box::new(sway::FunctionCall {
+                            function: sway::Expression::Identifier("todo!".into()),
+                            generic_parameters: None,
+                            parameters: vec![],
+                        }))),
+                    });
+
+                    // Add the toplevel function
+                    sway_definition.functions.push(sway_function.clone());
+
+                    if is_public {
+                        // Create the body for the contract impl's function wrapper
+                        sway_function.body = Some(sway::Block {
+                            statements: vec![],
+                            final_expr: Some(sway::Expression::FunctionCall(Box::new(sway::FunctionCall {
+                                function: sway::Expression::Identifier(format!("::{}", sway_function.name)),
+                                generic_parameters: None,
+                                parameters: sway_function.parameters.entries.iter().map(|p| sway::Expression::Identifier(p.name.clone())).collect(),
+                            }))),
+                        });
+
+                        // Attempt to get the contract impl
+                        let mut contract_impl = sway_definition.impls.iter_mut().find(|i| {
+                            let sway::TypeName::Identifier { name: type_name, .. } = &i.type_name else { return false };
+                            let Some(sway::TypeName::Identifier { name: for_type_name, .. }) = i.for_type_name.as_ref() else { return false };
+                            *type_name == definition_name && for_type_name == "Contract"
+                        });
+
+                        // Create the contract impl if it doesn't exist
+                        if contract_impl.is_none() {
+                            sway_definition.impls.push(sway::Impl {
+                                generic_parameters: sway::GenericParameterList::default(),
+                                type_name: sway::TypeName::Identifier {
+                                    name: sway_definition.name.clone(),
+                                    generic_parameters: sway::GenericParameterList::default(),
+                                },
+                                for_type_name: Some(sway::TypeName::Identifier {
+                                    name: "Contract".into(),
+                                    generic_parameters: sway::GenericParameterList::default(),
+                                }),
+                                items: vec![],
+                            });
+
+                            contract_impl = sway_definition.impls.last_mut();
+                        }
+
+                        // Add the function wrapper to the contract impl
+                        contract_impl.as_mut().unwrap().items.push(sway::ImplItem::Function(sway_function));
+                    }
                 }
                 
                 solidity::ContractPart::VariableDefinition(_) => {
