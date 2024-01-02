@@ -302,6 +302,11 @@ impl Project {
         }
     }
 
+    fn translate_name(&mut self, name: &str, case: Case) -> String {
+        let prefix = name.chars().take_while(|c| *c == '_').collect::<String>();
+        format!("{prefix}{}", name[prefix.len()..].to_string().to_case(case))
+    }
+
     fn translate_contract_definition(
         &mut self,
         source_unit_path: &Path,
@@ -336,7 +341,7 @@ impl Project {
 
             // Handle constant variable definitions
             if is_constant {
-                let variable_name = variable_definition.name.as_ref().unwrap().name.to_case(Case::ScreamingSnake); // TODO: keep track of original name
+                let variable_name = self.translate_name(variable_definition.name.as_ref().unwrap().name.as_str(), Case::ScreamingSnake); // TODO: keep track of original name
 
                 todo!("contract constants");
                 continue;
@@ -344,14 +349,14 @@ impl Project {
             
             // Handle immutable variable definitions
             if is_immutable {
-                let variable_name = variable_definition.name.as_ref().unwrap().name.to_case(Case::Snake); // TODO: keep track of original name
+                let variable_name = self.translate_name(variable_definition.name.as_ref().unwrap().name.as_str(), Case::Snake); // TODO: keep track of original name
 
                 todo!("immutable variables");
                 continue;
             }
             
             // Handle all other variable definitions
-            let variable_name = variable_definition.name.as_ref().unwrap().name.to_case(Case::Snake); // TODO: keep track of original name
+            let variable_name = self.translate_name(variable_definition.name.as_ref().unwrap().name.as_str(), Case::Snake); // TODO: keep track of original name
 
             // Create the storage block if it doesn't exist
             if sway_definition.storage.is_none() {
@@ -475,7 +480,7 @@ impl Project {
                         fields: struct_definition.fields.iter().map(|f| {
                             sway::StructField {
                                 is_public: true,
-                                name: f.name.as_ref().unwrap().name.to_case(Case::Snake), // TODO: keep track of original name
+                                name: self.translate_name(f.name.as_ref().unwrap().name.as_str(), Case::Snake), // TODO: keep track of original name
                                 type_name: self.translate_type_name(source_unit_path, &f.ty),
                             }
                         }).collect(),
@@ -549,7 +554,7 @@ impl Project {
                     } else if is_receive {
                         "receive".to_string()
                     } else {
-                        function_definition.name.as_ref().unwrap().name.to_case(Case::Snake)
+                        self.translate_name(function_definition.name.as_ref().unwrap().name.as_str(), Case::Snake)
                     };
 
                     if is_modifier {
@@ -566,7 +571,7 @@ impl Project {
                         parameters: sway::ParameterList {
                             entries: function_definition.params.iter().map(|(_, p)| {
                                 sway::Parameter {
-                                    name: p.as_ref().unwrap().name.as_ref().unwrap().name.to_case(Case::Snake), // TODO: keep track of original name
+                                    name: self.translate_name(p.as_ref().unwrap().name.as_ref().unwrap().name.as_str(), Case::Snake), // TODO: keep track of original name
                                     type_name: self.translate_type_name(source_unit_path, &p.as_ref().unwrap().ty),
                                 }
                             }).collect(),
