@@ -389,6 +389,16 @@ impl Project {
 
             // Create the function declaration for the abi
             let mut sway_function = sway::Function {
+                attributes: Some(sway::AttributeList {
+                    attributes: vec![
+                        sway::Attribute {
+                            name: "storage".into(),
+                            parameters: Some(vec![
+                                "read".into(),
+                            ]),
+                        },
+                    ],
+                }),
                 is_public: false,
                 name: variable_name.clone(), // TODO: keep track of original name
                 generic_parameters: sway::GenericParameterList::default(),
@@ -475,6 +485,7 @@ impl Project {
 
                 solidity::ContractPart::StructDefinition(struct_definition) => {
                     sway_definition.structs.push(sway::Struct {
+                        attributes: None,
                         is_public: true,
                         name: struct_definition.name.as_ref().unwrap().name.clone(),
                         generic_parameters: sway::GenericParameterList::default(),
@@ -493,6 +504,7 @@ impl Project {
                 solidity::ContractPart::EventDefinition(event_definition) => {
                     if sway_definition.events_enum.is_none() {
                         sway_definition.events_enum = Some(sway::Enum {
+                            attributes: None,
                             is_public: true,
                             name: format!("{definition_name}Event"),
                             generic_parameters: sway::GenericParameterList::default(),
@@ -513,6 +525,7 @@ impl Project {
                 solidity::ContractPart::ErrorDefinition(error_definition) => {
                     if sway_definition.errors_enum.is_none() {
                         sway_definition.errors_enum = Some(sway::Enum {
+                            attributes: None,
                             is_public: true,
                             name: format!("{definition_name}Error"),
                             generic_parameters: sway::GenericParameterList::default(),
@@ -547,6 +560,10 @@ impl Project {
                     let is_fallback = matches!(function_definition.ty, solidity::FunctionTy::Fallback);
                     let is_receive = matches!(function_definition.ty, solidity::FunctionTy::Receive);
                     let is_modifier = matches!(function_definition.ty, solidity::FunctionTy::Modifier);
+                    let is_constant = function_definition.attributes.iter().any(|x| matches!(x, solidity::FunctionAttribute::Mutability(solidity::Mutability::Constant(_))));
+                    let is_pure = function_definition.attributes.iter().any(|x| matches!(x, solidity::FunctionAttribute::Mutability(solidity::Mutability::Pure(_))));
+                    let is_view = function_definition.attributes.iter().any(|x| matches!(x, solidity::FunctionAttribute::Mutability(solidity::Mutability::View(_))));
+                    let is_payable = function_definition.attributes.iter().any(|x| matches!(x, solidity::FunctionAttribute::Mutability(solidity::Mutability::Payable(_))));
 
                     let function_name = if is_constructor {
                         "constructor".to_string()
@@ -565,6 +582,37 @@ impl Project {
                     
                     // Create the function declaration
                     let mut sway_function = sway::Function {
+                        attributes: if is_constant || is_pure {
+                            None
+                        } else {
+                            let mut attributes = vec![];
+                            
+                            if is_view {
+                                attributes.push(sway::Attribute {
+                                    name: "storage".into(),
+                                    parameters: Some(vec![
+                                        "read".into(),
+                                    ]),
+                                });
+                            } else {
+                                attributes.push(sway::Attribute {
+                                    name: "storage".into(),
+                                    parameters: Some(vec![
+                                        "read".into(),
+                                        "write".into(),
+                                    ]),
+                                });
+                            }
+
+                            if is_payable {
+                                attributes.push(sway::Attribute {
+                                    name: "payable".into(),
+                                    parameters: None,
+                                });
+                            }
+
+                            Some(sway::AttributeList { attributes })
+                        },
                         is_public: false,
                         name: function_name.clone(), // TODO: keep track of original name
                         generic_parameters: sway::GenericParameterList::default(),

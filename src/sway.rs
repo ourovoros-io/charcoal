@@ -292,6 +292,39 @@ impl Display for GenericParameterList {
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 #[derive(Clone)]
+pub struct Attribute {
+    pub name: String,
+    pub parameters: Option<Vec<String>>,
+}
+
+impl Display for Attribute {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name)?;
+        
+        if let Some(parameters) = self.parameters.as_ref() {
+            write!(f, "({})", parameters.join(", "))?;
+        }
+
+        Ok(())
+    }
+}
+
+// -------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+#[derive(Clone, Default)]
+pub struct AttributeList {
+    pub attributes: Vec<Attribute>,
+}
+
+impl Display for AttributeList {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "#[{}]", self.attributes.iter().map(|a| format!("{a}")).collect::<Vec<_>>().join(", "))
+    }
+}
+
+// -------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+#[derive(Clone)]
 pub enum TypeName {
     Identifier {
         name: String,
@@ -397,6 +430,7 @@ impl Display for Literal {
 
 #[derive(Clone)]
 pub struct Struct {
+    pub attributes: Option<AttributeList>,
     pub is_public: bool,
     pub name: String,
     pub generic_parameters: GenericParameterList,
@@ -405,6 +439,11 @@ pub struct Struct {
 
 impl TabbedDisplay for Struct {
     fn tabbed_fmt(&self, depth: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(attributes) = self.attributes.as_ref() {
+            writeln!(f, "{attributes}")?;
+            "".tabbed_fmt(depth, f)?;
+        }
+        
         if self.is_public {
             write!(f, "pub ")?;
         }
@@ -443,6 +482,7 @@ impl Display for StructField {
 
 #[derive(Clone)]
 pub struct Enum {
+    pub attributes: Option<AttributeList>,
     pub is_public: bool,
     pub name: String,
     pub generic_parameters: GenericParameterList,
@@ -451,6 +491,11 @@ pub struct Enum {
 
 impl TabbedDisplay for Enum {
     fn tabbed_fmt(&self, depth: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(attributes) = self.attributes.as_ref() {
+            writeln!(f, "{attributes}")?;
+            "".tabbed_fmt(depth, f)?;
+        }
+        
         if self.is_public {
             write!(f, "pub ")?;
         }
@@ -513,6 +558,7 @@ impl TabbedDisplay for Abi {
 
 #[derive(Clone)]
 pub struct Trait {
+    pub attributes: Option<AttributeList>,
     pub is_public: bool,
     pub name: String,
     pub generic_parameters: GenericParameterList,
@@ -521,6 +567,11 @@ pub struct Trait {
 
 impl TabbedDisplay for Trait {
     fn tabbed_fmt(&self, depth: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(attributes) = self.attributes.as_ref() {
+            writeln!(f, "{attributes}")?;
+            "".tabbed_fmt(depth, f)?;
+        }
+        
         if self.is_public {
             write!(f, "pub ")?;
         }
@@ -528,6 +579,7 @@ impl TabbedDisplay for Trait {
         write!(f, "trait {}{} {{", self.name, self.generic_parameters)?;
 
         for item in self.items.iter() {
+            "".tabbed_fmt(depth + 1, f)?;
             item.tabbed_fmt(depth + 1, f)?;
         }
 
@@ -632,6 +684,7 @@ impl TabbedDisplay for ConfigurableField {
 
 #[derive(Clone)]
 pub struct Function {
+    pub attributes: Option<AttributeList>,
     pub is_public: bool,
     pub name: String,
     pub generic_parameters: GenericParameterList,
@@ -642,6 +695,11 @@ pub struct Function {
 
 impl TabbedDisplay for Function {
     fn tabbed_fmt(&self, depth: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(attributes) = self.attributes.as_ref() {
+            writeln!(f, "{attributes}")?;
+            "".tabbed_fmt(depth, f)?;
+        }
+        
         if self.is_public {
             write!(f, "pub ")?;
         }
@@ -1113,6 +1171,7 @@ mod tests {
         //     return;
         // }
         module.items.push(ModuleItem::Function(Function {
+            attributes: None,
             is_public: true,
             name: "test".into(),
             generic_parameters: GenericParameterList::default(),
