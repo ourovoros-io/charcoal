@@ -525,17 +525,26 @@ impl Project {
         for part in solidity_definition.parts.iter() {
             let solidity::ContractPart::FunctionDefinition(function_definition) = part else { continue };
 
-            // Collect information about the function from its attributes
-            let is_public = function_definition.attributes.iter().any(|x| matches!(x, solidity::FunctionAttribute::Visibility(solidity::Visibility::External(_) | solidity::Visibility::Public(_))));
+            // Collect information about the function from its type
             let is_constructor = matches!(function_definition.ty, solidity::FunctionTy::Constructor);
-            let is_function = matches!(function_definition.ty, solidity::FunctionTy::Function);
             let is_fallback = matches!(function_definition.ty, solidity::FunctionTy::Fallback);
             let is_receive = matches!(function_definition.ty, solidity::FunctionTy::Receive);
             let is_modifier = matches!(function_definition.ty, solidity::FunctionTy::Modifier);
+
+            // Collect information about the function from its attributes
+            let is_public = function_definition.attributes.iter().any(|x| matches!(x, solidity::FunctionAttribute::Visibility(solidity::Visibility::External(_) | solidity::Visibility::Public(_))));
             let is_constant = function_definition.attributes.iter().any(|x| matches!(x, solidity::FunctionAttribute::Mutability(solidity::Mutability::Constant(_))));
             let is_pure = function_definition.attributes.iter().any(|x| matches!(x, solidity::FunctionAttribute::Mutability(solidity::Mutability::Pure(_))));
             let is_view = function_definition.attributes.iter().any(|x| matches!(x, solidity::FunctionAttribute::Mutability(solidity::Mutability::View(_))));
             let is_payable = function_definition.attributes.iter().any(|x| matches!(x, solidity::FunctionAttribute::Mutability(solidity::Mutability::Payable(_))));
+            let is_virtual = function_definition.attributes.iter().any(|x| matches!(x, solidity::FunctionAttribute::Virtual(_)));
+            let is_override = function_definition.attributes.iter().any(|x| matches!(x, solidity::FunctionAttribute::Override(_, _)));
+
+            //
+            // TODO:
+            // Handle virtual functions
+            // Handle function overrides
+            //
 
             let function_name = if is_constructor {
                 "constructor".to_string()
