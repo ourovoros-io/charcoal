@@ -1018,7 +1018,13 @@ impl Expression {
                         value.push(' ');
                     }
 
-                    Expression::Literal(Literal::String(value))
+                    Expression::FunctionCall(Box::new(FunctionCall {
+                        function: Expression::Identifier("__to_str_array".into()),
+                        generic_parameters: None,
+                        parameters: vec![
+                            Expression::Literal(Literal::String(value)),
+                        ],
+                    }))
                 }
 
                 Some(Expression::FunctionCall(f)) => {
@@ -1048,7 +1054,13 @@ impl Expression {
                         value.push(' ');
                     }
 
-                    Expression::Literal(Literal::String(value))
+                    Expression::FunctionCall(Box::new(FunctionCall {
+                        function: Expression::Identifier("__to_str_array".into()),
+                        generic_parameters: None,
+                        parameters: vec![
+                            Expression::Literal(Literal::String(value)),
+                        ],
+                    }))
                 }
 
                 Some(value) => panic!("Invalid string value expression: {value:#?}"),
