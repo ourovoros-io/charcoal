@@ -778,6 +778,60 @@ impl Project {
             solidity::Expression::MemberAccess(_, x, member) => {
                 if let solidity::Expression::Variable(solidity::Identifier { name, .. }) = x.as_ref() {
                     match (name.as_str(), member.name.as_str()) {
+                        // TODO: find out the appropriate sway version of `block.basefee`
+                        ("block", "basefee") => {
+                            // todo!("block.basefee")
+                            return Ok(sway::Expression::create_todo(Some("block.basefee".into())))
+                        }
+
+                        // TODO: find out the appropriate sway version of `block.chainid`
+                        ("block", "chainid") => {
+                            // todo!("block.chainid")
+                            return Ok(sway::Expression::create_todo(Some("block.chainid".into())))
+                        }
+
+                        // TODO: find out the appropriate sway version of `block.coinbase`
+                        ("block", "coinbase") => {
+                            // todo!("block.coinbase")
+                            return Ok(sway::Expression::create_todo(Some("block.coinbase".into())))
+                        }
+
+                        // TODO: find out the appropriate sway version of `block.difficulty`
+                        ("block", "difficulty") => {
+                            // todo!("block.difficulty")
+                            return Ok(sway::Expression::create_todo(Some("block.difficulty".into())))
+                        }
+
+                        // TODO: find out the appropriate sway version of `block.gaslimit`
+                        ("block", "gaslimit") => {
+                            // todo!("block.gaslimit")
+                            return Ok(sway::Expression::create_todo(Some("block.gaslimit".into())))
+                        }
+
+                        // TODO: find out the appropriate sway version of `block.number`
+                        ("block", "number") => {
+                            // todo!("block.number")
+                            return Ok(sway::Expression::create_todo(Some("block.number".into())))
+                        }
+
+                        // TODO: find out the appropriate sway version of `block.prevrandao`
+                        ("block", "prevrandao") => {
+                            // todo!("block.prevrandao")
+                            return Ok(sway::Expression::create_todo(Some("block.prevrandao".into())))
+                        }
+
+                        // TODO: find out the appropriate sway version of `block.timestamp`
+                        ("block", "timestamp") => {
+                            // todo!("block.timestamp")
+                            return Ok(sway::Expression::create_todo(Some("block.timestamp".into())))
+                        }
+
+                        // TODO: find out the appropriate sway version of `msg.data`
+                        ("msg", "data") => {
+                            // todo!("msg.data")
+                            return Ok(sway::Expression::create_todo(Some("msg.data".into())))
+                        }
+
                         ("msg", "sender") => {
                             // msg_sender().unwrap()
                             return Ok(sway::Expression::FunctionCall(Box::new(sway::FunctionCall {
@@ -794,16 +848,28 @@ impl Project {
                             })))
                         }
 
-                        // TODO: find out the appropriate sway version of `msg.data`
-                        ("msg", "data") => {
-                            // todo!("translate msg.data")
-                            return Ok(sway::Expression::FunctionCall(Box::new(sway::FunctionCall {
-                                function: sway::Expression::Identifier("todo!".into()),
-                                generic_parameters: None,
-                                parameters: vec![
-                                    sway::Expression::Literal(sway::Literal::String("translate msg.data".into())),
-                                ],
-                            })))
+                        // TODO: find out the appropriate sway version of `msg.sig`
+                        ("msg", "sig") => {
+                            // todo!("msg.sig")
+                            return Ok(sway::Expression::create_todo(Some("msg.sig".into())))
+                        }
+
+                        // TODO: find out the appropriate sway version of `msg.value`
+                        ("msg", "value") => {
+                            // todo!("msg.value")
+                            return Ok(sway::Expression::create_todo(Some("msg.value".into())))
+                        }
+
+                        // TODO: find out the appropriate sway version of `tx.gasprice`
+                        ("tx", "gasprice") => {
+                            // todo!("tx.gasprice")
+                            return Ok(sway::Expression::create_todo(Some("tx.gasprice".into())))
+                        }
+
+                        // TODO: find out the appropriate sway version of `tx.origin`
+                        ("tx", "origin") => {
+                            // todo!("tx.origin")
+                            return Ok(sway::Expression::create_todo(Some("tx.origin".into())))
                         }
 
                         _ => {}

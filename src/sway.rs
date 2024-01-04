@@ -992,6 +992,20 @@ impl TabbedDisplay for Expression {
 }
 
 impl Expression {
+    pub fn create_todo(msg: Option<String>) -> Expression {
+        Expression::FunctionCall(Box::new(FunctionCall {
+            function: Expression::Identifier("todo!".into()),
+            generic_parameters: None,
+            parameters: if let Some(msg) = msg {
+                vec![
+                    Expression::Literal(Literal::String(msg)),
+                ]
+            } else {
+                vec![]
+            },
+        }))
+    }
+
     pub fn create_value_expression(type_name: &TypeName, value: Option<&Expression>) -> Expression {
         match type_name {
             TypeName::Identifier { name, generic_parameters } => match name.as_str() {
