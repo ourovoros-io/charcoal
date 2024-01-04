@@ -544,7 +544,11 @@ impl TabbedDisplay for Abi {
 
         writeln!(f, " {{")?;
 
-        for function in self.functions.iter() {
+        for (i, function) in self.functions.iter().enumerate() {
+            if i > 0 {
+                writeln!(f)?;
+            }
+            
             "".tabbed_fmt(depth + 1, f)?;
             function.tabbed_fmt(depth + 1, f)?;
             writeln!(f)?;
@@ -768,7 +772,11 @@ impl TabbedDisplay for Impl {
 
         writeln!(f, " {{")?;
 
-        for item in self.items.iter() {
+        for (i, item) in self.items.iter().enumerate() {
+            if i > 0 {
+                writeln!(f)?;
+            }
+
             "".tabbed_fmt(depth + 1, f)?;
             item.tabbed_fmt(depth + 1, f)?;
             writeln!(f)?;

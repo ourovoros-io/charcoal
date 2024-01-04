@@ -1,6 +1,7 @@
 pub mod errors;
 pub mod project;
 pub mod sway;
+pub mod translate;
 
 use errors::Error;
 use project::Project;
