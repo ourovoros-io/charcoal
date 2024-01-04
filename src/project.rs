@@ -20,6 +20,7 @@ pub struct TranslatedDefinition {
     pub events_enum: Option<sway::Enum>,
     pub errors_enum: Option<sway::Enum>,
     pub abi: Option<sway::Abi>,
+    pub configurable: Option<sway::Configurable>,
     pub storage: Option<sway::Storage>,
     pub functions: Vec<sway::Function>,
     pub impls: Vec<sway::Impl>,
@@ -67,6 +68,17 @@ impl TranslatedDefinition {
         }
 
         self.abi.as_mut().unwrap()
+    }
+
+    /// Gets the configurable block for the translated definition. If it doesn't exist, it gets created.
+    pub fn get_configurable(&mut self) -> &mut sway::Configurable {
+        if self.configurable.is_none() {
+            self.configurable = Some(sway::Configurable {
+                fields: vec![],
+            });
+        }
+
+        self.configurable.as_mut().unwrap()
     }
 
     /// Gets the storage block for the translated definition. If it doesn't exist, it gets created.
@@ -421,6 +433,7 @@ impl Project {
             events_enum: None,
             errors_enum: None,
             abi: None,
+            configurable: None,
             storage: None,
             functions: vec![],
             impls: vec![],
