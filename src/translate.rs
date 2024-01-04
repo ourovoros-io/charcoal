@@ -137,7 +137,7 @@ impl TranslatedDefinition {
                 attributes: None,
                 is_public: false,
                 name: format!("{}Event", self.name),
-                generic_parameters: sway::GenericParameterList::default(),
+                generic_parameters: None,
                 variants: vec![],
             });
         }
@@ -152,7 +152,7 @@ impl TranslatedDefinition {
                 attributes: None,
                 is_public: false,
                 name: format!("{}Error", self.name),
-                generic_parameters: sway::GenericParameterList::default(),
+                generic_parameters: None,
                 variants: vec![],
             });
         }
@@ -205,14 +205,14 @@ impl TranslatedDefinition {
 
         if !self.impls.iter_mut().any(|i| find_contract_impl(i)) {
             self.impls.push(sway::Impl {
-                generic_parameters: sway::GenericParameterList::default(),
+                generic_parameters: None,
                 type_name: sway::TypeName::Identifier {
                     name: self.name.clone(),
-                    generic_parameters: sway::GenericParameterList::default(),
+                    generic_parameters: None,
                 },
                 for_type_name: Some(sway::TypeName::Identifier {
                     name: "Contract".into(),
-                    generic_parameters: sway::GenericParameterList::default(),
+                    generic_parameters: None,
                 }),
                 items: vec![],
             });

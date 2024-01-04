@@ -1,4 +1,9 @@
-use crate::{errors::Error, Options, sway, translate::{TranslatedDefinition, TranslationScope}};
+use crate::{
+    errors::Error,
+    sway,
+    translate::{TranslatedDefinition, TranslationScope},
+    Options,
+};
 use convert_case::{Case, Casing};
 use solang_parser::pt as solidity;
 use std::{
@@ -220,20 +225,20 @@ impl Project {
             solidity::Expression::Type(_, type_expression) => match type_expression {
                 solidity::Type::Address => sway::TypeName::Identifier {
                     name: "Identity".into(),
-                    generic_parameters: sway::GenericParameterList::default(),
+                    generic_parameters: None,
                 },
 
                 // TODO: should we note that this address was marked payable?
                 solidity::Type::AddressPayable => sway::TypeName::Identifier {
                     name: "Identity".into(),
-                    generic_parameters: sway::GenericParameterList::default(),
+                    generic_parameters: None,
                 },
 
                 solidity::Type::Payable => todo!("payable types (used for casting)"),
                 
                 solidity::Type::Bool => sway::TypeName::Identifier {
                     name: "bool".into(),
-                    generic_parameters: sway::GenericParameterList::default(),
+                    generic_parameters: None,
                 },
 
                 solidity::Type::String => sway::TypeName::String {
@@ -250,13 +255,13 @@ impl Project {
                         x if x >= 64 => "u64".into(), // TODO: is this really ok?
                         _ => todo!("unsigned integers of non-standard bit sizes")
                     },
-                    generic_parameters: sway::GenericParameterList::default(),
+                    generic_parameters: None,
                 },
 
                 solidity::Type::Bytes(length) => sway::TypeName::Array {
                     type_name: Box::new(sway::TypeName::Identifier {
                         name: "u8".into(),
-                        generic_parameters: sway::GenericParameterList::default(),
+                        generic_parameters: None,
                     }),
                     length: *length as usize,
                 },
@@ -265,12 +270,12 @@ impl Project {
 
                 solidity::Type::DynamicBytes => sway::TypeName::Identifier {
                     name: "std::bytes::Bytes".into(), // TODO: is this ok?
-                    generic_parameters: sway::GenericParameterList::default(),
+                    generic_parameters: None,
                 },
 
                 solidity::Type::Mapping { key, value, .. } => sway::TypeName::Identifier {
                     name: "StorageMap".into(),
-                    generic_parameters: sway::GenericParameterList {
+                    generic_parameters: Some(sway::GenericParameterList {
                         entries: vec![
                             sway::GenericParameter {
                                 name: self.translate_type_name(source_unit_path, key.as_ref()),
@@ -281,7 +286,7 @@ impl Project {
                                 implements: vec![],
                             },
                         ],
-                    },
+                    }),
                 },
 
                 solidity::Type::Function { params, attributes, returns } => todo!("function types"),
@@ -328,7 +333,7 @@ impl Project {
                 is_public: true,
                 name: sway::TypeName::Identifier {
                     name: type_definition.name.name.clone(),
-                    generic_parameters: sway::GenericParameterList::default(),
+                    generic_parameters: None,
                 },
                 underlying_type: Some(self.translate_type_name(source_unit_path, &type_definition.ty)),
             });
@@ -342,7 +347,7 @@ impl Project {
                 attributes: None,
                 is_public: true,
                 name: struct_definition.name.as_ref().unwrap().name.clone(),
-                generic_parameters: sway::GenericParameterList::default(),
+                generic_parameters: None,
                 fields: struct_definition.fields.iter().map(|f| {
                     sway::StructField {
                         is_public: true,
@@ -401,7 +406,10 @@ impl Project {
         for part in solidity_definition.parts.iter() {
             let solidity::ContractPart::VariableDefinition(variable_definition) = part else { continue };
 
+            // Translate the variable's type name
             let variable_type_name = self.translate_type_name(source_unit_path, &variable_definition.ty);
+
+            // Collect information about the variable from its attributes
             let is_public = variable_definition.attrs.iter().any(|x| matches!(x, solidity::VariableAttribute::Visibility(solidity::Visibility::External(_) | solidity::Visibility::Public(_))));
             let is_constant = variable_definition.attrs.iter().any(|x| matches!(x, solidity::VariableAttribute::Constant(_)));
             let is_immutable = variable_definition.attrs.iter().any(|x| matches!(x, solidity::VariableAttribute::Immutable(_)));
@@ -456,7 +464,7 @@ impl Project {
                 }),
                 is_public: false,
                 name: variable_name.clone(), // TODO: keep track of original name
-                generic_parameters: sway::GenericParameterList::default(),
+                generic_parameters: None,
                 parameters: sway::ParameterList::default(), // TODO: create parameters for StorageMap getter functions
                 return_type: Some(variable_type_name.clone()), // TODO: get proper return type for StorageMap getter functions
                 body: None,
@@ -574,7 +582,7 @@ impl Project {
 
                 is_public: false,
                 name: function_name.clone(), // TODO: keep track of original name
-                generic_parameters: sway::GenericParameterList::default(),
+                generic_parameters: None,
 
                 parameters: sway::ParameterList {
                     entries: function_definition.params.iter().map(|(_, p)| {
@@ -618,6 +626,11 @@ impl Project {
 
             // Create the body for the toplevel function
             sway_function.body = Some(self.translate_block(source_unit_path, scope, statements.as_slice())?);
+
+            //
+            // TODO:
+            // Propogate modifier pre and post functions into the function's body
+            //
 
             // Add the toplevel function
             sway_definition.functions.push(sway_function.clone());

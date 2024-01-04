@@ -92,14 +92,14 @@ impl Module {
             impl_type_name == impl_name && for_type_name == for_name
         }) {
             self.items.push(ModuleItem::Impl(Impl {
-                generic_parameters: GenericParameterList::default(),
+                generic_parameters: None,
                 type_name: TypeName::Identifier {
                     name: impl_name.into(),
-                    generic_parameters: GenericParameterList::default(),
+                    generic_parameters: None,
                 },
                 for_type_name: Some(TypeName::Identifier {
                     name: for_name.into(),
-                    generic_parameters: GenericParameterList::default(),
+                    generic_parameters: None,
                 }),
                 items: vec![],
             }));
@@ -281,11 +281,7 @@ pub struct GenericParameterList {
 
 impl Display for GenericParameterList {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if !self.entries.is_empty() {
-            write!(f, "<{}>", self.entries.iter().map(|x| format!("{x}")).collect::<Vec<_>>().join(", "))?;
-        }
-
-        Ok(())
+        write!(f, "<{}>", self.entries.iter().map(|x| format!("{x}")).collect::<Vec<_>>().join(", "))
     }
 }
 
@@ -328,7 +324,7 @@ impl Display for AttributeList {
 pub enum TypeName {
     Identifier {
         name: String,
-        generic_parameters: GenericParameterList,
+        generic_parameters: Option<GenericParameterList>,
     },
     Array {
         type_name: Box<TypeName>,
@@ -345,7 +341,7 @@ pub enum TypeName {
 impl Display for TypeName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TypeName::Identifier { name, generic_parameters } => write!(f, "{name}{generic_parameters}"),
+            TypeName::Identifier { name, generic_parameters } => write!(f, "{name}{}", if let Some(p) = generic_parameters.as_ref() { format!("{p}") } else { String::new() }),
             TypeName::Array { type_name, length } => write!(f, "[{type_name}; {length}]"),
             TypeName::Tuple { type_names } => write!(f, "({})", type_names.iter().map(|t| format!("{t}")).collect::<Vec<_>>().join(", ")),
             TypeName::String { length } => write!(f, "str[{length}]"),
@@ -433,7 +429,7 @@ pub struct Struct {
     pub attributes: Option<AttributeList>,
     pub is_public: bool,
     pub name: String,
-    pub generic_parameters: GenericParameterList,
+    pub generic_parameters: Option<GenericParameterList>,
     pub fields: Vec<StructField>,
 }
 
@@ -448,7 +444,16 @@ impl TabbedDisplay for Struct {
             write!(f, "pub ")?;
         }
 
-        writeln!(f, "struct {}{} {{", self.name, self.generic_parameters)?;
+        writeln!(
+            f,
+            "struct {}{} {{",
+            self.name,
+            if let Some(p) = self.generic_parameters.as_ref() {
+                format!("{p}")
+            } else {
+                String::new()
+            },
+        )?;
 
         for field in self.fields.iter() {
             field.tabbed_fmt(depth + 1, f)?;
@@ -485,7 +490,7 @@ pub struct Enum {
     pub attributes: Option<AttributeList>,
     pub is_public: bool,
     pub name: String,
-    pub generic_parameters: GenericParameterList,
+    pub generic_parameters: Option<GenericParameterList>,
     pub variants: Vec<EnumVariant>,
 }
 
@@ -500,7 +505,16 @@ impl TabbedDisplay for Enum {
             write!(f, "pub ")?;
         }
 
-        writeln!(f, "enum {}{} {{", self.name, self.generic_parameters)?;
+        writeln!(
+            f,
+            "enum {}{} {{",
+            self.name,
+            if let Some(p) = self.generic_parameters.as_ref() {
+                format!("{p}")
+            } else {
+                String::new()
+            },
+        )?;
 
         for field in self.variants.iter() {
             field.tabbed_fmt(depth + 1, f)?;
@@ -565,7 +579,7 @@ pub struct Trait {
     pub attributes: Option<AttributeList>,
     pub is_public: bool,
     pub name: String,
-    pub generic_parameters: GenericParameterList,
+    pub generic_parameters: Option<GenericParameterList>,
     pub items: Vec<TraitItem>,
 }
 
@@ -580,7 +594,16 @@ impl TabbedDisplay for Trait {
             write!(f, "pub ")?;
         }
 
-        write!(f, "trait {}{} {{", self.name, self.generic_parameters)?;
+        writeln!(
+            f,
+            "trait {}{} {{",
+            self.name,
+            if let Some(p) = self.generic_parameters.as_ref() {
+                format!("{p}")
+            } else {
+                String::new()
+            },
+        )?;
 
         for item in self.items.iter() {
             "".tabbed_fmt(depth + 1, f)?;
@@ -691,7 +714,7 @@ pub struct Function {
     pub attributes: Option<AttributeList>,
     pub is_public: bool,
     pub name: String,
-    pub generic_parameters: GenericParameterList,
+    pub generic_parameters: Option<GenericParameterList>,
     pub parameters: ParameterList,
     pub return_type: Option<TypeName>,
     pub body: Option<Block>,
@@ -708,7 +731,17 @@ impl TabbedDisplay for Function {
             write!(f, "pub ")?;
         }
 
-        write!(f, "fn {}{}{}", self.name, self.generic_parameters, self.parameters)?;
+        write!(
+            f,
+            "fn {}{}{}",
+            self.name,
+            if let Some(p) = self.generic_parameters.as_ref() {
+                format!("{p}")
+            } else {
+                String::new()
+            },
+            self.parameters,
+        )?;
 
         if let Some(return_type) = self.return_type.as_ref() {
             write!(f, " -> {return_type}")?;
@@ -756,7 +789,7 @@ impl Display for ParameterList {
 
 #[derive(Clone, Debug)]
 pub struct Impl {
-    pub generic_parameters: GenericParameterList,
+    pub generic_parameters: Option<GenericParameterList>,
     pub type_name: TypeName,
     pub for_type_name: Option<TypeName>,
     pub items: Vec<ImplItem>,
@@ -764,7 +797,16 @@ pub struct Impl {
 
 impl TabbedDisplay for Impl {
     fn tabbed_fmt(&self, depth: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "impl{} {}", self.generic_parameters, self.type_name)?;
+        write!(
+            f,
+            "impl{} {}",
+            if let Some(p) = self.generic_parameters.as_ref() {
+                format!("{p}")
+            } else {
+                String::new()
+            },
+            self.type_name,
+        )?;
 
         if let Some(for_type_name) = self.for_type_name.as_ref() {
             write!(f, " for {for_type_name}")?;
@@ -969,7 +1011,7 @@ impl Expression {
                     None => Expression::Constructor(Box::new(Constructor {
                         type_name: TypeName::Identifier {
                             name: "StorageMap".into(),
-                            generic_parameters: GenericParameterList::default(),
+                            generic_parameters: None,
                         },
                         fields: vec![],
                     })),
@@ -1278,7 +1320,7 @@ mod tests {
             attributes: None,
             is_public: true,
             name: "test".into(),
-            generic_parameters: GenericParameterList::default(),
+            generic_parameters: None,
             parameters: ParameterList::default(),
             return_type: None,
             body: Some(Block {
