@@ -25,6 +25,88 @@ pub struct TranslatedDefinition {
     pub impls: Vec<sway::Impl>,
 }
 
+impl TranslatedDefinition {
+    /// Gets the events enum for the translated definition. If it doesn't exist, it gets created.
+    pub fn get_events_enum(&mut self) -> &mut sway::Enum {
+        if self.events_enum.is_none() {
+            self.events_enum = Some(sway::Enum {
+                attributes: None,
+                is_public: false,
+                name: format!("{}Event", self.name),
+                generic_parameters: sway::GenericParameterList::default(),
+                variants: vec![],
+            });
+        }
+
+        self.events_enum.as_mut().unwrap()
+    }
+
+    /// Gets the errors enum for the translated definition. If it doesn't exist, it gets created.
+    pub fn get_errors_enum(&mut self) -> &mut sway::Enum {
+        if self.errors_enum.is_none() {
+            self.errors_enum = Some(sway::Enum {
+                attributes: None,
+                is_public: false,
+                name: format!("{}Error", self.name),
+                generic_parameters: sway::GenericParameterList::default(),
+                variants: vec![],
+            });
+        }
+
+        self.errors_enum.as_mut().unwrap()
+    }
+
+    /// Gets the abi for the translated definition. If it doesn't exist, it gets created.
+    pub fn get_abi(&mut self) -> &mut sway::Abi {
+        if self.abi.is_none() {
+            self.abi = Some(sway::Abi {
+                name: self.name.clone(),
+                inherits: self.inherits.clone(),
+                functions: vec![],
+            });
+        }
+
+        self.abi.as_mut().unwrap()
+    }
+
+    /// Gets the storage block for the translated definition. If it doesn't exist, it gets created.
+    pub fn get_storage(&mut self) -> &mut sway::Storage {
+        if self.storage.is_none() {
+            self.storage = Some(sway::Storage {
+                fields: vec![],
+            });
+        }
+
+        self.storage.as_mut().unwrap()
+    }
+
+    /// Gets the translated definition's implementation for `Contract`. If it doesn't exist, it gets created.
+    pub fn get_contract_impl(&mut self) -> &mut sway::Impl {
+        let find_contract_impl = |i: &sway::Impl| {
+            let sway::TypeName::Identifier { name: type_name, .. } = &i.type_name else { return false };
+            let Some(sway::TypeName::Identifier { name: for_type_name, .. }) = i.for_type_name.as_ref() else { return false };
+            *type_name == self.name && for_type_name == "Contract"
+        };
+
+        if !self.impls.iter_mut().any(|i| find_contract_impl(i)) {
+            self.impls.push(sway::Impl {
+                generic_parameters: sway::GenericParameterList::default(),
+                type_name: sway::TypeName::Identifier {
+                    name: self.name.clone(),
+                    generic_parameters: sway::GenericParameterList::default(),
+                },
+                for_type_name: Some(sway::TypeName::Identifier {
+                    name: "Contract".into(),
+                    generic_parameters: sway::GenericParameterList::default(),
+                }),
+                items: vec![],
+            });
+        }
+
+        self.impls.iter_mut().find(|i| find_contract_impl(*i)).unwrap()
+    }
+}
+
 #[derive(Default)]
 pub struct Project {
     line_ranges: HashMap<PathBuf, Vec<(usize, usize)>>,
@@ -222,6 +304,12 @@ impl Project {
         Ok(translation_queue)
     }
 
+    fn translate_naming_convention(&mut self, name: &str, case: Case) -> String {
+        let prefix = name.chars().take_while(|c| *c == '_').collect::<String>();
+        let postfix = name.chars().rev().take_while(|c| *c == '_').collect::<String>();
+        format!("{prefix}{}{postfix}", name.to_case(case))
+    }
+
     fn translate_type_name(&mut self, source_unit_path: &Path, type_name: &solidity::Expression) -> sway::TypeName {
         //
         // TODO: check mapping for previously canonicalized user type names?
@@ -302,12 +390,19 @@ impl Project {
         }
     }
 
-    fn translate_naming_convention(&mut self, name: &str, case: Case) -> String {
-        let prefix = name.chars().take_while(|c| *c == '_').collect::<String>();
-        let postfix = name.chars().rev().take_while(|c| *c == '_').collect::<String>();
-        format!("{prefix}{}{postfix}", name.to_case(case))
+    fn translate_literal_expression(&mut self, source_unit_path: &Path, value: &solidity::Expression) -> sway::Expression {
+        match value {
+            solidity::Expression::BoolLiteral(_, value) => sway::Expression::Literal(sway::Literal::Bool(*value)),
+            solidity::Expression::NumberLiteral(_, value, _, _) => sway::Expression::Literal(sway::Literal::DecInt(value.parse().unwrap())),
+            solidity::Expression::HexNumberLiteral(_, value, _) => sway::Expression::Literal(sway::Literal::HexInt(u64::from_str_radix(value.trim_start_matches("0x"), 16).unwrap())),
+            solidity::Expression::StringLiteral(values) => sway::Expression::Literal(sway::Literal::String(values.iter().map(|v| v.string.clone()).collect::<Vec<_>>().join(""))),
+            solidity::Expression::ArrayLiteral(_, values) => sway::Expression::Array(sway::Array {
+                elements: values.iter().map(|x| self.translate_literal_expression(source_unit_path, x)).collect(),
+            }),
+            _ => panic!("Invalid literal expression: {value:#?}"),
+        }
     }
-
+    
     fn translate_contract_definition(
         &mut self,
         source_unit_path: &Path,
@@ -330,6 +425,83 @@ impl Project {
             functions: vec![],
             impls: vec![],
         };
+
+        // Collect each type definition ahead of time for contextual reasons
+        for part in solidity_definition.parts.iter() {
+            let solidity::ContractPart::TypeDefinition(type_definition) = part else { continue };
+            
+            sway_definition.type_definitions.push(sway::TypeDefinition {
+                is_public: true,
+                name: sway::TypeName::Identifier {
+                    name: type_definition.name.name.clone(),
+                    generic_parameters: sway::GenericParameterList::default(),
+                },
+                underlying_type: Some(self.translate_type_name(source_unit_path, &type_definition.ty)),
+            });
+        }
+
+        // Collect each struct ahead of time for contextual reasons
+        for part in solidity_definition.parts.iter() {
+            let solidity::ContractPart::StructDefinition(struct_definition) = part else { continue };
+
+            sway_definition.structs.push(sway::Struct {
+                attributes: None,
+                is_public: true,
+                name: struct_definition.name.as_ref().unwrap().name.clone(),
+                generic_parameters: sway::GenericParameterList::default(),
+                fields: struct_definition.fields.iter().map(|f| {
+                    sway::StructField {
+                        is_public: true,
+                        name: self.translate_naming_convention(f.name.as_ref().unwrap().name.as_str(), Case::Snake), // TODO: keep track of original name
+                        type_name: self.translate_type_name(source_unit_path, &f.ty),
+                    }
+                }).collect(),
+            });
+        }
+
+        // Collect each enum ahead of time for contextual reasons
+        for part in solidity_definition.parts.iter() {
+            let solidity::ContractPart::EnumDefinition(enum_definition) = part else { continue };
+
+            todo!("enum definitions")
+        }
+
+        // Collect each event and error ahead of time for contextual reasons
+        for part in solidity_definition.parts.iter() {
+            match part {
+                solidity::ContractPart::EventDefinition(event_definition) => {
+                    sway_definition.get_events_enum().variants.push(sway::EnumVariant {
+                        name: event_definition.name.as_ref().unwrap().name.clone(),
+                        type_name: if event_definition.fields.len() == 1 {
+                            self.translate_type_name(source_unit_path, &event_definition.fields[0].ty)
+                        } else {
+                            sway::TypeName::Tuple {
+                                type_names: event_definition.fields.iter().map(|f| {
+                                    self.translate_type_name(source_unit_path, &f.ty)
+                                }).collect(),
+                            }
+                        },
+                    });
+                }
+
+                solidity::ContractPart::ErrorDefinition(error_definition) => {
+                    sway_definition.get_errors_enum().variants.push(sway::EnumVariant {
+                        name: error_definition.name.as_ref().unwrap().name.clone(),
+                        type_name: if error_definition.fields.len() == 1 {
+                            self.translate_type_name(source_unit_path, &error_definition.fields[0].ty)
+                        } else {
+                            sway::TypeName::Tuple {
+                                type_names: error_definition.fields.iter().map(|f| {
+                                    self.translate_type_name(source_unit_path, &f.ty)
+                                }).collect(),
+                            }
+                        },
+                    });
+                }
+                
+                _ => {}
+            }
+        }
 
         // Collect each storage field ahead of time for contextual reasons
         for part in solidity_definition.parts.iter() {
@@ -359,18 +531,16 @@ impl Project {
             // Handle all other variable definitions
             let variable_name = self.translate_naming_convention(variable_definition.name.as_ref().unwrap().name.as_str(), Case::Snake); // TODO: keep track of original name
 
-            // Create the storage block if it doesn't exist
-            if sway_definition.storage.is_none() {
-                sway_definition.storage = Some(sway::Storage {
-                    fields: vec![],
-                });
-            }
-
             // Add the storage field to the storage block
-            sway_definition.storage.as_mut().unwrap().fields.push(sway::StorageField {
+            sway_definition.get_storage().fields.push(sway::StorageField {
                 name: variable_name.clone(), // TODO: keep track of original name
                 type_name: variable_type_name.clone(),
-                value: sway::Expression::create_value_expression(&variable_type_name),
+                value: sway::Expression::create_value_expression(
+                    &variable_type_name,
+                    variable_definition.initializer.as_ref().map(|x| {
+                        self.translate_literal_expression(source_unit_path, x)
+                    }).as_ref(),
+                ),
             });
 
             // Generate a getter function if the storage field is public
@@ -378,15 +548,6 @@ impl Project {
                 continue;
             }
         
-            // Create the abi if it doesn't exist
-            if sway_definition.abi.is_none() {
-                sway_definition.abi = Some(sway::Abi {
-                    name: definition_name.clone(),
-                    inherits: inherits.clone(),
-                    functions: vec![],
-                });
-            }
-
             // Create the function declaration for the abi
             let mut sway_function = sway::Function {
                 attributes: Some(sway::AttributeList {
@@ -408,7 +569,7 @@ impl Project {
             };
 
             // Add the function to the abi
-            sway_definition.abi.as_mut().unwrap().functions.push(sway_function.clone());
+            sway_definition.get_abi().functions.push(sway_function.clone());
 
             // Create the body for the toplevel function
             sway_function.body = Some(sway::Block {
@@ -441,289 +602,147 @@ impl Project {
                 }))),
             });
 
-            // Attempt to get the contract impl
-            let mut contract_impl = sway_definition.impls.iter_mut().find(|i| {
-                let sway::TypeName::Identifier { name: type_name, .. } = &i.type_name else { return false };
-                let Some(sway::TypeName::Identifier { name: for_type_name, .. }) = i.for_type_name.as_ref() else { return false };
-                *type_name == definition_name && for_type_name == "Contract"
-            });
-
-            // Create the contract impl if it doesn't exist
-            if contract_impl.is_none() {
-                sway_definition.impls.push(sway::Impl {
-                    generic_parameters: sway::GenericParameterList::default(),
-                    type_name: sway::TypeName::Identifier {
-                        name: sway_definition.name.clone(),
-                        generic_parameters: sway::GenericParameterList::default(),
-                    },
-                    for_type_name: Some(sway::TypeName::Identifier {
-                        name: "Contract".into(),
-                        generic_parameters: sway::GenericParameterList::default(),
-                    }),
-                    items: vec![],
-                });
-
-                contract_impl = sway_definition.impls.last_mut();
-            }
-
             // Add the function wrapper to the contract impl
-            contract_impl.as_mut().unwrap().items.push(sway::ImplItem::Function(sway_function));
+            sway_definition.get_contract_impl().items.push(sway::ImplItem::Function(sway_function));
         }
         
+        // Resolve all using-for statements ahead of time for contextual reasons
         for part in solidity_definition.parts.iter() {
-            match part {
-                solidity::ContractPart::TypeDefinition(type_definition) => {
-                    sway_definition.type_definitions.push(sway::TypeDefinition {
-                        is_public: true,
-                        name: sway::TypeName::Identifier {
-                            name: type_definition.name.name.clone(),
-                            generic_parameters: sway::GenericParameterList::default(),
-                        },
-                        underlying_type: Some(self.translate_type_name(source_unit_path, &type_definition.ty)),
-                    });
-                }
+            let solidity::ContractPart::Using(using) = part else { continue };
 
-                solidity::ContractPart::StructDefinition(struct_definition) => {
-                    sway_definition.structs.push(sway::Struct {
-                        attributes: None,
-                        is_public: true,
-                        name: struct_definition.name.as_ref().unwrap().name.clone(),
-                        generic_parameters: sway::GenericParameterList::default(),
-                        fields: struct_definition.fields.iter().map(|f| {
-                            sway::StructField {
-                                is_public: true,
-                                name: self.translate_naming_convention(f.name.as_ref().unwrap().name.as_str(), Case::Snake), // TODO: keep track of original name
-                                type_name: self.translate_type_name(source_unit_path, &f.ty),
-                            }
-                        }).collect(),
-                    })
-                }
+            todo!("using-for statements")
+        }
 
-                solidity::ContractPart::EnumDefinition(_) => todo!("enum definitions"),
-                
-                solidity::ContractPart::EventDefinition(event_definition) => {
-                    if sway_definition.events_enum.is_none() {
-                        sway_definition.events_enum = Some(sway::Enum {
-                            attributes: None,
-                            is_public: true,
-                            name: format!("{definition_name}Event"),
-                            generic_parameters: sway::GenericParameterList::default(),
-                            variants: vec![],
-                        });
-                    }
+        //
+        // TODO:
+        // We may need to do a first pass scan to collect information about all available functions before
+        // translating each of their bodies so that we know what functions are availble in the toplevel scope
+        //
 
-                    sway_definition.events_enum.as_mut().unwrap().variants.push(sway::EnumVariant {
-                        name: event_definition.name.as_ref().unwrap().name.clone(),
-                        type_name: sway::TypeName::Tuple {
-                            type_names: event_definition.fields.iter().map(|f| {
-                                self.translate_type_name(source_unit_path, &f.ty)
-                            }).collect(),
-                        },
-                    });
-                }
+        // Translate each function
+        for part in solidity_definition.parts.iter() {
+            let solidity::ContractPart::FunctionDefinition(function_definition) = part else { continue };
 
-                solidity::ContractPart::ErrorDefinition(error_definition) => {
-                    if sway_definition.errors_enum.is_none() {
-                        sway_definition.errors_enum = Some(sway::Enum {
-                            attributes: None,
-                            is_public: true,
-                            name: format!("{definition_name}Error"),
-                            generic_parameters: sway::GenericParameterList::default(),
-                            variants: vec![],
-                        });
-                    }
+            // Collect information about the function from its attributes
+            let is_public = function_definition.attributes.iter().any(|x| matches!(x, solidity::FunctionAttribute::Visibility(solidity::Visibility::External(_) | solidity::Visibility::Public(_))));
+            let is_constructor = matches!(function_definition.ty, solidity::FunctionTy::Constructor);
+            let is_function = matches!(function_definition.ty, solidity::FunctionTy::Function);
+            let is_fallback = matches!(function_definition.ty, solidity::FunctionTy::Fallback);
+            let is_receive = matches!(function_definition.ty, solidity::FunctionTy::Receive);
+            let is_modifier = matches!(function_definition.ty, solidity::FunctionTy::Modifier);
+            let is_constant = function_definition.attributes.iter().any(|x| matches!(x, solidity::FunctionAttribute::Mutability(solidity::Mutability::Constant(_))));
+            let is_pure = function_definition.attributes.iter().any(|x| matches!(x, solidity::FunctionAttribute::Mutability(solidity::Mutability::Pure(_))));
+            let is_view = function_definition.attributes.iter().any(|x| matches!(x, solidity::FunctionAttribute::Mutability(solidity::Mutability::View(_))));
+            let is_payable = function_definition.attributes.iter().any(|x| matches!(x, solidity::FunctionAttribute::Mutability(solidity::Mutability::Payable(_))));
 
-                    sway_definition.errors_enum.as_mut().unwrap().variants.push(sway::EnumVariant {
-                        name: error_definition.name.as_ref().unwrap().name.clone(),
-                        type_name: sway::TypeName::Tuple {
-                            type_names: error_definition.fields.iter().map(|f| {
-                                self.translate_type_name(source_unit_path, &f.ty)
-                            }).collect(),
-                        },
-                    });
-                }
+            let function_name = if is_constructor {
+                "constructor".to_string()
+            } else if is_fallback {
+                "fallback".to_string()
+            } else if is_receive {
+                "receive".to_string()
+            } else {
+                self.translate_naming_convention(function_definition.name.as_ref().unwrap().name.as_str(), Case::Snake)
+            };
 
-                solidity::ContractPart::FunctionDefinition(function_definition) => {
-                    //
-                    // TODO:
-                    // * differentiate between `constructor`, `function`, `fallback`, `receive`, `modifier`
-                    // * make note of original name vs snake case name
-                    // * translate function
-                    // * determine if function reads from storage
-                    // * determine if function writes to storage
-                    // * determine if function is payable
-                    //
-
-                    let is_public = function_definition.attributes.iter().any(|x| matches!(x, solidity::FunctionAttribute::Visibility(solidity::Visibility::External(_) | solidity::Visibility::Public(_))));
-                    let is_constructor = matches!(function_definition.ty, solidity::FunctionTy::Constructor);
-                    let is_function = matches!(function_definition.ty, solidity::FunctionTy::Function);
-                    let is_fallback = matches!(function_definition.ty, solidity::FunctionTy::Fallback);
-                    let is_receive = matches!(function_definition.ty, solidity::FunctionTy::Receive);
-                    let is_modifier = matches!(function_definition.ty, solidity::FunctionTy::Modifier);
-                    let is_constant = function_definition.attributes.iter().any(|x| matches!(x, solidity::FunctionAttribute::Mutability(solidity::Mutability::Constant(_))));
-                    let is_pure = function_definition.attributes.iter().any(|x| matches!(x, solidity::FunctionAttribute::Mutability(solidity::Mutability::Pure(_))));
-                    let is_view = function_definition.attributes.iter().any(|x| matches!(x, solidity::FunctionAttribute::Mutability(solidity::Mutability::View(_))));
-                    let is_payable = function_definition.attributes.iter().any(|x| matches!(x, solidity::FunctionAttribute::Mutability(solidity::Mutability::Payable(_))));
-
-                    let function_name = if is_constructor {
-                        "constructor".to_string()
-                    } else if is_fallback {
-                        "fallback".to_string()
-                    } else if is_receive {
-                        "receive".to_string()
-                    } else {
-                        self.translate_naming_convention(function_definition.name.as_ref().unwrap().name.as_str(), Case::Snake)
-                    };
-
-                    if is_modifier {
-                        println!("WARNING: modifiers not yet implemented");
-                        continue;
-                    }
+            if is_modifier {
+                println!("WARNING: modifiers not yet implemented");
+                continue;
+            }
+            
+            // Create the function declaration
+            let mut sway_function = sway::Function {
+                attributes: if is_constant || is_pure {
+                    None
+                } else {
+                    let mut attributes = vec![];
                     
-                    // Create the function declaration
-                    let mut sway_function = sway::Function {
-                        attributes: if is_constant || is_pure {
-                            None
-                        } else {
-                            let mut attributes = vec![];
-                            
+                    attributes.push(sway::Attribute {
+                        name: "storage".into(),
+                        parameters: Some(
                             if is_view {
-                                attributes.push(sway::Attribute {
-                                    name: "storage".into(),
-                                    parameters: Some(vec![
-                                        "read".into(),
-                                    ]),
-                                });
+                                vec!["read".into()]
                             } else {
-                                attributes.push(sway::Attribute {
-                                    name: "storage".into(),
-                                    parameters: Some(vec![
-                                        "read".into(),
-                                        "write".into(),
-                                    ]),
-                                });
+                                vec!["read".into(), "write".into()]
                             }
-
-                            if is_payable {
-                                attributes.push(sway::Attribute {
-                                    name: "payable".into(),
-                                    parameters: None,
-                                });
-                            }
-
-                            Some(sway::AttributeList { attributes })
-                        },
-                        is_public: false,
-                        name: function_name.clone(), // TODO: keep track of original name
-                        generic_parameters: sway::GenericParameterList::default(),
-
-                        parameters: sway::ParameterList {
-                            entries: function_definition.params.iter().map(|(_, p)| {
-                                sway::Parameter {
-                                    name: self.translate_naming_convention(p.as_ref().unwrap().name.as_ref().unwrap().name.as_str(), Case::Snake), // TODO: keep track of original name
-                                    type_name: self.translate_type_name(source_unit_path, &p.as_ref().unwrap().ty),
-                                }
-                            }).collect(),
-                        },
-
-                        return_type: if function_definition.returns.is_empty() {
-                            None
-                        } else {
-                            Some(if function_definition.returns.len() == 1 {
-                                self.translate_type_name(source_unit_path, &function_definition.returns[0].1.as_ref().unwrap().ty)
-                            } else {
-                                sway::TypeName::Tuple {
-                                    type_names: function_definition.returns.iter().map(|(_, p)| {
-                                        self.translate_type_name(source_unit_path, &p.as_ref().unwrap().ty)
-                                    }).collect(),
-                                }
-                            })
-                        },
-
-                        body: None,
-                    };
-
-                    // Add the function declaration to the abi if it's public
-                    if is_public {
-                        // Create the abi if it doesn't exist
-                        if sway_definition.abi.is_none() {
-                            sway_definition.abi = Some(sway::Abi {
-                                name: definition_name.clone(),
-                                inherits: inherits.clone(),
-                                functions: vec![],
-                            });
-                        }
-    
-                        // Add the function declaration to the abi
-                        sway_definition.abi.as_mut().unwrap().functions.push(sway_function.clone());
-                    }
-
-                    if function_definition.body.is_none() {
-                        continue;
-                    }
-
-                    // Create the body for the toplevel function
-                    sway_function.body = Some(sway::Block { // TODO: actually translate function body
-                        statements: vec![],
-                        final_expr: Some(sway::Expression::FunctionCall(Box::new(sway::FunctionCall {
-                            function: sway::Expression::Identifier("todo!".into()),
-                            generic_parameters: None,
-                            parameters: vec![],
-                        }))),
+                        ),
                     });
 
-                    // Add the toplevel function
-                    sway_definition.functions.push(sway_function.clone());
-
-                    if is_public {
-                        // Create the body for the contract impl's function wrapper
-                        sway_function.body = Some(sway::Block {
-                            statements: vec![],
-                            final_expr: Some(sway::Expression::FunctionCall(Box::new(sway::FunctionCall {
-                                function: sway::Expression::Identifier(format!("::{}", sway_function.name)),
-                                generic_parameters: None,
-                                parameters: sway_function.parameters.entries.iter().map(|p| sway::Expression::Identifier(p.name.clone())).collect(),
-                            }))),
+                    if is_payable {
+                        attributes.push(sway::Attribute {
+                            name: "payable".into(),
+                            parameters: None,
                         });
-
-                        // Attempt to get the contract impl
-                        let mut contract_impl = sway_definition.impls.iter_mut().find(|i| {
-                            let sway::TypeName::Identifier { name: type_name, .. } = &i.type_name else { return false };
-                            let Some(sway::TypeName::Identifier { name: for_type_name, .. }) = i.for_type_name.as_ref() else { return false };
-                            *type_name == definition_name && for_type_name == "Contract"
-                        });
-
-                        // Create the contract impl if it doesn't exist
-                        if contract_impl.is_none() {
-                            sway_definition.impls.push(sway::Impl {
-                                generic_parameters: sway::GenericParameterList::default(),
-                                type_name: sway::TypeName::Identifier {
-                                    name: sway_definition.name.clone(),
-                                    generic_parameters: sway::GenericParameterList::default(),
-                                },
-                                for_type_name: Some(sway::TypeName::Identifier {
-                                    name: "Contract".into(),
-                                    generic_parameters: sway::GenericParameterList::default(),
-                                }),
-                                items: vec![],
-                            });
-
-                            contract_impl = sway_definition.impls.last_mut();
-                        }
-
-                        // Add the function wrapper to the contract impl
-                        contract_impl.as_mut().unwrap().items.push(sway::ImplItem::Function(sway_function));
                     }
-                }
-                
-                solidity::ContractPart::VariableDefinition(_) => {
-                    // NOTE: variable definitions are handled above
-                }
 
-                solidity::ContractPart::Using(_) => unimplemented!("using-for declarations"),
-                
-                solidity::ContractPart::Annotation(_) => {}
-                solidity::ContractPart::StraySemicolon(_) => {}
+                    Some(sway::AttributeList { attributes })
+                },
+
+                is_public: false,
+                name: function_name.clone(), // TODO: keep track of original name
+                generic_parameters: sway::GenericParameterList::default(),
+
+                parameters: sway::ParameterList {
+                    entries: function_definition.params.iter().map(|(_, p)| {
+                        sway::Parameter {
+                            name: self.translate_naming_convention(p.as_ref().unwrap().name.as_ref().unwrap().name.as_str(), Case::Snake), // TODO: keep track of original name
+                            type_name: self.translate_type_name(source_unit_path, &p.as_ref().unwrap().ty),
+                        }
+                    }).collect(),
+                },
+
+                return_type: if function_definition.returns.is_empty() {
+                    None
+                } else {
+                    Some(if function_definition.returns.len() == 1 {
+                        self.translate_type_name(source_unit_path, &function_definition.returns[0].1.as_ref().unwrap().ty)
+                    } else {
+                        sway::TypeName::Tuple {
+                            type_names: function_definition.returns.iter().map(|(_, p)| {
+                                self.translate_type_name(source_unit_path, &p.as_ref().unwrap().ty)
+                            }).collect(),
+                        }
+                    })
+                },
+
+                body: None,
+            };
+
+            // Add the function declaration to the abi if it's public
+            if is_public {
+                sway_definition.get_abi().functions.push(sway_function.clone());
+            }
+
+            if function_definition.body.is_none() {
+                continue;
+            }
+
+            // Create the body for the toplevel function
+            sway_function.body = Some(sway::Block { // TODO: actually translate function body
+                statements: vec![],
+                final_expr: Some(sway::Expression::FunctionCall(Box::new(sway::FunctionCall {
+                    function: sway::Expression::Identifier("todo!".into()),
+                    generic_parameters: None,
+                    parameters: vec![],
+                }))),
+            });
+
+            // Add the toplevel function
+            sway_definition.functions.push(sway_function.clone());
+
+            if is_public {
+                // Create the body for the contract impl's function wrapper
+                sway_function.body = Some(sway::Block {
+                    statements: vec![],
+                    final_expr: Some(sway::Expression::FunctionCall(Box::new(sway::FunctionCall {
+                        function: sway::Expression::Identifier(format!("::{}", sway_function.name)),
+                        generic_parameters: None,
+                        parameters: sway_function.parameters.entries.iter().map(|p| sway::Expression::Identifier(p.name.clone())).collect(),
+                    }))),
+                });
+
+                // Add the function wrapper to the contract impl
+                sway_definition.get_contract_impl().items.push(sway::ImplItem::Function(sway_function));
             }
         }
 
