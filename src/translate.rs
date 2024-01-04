@@ -5,6 +5,12 @@ use std::{
     path::{Path, PathBuf},
 };
 
+#[derive(Clone, Debug, Default)]
+pub struct TranslationScope {
+    pub parent: Option<Box<TranslationScope>>,
+    pub parameters: Vec<sway::Parameter>,
+}
+
 pub struct TranslatedDefinition {
     /// The path to the file that the original definition is located in.
     pub path: PathBuf,

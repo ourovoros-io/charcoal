@@ -807,7 +807,7 @@ impl TabbedDisplay for ImplItem {
 
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct Block {
     pub statements: Vec<Statement>,
     pub final_expr: Option<Expression>,
@@ -907,6 +907,8 @@ pub enum Expression {
     UnaryExpression(Box<UnaryExpression>),
     BinaryExpression(Box<BinaryExpression>),
     Constructor(Box<Constructor>),
+    Continue,
+    Break,
     // TODO: finish
 }
 
@@ -941,6 +943,8 @@ impl TabbedDisplay for Expression {
             Expression::UnaryExpression(x) => x.tabbed_fmt(depth, f),
             Expression::BinaryExpression(x) => x.tabbed_fmt(depth, f),
             Expression::Constructor(x) => x.tabbed_fmt(depth, f),
+            Expression::Continue => "continue".tabbed_fmt(depth, f),
+            Expression::Break => "break".tabbed_fmt(depth, f),
         }
     }
 }

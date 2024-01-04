@@ -1,4 +1,4 @@
-use crate::{errors::Error, Options, sway, translate::TranslatedDefinition};
+use crate::{errors::Error, Options, sway, translate::{TranslatedDefinition, TranslationScope}};
 use convert_case::{Case, Casing};
 use solang_parser::pt as solidity;
 use std::{
@@ -607,19 +607,17 @@ impl Project {
                 sway_definition.get_abi().functions.push(sway_function.clone());
             }
 
-            if function_definition.body.is_none() {
-                continue;
-            }
+            // Convert the statements in the function's body (if any)
+            let Some(solidity::Statement::Block { statements, .. }) = function_definition.body.as_ref() else { continue };
+
+            // Create the scope for the body of the toplevel function
+            let scope = TranslationScope {
+                parent: None,
+                parameters: sway_function.parameters.entries.clone(),
+            };
 
             // Create the body for the toplevel function
-            sway_function.body = Some(sway::Block { // TODO: actually translate function body
-                statements: vec![],
-                final_expr: Some(sway::Expression::FunctionCall(Box::new(sway::FunctionCall {
-                    function: sway::Expression::Identifier("todo!".into()),
-                    generic_parameters: None,
-                    parameters: vec![],
-                }))),
-            });
+            sway_function.body = Some(self.translate_block(source_unit_path, scope, statements.as_slice())?);
 
             // Add the toplevel function
             sway_definition.functions.push(sway_function.clone());
@@ -646,5 +644,418 @@ impl Project {
         self.translated_definitions.push(sway_definition);
         
         Ok(())
+    }
+
+    fn translate_block(&mut self, source_unit_path: &Path, mut scope: TranslationScope, statements: &[solidity::Statement]) -> Result<sway::Block, Error> {
+        let mut block = sway::Block::default();
+
+        // Translate each of the statements in the block
+        for statement in statements {
+            block.statements.push(self.translate_statement(source_unit_path, &mut scope, statement)?);
+        }
+
+        // Check if the final statement returns a value and change it to be the final expression of the block
+        if let Some(sway::Statement::Expression(sway::Expression::Return(Some(value)))) = block.statements.last().cloned() {
+            block.statements.pop();
+            block.final_expr = Some(*value);
+        }
+
+        Ok(block)
+    }
+
+    fn translate_statement(&mut self, source_unit_path: &Path, scope: &mut TranslationScope, statement: &solidity::Statement) -> Result<sway::Statement, Error> {
+        match statement {
+            solidity::Statement::Block { statements, .. } => {
+                let scope = TranslationScope {
+                    parent: Some(Box::new(scope.clone())),
+                    parameters: vec![],
+                };
+
+                Ok(sway::Statement::Expression(sway::Expression::Block(Box::new(
+                    self.translate_block(source_unit_path, scope, statements)?
+                ))))
+            }
+
+            solidity::Statement::Assembly { loc, dialect, flags, block } => todo!("translate assembly blocks"),
+            solidity::Statement::Args(_, _) => todo!("translate args statement: {statement:#?}"),
+
+            solidity::Statement::If(_, _, _, _) => todo!("translate if statements"),
+            solidity::Statement::While(_, _, _) => todo!("translate while statements"),
+            
+            solidity::Statement::Expression(_, x) => {
+                Ok(sway::Statement::Expression(
+                    self.translate_expression(source_unit_path, scope, x)?
+                ))
+            }
+
+            solidity::Statement::VariableDefinition(_, _, _) => todo!("translate variable definition statements"),
+            solidity::Statement::For(_, _, _, _, _) => todo!("translate for statements"),
+            solidity::Statement::DoWhile(_, _, _) => todo!("translate do while statements"),
+            
+            solidity::Statement::Continue(_) => {
+                Ok(sway::Statement::Expression(sway::Expression::Continue))
+            }
+
+            solidity::Statement::Break(_) => {
+                Ok(sway::Statement::Expression(sway::Expression::Break))
+            }
+
+            solidity::Statement::Return(_, x) => {
+                Ok(sway::Statement::Expression(sway::Expression::Return(if let Some(x) = x.as_ref() {
+                    Some(Box::new(self.translate_expression(source_unit_path, scope, x)?))
+                } else {
+                    None
+                })))
+            }
+            
+            solidity::Statement::Revert(_, _, _) => todo!("translate revert statements"),
+            solidity::Statement::RevertNamedArgs(_, _, _) => todo!("translate revert named args statements"),
+            solidity::Statement::Emit(_, _) => todo!("translate emit statements"),
+            solidity::Statement::Try(_, _, _, _) => todo!("translate try statements"),
+
+            solidity::Statement::Error(_) => panic!("Encountered a statement that was not parsed correctly"),
+        }
+    }
+
+    fn translate_expression(&mut self, source_unit_path: &Path, scope: &mut TranslationScope, expression: &solidity::Expression) -> Result<sway::Expression, Error> {
+        match expression {
+            solidity::Expression::PostIncrement(_, x) => {
+                let x = self.translate_expression(source_unit_path, scope, x)?;
+
+                // { x += 1; x }
+                Ok(sway::Expression::Block(Box::new(sway::Block {
+                    statements: vec![
+                        sway::Statement::Expression(sway::Expression::BinaryExpression(Box::new(sway::BinaryExpression {
+                            operator: "+=".into(),
+                            lhs: x.clone(),
+                            rhs: sway::Expression::Literal(sway::Literal::DecInt(1)),
+                        }))),
+                    ],
+                    final_expr: Some(x),
+                })))
+            }
+
+            solidity::Expression::PostDecrement(_, x) => {
+                let x = self.translate_expression(source_unit_path, scope, x)?;
+
+                // { x -= 1; x }
+                Ok(sway::Expression::Block(Box::new(sway::Block {
+                    statements: vec![
+                        sway::Statement::Expression(sway::Expression::BinaryExpression(Box::new(sway::BinaryExpression {
+                            operator: "-=".into(),
+                            lhs: x.clone(),
+                            rhs: sway::Expression::Literal(sway::Literal::DecInt(1)),
+                        }))),
+                    ],
+                    final_expr: Some(x),
+                })))
+            }
+
+            solidity::Expression::New(_, _) => todo!("translate new expression: {expression:#?}"),
+            solidity::Expression::ArraySubscript(_, _, _) => todo!("translate array subscript expression: {expression:#?}"),
+            solidity::Expression::ArraySlice(_, _, _, _) => todo!("translate array slice expression: {expression:#?}"),
+            
+            solidity::Expression::Parenthesis(_, x) => {
+                // (x)
+                Ok(sway::Expression::Tuple(vec![
+                    self.translate_expression(source_unit_path, scope, x.as_ref())?,
+                ]))
+            }
+
+            solidity::Expression::MemberAccess(_, x, member) => {
+                if let solidity::Expression::Variable(solidity::Identifier { name, .. }) = x.as_ref() {
+                    match (name.as_str(), member.name.as_str()) {
+                        ("msg", "sender") => {
+                            // msg_sender().unwrap()
+                            return Ok(sway::Expression::FunctionCall(Box::new(sway::FunctionCall {
+                                function: sway::Expression::MemberAccess(Box::new(sway::MemberAccess {
+                                    expression: sway::Expression::FunctionCall(Box::new(sway::FunctionCall {
+                                        function: sway::Expression::Identifier("msg_sender".into()),
+                                        generic_parameters: None,
+                                        parameters: vec![],
+                                    })),
+                                    member: "unwrap".into(),
+                                })),
+                                generic_parameters: None,
+                                parameters: vec![],
+                            })))
+                        }
+
+                        // TODO: find out the appropriate sway version of `msg.data`
+                        ("msg", "data") => {
+                            // todo!("translate msg.data")
+                            return Ok(sway::Expression::FunctionCall(Box::new(sway::FunctionCall {
+                                function: sway::Expression::Identifier("todo!".into()),
+                                generic_parameters: None,
+                                parameters: vec![
+                                    sway::Expression::Literal(sway::Literal::String("translate msg.data".into())),
+                                ],
+                            })))
+                        }
+
+                        _ => {}
+                    }
+                }
+
+                todo!("translate member access expression: {expression:#?}")
+            }
+
+            solidity::Expression::FunctionCall(_, _, _) => todo!("translate function call expression: {expression:#?}"),
+            solidity::Expression::FunctionCallBlock(_, _, _) => todo!("translate function call block expression: {expression:#?}"),
+            solidity::Expression::NamedFunctionCall(_, _, _) => todo!("translate named function call expression: {expression:#?}"),
+
+            solidity::Expression::Not(_, x) => {
+                // !x
+                Ok(sway::Expression::UnaryExpression(Box::new(sway::UnaryExpression {
+                    operator: "!".into(),
+                    expression: self.translate_expression(source_unit_path, scope, x)?,
+                })))
+            }
+
+            solidity::Expression::BitwiseNot(_, x) => {
+                // TODO: rust uses the ! operator instead of ~, I believe sway does too, but we should verify this
+                // !x
+                Ok(sway::Expression::UnaryExpression(Box::new(sway::UnaryExpression {
+                    operator: "!".into(),
+                    expression: self.translate_expression(source_unit_path, scope, x)?,
+                })))
+            }
+
+            solidity::Expression::Delete(_, _) => todo!("translate delete expression: {expression:#?}"),
+            solidity::Expression::PreIncrement(_, _) => todo!("translate pre increment expression: {expression:#?}"),
+            solidity::Expression::PreDecrement(_, _) => todo!("translate pre decrement expression: {expression:#?}"),
+
+            solidity::Expression::UnaryPlus(_, x) => {
+                // x
+                self.translate_expression(source_unit_path, scope, x)
+            }
+
+            solidity::Expression::Negate(_, x) => {
+                // -x
+                Ok(sway::Expression::UnaryExpression(Box::new(sway::UnaryExpression {
+                    operator: "-".into(),
+                    expression: self.translate_expression(source_unit_path, scope, x)?,
+                })))
+            }
+
+            solidity::Expression::Power(_, _, _) => todo!("translate power expression: {expression:#?}"),
+
+            solidity::Expression::Multiply(_, lhs, rhs) => {
+                // lhs * rhs
+                Ok(sway::Expression::BinaryExpression(Box::new(sway::BinaryExpression {
+                    operator: "*".into(),
+                    lhs: self.translate_expression(source_unit_path, scope, lhs)?,
+                    rhs: self.translate_expression(source_unit_path, scope, rhs)?,
+                })))
+            }
+
+            solidity::Expression::Divide(_, lhs, rhs) => {
+                // lhs / rhs
+                Ok(sway::Expression::BinaryExpression(Box::new(sway::BinaryExpression {
+                    operator: "/".into(),
+                    lhs: self.translate_expression(source_unit_path, scope, lhs)?,
+                    rhs: self.translate_expression(source_unit_path, scope, rhs)?,
+                })))
+            }
+
+            solidity::Expression::Modulo(_, lhs, rhs) => {
+                // lhs % rhs
+                Ok(sway::Expression::BinaryExpression(Box::new(sway::BinaryExpression {
+                    operator: "%".into(),
+                    lhs: self.translate_expression(source_unit_path, scope, lhs)?,
+                    rhs: self.translate_expression(source_unit_path, scope, rhs)?,
+                })))
+            }
+
+            solidity::Expression::Add(_, lhs, rhs) => {
+                // lhs + rhs
+                Ok(sway::Expression::BinaryExpression(Box::new(sway::BinaryExpression {
+                    operator: "+".into(),
+                    lhs: self.translate_expression(source_unit_path, scope, lhs)?,
+                    rhs: self.translate_expression(source_unit_path, scope, rhs)?,
+                })))
+            }
+
+            solidity::Expression::Subtract(_, lhs, rhs) => {
+                // lhs - rhs
+                Ok(sway::Expression::BinaryExpression(Box::new(sway::BinaryExpression {
+                    operator: "-".into(),
+                    lhs: self.translate_expression(source_unit_path, scope, lhs)?,
+                    rhs: self.translate_expression(source_unit_path, scope, rhs)?,
+                })))
+            }
+
+            solidity::Expression::ShiftLeft(_, lhs, rhs) => {
+                // lhs << rhs
+                Ok(sway::Expression::BinaryExpression(Box::new(sway::BinaryExpression {
+                    operator: "<<".into(),
+                    lhs: self.translate_expression(source_unit_path, scope, lhs)?,
+                    rhs: self.translate_expression(source_unit_path, scope, rhs)?,
+                })))
+            }
+
+            solidity::Expression::ShiftRight(_, lhs, rhs) => {
+                // lhs >> rhs
+                Ok(sway::Expression::BinaryExpression(Box::new(sway::BinaryExpression {
+                    operator: ">>".into(),
+                    lhs: self.translate_expression(source_unit_path, scope, lhs)?,
+                    rhs: self.translate_expression(source_unit_path, scope, rhs)?,
+                })))
+            }
+
+            solidity::Expression::BitwiseAnd(_, lhs, rhs) => {
+                // lhs & rhs
+                Ok(sway::Expression::BinaryExpression(Box::new(sway::BinaryExpression {
+                    operator: "&".into(),
+                    lhs: self.translate_expression(source_unit_path, scope, lhs)?,
+                    rhs: self.translate_expression(source_unit_path, scope, rhs)?,
+                })))
+            }
+
+            solidity::Expression::BitwiseXor(_, lhs, rhs) => {
+                // lhs ^ rhs
+                Ok(sway::Expression::BinaryExpression(Box::new(sway::BinaryExpression {
+                    operator: "^".into(),
+                    lhs: self.translate_expression(source_unit_path, scope, lhs)?,
+                    rhs: self.translate_expression(source_unit_path, scope, rhs)?,
+                })))
+            }
+
+            solidity::Expression::BitwiseOr(_, lhs, rhs) => {
+                // lhs | rhs
+                Ok(sway::Expression::BinaryExpression(Box::new(sway::BinaryExpression {
+                    operator: "|".into(),
+                    lhs: self.translate_expression(source_unit_path, scope, lhs)?,
+                    rhs: self.translate_expression(source_unit_path, scope, rhs)?,
+                })))
+            }
+
+            solidity::Expression::Less(_, lhs, rhs) => {
+                // lhs < rhs
+                Ok(sway::Expression::BinaryExpression(Box::new(sway::BinaryExpression {
+                    operator: "<".into(),
+                    lhs: self.translate_expression(source_unit_path, scope, lhs)?,
+                    rhs: self.translate_expression(source_unit_path, scope, rhs)?,
+                })))
+            }
+
+            solidity::Expression::More(_, lhs, rhs) => {
+                // lhs > rhs
+                Ok(sway::Expression::BinaryExpression(Box::new(sway::BinaryExpression {
+                    operator: ">".into(),
+                    lhs: self.translate_expression(source_unit_path, scope, lhs)?,
+                    rhs: self.translate_expression(source_unit_path, scope, rhs)?,
+                })))
+            }
+
+            solidity::Expression::LessEqual(_, lhs, rhs) => {
+                // lhs <= rhs
+                Ok(sway::Expression::BinaryExpression(Box::new(sway::BinaryExpression {
+                    operator: "<=".into(),
+                    lhs: self.translate_expression(source_unit_path, scope, lhs)?,
+                    rhs: self.translate_expression(source_unit_path, scope, rhs)?,
+                })))
+            }
+
+            solidity::Expression::MoreEqual(_, lhs, rhs) => {
+                // lhs >= rhs
+                Ok(sway::Expression::BinaryExpression(Box::new(sway::BinaryExpression {
+                    operator: ">=".into(),
+                    lhs: self.translate_expression(source_unit_path, scope, lhs)?,
+                    rhs: self.translate_expression(source_unit_path, scope, rhs)?,
+                })))
+            }
+
+            solidity::Expression::Equal(_, lhs, rhs) => {
+                // lhs == rhs
+                Ok(sway::Expression::BinaryExpression(Box::new(sway::BinaryExpression {
+                    operator: "==".into(),
+                    lhs: self.translate_expression(source_unit_path, scope, lhs)?,
+                    rhs: self.translate_expression(source_unit_path, scope, rhs)?,
+                })))
+            }
+
+            solidity::Expression::NotEqual(_, lhs, rhs) => {
+                // lhs != rhs
+                Ok(sway::Expression::BinaryExpression(Box::new(sway::BinaryExpression {
+                    operator: "!=".into(),
+                    lhs: self.translate_expression(source_unit_path, scope, lhs)?,
+                    rhs: self.translate_expression(source_unit_path, scope, rhs)?,
+                })))
+            }
+
+            solidity::Expression::And(_, lhs, rhs) => {
+                // lhs && rhs
+                Ok(sway::Expression::BinaryExpression(Box::new(sway::BinaryExpression {
+                    operator: "&&".into(),
+                    lhs: self.translate_expression(source_unit_path, scope, lhs)?,
+                    rhs: self.translate_expression(source_unit_path, scope, rhs)?,
+                })))
+            }
+
+            solidity::Expression::Or(_, lhs, rhs) => {
+                // lhs || rhs
+                Ok(sway::Expression::BinaryExpression(Box::new(sway::BinaryExpression {
+                    operator: "||".into(),
+                    lhs: self.translate_expression(source_unit_path, scope, lhs)?,
+                    rhs: self.translate_expression(source_unit_path, scope, rhs)?,
+                })))
+            }
+
+            solidity::Expression::ConditionalOperator(_, _, _, _) => todo!("translate conditional operator expression: {expression:#?}"),
+
+            solidity::Expression::Assign(_, _, _) => todo!("translate assign expression: {expression:#?}"),
+            solidity::Expression::AssignOr(_, _, _) => todo!("translate assign or expression: {expression:#?}"),
+            solidity::Expression::AssignAnd(_, _, _) => todo!("translate assign and expression: {expression:#?}"),
+            solidity::Expression::AssignXor(_, _, _) => todo!("translate assign xor expression: {expression:#?}"),
+            solidity::Expression::AssignShiftLeft(_, _, _) => todo!("translate assign shift left expression: {expression:#?}"),
+            solidity::Expression::AssignShiftRight(_, _, _) => todo!("translate assign shift right expression: {expression:#?}"),
+            solidity::Expression::AssignAdd(_, _, _) => todo!("translate assign add expression: {expression:#?}"),
+            solidity::Expression::AssignSubtract(_, _, _) => todo!("translate assign subtract expression: {expression:#?}"),
+            solidity::Expression::AssignMultiply(_, _, _) => todo!("translate assign multiply expression: {expression:#?}"),
+            solidity::Expression::AssignDivide(_, _, _) => todo!("translate assign divide expression: {expression:#?}"),
+            solidity::Expression::AssignModulo(_, _, _) => todo!("translate assign modulo expression: {expression:#?}"),
+            
+            solidity::Expression::BoolLiteral(_, value) => {
+                Ok(sway::Expression::Literal(sway::Literal::Bool(*value)))
+            }
+            
+            solidity::Expression::NumberLiteral(_, value, _, _) => {
+                Ok(sway::Expression::Literal(sway::Literal::DecInt(value.parse().unwrap())))
+            }
+
+            solidity::Expression::RationalNumberLiteral(_, _, _, _, _) => todo!("translate rational number literal expression: {expression:#?}"),
+
+            solidity::Expression::HexNumberLiteral(_, value, _) => {
+                Ok(sway::Expression::Literal(sway::Literal::HexInt(
+                    u64::from_str_radix(value.as_str(), 16)
+                        .map_err(|e| Error::Wrapped(Box::new(e)))?
+                )))
+            }
+
+            solidity::Expression::StringLiteral(value) => {
+                Ok(sway::Expression::Literal(sway::Literal::String(
+                    value.iter().map(|s| s.string.clone()).collect::<Vec<_>>().join("")
+                )))
+            }
+            
+            solidity::Expression::Type(_, _) => todo!("translate type expression: {expression:#?}"),
+            solidity::Expression::HexLiteral(_) => todo!("translate hex literal expression: {expression:#?}"),
+            solidity::Expression::AddressLiteral(_, _) => todo!("translate address literal expression: {expression:#?}"),
+            solidity::Expression::Variable(_) => todo!("translate variable expression: {expression:#?}"),
+            solidity::Expression::List(_, _) => todo!("translate list expression: {expression:#?}"),
+
+            solidity::Expression::ArrayLiteral(_, xs) => {
+                let mut elements = vec![];
+
+                for x in xs.iter() {
+                    elements.push(self.translate_expression(source_unit_path, scope, x)?);
+                }
+
+                Ok(sway::Expression::Array(sway::Array {
+                    elements,
+                }))
+            }
+        }
     }
 }
