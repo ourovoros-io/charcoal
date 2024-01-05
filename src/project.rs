@@ -779,7 +779,7 @@ impl Project {
                 //         update;
                 //     }                    
                 // }
-                
+
                 let mut statements = vec![];
 
                 if let Some(initialization) = initialization.as_ref() {
@@ -823,6 +823,7 @@ impl Project {
                     final_expr: None,
                 }))))
             }
+
             solidity::Statement::DoWhile(_, body, condition) => todo!("translate do while statements"),
             
             solidity::Statement::Continue(_) => {
@@ -834,11 +835,15 @@ impl Project {
             }
 
             solidity::Statement::Return(_, x) => {
-                Ok(sway::Statement::Expression(sway::Expression::Return(if let Some(x) = x.as_ref() {
-                    Some(Box::new(self.translate_expression(source_unit_path, scope, x)?))
-                } else {
-                    None
-                })))
+                Ok(sway::Statement::Expression(sway::Expression::Return(
+                    if let Some(x) = x.as_ref() {
+                        Some(Box::new(
+                            self.translate_expression(source_unit_path, scope, x)?
+                        ))
+                    } else {
+                        None
+                    }
+                )))
             }
             
             solidity::Statement::Revert(_, _, _) => todo!("translate revert statements"),
@@ -1201,8 +1206,29 @@ impl Project {
                 })))
             }
 
-            solidity::Expression::ConditionalOperator(_, _, _, _) => todo!("translate conditional operator expression: {expression:#?}"),
-
+            solidity::Expression::ConditionalOperator(_, condition, then_value, else_value) => {
+                // if condition { then_value } else { else_value }
+                Ok(sway::Expression::If(Box::new(sway::If {
+                    condition: Some(self.translate_expression(source_unit_path, scope, condition.as_ref())?),
+                    then_body: sway::Block {
+                        statements: vec![],
+                        final_expr: Some(
+                            self.translate_expression(source_unit_path, scope, then_value.as_ref())?
+                        ),
+                    },
+                    else_if: Some(Box::new(sway::If {
+                        condition: None,
+                        then_body: sway::Block {
+                            statements: vec![],
+                            final_expr: Some(
+                                self.translate_expression(source_unit_path, scope, else_value.as_ref())?
+                            ),
+                        },
+                        else_if: None,
+                    })),
+                })))
+            }
+            
             solidity::Expression::Assign(_, _, _) => todo!("translate assign expression: {expression:#?}"),
             solidity::Expression::AssignOr(_, _, _) => todo!("translate assign or expression: {expression:#?}"),
             solidity::Expression::AssignAnd(_, _, _) => todo!("translate assign and expression: {expression:#?}"),
