@@ -633,8 +633,17 @@ impl Project {
                 parameters: sway_function.parameters.entries.clone(),
             };
 
+            // Translate the body for the toplevel function
+            let mut function_body = self.translate_block(source_unit_path, scope, statements.as_slice())?;
+
+            // Check if the final statement returns a value and change it to be the final expression of the block
+            if let Some(sway::Statement::Expression(sway::Expression::Return(Some(value)))) = function_body.statements.last().cloned() {
+                function_body.statements.pop();
+                function_body.final_expr = Some(*value);
+            }
+
             // Create the body for the toplevel function
-            sway_function.body = Some(self.translate_block(source_unit_path, scope, statements.as_slice())?);
+            sway_function.body = Some(function_body);
 
             //
             // TODO:
@@ -676,12 +685,6 @@ impl Project {
             block.statements.push(self.translate_statement(source_unit_path, &mut scope, statement)?);
         }
 
-        // Check if the final statement returns a value and change it to be the final expression of the block
-        if let Some(sway::Statement::Expression(sway::Expression::Return(Some(value)))) = block.statements.last().cloned() {
-            block.statements.pop();
-            block.final_expr = Some(*value);
-        }
-
         Ok(block)
     }
 
@@ -701,8 +704,58 @@ impl Project {
             solidity::Statement::Assembly { loc, dialect, flags, block } => todo!("translate assembly blocks"),
             solidity::Statement::Args(_, _) => todo!("translate args statement: {statement:#?}"),
 
-            solidity::Statement::If(_, _, _, _) => todo!("translate if statements"),
-            solidity::Statement::While(_, _, _) => todo!("translate while statements"),
+            solidity::Statement::If(_, condition, then_body, else_if) => {
+                let condition = self.translate_expression(source_unit_path, scope, condition)?;
+                
+                let then_body = match self.translate_statement(source_unit_path, scope, then_body.as_ref())? {
+                    sway::Statement::Expression(sway::Expression::Block(block)) => *block,
+                    
+                    statement => sway::Block {
+                        statements: vec![statement],
+                        final_expr: None,
+                    }
+                };
+
+                let else_if = if let Some(else_if) = else_if.as_ref() {
+                    match self.translate_statement(source_unit_path, scope, else_if.as_ref())? {
+                        sway::Statement::Expression(sway::Expression::If(else_if)) => Some(else_if.clone()),
+                        sway::Statement::Expression(sway::Expression::Block(block)) => Some(Box::new(sway::If {
+                            condition: None,
+                            then_body: *block,
+                            else_if: None,
+                        })),
+                        statement => Some(Box::new(sway::If {
+                            condition: None,
+                            then_body: sway::Block {
+                                statements: vec![statement],
+                                final_expr: None,
+                            },
+                            else_if: None,
+                        })),
+                    }
+                } else {
+                    None
+                };
+
+                Ok(sway::Statement::Expression(sway::Expression::If(Box::new(sway::If {
+                    condition: Some(condition),
+                    then_body,
+                    else_if,
+                }))))
+            }
+
+            solidity::Statement::While(_, condition, body) => {
+                Ok(sway::Statement::Expression(sway::Expression::While(Box::new(sway::While {
+                    condition: self.translate_expression(source_unit_path, scope, condition)?,
+                    body: match self.translate_statement(source_unit_path, scope, body)? {
+                        sway::Statement::Expression(sway::Expression::Block(block)) => *block,
+                        statement => sway::Block {
+                            statements: vec![statement],
+                            final_expr: None,
+                        }
+                    },
+                }))))
+            }
             
             solidity::Statement::Expression(_, x) => {
                 Ok(sway::Statement::Expression(
@@ -711,6 +764,7 @@ impl Project {
             }
 
             solidity::Statement::VariableDefinition(_, _, _) => todo!("translate variable definition statements"),
+            
             solidity::Statement::For(_, _, _, _, _) => todo!("translate for statements"),
             solidity::Statement::DoWhile(_, _, _) => todo!("translate do while statements"),
             

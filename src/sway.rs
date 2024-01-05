@@ -894,7 +894,14 @@ impl TabbedDisplay for Statement {
 
             Statement::Expression(x) => {
                 x.tabbed_fmt(depth, f)?;
-                write!(f, ";")
+
+                match x {
+                    Expression::If(_) | Expression::While(_) => {}
+
+                    _ => write!(f, ";")?,
+                }
+
+                Ok(())
             }
         }
     }
@@ -946,6 +953,8 @@ pub enum Expression {
     ArrayAccess(Box<ArrayAccess>),
     MemberAccess(Box<MemberAccess>),
     Tuple(Vec<Expression>),
+    If(Box<If>),
+    While(Box<While>),
     UnaryExpression(Box<UnaryExpression>),
     BinaryExpression(Box<BinaryExpression>),
     Constructor(Box<Constructor>),
@@ -962,7 +971,7 @@ impl TabbedDisplay for Expression {
             Expression::FunctionCall(x) => x.tabbed_fmt(depth, f),
             Expression::Block(x) => x.tabbed_fmt(depth, f),
             Expression::Return(x) => {
-                "return".tabbed_fmt(depth, f)?;
+                write!(f, "return")?;
                 if let Some(x) = x.as_ref() {
                     write!(f, " ")?;
                     x.tabbed_fmt(0, f)?;
@@ -972,8 +981,10 @@ impl TabbedDisplay for Expression {
             Expression::Array(x) => write!(f, "{x}"),
             Expression::ArrayAccess(x) => x.tabbed_fmt(depth, f),
             Expression::MemberAccess(x) => x.tabbed_fmt(depth, f),
+            Expression::If(x) => x.tabbed_fmt(depth, f),
+            Expression::While(x) => x.tabbed_fmt(depth, f),
             Expression::Tuple(x) => {
-                "(".tabbed_fmt(depth, f)?;
+                write!(f, "(")?;
                 for (i, expr) in x.iter().enumerate() {
                     if i > 0 {
                         write!(f, ", ")?;
@@ -985,8 +996,8 @@ impl TabbedDisplay for Expression {
             Expression::UnaryExpression(x) => x.tabbed_fmt(depth, f),
             Expression::BinaryExpression(x) => x.tabbed_fmt(depth, f),
             Expression::Constructor(x) => x.tabbed_fmt(depth, f),
-            Expression::Continue => "continue".tabbed_fmt(depth, f),
-            Expression::Break => "break".tabbed_fmt(depth, f),
+            Expression::Continue => write!(f, "continue"),
+            Expression::Break => write!(f, "break"),
         }
     }
 }
@@ -1220,6 +1231,51 @@ impl Display for MemberAccess {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.expression.tabbed_fmt(0, f)?;
         write!(f, ".{}", self.member)
+    }
+}
+
+// -------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+#[derive(Clone, Debug)]
+pub struct If {
+    pub condition: Option<Expression>,
+    pub then_body: Block,
+    pub else_if: Option<Box<If>>,
+}
+
+impl TabbedDisplay for If {
+    fn tabbed_fmt(&self, depth: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(condition) = self.condition.as_ref() {
+            write!(f, "if ")?;
+            condition.tabbed_fmt(depth, f)?;
+            write!(f, " ")?;
+        }
+
+        self.then_body.tabbed_fmt(depth, f)?;
+
+        if let Some(else_if) = self.else_if.as_ref() {
+            write!(f, " else ")?;
+            else_if.tabbed_fmt(depth, f)?;
+        }
+
+        Ok(())
+    }
+}
+
+// -------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+#[derive(Clone, Debug)]
+pub struct While {
+    pub condition: Expression,
+    pub body: Block,
+}
+
+impl TabbedDisplay for While {
+    fn tabbed_fmt(&self, depth: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "while ")?;
+        self.condition.tabbed_fmt(depth, f)?;
+        write!(f, " ")?;
+        self.body.tabbed_fmt(depth, f)
     }
 }
 
