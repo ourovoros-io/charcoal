@@ -143,6 +143,12 @@ impl Project {
             }
         }
 
+        //
+        // TODO:
+        // Flatten final contract
+        // Create forc project on disk
+        //
+
         Ok(())
     }
 
@@ -402,6 +408,13 @@ impl Project {
             }
         }
 
+        // Resolve all using-for statements ahead of time for contextual reasons
+        for part in solidity_definition.parts.iter() {
+            let solidity::ContractPart::Using(using) = part else { continue };
+
+            todo!("using-for statements")
+        }
+
         // Collect each storage field ahead of time for contextual reasons
         for part in solidity_definition.parts.iter() {
             let solidity::ContractPart::VariableDefinition(variable_definition) = part else { continue };
@@ -508,13 +521,6 @@ impl Project {
             sway_definition.get_contract_impl().items.push(sway::ImplItem::Function(sway_function));
         }
         
-        // Resolve all using-for statements ahead of time for contextual reasons
-        for part in solidity_definition.parts.iter() {
-            let solidity::ContractPart::Using(using) = part else { continue };
-
-            todo!("using-for statements")
-        }
-
         //
         // TODO:
         // We may need to do a first pass scan to collect information about all available functions before
@@ -764,9 +770,60 @@ impl Project {
             }
 
             solidity::Statement::VariableDefinition(_, _, _) => todo!("translate variable definition statements"),
-            
-            solidity::Statement::For(_, _, _, _, _) => todo!("translate for statements"),
-            solidity::Statement::DoWhile(_, _, _) => todo!("translate do while statements"),
+
+            solidity::Statement::For(_, initialization, condition, update, body) => {
+                // {
+                //     initialization;
+                //     while condition {
+                //         body;
+                //         update;
+                //     }                    
+                // }
+                
+                let mut statements = vec![];
+
+                if let Some(initialization) = initialization.as_ref() {
+                    statements.push(
+                        self.translate_statement(source_unit_path, scope, initialization.as_ref())?
+                    );
+                }
+
+                let condition = if let Some(condition) = condition.as_ref() {
+                    self.translate_expression(source_unit_path, scope, condition.as_ref())?
+                } else {
+                    sway::Expression::Literal(sway::Literal::Bool(true))
+                };
+
+                let mut body = match body.as_ref() {
+                    None => sway::Block::default(),
+                    Some(body) => match self.translate_statement(source_unit_path, scope, body.as_ref())? {
+                        sway::Statement::Expression(sway::Expression::Block(block)) => *block,
+                        statement => sway::Block {
+                            statements: vec![statement],
+                            final_expr: None,
+                        }
+                    }
+                };
+
+                if let Some(update) = update.as_ref() {
+                    body.statements.push(sway::Statement::Expression(
+                        self.translate_expression(source_unit_path, scope, update.as_ref())?
+                    ));
+                }
+
+                statements.push(
+                    sway::Statement::Expression(sway::Expression::While(Box::new(sway::While {
+                        condition,
+                        body,
+                    })))
+                );
+
+                Ok(sway::Statement::Expression(sway::Expression::Block(Box::new(sway::Block {
+                    statements,
+                    final_expr: None,
+                }))))
+            }
+            solidity::Statement::DoWhile(_, body, condition) => todo!("translate do while statements"),
             
             solidity::Statement::Continue(_) => {
                 Ok(sway::Statement::Expression(sway::Expression::Continue))
