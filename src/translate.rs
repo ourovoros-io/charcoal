@@ -24,7 +24,7 @@ pub struct TranslationScope {
 impl TranslationScope {
     /// Attempts to get a reference to a variable using its old name
     pub fn find_variable(&self, old_name: &str) -> Option<&TranslatedVariable> {
-        if let Some(variable) = self.variables.iter().find(|v| v.old_name == old_name) {
+        if let Some(variable) = self.variables.iter().rev().find(|v| v.old_name == old_name) {
             return Some(variable);
         }
 
@@ -39,7 +39,7 @@ impl TranslationScope {
 
     /// Attempts to get a mutable reference to a variable using its old name
     pub fn find_variable_mut(&mut self, old_name: &str) -> Option<&mut TranslatedVariable> {
-        if let Some(variable) = self.variables.iter_mut().find(|v| v.old_name == old_name) {
+        if let Some(variable) = self.variables.iter_mut().rev().find(|v| v.old_name == old_name) {
             return Some(variable);
         }
 
