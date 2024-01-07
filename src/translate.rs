@@ -5,10 +5,52 @@ use std::{
     path::{Path, PathBuf},
 };
 
+#[derive(Clone, Debug)]
+pub struct TranslatedVariable {
+    pub old_name: String,
+    pub new_name: String,
+    pub type_name: sway::TypeName,
+    pub is_storage: bool,
+    pub statement_index: Option<usize>,
+    pub mutation_count: usize,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct TranslationScope {
     pub parent: Option<Box<TranslationScope>>,
-    pub parameters: Vec<sway::Parameter>,
+    pub variables: Vec<TranslatedVariable>,
+}
+
+impl TranslationScope {
+    /// Attempts to get a reference to a variable using its old name
+    pub fn find_variable(&self, old_name: &str) -> Option<&TranslatedVariable> {
+        if let Some(variable) = self.variables.iter().find(|v| v.old_name == old_name) {
+            return Some(variable);
+        }
+
+        if let Some(parent) = self.parent.as_ref() {
+            if let Some(variable) = parent.find_variable(old_name) {
+                return Some(variable);
+            }
+        }
+
+        None
+    }
+
+    /// Attempts to get a mutable reference to a variable using its old name
+    pub fn find_variable_mut(&mut self, old_name: &str) -> Option<&mut TranslatedVariable> {
+        if let Some(variable) = self.variables.iter_mut().find(|v| v.old_name == old_name) {
+            return Some(variable);
+        }
+
+        if let Some(parent) = self.parent.as_mut() {
+            if let Some(variable) = parent.find_variable_mut(old_name) {
+                return Some(variable);
+            }
+        }
+
+        None
+    }
 }
 
 pub struct TranslatedDefinition {

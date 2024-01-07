@@ -928,15 +928,15 @@ impl TabbedDisplay for Let {
         write!(f, "{}", self.name)?;
 
         if let Some(type_name) = self.type_name.as_ref() {
-            write!(f, "{type_name}")?;
+            write!(f, ": {type_name}")?;
         }
 
         if let Some(value) = self.value.as_ref() {
             write!(f, " = ")?;
             value.tabbed_fmt(depth, f)?;
         }
-
-        write!(f, ";")
+        
+        Ok(())
     }
 }
 
@@ -1004,7 +1004,8 @@ impl TabbedDisplay for Expression {
 
 impl Expression {
     pub fn create_todo(msg: Option<String>) -> Expression {
-        Expression::FunctionCall(Box::new(FunctionCall {
+        #[cfg(debug_assertions)]
+        return Expression::FunctionCall(Box::new(FunctionCall {
             function: Expression::Identifier("todo!".into()),
             generic_parameters: None,
             parameters: if let Some(msg) = msg {
@@ -1014,7 +1015,14 @@ impl Expression {
             } else {
                 vec![]
             },
-        }))
+        }));
+        
+        #[cfg(not(debug_assertions))]
+        if let Some(msg) = msg {
+            todo!("{msg}")
+        } else {
+            todo!()
+        }
     }
 
     pub fn create_value_expression(type_name: &TypeName, value: Option<&Expression>) -> Expression {
@@ -1303,11 +1311,11 @@ pub struct BinaryExpression {
     pub rhs: Expression,
 }
 
-impl Display for BinaryExpression {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.lhs.tabbed_fmt(0, f)?;
+impl TabbedDisplay for BinaryExpression {
+    fn tabbed_fmt(&self, depth: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.lhs.tabbed_fmt(depth, f)?;
         write!(f, " {} ", self.operator)?;
-        self.rhs.tabbed_fmt(0, f)
+        self.rhs.tabbed_fmt(depth, f)
     }
 }
 

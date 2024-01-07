@@ -1,7 +1,7 @@
 use crate::{
     errors::Error,
     sway,
-    translate::{TranslatedDefinition, TranslationScope},
+    translate::{TranslatedDefinition, TranslationScope, TranslatedVariable},
     Options,
 };
 use convert_case::{Case, Casing};
@@ -298,7 +298,7 @@ impl Project {
                 solidity::Type::Function { params, attributes, returns } => todo!("function types"),
             }
 
-            _ => unimplemented!("type name expression: {type_name:#?}"),
+            _ => unimplemented!("type name expression: {type_name:?}"),
         }
     }
 
@@ -311,7 +311,7 @@ impl Project {
             solidity::Expression::ArrayLiteral(_, values) => sway::Expression::Array(sway::Array {
                 elements: values.iter().map(|x| self.translate_literal_expression(source_unit_path, x)).collect(),
             }),
-            _ => panic!("Invalid literal expression: {value:#?}"),
+            _ => panic!("Invalid literal expression: {value:?}"),
         }
     }
     
@@ -415,6 +415,9 @@ impl Project {
             todo!("using-for statements")
         }
 
+        // Keep track of storage variables for function scopes
+        let mut storage_variables = vec![];
+
         // Collect each storage field ahead of time for contextual reasons
         for part in solidity_definition.parts.iter() {
             let solidity::ContractPart::VariableDefinition(variable_definition) = part else { continue };
@@ -444,11 +447,22 @@ impl Project {
             }
             
             // Handle all other variable definitions
-            let variable_name = self.translate_naming_convention(variable_definition.name.as_ref().unwrap().name.as_str(), Case::Snake); // TODO: keep track of original name
+            let old_name = variable_definition.name.as_ref().unwrap().name.clone();
+            let new_name = self.translate_naming_convention(old_name.as_str(), Case::Snake); // TODO: keep track of original name
+
+            // Add the storage variable for function scopes
+            storage_variables.push(TranslatedVariable {
+                old_name,
+                new_name: new_name.clone(),
+                type_name: variable_type_name.clone(),
+                is_storage: true,
+                statement_index: None,
+                mutation_count: 0,
+            });
 
             // Add the storage field to the storage block
             sway_definition.get_storage().fields.push(sway::StorageField {
-                name: variable_name.clone(), // TODO: keep track of original name
+                name: new_name.clone(), // TODO: keep track of original name
                 type_name: variable_type_name.clone(),
                 value: sway::Expression::create_value_expression(
                     &variable_type_name,
@@ -476,7 +490,7 @@ impl Project {
                     ],
                 }),
                 is_public: false,
-                name: variable_name.clone(), // TODO: keep track of original name
+                name: new_name.clone(), // TODO: keep track of original name
                 generic_parameters: None,
                 parameters: sway::ParameterList::default(), // TODO: create parameters for StorageMap getter functions
                 return_type: Some(variable_type_name.clone()), // TODO: get proper return type for StorageMap getter functions
@@ -494,7 +508,7 @@ impl Project {
                     function: sway::Expression::MemberAccess(Box::new(sway::MemberAccess {
                         expression: sway::Expression::MemberAccess(Box::new(sway::MemberAccess {
                             expression: sway::Expression::Identifier("storage".into()),
-                            member: variable_name.clone(),
+                            member: new_name.clone(),
                         })),
                         member: "read".into(),
                     })),
@@ -634,10 +648,28 @@ impl Project {
             let Some(solidity::Statement::Block { statements, .. }) = function_definition.body.as_ref() else { continue };
 
             // Create the scope for the body of the toplevel function
-            let scope = TranslationScope {
+            let mut scope = TranslationScope {
                 parent: None,
-                parameters: sway_function.parameters.entries.clone(),
+                variables: storage_variables.clone(),
             };
+
+            // Add the function parameters to the scope
+            scope.variables.extend(
+                function_definition.params.iter().map(|(_, p)| {
+                    let old_name = p.as_ref().unwrap().name.as_ref().unwrap().name.clone();
+                    let new_name = self.translate_naming_convention(old_name.as_str(), Case::Snake);
+                    let type_name = self.translate_type_name(source_unit_path, &p.as_ref().unwrap().ty);
+
+                    TranslatedVariable {
+                        old_name,
+                        new_name,
+                        type_name,
+                        is_storage: false,
+                        statement_index: None,
+                        mutation_count: 0,
+                    }
+                })
+            );
 
             // Translate the body for the toplevel function
             let mut function_body = self.translate_block(source_unit_path, scope, statements.as_slice())?;
@@ -688,7 +720,36 @@ impl Project {
 
         // Translate each of the statements in the block
         for statement in statements {
-            block.statements.push(self.translate_statement(source_unit_path, &mut scope, statement)?);
+            // Translate the statement
+            let sway_statement = self.translate_statement(source_unit_path, &mut scope, statement)?;
+
+            // Store the index of the sway statement
+            let statement_index = block.statements.len();
+
+            // Add the sway statement to the sway block
+            block.statements.push(sway_statement);
+
+            // If the sway statement is a variable declaration, keep track of its statement index
+            if let Some(sway::Statement::Let(sway_variable)) = block.statements.last() {
+                let scope_entry = scope.variables.iter_mut().find(|v| v.new_name == sway_variable.name).unwrap();
+                scope_entry.statement_index = Some(statement_index);
+            }
+        }
+
+        // Check the block for variable declarations that need to be marked mutable
+        for variable in scope.variables.iter() {
+            // Only check variables that are declared as statements
+            let Some(statement_index) = variable.statement_index else { continue };
+
+            // If the variable has any mutations, mark it as mutable
+            if variable.mutation_count > 0 {
+                let let_statement = match &mut block.statements[statement_index] {
+                    sway::Statement::Let(let_statement) => let_statement,
+                    statement => panic!("Expected let statement, found: {statement:?}"),
+                };
+
+                let_statement.is_mutable = true;
+            }
         }
 
         Ok(block)
@@ -699,7 +760,7 @@ impl Project {
             solidity::Statement::Block { statements, .. } => {
                 let scope = TranslationScope {
                     parent: Some(Box::new(scope.clone())),
-                    parameters: vec![],
+                    variables: vec![],
                 };
 
                 Ok(sway::Statement::Expression(sway::Expression::Block(Box::new(
@@ -707,8 +768,8 @@ impl Project {
                 ))))
             }
 
-            solidity::Statement::Assembly { loc, dialect, flags, block } => todo!("translate assembly blocks"),
-            solidity::Statement::Args(_, _) => todo!("translate args statement: {statement:#?}"),
+            solidity::Statement::Assembly { loc, dialect, flags, block } => Ok(sway::Statement::Expression(sway::Expression::create_todo(Some(format!("translate assembly blocks"))))),
+            solidity::Statement::Args(_, _) => Ok(sway::Statement::Expression(sway::Expression::create_todo(Some(format!("translate args statement: {statement:?}"))))),
 
             solidity::Statement::If(_, condition, then_body, else_if) => {
                 let condition = self.translate_expression(source_unit_path, scope, condition)?;
@@ -769,7 +830,33 @@ impl Project {
                 ))
             }
 
-            solidity::Statement::VariableDefinition(_, _, _) => todo!("translate variable definition statements"),
+            solidity::Statement::VariableDefinition(_, variable_declaration, initializer) => {
+                let old_name = variable_declaration.name.as_ref().unwrap().name.clone();
+                let new_name = self.translate_naming_convention(old_name.as_str(), Case::Snake);
+                let type_name = self.translate_type_name(source_unit_path, &variable_declaration.ty);
+
+                let statement = sway::Statement::Let(sway::Let {
+                    is_mutable: false,
+                    name: new_name.clone(),
+                    type_name: Some(type_name.clone()),
+                    value: if let Some(x) = initializer.as_ref() {
+                        Some(self.translate_expression(source_unit_path, scope, x)?)
+                    } else {
+                        None
+                    },
+                });
+
+                scope.variables.push(TranslatedVariable {
+                    old_name,
+                    new_name,
+                    type_name,
+                    is_storage: false,
+                    statement_index: None,
+                    mutation_count: 0,
+                });
+
+                Ok(statement)
+            }
 
             solidity::Statement::For(_, initialization, condition, update, body) => {
                 // {
@@ -824,7 +911,7 @@ impl Project {
                 }))))
             }
 
-            solidity::Statement::DoWhile(_, body, condition) => todo!("translate do while statements"),
+            solidity::Statement::DoWhile(_, body, condition) => Ok(sway::Statement::Expression(sway::Expression::create_todo(Some(format!("translate do while statements"))))),
             
             solidity::Statement::Continue(_) => {
                 Ok(sway::Statement::Expression(sway::Expression::Continue))
@@ -846,10 +933,10 @@ impl Project {
                 )))
             }
             
-            solidity::Statement::Revert(_, _, _) => todo!("translate revert statements"),
-            solidity::Statement::RevertNamedArgs(_, _, _) => todo!("translate revert named args statements"),
-            solidity::Statement::Emit(_, _) => todo!("translate emit statements"),
-            solidity::Statement::Try(_, _, _, _) => todo!("translate try statements"),
+            solidity::Statement::Revert(_, _, _) => Ok(sway::Statement::Expression(sway::Expression::create_todo(Some(format!("translate revert statements: {statement:?}"))))),
+            solidity::Statement::RevertNamedArgs(_, _, _) => Ok(sway::Statement::Expression(sway::Expression::create_todo(Some(format!("translate revert named args statements"))))),
+            solidity::Statement::Emit(_, _) => Ok(sway::Statement::Expression(sway::Expression::create_todo(Some(format!("translate emit statements: {statement:?}"))))),
+            solidity::Statement::Try(_, _, _, _) => Ok(sway::Statement::Expression(sway::Expression::create_todo(Some(format!("translate try statements"))))),
 
             solidity::Statement::Error(_) => panic!("Encountered a statement that was not parsed correctly"),
         }
@@ -889,9 +976,9 @@ impl Project {
                 })))
             }
 
-            solidity::Expression::New(_, _) => todo!("translate new expression: {expression:#?}"),
-            solidity::Expression::ArraySubscript(_, _, _) => todo!("translate array subscript expression: {expression:#?}"),
-            solidity::Expression::ArraySlice(_, _, _, _) => todo!("translate array slice expression: {expression:#?}"),
+            solidity::Expression::New(_, _) => Ok(sway::Expression::create_todo(Some(format!("translate new expression: {expression:?}")))),
+            solidity::Expression::ArraySubscript(_, _, _) => Ok(sway::Expression::create_todo(Some(format!("translate array subscript expression: {expression:?}")))),
+            solidity::Expression::ArraySlice(_, _, _, _) => Ok(sway::Expression::create_todo(Some(format!("translate array slice expression: {expression:?}")))),
             
             solidity::Expression::Parenthesis(_, x) => {
                 // (x)
@@ -1001,12 +1088,12 @@ impl Project {
                     }
                 }
 
-                todo!("translate member access expression: {expression:#?}")
+                Ok(sway::Expression::create_todo(Some(format!("translate member access expression: {expression:?}"))))
             }
 
-            solidity::Expression::FunctionCall(_, _, _) => todo!("translate function call expression: {expression:#?}"),
-            solidity::Expression::FunctionCallBlock(_, _, _) => todo!("translate function call block expression: {expression:#?}"),
-            solidity::Expression::NamedFunctionCall(_, _, _) => todo!("translate named function call expression: {expression:#?}"),
+            solidity::Expression::FunctionCall(_, _, _) => Ok(sway::Expression::create_todo(Some(format!("translate function call expression: {expression:?}")))),
+            solidity::Expression::FunctionCallBlock(_, _, _) => Ok(sway::Expression::create_todo(Some(format!("translate function call block expression: {expression:?}")))),
+            solidity::Expression::NamedFunctionCall(_, _, _) => Ok(sway::Expression::create_todo(Some(format!("translate named function call expression: {expression:?}")))),
 
             solidity::Expression::Not(_, x) => {
                 // !x
@@ -1025,9 +1112,9 @@ impl Project {
                 })))
             }
 
-            solidity::Expression::Delete(_, _) => todo!("translate delete expression: {expression:#?}"),
-            solidity::Expression::PreIncrement(_, _) => todo!("translate pre increment expression: {expression:#?}"),
-            solidity::Expression::PreDecrement(_, _) => todo!("translate pre decrement expression: {expression:#?}"),
+            solidity::Expression::Delete(_, _) => Ok(sway::Expression::create_todo(Some(format!("translate delete expression: {expression:?}")))),
+            solidity::Expression::PreIncrement(_, _) => Ok(sway::Expression::create_todo(Some(format!("translate pre increment expression: {expression:?}")))),
+            solidity::Expression::PreDecrement(_, _) => Ok(sway::Expression::create_todo(Some(format!("translate pre decrement expression: {expression:?}")))),
 
             solidity::Expression::UnaryPlus(_, x) => {
                 // x
@@ -1042,7 +1129,7 @@ impl Project {
                 })))
             }
 
-            solidity::Expression::Power(_, _, _) => todo!("translate power expression: {expression:#?}"),
+            solidity::Expression::Power(_, _, _) => Ok(sway::Expression::create_todo(Some(format!("translate power expression: {expression:?}")))),
 
             solidity::Expression::Multiply(_, lhs, rhs) => {
                 // lhs * rhs
@@ -1229,17 +1316,65 @@ impl Project {
                 })))
             }
             
-            solidity::Expression::Assign(_, _, _) => todo!("translate assign expression: {expression:#?}"),
-            solidity::Expression::AssignOr(_, _, _) => todo!("translate assign or expression: {expression:#?}"),
-            solidity::Expression::AssignAnd(_, _, _) => todo!("translate assign and expression: {expression:#?}"),
-            solidity::Expression::AssignXor(_, _, _) => todo!("translate assign xor expression: {expression:#?}"),
-            solidity::Expression::AssignShiftLeft(_, _, _) => todo!("translate assign shift left expression: {expression:#?}"),
-            solidity::Expression::AssignShiftRight(_, _, _) => todo!("translate assign shift right expression: {expression:#?}"),
-            solidity::Expression::AssignAdd(_, _, _) => todo!("translate assign add expression: {expression:#?}"),
-            solidity::Expression::AssignSubtract(_, _, _) => todo!("translate assign subtract expression: {expression:#?}"),
-            solidity::Expression::AssignMultiply(_, _, _) => todo!("translate assign multiply expression: {expression:#?}"),
-            solidity::Expression::AssignDivide(_, _, _) => todo!("translate assign divide expression: {expression:#?}"),
-            solidity::Expression::AssignModulo(_, _, _) => todo!("translate assign modulo expression: {expression:#?}"),
+            solidity::Expression::Assign(_, lhs, rhs) => {
+                //
+                // TODO:
+                // Look up `lhs` to see if it is a regular variable or a storage variable
+                // Check if lhs is a regular identifier or a compound expression (mix of array access and member access, etc)
+                // Find root variable of lhs and mark it as mutated
+                //
+
+                match lhs.as_ref() {
+                    solidity::Expression::Variable(solidity::Identifier { name, .. }) => {
+                        let Some(variable) = scope.find_variable_mut(name.as_str()) else {
+                            panic!("Failed to find variable in scope: {name}")
+                        };
+
+                        // Create a storage write expression
+                        if variable.is_storage {
+                            // TODO: special handling for StorageMap and StorageVec
+                            return Ok(sway::Expression::FunctionCall(Box::new(sway::FunctionCall {
+                                function: sway::Expression::MemberAccess(Box::new(sway::MemberAccess {
+                                    expression: sway::Expression::MemberAccess(Box::new(sway::MemberAccess {
+                                        expression: sway::Expression::Identifier("storage".into()),
+                                        member: variable.new_name.clone(),
+                                    })),
+                                    member: "write".into(),
+                                })),
+                                generic_parameters: None,
+                                parameters: vec![
+                                    self.translate_expression(source_unit_path, scope, rhs.as_ref())?,
+                                ],
+                            })));
+                        }
+
+                        // Increment the variable's mutation count
+                        variable.mutation_count += 1;
+
+                        // Create a regular assignment expression
+                        return Ok(sway::Expression::BinaryExpression(Box::new(sway::BinaryExpression {
+                            operator: "=".into(),
+                            lhs: self.translate_expression(source_unit_path, scope, lhs.as_ref())?,
+                            rhs: self.translate_expression(source_unit_path, scope, rhs.as_ref())?,
+                        })));
+                    }
+
+                    _ => {}
+                }
+
+                Ok(sway::Expression::create_todo(Some(format!("handle assignment to lhs: {lhs:?}"))))
+            }
+
+            solidity::Expression::AssignOr(_, _, _) => Ok(sway::Expression::create_todo(Some(format!("translate assign or expression: {expression:?}")))),
+            solidity::Expression::AssignAnd(_, _, _) => Ok(sway::Expression::create_todo(Some(format!("translate assign and expression: {expression:?}")))),
+            solidity::Expression::AssignXor(_, _, _) => Ok(sway::Expression::create_todo(Some(format!("translate assign xor expression: {expression:?}")))),
+            solidity::Expression::AssignShiftLeft(_, _, _) => Ok(sway::Expression::create_todo(Some(format!("translate assign shift left expression: {expression:?}")))),
+            solidity::Expression::AssignShiftRight(_, _, _) => Ok(sway::Expression::create_todo(Some(format!("translate assign shift right expression: {expression:?}")))),
+            solidity::Expression::AssignAdd(_, _, _) => Ok(sway::Expression::create_todo(Some(format!("translate assign add expression: {expression:?}")))),
+            solidity::Expression::AssignSubtract(_, _, _) => Ok(sway::Expression::create_todo(Some(format!("translate assign subtract expression: {expression:?}")))),
+            solidity::Expression::AssignMultiply(_, _, _) => Ok(sway::Expression::create_todo(Some(format!("translate assign multiply expression: {expression:?}")))),
+            solidity::Expression::AssignDivide(_, _, _) => Ok(sway::Expression::create_todo(Some(format!("translate assign divide expression: {expression:?}")))),
+            solidity::Expression::AssignModulo(_, _, _) => Ok(sway::Expression::create_todo(Some(format!("translate assign modulo expression: {expression:?}")))),
             
             solidity::Expression::BoolLiteral(_, value) => {
                 Ok(sway::Expression::Literal(sway::Literal::Bool(*value)))
@@ -1249,7 +1384,7 @@ impl Project {
                 Ok(sway::Expression::Literal(sway::Literal::DecInt(value.parse().unwrap())))
             }
 
-            solidity::Expression::RationalNumberLiteral(_, _, _, _, _) => todo!("translate rational number literal expression: {expression:#?}"),
+            solidity::Expression::RationalNumberLiteral(_, _, _, _, _) => Ok(sway::Expression::create_todo(Some(format!("translate rational number literal expression: {expression:?}")))),
 
             solidity::Expression::HexNumberLiteral(_, value, _) => {
                 Ok(sway::Expression::Literal(sway::Literal::HexInt(
@@ -1264,11 +1399,19 @@ impl Project {
                 )))
             }
             
-            solidity::Expression::Type(_, _) => todo!("translate type expression: {expression:#?}"),
-            solidity::Expression::HexLiteral(_) => todo!("translate hex literal expression: {expression:#?}"),
-            solidity::Expression::AddressLiteral(_, _) => todo!("translate address literal expression: {expression:#?}"),
-            solidity::Expression::Variable(_) => todo!("translate variable expression: {expression:#?}"),
-            solidity::Expression::List(_, _) => todo!("translate list expression: {expression:#?}"),
+            solidity::Expression::Type(_, _) => Ok(sway::Expression::create_todo(Some(format!("translate type expression: {expression:?}")))),
+            solidity::Expression::HexLiteral(_) => Ok(sway::Expression::create_todo(Some(format!("translate hex literal expression: {expression:?}")))),
+            solidity::Expression::AddressLiteral(_, _) => Ok(sway::Expression::create_todo(Some(format!("translate address literal expression: {expression:?}")))),
+            
+            solidity::Expression::Variable(variable) => {
+                if let Some(variable) = scope.find_variable(variable.name.as_str()) {
+                    return Ok(sway::Expression::Identifier(variable.new_name.clone()));
+                }
+
+                todo!("find variable in storage block: {}", variable.name)
+            }
+
+            solidity::Expression::List(_, _) => Ok(sway::Expression::create_todo(Some(format!("translate list expression: {expression:?}")))),
 
             solidity::Expression::ArrayLiteral(_, xs) => {
                 let mut elements = vec![];
