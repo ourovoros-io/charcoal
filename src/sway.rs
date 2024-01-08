@@ -8,7 +8,7 @@ pub trait TabbedDisplay {
 
 impl<T: Display> TabbedDisplay for T {
     fn tabbed_fmt(&self, depth: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        (0..depth).into_iter().map(|_| "    ").collect::<String>().fmt(f)?;
+        (0..depth).map(|_| "    ").collect::<String>().fmt(f)?;
         self.fmt(f)
     }
 }
@@ -1004,8 +1004,7 @@ impl TabbedDisplay for Expression {
 
 impl Expression {
     pub fn create_todo(msg: Option<String>) -> Expression {
-        #[cfg(debug_assertions)]
-        return Expression::FunctionCall(Box::new(FunctionCall {
+        Expression::FunctionCall(Box::new(FunctionCall {
             function: Expression::Identifier("todo!".into()),
             generic_parameters: None,
             parameters: if let Some(msg) = msg {
@@ -1015,14 +1014,7 @@ impl Expression {
             } else {
                 vec![]
             },
-        }));
-        
-        #[cfg(not(debug_assertions))]
-        if let Some(msg) = msg {
-            todo!("{msg}")
-        } else {
-            todo!()
-        }
+        }))
     }
 
     pub fn create_value_expression(type_name: &TypeName, value: Option<&Expression>) -> Expression {
@@ -1061,7 +1053,7 @@ impl Expression {
 
             TypeName::Array { type_name, length } => match value {
                 None => Expression::Array(Array {
-                    elements: (0..*length).into_iter().map(|_| Self::create_value_expression(type_name, None)).collect(),
+                    elements: (0..*length).map(|_| Self::create_value_expression(type_name, None)).collect(),
                 }),
 
                 Some(Expression::Array(value)) => {
@@ -1090,7 +1082,7 @@ impl Expression {
                     function: Expression::Identifier("__to_str_array".into()),
                     generic_parameters: None,
                     parameters: vec![
-                        Expression::Literal(Literal::String((0..*length).into_iter().map(|_| " ").collect())),
+                        Expression::Literal(Literal::String((0..*length).map(|_| " ").collect())),
                     ],
                 })),
 
