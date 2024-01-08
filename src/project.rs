@@ -922,6 +922,10 @@ impl Project {
             }
 
             solidity::Statement::Return(_, x) => {
+                //
+                // TODO: check if the returned expression contains a variable or storage variable, use storage.x.read if necessary
+                //
+                
                 Ok(sway::Statement::Expression(sway::Expression::Return(
                     if let Some(x) = x.as_ref() {
                         Some(Box::new(
@@ -943,9 +947,78 @@ impl Project {
     }
 
     fn translate_expression(&mut self, source_unit_path: &Path, scope: &mut TranslationScope, expression: &solidity::Expression) -> Result<sway::Expression, Error> {
+        let mut translate_assignment_expression = |operator: &str, lhs: &solidity::Expression, rhs: &solidity::Expression| -> Result<sway::Expression, Error> {
+            //
+            // TODO:
+            // Handle compound expressions (mixtures of member access, array access, etc)
+            // Handle StorageMap, StorageVec, etc
+            //
+
+            match lhs {
+                solidity::Expression::Variable(solidity::Identifier { name, .. }) => {
+                    let Some(variable) = scope.find_variable_mut(name.as_str()) else {
+                        panic!("Failed to find variable in scope: {name}")
+                    };
+
+                    // Create a storage write expression
+                    if variable.is_storage {
+                        return Ok(sway::Expression::FunctionCall(Box::new(sway::FunctionCall {
+                            function: sway::Expression::MemberAccess(Box::new(sway::MemberAccess {
+                                expression: sway::Expression::MemberAccess(Box::new(sway::MemberAccess {
+                                    expression: sway::Expression::Identifier("storage".into()),
+                                    member: variable.new_name.clone(),
+                                })),
+                                member: "write".into(),
+                            })),
+                            generic_parameters: None,
+                            parameters: vec![
+                                match operator {
+                                    "=" => self.translate_expression(source_unit_path, scope, rhs)?,
+
+                                    _ => sway::Expression::BinaryExpression(Box::new(sway::BinaryExpression {
+                                        operator: operator.trim_end_matches("=").into(),
+
+                                        lhs: sway::Expression::FunctionCall(Box::new(sway::FunctionCall {
+                                            function: sway::Expression::MemberAccess(Box::new(sway::MemberAccess {
+                                                expression: sway::Expression::MemberAccess(Box::new(sway::MemberAccess {
+                                                    expression: sway::Expression::Identifier("storage".into()),
+                                                    member: variable.new_name.clone(),
+                                                })),
+                                                member: "read".into(),
+                                            })),
+                                            generic_parameters: None,
+                                            parameters: vec![],
+                                        })),
+
+                                        rhs: self.translate_expression(source_unit_path, scope, rhs)?,
+                                    })),
+                                },
+                            ],
+                        })));
+                    }
+
+                    // Increment the variable's mutation count
+                    variable.mutation_count += 1;
+
+                    // Create a regular assignment expression
+                    return Ok(sway::Expression::BinaryExpression(Box::new(sway::BinaryExpression {
+                        operator: operator.into(),
+                        lhs: self.translate_expression(source_unit_path, scope, lhs)?,
+                        rhs: self.translate_expression(source_unit_path, scope, rhs)?,
+                    })));
+                }
+
+                _ => todo!("handle assignment to lhs: {lhs:?}"),
+            }
+        };
+
         match expression {
             solidity::Expression::PostIncrement(_, x) => {
                 let x = self.translate_expression(source_unit_path, scope, x)?;
+
+                //
+                // TODO: handle storage variables vs regular variables
+                //
 
                 // { x += 1; x }
                 Ok(sway::Expression::Block(Box::new(sway::Block {
@@ -962,6 +1035,10 @@ impl Project {
 
             solidity::Expression::PostDecrement(_, x) => {
                 let x = self.translate_expression(source_unit_path, scope, x)?;
+
+                //
+                // TODO: handle storage variables vs regular variables
+                //
 
                 // { x -= 1; x }
                 Ok(sway::Expression::Block(Box::new(sway::Block {
@@ -1316,65 +1393,17 @@ impl Project {
                 })))
             }
             
-            solidity::Expression::Assign(_, lhs, rhs) => {
-                //
-                // TODO:
-                // Look up `lhs` to see if it is a regular variable or a storage variable
-                // Check if lhs is a regular identifier or a compound expression (mix of array access and member access, etc)
-                // Find root variable of lhs and mark it as mutated
-                //
-
-                match lhs.as_ref() {
-                    solidity::Expression::Variable(solidity::Identifier { name, .. }) => {
-                        let Some(variable) = scope.find_variable_mut(name.as_str()) else {
-                            panic!("Failed to find variable in scope: {name}")
-                        };
-
-                        // Create a storage write expression
-                        if variable.is_storage {
-                            // TODO: special handling for StorageMap and StorageVec
-                            return Ok(sway::Expression::FunctionCall(Box::new(sway::FunctionCall {
-                                function: sway::Expression::MemberAccess(Box::new(sway::MemberAccess {
-                                    expression: sway::Expression::MemberAccess(Box::new(sway::MemberAccess {
-                                        expression: sway::Expression::Identifier("storage".into()),
-                                        member: variable.new_name.clone(),
-                                    })),
-                                    member: "write".into(),
-                                })),
-                                generic_parameters: None,
-                                parameters: vec![
-                                    self.translate_expression(source_unit_path, scope, rhs.as_ref())?,
-                                ],
-                            })));
-                        }
-
-                        // Increment the variable's mutation count
-                        variable.mutation_count += 1;
-
-                        // Create a regular assignment expression
-                        return Ok(sway::Expression::BinaryExpression(Box::new(sway::BinaryExpression {
-                            operator: "=".into(),
-                            lhs: self.translate_expression(source_unit_path, scope, lhs.as_ref())?,
-                            rhs: self.translate_expression(source_unit_path, scope, rhs.as_ref())?,
-                        })));
-                    }
-
-                    _ => {}
-                }
-
-                todo!("handle assignment to lhs: {lhs:?}")
-            }
-
-            solidity::Expression::AssignOr(_, _, _) => todo!("translate assign or expression: {expression:?}"),
-            solidity::Expression::AssignAnd(_, _, _) => todo!("translate assign and expression: {expression:?}"),
-            solidity::Expression::AssignXor(_, _, _) => todo!("translate assign xor expression: {expression:?}"),
-            solidity::Expression::AssignShiftLeft(_, _, _) => todo!("translate assign shift left expression: {expression:?}"),
-            solidity::Expression::AssignShiftRight(_, _, _) => todo!("translate assign shift right expression: {expression:?}"),
-            solidity::Expression::AssignAdd(_, _, _) => todo!("translate assign add expression: {expression:?}"),
-            solidity::Expression::AssignSubtract(_, _, _) => todo!("translate assign subtract expression: {expression:?}"),
-            solidity::Expression::AssignMultiply(_, _, _) => todo!("translate assign multiply expression: {expression:?}"),
-            solidity::Expression::AssignDivide(_, _, _) => todo!("translate assign divide expression: {expression:?}"),
-            solidity::Expression::AssignModulo(_, _, _) => todo!("translate assign modulo expression: {expression:?}"),
+            solidity::Expression::Assign(_, lhs, rhs) => translate_assignment_expression("=", lhs.as_ref(), rhs.as_ref()),
+            solidity::Expression::AssignOr(_, lhs, rhs) => translate_assignment_expression("|=", lhs.as_ref(), rhs.as_ref()),
+            solidity::Expression::AssignAnd(_, lhs, rhs) => translate_assignment_expression("&=", lhs.as_ref(), rhs.as_ref()),
+            solidity::Expression::AssignXor(_, lhs, rhs) => translate_assignment_expression("^=", lhs.as_ref(), rhs.as_ref()),
+            solidity::Expression::AssignShiftLeft(_, lhs, rhs) => translate_assignment_expression("<<=", lhs.as_ref(), rhs.as_ref()),
+            solidity::Expression::AssignShiftRight(_, lhs, rhs) => translate_assignment_expression(">>=", lhs.as_ref(), rhs.as_ref()),
+            solidity::Expression::AssignAdd(_, lhs, rhs) => translate_assignment_expression("+=", lhs.as_ref(), rhs.as_ref()),
+            solidity::Expression::AssignSubtract(_, lhs, rhs) => translate_assignment_expression("-=", lhs.as_ref(), rhs.as_ref()),
+            solidity::Expression::AssignMultiply(_, lhs, rhs) => translate_assignment_expression("*=", lhs.as_ref(), rhs.as_ref()),
+            solidity::Expression::AssignDivide(_, lhs, rhs) => translate_assignment_expression("/=", lhs.as_ref(), rhs.as_ref()),
+            solidity::Expression::AssignModulo(_, lhs, rhs) => translate_assignment_expression("%=", lhs.as_ref(), rhs.as_ref()),
             
             solidity::Expression::BoolLiteral(_, value) => {
                 Ok(sway::Expression::Literal(sway::Literal::Bool(*value)))
