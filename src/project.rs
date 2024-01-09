@@ -1763,7 +1763,199 @@ impl Project {
                 }))
             }
 
-            _ => Ok(sway::Expression::create_todo(Some("handle assignment to lhs: {lhs:?}".into()))),
+            solidity::Expression::ArraySubscript(_, x, Some(index)) => {
+                // Translate the array index expression
+                let index = self.translate_expression(source_unit_path, scope, index)?;
+                
+                match x.as_ref() {
+                    solidity::Expression::Variable(solidity::Identifier { name, .. }) => {
+                        let Some(variable) = scope.find_variable_mut(name.as_str()) else {
+                            panic!("Failed to find variable in scope: {name}")
+                        };
+        
+                        // Create a storage write expression
+                        if variable.is_storage {
+                            match &variable.type_name {
+                                sway::TypeName::Identifier { name, .. } => match name.as_str() {
+                                    "StorageMap" => {
+                                        // Create a storage map insert expression
+                                        return Ok(sway::Expression::from(sway::FunctionCall {
+                                            function: sway::Expression::from(sway::MemberAccess {
+                                                expression: sway::Expression::from(sway::FunctionCall {
+                                                    function: sway::Expression::from(sway::MemberAccess {
+                                                        expression: sway::Expression::from(sway::MemberAccess {
+                                                            expression: sway::Expression::Identifier("storage".into()),
+                                                            member: variable.new_name.clone(),
+                                                        }),
+                                                        member: "get".into(),
+                                                    }),
+                                                    generic_parameters: None,
+                                                    parameters: vec![index.clone()],
+                                                }),
+                                                member: "write".into(),
+                                            }),
+                                            generic_parameters: None,
+                                            parameters: vec![
+                                                match operator {
+                                                    "=" => self.translate_expression(source_unit_path, scope, rhs)?,
+                    
+                                                    _ => sway::Expression::from(sway::BinaryExpression {
+                                                        operator: operator.trim_end_matches("=").into(),
+                    
+                                                        lhs: sway::Expression::from(sway::FunctionCall {
+                                                            function: sway::Expression::from(sway::MemberAccess {
+                                                                expression: sway::Expression::from(sway::FunctionCall {
+                                                                    function: sway::Expression::from(sway::MemberAccess {
+                                                                        expression: sway::Expression::from(sway::MemberAccess {
+                                                                            expression: sway::Expression::Identifier("storage".into()),
+                                                                            member: variable.new_name.clone(),
+                                                                        }),
+                                                                        member: "get".into(),
+                                                                    }),
+                                                                    generic_parameters: None,
+                                                                    parameters: vec![index.clone()],
+                                                                }),
+                                                                member: "read".into(),
+                                                            }),
+                                                            generic_parameters: None,
+                                                            parameters: vec![],
+                                                        }),
+                    
+                                                        rhs: self.translate_expression(source_unit_path, scope, rhs)?,
+                                                    }),
+                                                },
+                                            ],
+                                        }));
+                                    }
+
+                                    _ => todo!("handle assignment to lhs: {lhs:?}"),
+                                }
+
+                                sway::TypeName::Array { type_name, length } => todo!(),
+                                sway::TypeName::Tuple { type_names } => todo!(),
+                                sway::TypeName::String { length } => todo!(),
+                            }
+                        }
+        
+                        // Increment the variable's mutation count
+                        variable.mutation_count += 1;
+        
+                        // Create a regular assignment expression
+                        Ok(sway::Expression::from(sway::BinaryExpression {
+                            operator: operator.into(),
+                            lhs: self.translate_expression(source_unit_path, scope, lhs)?,
+                            rhs: self.translate_expression(source_unit_path, scope, rhs)?,
+                        }))
+                    }
+
+                    solidity::Expression::ArraySubscript(_, x, Some(index1)) => {
+                        // Translate the index expression
+                        let index1 = self.translate_expression(source_unit_path, scope, index1.as_ref())?;
+
+                        match x.as_ref() {
+                            solidity::Expression::Variable(solidity::Identifier { name, .. }) => {
+                                let Some(variable) = scope.find_variable_mut(name.as_str()) else {
+                                    panic!("Failed to find variable in scope: {name}")
+                                };
+                
+                                // Create a storage write expression
+                                if variable.is_storage {
+                                    match &variable.type_name {
+                                        sway::TypeName::Identifier { name, .. } => match name.as_str() {
+                                            "StorageMap" => {
+                                                // Create a storage map insert expression
+                                                return Ok(sway::Expression::from(sway::FunctionCall {
+                                                    function: sway::Expression::from(sway::MemberAccess {
+                                                        expression: sway::Expression::from(sway::FunctionCall {
+                                                            function: sway::Expression::from(sway::MemberAccess {
+                                                                expression: sway::Expression::from(sway::FunctionCall {
+                                                                    function: sway::Expression::from(sway::MemberAccess {
+                                                                        expression: sway::Expression::from(sway::MemberAccess {
+                                                                            expression: sway::Expression::Identifier("storage".into()),
+                                                                            member: variable.new_name.clone(),
+                                                                        }),
+                                                                        member: "get".into(),
+                                                                    }),
+                                                                    generic_parameters: None,
+                                                                    parameters: vec![index1.clone()],
+                                                                }),
+                                                                member: "get".into(),
+                                                            }),
+                                                            generic_parameters: None,
+                                                            parameters: vec![index.clone()],
+                                                        }),
+                                                        member: "write".into(),
+                                                    }),
+                                                    generic_parameters: None,
+                                                    parameters: vec![
+                                                        match operator {
+                                                            "=" => self.translate_expression(source_unit_path, scope, rhs)?,
+                            
+                                                            _ => sway::Expression::from(sway::BinaryExpression {
+                                                                operator: operator.trim_end_matches("=").into(),
+                            
+                                                                lhs: sway::Expression::from(sway::FunctionCall {
+                                                                    function: sway::Expression::from(sway::MemberAccess {
+                                                                        expression: sway::Expression::from(sway::FunctionCall {
+                                                                            function: sway::Expression::from(sway::MemberAccess {
+                                                                                expression: sway::Expression::from(sway::FunctionCall {
+                                                                                    function: sway::Expression::from(sway::MemberAccess {
+                                                                                        expression: sway::Expression::from(sway::MemberAccess {
+                                                                                            expression: sway::Expression::Identifier("storage".into()),
+                                                                                            member: variable.new_name.clone(),
+                                                                                        }),
+                                                                                        member: "get".into(),
+                                                                                    }),
+                                                                                    generic_parameters: None,
+                                                                                    parameters: vec![index1.clone()],
+                                                                                }),
+                                                                                member: "get".into(),
+                                                                            }),
+                                                                            generic_parameters: None,
+                                                                            parameters: vec![index.clone()],
+                                                                        }),
+                                                                        member: "read".into(),
+                                                                    }),
+                                                                    generic_parameters: None,
+                                                                    parameters: vec![],
+                                                                }),
+                            
+                                                                rhs: self.translate_expression(source_unit_path, scope, rhs)?,
+                                                            }),
+                                                        },
+                                                    ],
+                                                }));
+                                            }
+        
+                                            _ => todo!("handle assignment to lhs: {lhs:?}"),
+                                        }
+        
+                                        sway::TypeName::Array { type_name, length } => todo!(),
+                                        sway::TypeName::Tuple { type_names } => todo!(),
+                                        sway::TypeName::String { length } => todo!(),
+                                    }
+                                }
+                
+                                // Increment the variable's mutation count
+                                variable.mutation_count += 1;
+                
+                                // Create a regular assignment expression
+                                Ok(sway::Expression::from(sway::BinaryExpression {
+                                    operator: operator.into(),
+                                    lhs: self.translate_expression(source_unit_path, scope, lhs)?,
+                                    rhs: self.translate_expression(source_unit_path, scope, rhs)?,
+                                }))
+                            }
+
+                            _ => todo!("handle assignment to lhs: {lhs:?}"),
+                        }
+                    }
+                    
+                    _ => todo!("handle assignment to lhs: {lhs:?}"),
+                }
+            }
+
+            _ => todo!("handle assignment to lhs: {lhs:?}"),
         }
     }
 }
