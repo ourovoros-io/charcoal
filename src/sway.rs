@@ -896,7 +896,7 @@ impl TabbedDisplay for Statement {
                 x.tabbed_fmt(depth, f)?;
 
                 match x {
-                    Expression::If(_) | Expression::While(_) => {}
+                    Expression::Block(_) | Expression::If(_) | Expression::While(_) => {}
 
                     _ => write!(f, ";")?,
                 }
