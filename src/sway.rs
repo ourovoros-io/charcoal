@@ -907,6 +907,19 @@ impl TabbedDisplay for Statement {
     }
 }
 
+macro_rules! impl_stmt_from {
+    ($t: ident) => {
+        impl From<$t> for Statement {
+            fn from(x: $t) -> Self {
+                Self::$t(x)
+            }
+        }
+    };
+}
+
+impl_stmt_from!(Let);
+impl_stmt_from!(Expression);
+
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 #[derive(Clone, Debug)]
@@ -1001,6 +1014,38 @@ impl TabbedDisplay for Expression {
         }
     }
 }
+
+macro_rules! impl_expr_from {
+    ($t: ident) => {
+        impl From<$t> for Expression {
+            fn from(x: $t) -> Self {
+                Self::$t(x)
+            }
+        }
+    };
+}
+
+macro_rules! impl_expr_box_from {
+    ($t: ident) => {
+        impl From<$t> for Expression {
+            fn from(x: $t) -> Self {
+                Self::$t(Box::new(x))
+            }
+        }
+    };
+}
+
+impl_expr_from!(Literal);
+impl_expr_box_from!(FunctionCall);
+impl_expr_box_from!(Block);
+impl_expr_from!(Array);
+impl_expr_box_from!(ArrayAccess);
+impl_expr_box_from!(MemberAccess);
+impl_expr_box_from!(If);
+impl_expr_box_from!(While);
+impl_expr_box_from!(UnaryExpression);
+impl_expr_box_from!(BinaryExpression);
+impl_expr_box_from!(Constructor);
 
 impl Expression {
     pub fn create_todo(msg: Option<String>) -> Expression {
