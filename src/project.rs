@@ -927,7 +927,8 @@ impl Project {
                                         }
                                     })
                                     .collect()
-                                ),
+                            ),
+
                             type_name: Some(sway::TypeName::Tuple {
                                 type_names: parameters.iter()
                                     .map(|(_, p)| {
@@ -942,6 +943,7 @@ impl Project {
                                     })
                                     .collect(),
                             }),
+                            
                             value: Some(self.translate_expression(translated_definition, scope, rhs.as_ref())?),
                         }));
                     }
@@ -962,9 +964,17 @@ impl Project {
                         is_mutable: false,
                         name: new_name.clone(),
                     }),
+
                     type_name: Some(type_name.clone()),
+
                     value: if let Some(x) = initializer.as_ref() {
-                        Some(self.translate_expression(translated_definition, scope, x)?)
+                        Some(match x {
+                            solidity::Expression::PreIncrement(loc, x) => self.translate_pre_operator_expression(translated_definition, scope, loc, x, "+=")?,
+                            solidity::Expression::PreDecrement(loc, x) => self.translate_pre_operator_expression(translated_definition, scope, loc, x, "-=")?,
+                            solidity::Expression::PostIncrement(loc, x) => self.translate_post_operator_expression(translated_definition, scope, loc, x, "+=")?,
+                            solidity::Expression::PostDecrement(loc, x) => self.translate_post_operator_expression(translated_definition, scope, loc, x, "-=")?,
+                            _ => self.translate_expression(translated_definition, scope, x)?,
+                        })
                     } else {
                         None
                     },
@@ -1686,115 +1696,78 @@ impl Project {
             solidity::Expression::AssignDivide(_, lhs, rhs) => self.translate_assignment_expression(translated_definition, scope, "/=", lhs.as_ref(), rhs.as_ref()),
             solidity::Expression::AssignModulo(_, lhs, rhs) => self.translate_assignment_expression(translated_definition, scope, "%=", lhs.as_ref(), rhs.as_ref()),
             
-            solidity::Expression::PreIncrement(_, x) => {
-                // { x += 1; x }
+            solidity::Expression::PreIncrement(loc, x) => {
+                // x += 1
 
-                let (variable, expression) = self.translate_variable_access_expression(translated_definition, scope, x)?;
+                //
+                // NOTE:
+                // For standalone expressions, this is a standard incrementation without returning the value.
+                // If a pre-increment expression is encountered as the value in an assignment, we do return the value.
+                //
 
-                if variable.is_storage {
-                    Ok(sway::Expression::from(sway::Block {
-                        statements: vec![
-                            sway::Statement::from(sway::Expression::from(sway::FunctionCall {
-                                function: sway::Expression::from(sway::MemberAccess {
-                                    expression: expression.clone(),
-                                    member: "write".into(),
-                                }),
-                                generic_parameters: None,
-                                parameters: vec![
-                                    sway::Expression::from(sway::BinaryExpression {
-                                        operator: "+=".into(),
-                                        lhs: sway::Expression::from(sway::FunctionCall {
-                                            function: sway::Expression::from(sway::MemberAccess {
-                                                expression: expression.clone(),
-                                                member: "read".into(),
-                                            }),
-                                            generic_parameters: None,
-                                            parameters: vec![],
-                                        }),
-                                        rhs: sway::Expression::from(sway::Literal::DecInt(1)),
-                                    }),
-                                ],
-                            })),
-                        ],
-                        final_expr: Some(sway::Expression::from(sway::FunctionCall {
-                            function: sway::Expression::from(sway::MemberAccess {
-                                expression,
-                                member: "read".into(),
-                            }),
-                            generic_parameters: None,
-                            parameters: vec![],
-                        })),
-                    }))
-                } else {
-                    Ok(sway::Expression::from(sway::Block {
-                        statements: vec![
-                            sway::Statement::Expression(sway::Expression::from(sway::BinaryExpression {
-                                operator: "+=".into(),
-                                lhs: expression.clone(),
-                                rhs: sway::Expression::from(sway::Literal::DecInt(1)),
-                            })),
-                        ],
-                        final_expr: Some(expression),
-                    }))
-                }
+                self.translate_assignment_expression(
+                    translated_definition,
+                    scope,
+                    "+=",
+                    x.as_ref(),
+                    &solidity::Expression::NumberLiteral(loc.clone(), "1".into(), "".into(), None),
+                )
             }
 
-            solidity::Expression::PreDecrement(_, x) => {
-                // { x -= 1; x }
+            solidity::Expression::PreDecrement(loc, x) => {
+                // x -= 1
 
-                let (variable, expression) = self.translate_variable_access_expression(translated_definition, scope, x)?;
+                //
+                // NOTE:
+                // For standalone expressions, this is a standard decrementation without returning the value.
+                // If a pre-decrement expression is encountered as the value in an assignment, we do return the value.
+                //
 
-                if variable.is_storage {
-                    Ok(sway::Expression::from(sway::Block {
-                        statements: vec![
-                            sway::Statement::from(sway::Expression::from(sway::FunctionCall {
-                                function: sway::Expression::from(sway::MemberAccess {
-                                    expression: expression.clone(),
-                                    member: "write".into(),
-                                }),
-                                generic_parameters: None,
-                                parameters: vec![
-                                    sway::Expression::from(sway::BinaryExpression {
-                                        operator: "-=".into(),
-                                        lhs: sway::Expression::from(sway::FunctionCall {
-                                            function: sway::Expression::from(sway::MemberAccess {
-                                                expression: expression.clone(),
-                                                member: "read".into(),
-                                            }),
-                                            generic_parameters: None,
-                                            parameters: vec![],
-                                        }),
-                                        rhs: sway::Expression::from(sway::Literal::DecInt(1)),
-                                    }),
-                                ],
-                            })),
-                        ],
-                        final_expr: Some(sway::Expression::from(sway::FunctionCall {
-                            function: sway::Expression::from(sway::MemberAccess {
-                                expression,
-                                member: "read".into(),
-                            }),
-                            generic_parameters: None,
-                            parameters: vec![],
-                        })),
-                    }))
-                } else {
-                    Ok(sway::Expression::from(sway::Block {
-                        statements: vec![
-                            sway::Statement::Expression(sway::Expression::from(sway::BinaryExpression {
-                                operator: "-=".into(),
-                                lhs: expression.clone(),
-                                rhs: sway::Expression::from(sway::Literal::DecInt(1)),
-                            })),
-                        ],
-                        final_expr: Some(expression),
-                    }))
-                }
+                self.translate_assignment_expression(
+                    translated_definition,
+                    scope,
+                    "-=",
+                    x.as_ref(),
+                    &solidity::Expression::NumberLiteral(loc.clone(), "1".into(), "".into(), None),
+                )
             }
 
-            solidity::Expression::PostIncrement(_, _) => todo!("translate post increment expression: {expression:#?}"),
-            solidity::Expression::PostDecrement(_, _) => todo!("translate post decrement expression: {expression:#?}"),
+            solidity::Expression::PostIncrement(loc, x) => {
+                // x += 1
+                
+                //
+                // NOTE:
+                // For standalone expressions, this is a standard incrementation without returning the value.
+                // If a post-increment expression is encountered as the value in an assignment, we do return the value.
+                //
 
+                self.translate_assignment_expression(
+                    translated_definition,
+                    scope,
+                    "+=",
+                    x.as_ref(),
+                    &solidity::Expression::NumberLiteral(loc.clone(), "1".into(), "".into(), None),
+                )
+            }
+
+            solidity::Expression::PostDecrement(loc, x) => {
+                // x -= 1
+
+                //
+                // NOTE:
+                // For standalone expressions, this is a standard decrementation without returning the value.
+                // If a post-decrement expression is encountered as the value in an assignment, we do return the value.
+                //
+
+                self.translate_assignment_expression(
+                    translated_definition,
+                    scope,
+                    "-=",
+                    x.as_ref(),
+                    &solidity::Expression::NumberLiteral(loc.clone(), "1".into(), "".into(), None),
+                )
+            }
+            
             solidity::Expression::New(_, _) => todo!("translate new expression: {expression:#?}"),
             solidity::Expression::Delete(_, _) => todo!("translate delete expression: {expression:#?}"),
         }
@@ -1880,7 +1853,13 @@ impl Project {
                 generic_parameters: None,
                 parameters: vec![
                     match operator {
-                        "=" => self.translate_expression(translated_definition, scope, rhs)?,
+                        "=" => match rhs {
+                            solidity::Expression::PreIncrement(loc, x) => self.translate_pre_operator_expression(translated_definition, scope, loc, x, "+=")?,
+                            solidity::Expression::PreDecrement(loc, x) => self.translate_pre_operator_expression(translated_definition, scope, loc, x, "-=")?,
+                            solidity::Expression::PostIncrement(loc, x) => self.translate_post_operator_expression(translated_definition, scope, loc, x, "+=")?,
+                            solidity::Expression::PostDecrement(loc, x) => self.translate_post_operator_expression(translated_definition, scope, loc, x, "-=")?,
+                            _ => self.translate_expression(translated_definition, scope, rhs)?,
+                        }
 
                         _ => sway::Expression::from(sway::BinaryExpression {
                             operator: operator.trim_end_matches("=").into(),
@@ -1905,8 +1884,108 @@ impl Project {
             Ok(sway::Expression::from(sway::BinaryExpression {
                 operator: operator.into(),
                 lhs: self.translate_expression(translated_definition, scope, lhs)?,
-                rhs: self.translate_expression(translated_definition, scope, rhs)?,
+                rhs: match rhs {
+                    solidity::Expression::PreIncrement(loc, x) => self.translate_pre_operator_expression(translated_definition, scope, loc, x, "+=")?,
+                    solidity::Expression::PreDecrement(loc, x) => self.translate_pre_operator_expression(translated_definition, scope, loc, x, "-=")?,
+                    solidity::Expression::PostIncrement(loc, x) => self.translate_post_operator_expression(translated_definition, scope, loc, x, "+=")?,
+                    solidity::Expression::PostDecrement(loc, x) => self.translate_post_operator_expression(translated_definition, scope, loc, x, "-=")?,
+                    _ => self.translate_expression(translated_definition, scope, rhs)?,
+                }
             }))
         }
+    }
+
+    fn translate_pre_operator_expression(
+        &mut self,
+        translated_definition: &TranslatedDefinition,
+        scope: &mut TranslationScope,
+        loc: &solidity::Loc,
+        x: &solidity::Expression,
+        operator: &str,
+    ) -> Result<sway::Expression, Error> {
+        let assignment = sway::Statement::from(
+            self.translate_assignment_expression(
+                translated_definition,
+                scope,
+                operator,
+                x,
+                &solidity::Expression::NumberLiteral(loc.clone(), "1".into(), "".into(), None),
+            )?
+        );
+
+        let (variable, expression) = self.translate_variable_access_expression(translated_definition, scope, x)?;
+
+        Ok(sway::Expression::from(sway::Block {
+            statements: vec![assignment],
+            final_expr: Some(
+                if variable.is_storage {
+                    sway::Expression::from(sway::FunctionCall {
+                        function: sway::Expression::from(sway::MemberAccess {
+                            expression,
+                            member: "read".into(),
+                        }),
+                        generic_parameters: None,
+                        parameters: vec![],
+                    })
+                } else {
+                    expression
+                }
+            ),
+        }))
+    }
+
+    fn translate_post_operator_expression(
+        &mut self,
+        translated_definition: &TranslatedDefinition,
+        scope: &mut TranslationScope,
+        loc: &solidity::Loc,
+        x: &solidity::Expression,
+        operator: &str,
+    ) -> Result<sway::Expression, Error> {
+        let assignment = sway::Statement::from(
+            self.translate_assignment_expression(
+                translated_definition,
+                scope,
+                operator,
+                x,
+                &solidity::Expression::NumberLiteral(loc.clone(), "1".into(), "".into(), None),
+            )?
+        );
+
+        let (variable, expression) = self.translate_variable_access_expression(translated_definition, scope, x)?;
+
+        let variable_name = if variable.is_storage {
+            variable.new_name.clone()
+        } else {
+            format!("_{}", variable.new_name)
+        };
+
+        Ok(sway::Expression::from(sway::Block {
+            statements: vec![
+                sway::Statement::from(sway::Let {
+                    pattern: sway::LetPattern::Identifier(sway::LetIdentifier {
+                        is_mutable: false,
+                        name: variable_name.clone(),
+                    }),
+                    type_name: None,
+                    value: Some(
+                        if variable.is_storage {
+                            sway::Expression::from(sway::FunctionCall {
+                                function: sway::Expression::from(sway::MemberAccess {
+                                    expression,
+                                    member: "read".into(),
+                                }),
+                                generic_parameters: None,
+                                parameters: vec![],
+                            })
+                        } else {
+                            expression
+                        }
+                    ),
+                }),
+                assignment,
+            ],
+            final_expr: Some(sway::Expression::Identifier(variable_name)),
+        }))
     }
 }
