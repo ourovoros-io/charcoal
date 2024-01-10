@@ -1078,115 +1078,25 @@ impl Project {
 
             solidity::Expression::New(_, _) => todo!("translate new expression: {expression:#?}"),
             
-            solidity::Expression::ArraySubscript(_, x, index) => {
-                match x.as_ref() {
-                    solidity::Expression::Variable(solidity::Identifier { name, .. }) => {
-                        let Some(variable) = scope.find_variable(name.as_str()) else {
-                            panic!("Failed to find variable in scope: {name}")
-                        };
+            solidity::Expression::ArraySubscript(_, _, _) => {
+                //
+                // NOTE: Array subscript expressions should only ever be encountered for reading the value. Writes are handled when translating assignments.
+                //
 
-                        if variable.is_storage {
-                            match &variable.type_name {
-                                sway::TypeName::Identifier { name, generic_parameters } => match name.as_str() {
-                                    "StorageMap" => {
-                                        return Ok(sway::Expression::from(sway::FunctionCall {
-                                            function: sway::Expression::from(sway::MemberAccess {
-                                                expression: sway::Expression::from(sway::FunctionCall {
-                                                    function: sway::Expression::from(sway::MemberAccess {
-                                                        expression: sway::Expression::from(sway::MemberAccess {
-                                                            expression: sway::Expression::Identifier("storage".into()),
-                                                            member: variable.new_name.clone(),
-                                                        }),
-                                                        member: "get".into(),
-                                                    }),
-                                                    generic_parameters: None,
-                                                    parameters: vec![
-                                                        self.translate_expression(source_unit_path, scope, index.as_ref().unwrap().as_ref())?,
-                                                    ],
-                                                }),
-                                                member: "read".into(),
-                                            }),
-                                            generic_parameters: None,
-                                            parameters: vec![],
-                                        }))
-                                    }
+                let (variable, expression) = self.translate_variable_expression(source_unit_path, scope, expression)?;
 
-                                    "StorageVec" => {
-
-                                    }
-
-                                    _ => {}
-                                }
-
-                                sway::TypeName::Array { type_name, length } => todo!(),
-                                sway::TypeName::Tuple { type_names } => todo!(),
-                                sway::TypeName::String { length } => todo!(),
-                            }
-                        }
-                    }
-
-                    solidity::Expression::ArraySubscript(_, x, index1) => match x.as_ref() {
-                        solidity::Expression::Variable(solidity::Identifier { name, .. }) => {
-                            let Some(variable) = scope.find_variable(name.as_str()) else {
-                                panic!("Failed to find variable in scope: {name}")
-                            };
-    
-                            if variable.is_storage {
-                                match &variable.type_name {
-                                    sway::TypeName::Identifier { name, generic_parameters } => match name.as_str() {
-                                        "StorageMap" => {
-                                            return Ok(sway::Expression::from(sway::FunctionCall {
-                                                function: sway::Expression::from(sway::MemberAccess {
-                                                    expression: sway::Expression::from(sway::FunctionCall {
-                                                        function: sway::Expression::from(sway::MemberAccess {
-                                                            expression: sway::Expression::from(sway::FunctionCall {
-                                                                function: sway::Expression::from(sway::MemberAccess {
-                                                                    expression: sway::Expression::from(sway::MemberAccess {
-                                                                        expression: sway::Expression::Identifier("storage".into()),
-                                                                        member: variable.new_name.clone(),
-                                                                    }),
-                                                                    member: "get".into(),
-                                                                }),
-                                                                generic_parameters: None,
-                                                                parameters: vec![
-                                                                    self.translate_expression(source_unit_path, scope, index1.as_ref().unwrap().as_ref())?,
-                                                                ],
-                                                            }),
-                                                            member: "get".into(),
-                                                        }),
-                                                        generic_parameters: None,
-                                                        parameters: vec![
-                                                            self.translate_expression(source_unit_path, scope, index.as_ref().unwrap().as_ref())?,
-                                                        ],
-                                                    }),
-                                                    member: "read".into(),
-                                                }),
-                                                generic_parameters: None,
-                                                parameters: vec![],
-                                            }))
-                                        }
-    
-                                        "StorageVec" => {
-    
-                                        }
-    
-                                        _ => {}
-                                    }
-    
-                                    sway::TypeName::Array { type_name, length } => todo!(),
-                                    sway::TypeName::Tuple { type_names } => todo!(),
-                                    sway::TypeName::String { length } => todo!(),
-                                }
-                            }
-                        }
-
-                        _ => {}
-                    }
-
-                    _ => {}
+                if variable.is_storage {
+                    Ok(sway::Expression::from(sway::FunctionCall {
+                        function: sway::Expression::from(sway::MemberAccess {
+                            expression,
+                            member: "read".into(),
+                        }),
+                        generic_parameters: None,
+                        parameters: vec![],
+                    }))
+                } else {
+                    Ok(expression)
                 }
-
-                todo!("translate array subscript expression: {expression:#?}")
             }
 
             solidity::Expression::ArraySlice(_, _, _, _) => todo!("translate array slice expression: {expression:#?}"),
@@ -1354,7 +1264,7 @@ impl Project {
                                 solidity::Expression::NumberLiteral(_, value, _, _) if value == "0" => {
                                     // Create a zero address expression
                                     // Identity::Address(Address::from(ZERO_B256))
-                                    return Ok(sway::Expression::from(sway::FunctionCall {
+                                    Ok(sway::Expression::from(sway::FunctionCall {
                                         function: sway::Expression::Identifier("Identity::Address".into()),
                                         generic_parameters: None,
                                         parameters: vec![
@@ -1391,17 +1301,15 @@ impl Project {
                         }
 
                         // Translate the function call
-                        return Ok(sway::Expression::from(sway::FunctionCall {
+                        Ok(sway::Expression::from(sway::FunctionCall {
                             function: sway::Expression::Identifier(self.translate_naming_convention(name.as_str(), Case::Snake)),
                             generic_parameters: None,
                             parameters,
                         }))
                     }
 
-                    _ => {}
+                    _ => todo!("translate function call expression: {expression:#?}"),
                 }
-
-                todo!("translate function call expression: {expression:#?}")
             }
 
             solidity::Expression::FunctionCallBlock(_, _, _) => todo!("translate function call block expression: {expression:#?}"),
@@ -1695,267 +1603,113 @@ impl Project {
         }
     }
 
+    fn translate_variable_expression<'a>(
+        &mut self,
+        source_unit_path: &Path,
+        scope: &'a mut TranslationScope,
+        expression: &solidity::Expression,
+    ) -> Result<(&'a mut TranslatedVariable, sway::Expression), Error> {
+        match expression {
+            solidity::Expression::Variable(solidity::Identifier { name, .. }) => {
+                let Some(variable) = scope.find_variable_mut(name.as_str()) else {
+                    panic!("Failed to find variable in scope: {name}")
+                };
+
+                let variable_name = variable.new_name.clone();
+
+                if variable.is_storage {
+                    Ok((
+                        variable,
+                        sway::Expression::from(sway::MemberAccess {
+                            expression: sway::Expression::Identifier("storage".into()),
+                            member: variable_name,
+                        })
+                    ))
+                } else {
+                    Ok((
+                        variable,
+                        sway::Expression::Identifier(variable_name)
+                    ))
+                }
+            }
+
+            solidity::Expression::ArraySubscript(_, expression, Some(index)) => {
+                let index = self.translate_expression(source_unit_path, scope, index.as_ref())?;
+                let (variable, expression) = self.translate_variable_expression(source_unit_path, scope, expression)?;
+
+                if variable.is_storage {
+                    Ok((
+                        variable,
+                        sway::Expression::from(sway::FunctionCall {
+                            function: sway::Expression::from(sway::MemberAccess {
+                                expression,
+                                member: "get".into(),
+                            }),
+                            generic_parameters: None,
+                            parameters: vec![index],
+                        })
+                    ))
+                } else {
+                    Ok((
+                        variable,
+                        sway::Expression::from(sway::ArrayAccess {
+                            expression,
+                            index,
+                        })
+                    ))
+                }
+            }
+
+            _ => todo!("translate storage expression: {expression:#?}")
+        }
+    }
+
     fn translate_assignment_expression(
         &mut self,
         source_unit_path: &Path,
         scope: &mut TranslationScope,
         operator: &str,
         lhs: &solidity::Expression,
-        rhs: &solidity::Expression
+        rhs: &solidity::Expression,
     ) -> Result<sway::Expression, Error> {
-        //
-        // TODO:
-        // Handle compound expressions (mixtures of member access, array access, etc)
-        // Handle StorageMap, StorageVec, etc
-        //
+        let (variable, expression) = self.translate_variable_expression(source_unit_path, scope, lhs)?;
 
-        match lhs {
-            solidity::Expression::Variable(solidity::Identifier { name, .. }) => {
-                let Some(variable) = scope.find_variable_mut(name.as_str()) else {
-                    panic!("Failed to find variable in scope: {name}")
-                };
+        if variable.is_storage {
+            Ok(sway::Expression::from(sway::FunctionCall {
+                function: sway::Expression::from(sway::MemberAccess {
+                    expression: expression.clone(),
+                    member: "write".into(),
+                }),
+                generic_parameters: None,
+                parameters: vec![
+                    match operator {
+                        "=" => self.translate_expression(source_unit_path, scope, rhs)?,
 
-                // Create a storage write expression
-                if variable.is_storage {
-                    return Ok(sway::Expression::from(sway::FunctionCall {
-                        function: sway::Expression::from(sway::MemberAccess {
-                            expression: sway::Expression::from(sway::MemberAccess {
-                                expression: sway::Expression::Identifier("storage".into()),
-                                member: variable.new_name.clone(),
-                            }),
-                            member: "write".into(),
-                        }),
-                        generic_parameters: None,
-                        parameters: vec![
-                            match operator {
-                                "=" => self.translate_expression(source_unit_path, scope, rhs)?,
+                        _ => sway::Expression::from(sway::BinaryExpression {
+                            operator: operator.trim_end_matches("=").into(),
 
-                                _ => sway::Expression::from(sway::BinaryExpression {
-                                    operator: operator.trim_end_matches("=").into(),
-
-                                    lhs: sway::Expression::from(sway::FunctionCall {
-                                        function: sway::Expression::from(sway::MemberAccess {
-                                            expression: sway::Expression::from(sway::MemberAccess {
-                                                expression: sway::Expression::Identifier("storage".into()),
-                                                member: variable.new_name.clone(),
-                                            }),
-                                            member: "read".into(),
-                                        }),
-                                        generic_parameters: None,
-                                        parameters: vec![],
-                                    }),
-
-                                    rhs: self.translate_expression(source_unit_path, scope, rhs)?,
+                            lhs: sway::Expression::from(sway::FunctionCall {
+                                function: sway::Expression::from(sway::MemberAccess {
+                                    expression: expression.clone(),
+                                    member: "read".into(),
                                 }),
-                            },
-                        ],
-                    }));
-                }
+                                generic_parameters: None,
+                                parameters: vec![],
+                            }),
 
-                // Increment the variable's mutation count
-                variable.mutation_count += 1;
-
-                // Create a regular assignment expression
-                Ok(sway::Expression::from(sway::BinaryExpression {
-                    operator: operator.into(),
-                    lhs: self.translate_expression(source_unit_path, scope, lhs)?,
-                    rhs: self.translate_expression(source_unit_path, scope, rhs)?,
-                }))
-            }
-
-            solidity::Expression::ArraySubscript(_, x, Some(index)) => {
-                // Translate the array index expression
-                let index = self.translate_expression(source_unit_path, scope, index)?;
-                
-                match x.as_ref() {
-                    solidity::Expression::Variable(solidity::Identifier { name, .. }) => {
-                        let Some(variable) = scope.find_variable_mut(name.as_str()) else {
-                            panic!("Failed to find variable in scope: {name}")
-                        };
-        
-                        // Create a storage write expression
-                        if variable.is_storage {
-                            match &variable.type_name {
-                                sway::TypeName::Identifier { name, .. } => match name.as_str() {
-                                    "StorageMap" => {
-                                        // Create a storage map insert expression
-                                        return Ok(sway::Expression::from(sway::FunctionCall {
-                                            function: sway::Expression::from(sway::MemberAccess {
-                                                expression: sway::Expression::from(sway::FunctionCall {
-                                                    function: sway::Expression::from(sway::MemberAccess {
-                                                        expression: sway::Expression::from(sway::MemberAccess {
-                                                            expression: sway::Expression::Identifier("storage".into()),
-                                                            member: variable.new_name.clone(),
-                                                        }),
-                                                        member: "get".into(),
-                                                    }),
-                                                    generic_parameters: None,
-                                                    parameters: vec![index.clone()],
-                                                }),
-                                                member: "write".into(),
-                                            }),
-                                            generic_parameters: None,
-                                            parameters: vec![
-                                                match operator {
-                                                    "=" => self.translate_expression(source_unit_path, scope, rhs)?,
-                    
-                                                    _ => sway::Expression::from(sway::BinaryExpression {
-                                                        operator: operator.trim_end_matches("=").into(),
-                    
-                                                        lhs: sway::Expression::from(sway::FunctionCall {
-                                                            function: sway::Expression::from(sway::MemberAccess {
-                                                                expression: sway::Expression::from(sway::FunctionCall {
-                                                                    function: sway::Expression::from(sway::MemberAccess {
-                                                                        expression: sway::Expression::from(sway::MemberAccess {
-                                                                            expression: sway::Expression::Identifier("storage".into()),
-                                                                            member: variable.new_name.clone(),
-                                                                        }),
-                                                                        member: "get".into(),
-                                                                    }),
-                                                                    generic_parameters: None,
-                                                                    parameters: vec![index.clone()],
-                                                                }),
-                                                                member: "read".into(),
-                                                            }),
-                                                            generic_parameters: None,
-                                                            parameters: vec![],
-                                                        }),
-                    
-                                                        rhs: self.translate_expression(source_unit_path, scope, rhs)?,
-                                                    }),
-                                                },
-                                            ],
-                                        }));
-                                    }
-
-                                    _ => todo!("handle assignment to lhs: {lhs:?}"),
-                                }
-
-                                sway::TypeName::Array { type_name, length } => todo!(),
-                                sway::TypeName::Tuple { type_names } => todo!(),
-                                sway::TypeName::String { length } => todo!(),
-                            }
-                        }
-        
-                        // Increment the variable's mutation count
-                        variable.mutation_count += 1;
-        
-                        // Create a regular assignment expression
-                        Ok(sway::Expression::from(sway::BinaryExpression {
-                            operator: operator.into(),
-                            lhs: self.translate_expression(source_unit_path, scope, lhs)?,
                             rhs: self.translate_expression(source_unit_path, scope, rhs)?,
-                        }))
-                    }
+                        }),
+                    },
+                ],
+            }))
+        } else {
+            variable.mutation_count += 1;
 
-                    solidity::Expression::ArraySubscript(_, x, Some(index1)) => {
-                        // Translate the index expression
-                        let index1 = self.translate_expression(source_unit_path, scope, index1.as_ref())?;
-
-                        match x.as_ref() {
-                            solidity::Expression::Variable(solidity::Identifier { name, .. }) => {
-                                let Some(variable) = scope.find_variable_mut(name.as_str()) else {
-                                    panic!("Failed to find variable in scope: {name}")
-                                };
-                
-                                // Create a storage write expression
-                                if variable.is_storage {
-                                    match &variable.type_name {
-                                        sway::TypeName::Identifier { name, .. } => match name.as_str() {
-                                            "StorageMap" => {
-                                                // Create a storage map insert expression
-                                                return Ok(sway::Expression::from(sway::FunctionCall {
-                                                    function: sway::Expression::from(sway::MemberAccess {
-                                                        expression: sway::Expression::from(sway::FunctionCall {
-                                                            function: sway::Expression::from(sway::MemberAccess {
-                                                                expression: sway::Expression::from(sway::FunctionCall {
-                                                                    function: sway::Expression::from(sway::MemberAccess {
-                                                                        expression: sway::Expression::from(sway::MemberAccess {
-                                                                            expression: sway::Expression::Identifier("storage".into()),
-                                                                            member: variable.new_name.clone(),
-                                                                        }),
-                                                                        member: "get".into(),
-                                                                    }),
-                                                                    generic_parameters: None,
-                                                                    parameters: vec![index1.clone()],
-                                                                }),
-                                                                member: "get".into(),
-                                                            }),
-                                                            generic_parameters: None,
-                                                            parameters: vec![index.clone()],
-                                                        }),
-                                                        member: "write".into(),
-                                                    }),
-                                                    generic_parameters: None,
-                                                    parameters: vec![
-                                                        match operator {
-                                                            "=" => self.translate_expression(source_unit_path, scope, rhs)?,
-                            
-                                                            _ => sway::Expression::from(sway::BinaryExpression {
-                                                                operator: operator.trim_end_matches("=").into(),
-                            
-                                                                lhs: sway::Expression::from(sway::FunctionCall {
-                                                                    function: sway::Expression::from(sway::MemberAccess {
-                                                                        expression: sway::Expression::from(sway::FunctionCall {
-                                                                            function: sway::Expression::from(sway::MemberAccess {
-                                                                                expression: sway::Expression::from(sway::FunctionCall {
-                                                                                    function: sway::Expression::from(sway::MemberAccess {
-                                                                                        expression: sway::Expression::from(sway::MemberAccess {
-                                                                                            expression: sway::Expression::Identifier("storage".into()),
-                                                                                            member: variable.new_name.clone(),
-                                                                                        }),
-                                                                                        member: "get".into(),
-                                                                                    }),
-                                                                                    generic_parameters: None,
-                                                                                    parameters: vec![index1.clone()],
-                                                                                }),
-                                                                                member: "get".into(),
-                                                                            }),
-                                                                            generic_parameters: None,
-                                                                            parameters: vec![index.clone()],
-                                                                        }),
-                                                                        member: "read".into(),
-                                                                    }),
-                                                                    generic_parameters: None,
-                                                                    parameters: vec![],
-                                                                }),
-                            
-                                                                rhs: self.translate_expression(source_unit_path, scope, rhs)?,
-                                                            }),
-                                                        },
-                                                    ],
-                                                }));
-                                            }
-        
-                                            _ => todo!("handle assignment to lhs: {lhs:?}"),
-                                        }
-        
-                                        sway::TypeName::Array { type_name, length } => todo!(),
-                                        sway::TypeName::Tuple { type_names } => todo!(),
-                                        sway::TypeName::String { length } => todo!(),
-                                    }
-                                }
-                
-                                // Increment the variable's mutation count
-                                variable.mutation_count += 1;
-                
-                                // Create a regular assignment expression
-                                Ok(sway::Expression::from(sway::BinaryExpression {
-                                    operator: operator.into(),
-                                    lhs: self.translate_expression(source_unit_path, scope, lhs)?,
-                                    rhs: self.translate_expression(source_unit_path, scope, rhs)?,
-                                }))
-                            }
-
-                            _ => todo!("handle assignment to lhs: {lhs:?}"),
-                        }
-                    }
-                    
-                    _ => todo!("handle assignment to lhs: {lhs:?}"),
-                }
-            }
-
-            _ => todo!("handle assignment to lhs: {lhs:?}"),
+            Ok(sway::Expression::from(sway::BinaryExpression {
+                operator: operator.into(),
+                lhs: self.translate_expression(source_unit_path, scope, lhs)?,
+                rhs: self.translate_expression(source_unit_path, scope, rhs)?,
+            }))
         }
     }
 }
