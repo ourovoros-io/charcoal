@@ -752,6 +752,35 @@ impl Project {
             }
         }
 
+        // Check block for sub-blocks that don't contain variable declarations and flatten them
+        for i in (0..block.statements.len()).rev() {
+            let mut statements = None;
+
+            {
+                let sway::Statement::Expression(sway::Expression::Block(sub_block)) = &block.statements[i] else { continue };
+                
+                let mut var_count = 0;
+
+                for statement in sub_block.statements.iter() {
+                    if let sway::Statement::Let(_) = statement {
+                        var_count += 1;
+                    }
+                }
+
+                if var_count == 0 {
+                    statements = Some(sub_block.statements.clone());
+                }
+            }
+
+            if let Some(statements) = statements {
+                block.statements.remove(i);
+
+                for statement in statements.into_iter().rev() {
+                    block.statements.insert(i, statement);
+                }
+            }
+        }
+
         Ok(block)
     }
 
@@ -922,10 +951,6 @@ impl Project {
             }
 
             solidity::Statement::Return(_, x) => {
-                //
-                // TODO: check if the returned expression contains a variable or storage variable, use storage.x.read if necessary
-                //
-                
                 Ok(sway::Statement::from(sway::Expression::Return(
                     if let Some(x) = x.as_ref() {
                         Some(Box::new(
@@ -1575,16 +1600,21 @@ impl Project {
             solidity::Expression::HexLiteral(_) => todo!("translate hex literal expression: {expression:#?}"),
             solidity::Expression::AddressLiteral(_, _) => todo!("translate address literal expression: {expression:#?}"),
             
-            solidity::Expression::Variable(variable) => {
-                //
-                // TODO: determine if variable is a storage field
-                //
-
-                if let Some(variable) = scope.find_variable(variable.name.as_str()) {
-                    return Ok(sway::Expression::Identifier(variable.new_name.clone()));
+            solidity::Expression::Variable(_) => {
+                let (variable, expression) = self.translate_variable_expression(source_unit_path, scope, expression)?;
+                
+                if variable.is_storage {
+                    Ok(sway::Expression::from(sway::FunctionCall {
+                        function: sway::Expression::from(sway::MemberAccess {
+                            expression,
+                            member: "read".into(),
+                        }),
+                        generic_parameters: None,
+                        parameters: vec![],
+                    }))
+                } else {
+                    Ok(expression)
                 }
-
-                todo!("find variable in storage block: {}", variable.name)
             }
 
             solidity::Expression::List(_, _) => todo!("translate list expression: {expression:#?}"),
