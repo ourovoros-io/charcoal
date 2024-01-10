@@ -1105,10 +1105,12 @@ impl Project {
             
             solidity::Expression::ArraySubscript(_, _, _) => {
                 //
-                // NOTE: Array subscript expressions should only ever be encountered for reading the value. Writes are handled when translating assignments.
+                // NOTE:
+                // Array subscript expressions should only ever be encountered for reading the value.
+                // Writes are handled when translating assignment expressions.
                 //
 
-                let (variable, expression) = self.translate_variable_expression(source_unit_path, scope, expression)?;
+                let (variable, expression) = self.translate_variable_access_expression(source_unit_path, scope, expression)?;
 
                 if variable.is_storage {
                     Ok(sway::Expression::from(sway::FunctionCall {
@@ -1601,7 +1603,13 @@ impl Project {
             solidity::Expression::AddressLiteral(_, _) => todo!("translate address literal expression: {expression:#?}"),
             
             solidity::Expression::Variable(_) => {
-                let (variable, expression) = self.translate_variable_expression(source_unit_path, scope, expression)?;
+                //
+                // NOTE:
+                // Variable expressions should only ever be encountered for reading the value.
+                // Writes are handled when translating assignment expressions.
+                //
+
+                let (variable, expression) = self.translate_variable_access_expression(source_unit_path, scope, expression)?;
                 
                 if variable.is_storage {
                     Ok(sway::Expression::from(sway::FunctionCall {
@@ -1633,7 +1641,7 @@ impl Project {
         }
     }
 
-    fn translate_variable_expression<'a>(
+    fn translate_variable_access_expression<'a>(
         &mut self,
         source_unit_path: &Path,
         scope: &'a mut TranslationScope,
@@ -1665,7 +1673,7 @@ impl Project {
 
             solidity::Expression::ArraySubscript(_, expression, Some(index)) => {
                 let index = self.translate_expression(source_unit_path, scope, index.as_ref())?;
-                let (variable, expression) = self.translate_variable_expression(source_unit_path, scope, expression)?;
+                let (variable, expression) = self.translate_variable_access_expression(source_unit_path, scope, expression)?;
 
                 if variable.is_storage {
                     Ok((
@@ -1690,7 +1698,7 @@ impl Project {
                 }
             }
 
-            _ => todo!("translate storage expression: {expression:#?}")
+            _ => todo!("translate variable access expression: {expression:#?}")
         }
     }
 
@@ -1702,7 +1710,7 @@ impl Project {
         lhs: &solidity::Expression,
         rhs: &solidity::Expression,
     ) -> Result<sway::Expression, Error> {
-        let (variable, expression) = self.translate_variable_expression(source_unit_path, scope, lhs)?;
+        let (variable, expression) = self.translate_variable_access_expression(source_unit_path, scope, lhs)?;
 
         if variable.is_storage {
             Ok(sway::Expression::from(sway::FunctionCall {
