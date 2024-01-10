@@ -924,21 +924,14 @@ impl_stmt_from!(Expression);
 
 #[derive(Clone, Debug)]
 pub struct Let {
-    pub is_mutable: bool,
-    pub name: String,
+    pub pattern: LetPattern,
     pub type_name: Option<TypeName>,
     pub value: Option<Expression>,
 }
 
 impl TabbedDisplay for Let {
     fn tabbed_fmt(&self, depth: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "let ")?;
-
-        if self.is_mutable {
-            write!(f, "mut ")?;
-        }
-
-        write!(f, "{}", self.name)?;
+        write!(f, "let {}", self.pattern)?;
 
         if let Some(type_name) = self.type_name.as_ref() {
             write!(f, ": {type_name}")?;
@@ -950,6 +943,41 @@ impl TabbedDisplay for Let {
         }
         
         Ok(())
+    }
+}
+
+// -------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+#[derive(Clone, Debug)]
+pub enum LetPattern {
+    Identifier(LetIdentifier),
+    Tuple(Vec<LetIdentifier>),
+}
+
+impl Display for LetPattern {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LetPattern::Identifier(id) => write!(f, "{id}"),
+            LetPattern::Tuple(ids) => write!(f, "({})", ids.iter().map(|id| format!("{id}")).collect::<Vec<_>>().join(", ")),
+        }
+    }
+}
+
+// -------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+#[derive(Clone, Debug)]
+pub struct LetIdentifier {
+    pub is_mutable: bool,
+    pub name: String,
+}
+
+impl Display for LetIdentifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.is_mutable {
+            write!(f, "mut ")?;
+        }
+
+        write!(f, "{}", self.name)
     }
 }
 
