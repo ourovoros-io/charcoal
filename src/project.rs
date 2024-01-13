@@ -2100,35 +2100,10 @@ impl Project {
             solidity::Expression::FunctionCallBlock(_, _, _) => todo!("translate function call block expression: {expression:#?}"),
             solidity::Expression::NamedFunctionCall(_, _, _) => todo!("translate named function call expression: {expression:#?}"),
 
-            solidity::Expression::Not(_, x) => {
-                // !x
-                Ok(sway::Expression::from(sway::UnaryExpression {
-                    operator: "!".into(),
-                    expression: self.translate_expression(translated_definition, scope, x)?,
-                }))
-            }
-
-            solidity::Expression::BitwiseNot(_, x) => {
-                // TODO: rust uses the ! operator instead of ~, I believe sway does too, but we should verify this
-                // !x
-                Ok(sway::Expression::from(sway::UnaryExpression {
-                    operator: "!".into(),
-                    expression: self.translate_expression(translated_definition, scope, x)?,
-                }))
-            }
-
-            solidity::Expression::UnaryPlus(_, x) => {
-                // x
-                self.translate_expression(translated_definition, scope, x)
-            }
-
-            solidity::Expression::Negate(_, x) => {
-                // -x
-                Ok(sway::Expression::from(sway::UnaryExpression {
-                    operator: "-".into(),
-                    expression: self.translate_expression(translated_definition, scope, x)?,
-                }))
-            }
+            solidity::Expression::Not(_, x) => self.translate_unary_expression(translated_definition, scope, "!", x),
+            solidity::Expression::BitwiseNot(_, x) => self.translate_unary_expression(translated_definition, scope, "!", x),
+            solidity::Expression::UnaryPlus(_, x) => self.translate_expression(translated_definition, scope, x),
+            solidity::Expression::Negate(_, x) => self.translate_unary_expression(translated_definition, scope, "-", x),
 
             solidity::Expression::Power(_, _, _) => todo!("translate power expression: {expression:#?}"),
 
@@ -2225,6 +2200,19 @@ impl Project {
             solidity::Expression::New(_, _) => todo!("translate new expression: {expression:#?}"),
             solidity::Expression::Delete(_, _) => todo!("translate delete expression: {expression:#?}"),
         }
+    }
+
+    fn translate_unary_expression(
+        &mut self,
+        translated_definition: &TranslatedDefinition,
+        scope: &mut TranslationScope,
+        operator: &str,
+        expression: &solidity::Expression,
+    ) -> Result<sway::Expression, Error> {
+        Ok(sway::Expression::from(sway::UnaryExpression {
+            operator: operator.into(),
+            expression: self.translate_expression(translated_definition, scope, expression)?,
+        }))
     }
 
     fn translate_binary_expression(
