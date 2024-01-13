@@ -1473,19 +1473,146 @@ impl Project {
                     }
                 }
 
-                solidity::Expression::Variable(solidity::Identifier { name, .. }) => {
-                    //
-                    // TODO: do a proper function lookup
-                    //
+                solidity::Expression::Variable(solidity::Identifier { name, .. }) => match name.as_str() {
+                    "blockhash" => {
+                        // std::block::block_header_hash(block_height).unwrap_or(0)
+                        Ok(sway::Expression::from(sway::FunctionCall {
+                            function: sway::Expression::from(sway::MemberAccess {
+                                expression: sway::Expression::from(sway::FunctionCall {
+                                    function: sway::Expression::Identifier("std::block::block_header_hash".into()),
+                                    generic_parameters: None,
+                                    parameters: args.iter()
+                                        .map(|a| self.translate_expression(translated_definition, scope, a))
+                                        .collect::<Result<Vec<_>, _>>()?,
+                                }),
+                                member: "unwrap_or".into(),
+                            }),
+                            generic_parameters: None,
+                            parameters: vec![
+                                sway::Expression::from(sway::Literal::DecInt(0)),
+                            ],
+                        }))
+                    }
 
-                    // Translate the function call
-                    Ok(sway::Expression::from(sway::FunctionCall {
-                        function: sway::Expression::Identifier(self.translate_naming_convention(name.as_str(), Case::Snake)),
-                        generic_parameters: None,
-                        parameters: args.iter()
+                    "addmod" => {
+                        // (x + y) % k
+
+                        let parameters = args.iter()
                             .map(|a| self.translate_expression(translated_definition, scope, a))
-                            .collect::<Result<Vec<_>, _>>()?,
-                    }))
+                            .collect::<Result<Vec<_>, _>>()?;
+
+                        if parameters.len() != 3 {
+                            panic!("Invalid addmod call: {expression:#?}");
+                        }
+
+                        Ok(sway::Expression::from(sway::BinaryExpression {
+                            operator: "%".into(),
+                            lhs: sway::Expression::from(sway::BinaryExpression {
+                                operator: "+".into(),
+                                lhs: parameters[0].clone(),
+                                rhs: parameters[1].clone(),
+                            }),
+                            rhs: parameters[2].clone(),
+                        }))
+                    }
+
+                    "mulmod" => {
+                        // (x * y) % k
+
+                        let parameters = args.iter()
+                            .map(|a| self.translate_expression(translated_definition, scope, a))
+                            .collect::<Result<Vec<_>, _>>()?;
+
+                        if parameters.len() != 3 {
+                            panic!("Invalid mulmod call: {expression:#?}");
+                        }
+
+                        Ok(sway::Expression::from(sway::BinaryExpression {
+                            operator: "%".into(),
+                            lhs: sway::Expression::from(sway::BinaryExpression {
+                                operator: "*".into(),
+                                lhs: parameters[0].clone(),
+                                rhs: parameters[1].clone(),
+                            }),
+                            rhs: parameters[2].clone(),
+                        }))
+                    }
+
+                    "keccak256" => {
+                        // std::hash::keccak256(value)
+
+                        let parameters = args.iter()
+                            .map(|a| self.translate_expression(translated_definition, scope, a))
+                            .collect::<Result<Vec<_>, _>>()?;
+
+                        if parameters.len() != 1 {
+                            panic!("Invalid keccak256 call: {expression:#?}");
+                        }
+
+                        Ok(sway::Expression::from(sway::FunctionCall {
+                            function: sway::Expression::Identifier("std::hash::keccak256".into()),
+                            generic_parameters: None,
+                            parameters,
+                        }))
+                    }
+
+                    "sha256" => {
+                        // std::hash::sha256(value)
+                        
+                        let parameters = args.iter()
+                            .map(|a| self.translate_expression(translated_definition, scope, a))
+                            .collect::<Result<Vec<_>, _>>()?;
+
+                        if parameters.len() != 1 {
+                            panic!("Invalid sha256 call: {expression:#?}");
+                        }
+
+                        Ok(sway::Expression::from(sway::FunctionCall {
+                            function: sway::Expression::Identifier("std::hash::sha256".into()),
+                            generic_parameters: None,
+                            parameters,
+                        }))
+                    }
+
+                    "ripemd160" => {
+                        unimplemented!("ripemd160 is not supported in sway")
+                    }
+
+                    "ecrecover" => {
+                        // std::ecr::ec_recover(sig, msg_hash)
+
+                        let parameters = args.iter()
+                            .map(|a| self.translate_expression(translated_definition, scope, a))
+                            .collect::<Result<Vec<_>, _>>()?;
+
+                        if parameters.len() != 4 {
+                            panic!("Invalid ecrecover call: {expression:#?}");
+                        }
+
+                        Ok(sway::Expression::from(sway::FunctionCall {
+                            function: sway::Expression::Identifier("std::ecr::ec_recover".into()),
+                            generic_parameters: None,
+                            parameters: vec![
+                                todo!("ecrecover: how should we generate the sig value from v,r,s?"),
+                                parameters[0].clone(),
+                            ],
+                        }))
+                    }
+
+                    _ => {
+                        //
+                        // TODO: do a proper function lookup
+                        //
+
+                        // Translate the function call
+                        Ok(sway::Expression::from(sway::FunctionCall {
+                            function: sway::Expression::Identifier(self.translate_naming_convention(name.as_str(), Case::Snake)),
+                            generic_parameters: None,
+                            parameters: args.iter()
+                                .map(|a| self.translate_expression(translated_definition, scope, a))
+                                .collect::<Result<Vec<_>, _>>()?,
+                        }))
+                    }
                 }
 
                 _ => todo!("translate function call expression: {expression:#?}"),
