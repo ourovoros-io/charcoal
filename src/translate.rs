@@ -314,22 +314,4 @@ impl TranslatedDefinition {
 
         self.impls.iter_mut().find(|i| find_contract_impl(*i)).unwrap()
     }
-
-    /// Attempts to get a reference to a modifier using its old name
-    pub fn find_modifier(&self, old_name: &str) -> Option<&TranslatedModifier> {
-        if let Some(modifier) = self.modifiers.iter().find(|v| v.old_name == old_name) {
-            return Some(modifier);
-        }
-
-        None
-    }
-
-    /// Attempts to get a mutable reference to a modifier using its old name
-    pub fn find_modifier_mut(&mut self, old_name: &str) -> Option<&mut TranslatedModifier> {
-        if let Some(modifier) = self.modifiers.iter_mut().find(|v| v.old_name == old_name) {
-            return Some(modifier);
-        }
-
-        None
-    }
 }

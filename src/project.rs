@@ -601,8 +601,11 @@ impl Project {
             for attr in function_definition.attributes.iter() {
                 let solidity::FunctionAttribute::BaseOrModifier(_, base) = attr else { continue };
 
+                let old_name = base.name.identifiers.iter().map(|i| i.name.clone()).collect::<Vec<_>>().join(".");
+                let new_name = self.translate_naming_convention(old_name.as_str(), Case::Snake);
+
                 modifiers.push(sway::FunctionCall {
-                    function: sway::Expression::Identifier(base.name.identifiers.iter().map(|i| i.name.clone()).collect::<Vec<_>>().join(".")),
+                    function: sway::Expression::Identifier(new_name),
                     generic_parameters: None,
                     parameters: base.args.as_ref()
                         .map(|args| args.iter().map(|a| self.translate_expression(&translated_definition, &mut scope, a)).collect::<Result<Vec<_>, _>>())
@@ -756,6 +759,49 @@ impl Project {
             // If a modifier only has a pre body, or only has a post body, don't tack _pre or _post onto the name, just use the original modifier name.
             //
 
+            match (modifier.pre_body.as_ref(), modifier.post_body.as_ref()) {
+                (Some(pre_body), Some(post_body)) => {
+                    // Generate a pre function
+                    translated_definition.functions.push(sway::Function {
+                        attributes: None, // TODO: we need to check for storage read/write
+                        is_public: false,
+                        name: format!("{}_pre", modifier.new_name),
+                        generic_parameters: None,
+                        parameters: modifier.parameters.clone(),
+                        return_type: None,
+                        body: Some(pre_body.clone()),
+                    });
+
+                    // Generate a post function
+                    translated_definition.functions.push(sway::Function {
+                        attributes: None, // TODO: we need to check for storage read/write
+                        is_public: false,
+                        name: format!("{}_post", modifier.new_name),
+                        generic_parameters: None,
+                        parameters: modifier.parameters.clone(),
+                        return_type: None,
+                        body: Some(post_body.clone()),
+                    });
+                }
+
+                (Some(body), None) | (None, Some(body)) => {
+                    // Only generate a single function
+                    translated_definition.functions.push(sway::Function {
+                        attributes: None, // TODO: we need to check for storage read/write
+                        is_public: false,
+                        name: modifier.new_name.clone(),
+                        generic_parameters: None,
+                        parameters: modifier.parameters.clone(),
+                        return_type: None,
+                        body: Some(body.clone()),
+                    });
+                }
+
+                (None, None) => {
+                    panic!("Malformed modifier contains no body");
+                }
+            }
+
             // Add the translated modifier to the translated definition
             translated_definition.modifiers.push(modifier);
         }
@@ -785,14 +831,16 @@ impl Project {
             // Handle function overrides
             //
 
-            let function_name = if is_constructor {
+            let old_name = function_definition.name.as_ref().unwrap().name.clone();
+
+            let new_name = if is_constructor {
                 "constructor".to_string()
             } else if is_fallback {
                 "fallback".to_string()
             } else if is_receive {
                 "receive".to_string()
             } else {
-                self.translate_naming_convention(function_definition.name.as_ref().unwrap().name.as_str(), Case::Snake)
+                self.translate_naming_convention(old_name.as_str(), Case::Snake)
             };
 
             if is_modifier {
@@ -828,7 +876,7 @@ impl Project {
                 },
 
                 is_public: false,
-                name: function_name.clone(), // TODO: keep track of original name
+                name: new_name.clone(), // TODO: keep track of original name
                 generic_parameters: None,
 
                 parameters: sway::ParameterList {
@@ -891,7 +939,7 @@ impl Project {
             );
 
             // Translate the body for the toplevel function
-            let mut function_body = self.translate_block(&translated_definition, scope, statements.as_slice())?;
+            let mut function_body = self.translate_block(&translated_definition, scope.clone(), statements.as_slice())?;
 
             // Check if the final statement returns a value and change it to be the final expression of the block
             if let Some(sway::Statement::Expression(sway::Expression::Return(Some(value)))) = function_body.statements.last().cloned() {
@@ -899,10 +947,58 @@ impl Project {
                 function_body.final_expr = Some(*value);
             }
 
-            //
-            // TODO:
+            // Get the function from the scope
+            let Some(function) = scope.find_function(old_name.as_str()) else {
+                panic!("Failed to find function in scope: {old_name}");
+            };
+
             // Propagate modifier pre and post functions into the function's body
-            //
+            let mut modifier_pre_calls = vec![];
+            let mut modifier_post_calls = vec![];
+
+            for modifier_invocation in function.modifiers.iter() {
+                let sway::Expression::Identifier(new_name) = &modifier_invocation.function else {
+                    panic!("Malformed modifier invocation: {modifier_invocation:#?}");
+                };
+                
+                let Some(modifier) = translated_definition.modifiers.iter().find(|v| v.new_name == *new_name) else {
+                    panic!("Failed to find modifier: {new_name}");
+                };
+
+                if modifier.pre_body.is_some() && modifier.post_body.is_some() {
+                    modifier_pre_calls.push(sway::FunctionCall {
+                        function: sway::Expression::Identifier(format!("{}_pre", modifier.new_name)),
+                        generic_parameters: None,
+                        parameters: modifier_invocation.parameters.clone(),
+                    });
+
+                    modifier_post_calls.push(sway::FunctionCall {
+                        function: sway::Expression::Identifier(format!("{}_post", modifier.new_name)),
+                        generic_parameters: None,
+                        parameters: modifier_invocation.parameters.clone(),
+                    });
+                } else if modifier.pre_body.is_some() {
+                    modifier_pre_calls.push(sway::FunctionCall {
+                        function: sway::Expression::Identifier(modifier.new_name.clone()),
+                        generic_parameters: None,
+                        parameters: modifier_invocation.parameters.clone(),
+                    });
+                } else if modifier.post_body.is_some() {
+                    modifier_post_calls.push(sway::FunctionCall {
+                        function: sway::Expression::Identifier(modifier.new_name.clone()),
+                        generic_parameters: None,
+                        parameters: modifier_invocation.parameters.clone(),
+                    });
+                }
+            }
+
+            for modifier_pre_call in modifier_pre_calls.iter().rev() {
+                function_body.statements.insert(0, sway::Statement::from(sway::Expression::from(modifier_pre_call.clone())));
+            }
+
+            for modifier_post_call in modifier_post_calls.iter().rev() {
+                function_body.statements.push(sway::Statement::from(sway::Expression::from(modifier_post_call.clone())));
+            }
 
             // Create the body for the toplevel function
             sway_function.body = Some(function_body);
