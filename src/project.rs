@@ -694,62 +694,6 @@ impl Project {
             let mut current_body: &mut Option<sway::Block> = &mut modifier.pre_body;
             let mut current_scope = scope.clone();
 
-            let cleanup_block = |scope: &TranslationScope, block: &mut sway::Block| {
-                // Check the block for variable declarations that need to be marked mutable
-                for variable in scope.variables.iter() {
-                    // Only check variables that are declared as statements
-                    let Some(statement_index) = variable.statement_index else { continue };
-    
-                    // If the variable has any mutations, mark it as mutable
-                    if variable.mutation_count > 0 {
-                        let let_statement = match &mut block.statements[statement_index] {
-                            sway::Statement::Let(let_statement) => let_statement,
-                            statement => panic!("Expected let statement, found: {statement:?}"),
-                        };
-    
-                        let mark_let_identifier_mutable = |id: &mut LetIdentifier| {
-                            if id.name == variable.new_name {
-                                id.is_mutable = true;
-                            }
-                        };
-    
-                        match &mut let_statement.pattern {
-                            sway::LetPattern::Identifier(id) => mark_let_identifier_mutable(id),
-                            sway::LetPattern::Tuple(ids) => ids.iter_mut().for_each(mark_let_identifier_mutable),
-                        }
-                    }
-                }
-    
-                // Check block for sub-blocks that don't contain variable declarations and flatten them
-                for i in (0..block.statements.len()).rev() {
-                    let mut statements = None;
-    
-                    {
-                        let sway::Statement::Expression(sway::Expression::Block(sub_block)) = &block.statements[i] else { continue };
-                        
-                        let mut var_count = 0;
-    
-                        for statement in sub_block.statements.iter() {
-                            if let sway::Statement::Let(_) = statement {
-                                var_count += 1;
-                            }
-                        }
-    
-                        if var_count == 0 {
-                            statements = Some(sub_block.statements.clone());
-                        }
-                    }
-    
-                    if let Some(statements) = statements {
-                        block.statements.remove(i);
-    
-                        for statement in statements.into_iter().rev() {
-                            block.statements.insert(i, statement);
-                        }
-                    }
-                };
-            };
-
             for statement in statements.iter() {
                 // If we encounter the underscore statement, every following statement goes into the modifier's post_body block.
                 if let solidity::Statement::Expression(_, solidity::Expression::Variable(solidity::Identifier { name, .. })) = statement {
@@ -757,7 +701,7 @@ impl Project {
                         modifier.has_underscore = true;
                         
                         if let Some(block) = current_body.as_mut() {
-                            cleanup_block(&current_scope, block);
+                            self.finalize_block_translation(&current_scope, block)?;
                         }
 
                         current_body = &mut modifier.post_body;
@@ -798,7 +742,7 @@ impl Project {
             }
 
             if let Some(block) = current_body.as_mut() {
-                cleanup_block(&current_scope, block);
+                self.finalize_block_translation(&current_scope, block)?;
             }
 
             // Ensure that an underscore statement was encountered while translating the modifier
@@ -1023,6 +967,16 @@ impl Project {
             }
         }
 
+        self.finalize_block_translation(&scope, &mut block)?;
+
+        Ok(block)
+    }
+
+    fn finalize_block_translation(
+        &mut self,
+        scope: &TranslationScope,
+        block: &mut sway::Block,
+    ) -> Result<(), Error> {
         // Check the block for variable declarations that need to be marked mutable
         for variable in scope.variables.iter() {
             // Only check variables that are declared as statements
@@ -1077,7 +1031,7 @@ impl Project {
             }
         }
 
-        Ok(block)
+        Ok(())
     }
 
     fn translate_statement(
