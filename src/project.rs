@@ -2132,167 +2132,24 @@ impl Project {
 
             solidity::Expression::Power(_, _, _) => todo!("translate power expression: {expression:#?}"),
 
-            solidity::Expression::Multiply(_, lhs, rhs) => {
-                // lhs * rhs
-                Ok(sway::Expression::from(sway::BinaryExpression {
-                    operator: "*".into(),
-                    lhs: self.translate_expression(translated_definition, scope, lhs)?,
-                    rhs: self.translate_expression(translated_definition, scope, rhs)?,
-                }))
-            }
-
-            solidity::Expression::Divide(_, lhs, rhs) => {
-                // lhs / rhs
-                Ok(sway::Expression::from(sway::BinaryExpression {
-                    operator: "/".into(),
-                    lhs: self.translate_expression(translated_definition, scope, lhs)?,
-                    rhs: self.translate_expression(translated_definition, scope, rhs)?,
-                }))
-            }
-
-            solidity::Expression::Modulo(_, lhs, rhs) => {
-                // lhs % rhs
-                Ok(sway::Expression::from(sway::BinaryExpression {
-                    operator: "%".into(),
-                    lhs: self.translate_expression(translated_definition, scope, lhs)?,
-                    rhs: self.translate_expression(translated_definition, scope, rhs)?,
-                }))
-            }
-
-            solidity::Expression::Add(_, lhs, rhs) => {
-                // lhs + rhs
-                Ok(sway::Expression::from(sway::BinaryExpression {
-                    operator: "+".into(),
-                    lhs: self.translate_expression(translated_definition, scope, lhs)?,
-                    rhs: self.translate_expression(translated_definition, scope, rhs)?,
-                }))
-            }
-
-            solidity::Expression::Subtract(_, lhs, rhs) => {
-                // lhs - rhs
-                Ok(sway::Expression::from(sway::BinaryExpression {
-                    operator: "-".into(),
-                    lhs: self.translate_expression(translated_definition, scope, lhs)?,
-                    rhs: self.translate_expression(translated_definition, scope, rhs)?,
-                }))
-            }
-
-            solidity::Expression::ShiftLeft(_, lhs, rhs) => {
-                // lhs << rhs
-                Ok(sway::Expression::from(sway::BinaryExpression {
-                    operator: "<<".into(),
-                    lhs: self.translate_expression(translated_definition, scope, lhs)?,
-                    rhs: self.translate_expression(translated_definition, scope, rhs)?,
-                }))
-            }
-
-            solidity::Expression::ShiftRight(_, lhs, rhs) => {
-                // lhs >> rhs
-                Ok(sway::Expression::from(sway::BinaryExpression {
-                    operator: ">>".into(),
-                    lhs: self.translate_expression(translated_definition, scope, lhs)?,
-                    rhs: self.translate_expression(translated_definition, scope, rhs)?,
-                }))
-            }
-
-            solidity::Expression::BitwiseAnd(_, lhs, rhs) => {
-                // lhs & rhs
-                Ok(sway::Expression::from(sway::BinaryExpression {
-                    operator: "&".into(),
-                    lhs: self.translate_expression(translated_definition, scope, lhs)?,
-                    rhs: self.translate_expression(translated_definition, scope, rhs)?,
-                }))
-            }
-
-            solidity::Expression::BitwiseXor(_, lhs, rhs) => {
-                // lhs ^ rhs
-                Ok(sway::Expression::from(sway::BinaryExpression {
-                    operator: "^".into(),
-                    lhs: self.translate_expression(translated_definition, scope, lhs)?,
-                    rhs: self.translate_expression(translated_definition, scope, rhs)?,
-                }))
-            }
-
-            solidity::Expression::BitwiseOr(_, lhs, rhs) => {
-                // lhs | rhs
-                Ok(sway::Expression::from(sway::BinaryExpression {
-                    operator: "|".into(),
-                    lhs: self.translate_expression(translated_definition, scope, lhs)?,
-                    rhs: self.translate_expression(translated_definition, scope, rhs)?,
-                }))
-            }
-
-            solidity::Expression::Less(_, lhs, rhs) => {
-                // lhs < rhs
-                Ok(sway::Expression::from(sway::BinaryExpression {
-                    operator: "<".into(),
-                    lhs: self.translate_expression(translated_definition, scope, lhs)?,
-                    rhs: self.translate_expression(translated_definition, scope, rhs)?,
-                }))
-            }
-
-            solidity::Expression::More(_, lhs, rhs) => {
-                // lhs > rhs
-                Ok(sway::Expression::from(sway::BinaryExpression {
-                    operator: ">".into(),
-                    lhs: self.translate_expression(translated_definition, scope, lhs)?,
-                    rhs: self.translate_expression(translated_definition, scope, rhs)?,
-                }))
-            }
-
-            solidity::Expression::LessEqual(_, lhs, rhs) => {
-                // lhs <= rhs
-                Ok(sway::Expression::from(sway::BinaryExpression {
-                    operator: "<=".into(),
-                    lhs: self.translate_expression(translated_definition, scope, lhs)?,
-                    rhs: self.translate_expression(translated_definition, scope, rhs)?,
-                }))
-            }
-
-            solidity::Expression::MoreEqual(_, lhs, rhs) => {
-                // lhs >= rhs
-                Ok(sway::Expression::from(sway::BinaryExpression {
-                    operator: ">=".into(),
-                    lhs: self.translate_expression(translated_definition, scope, lhs)?,
-                    rhs: self.translate_expression(translated_definition, scope, rhs)?,
-                }))
-            }
-
-            solidity::Expression::Equal(_, lhs, rhs) => {
-                // lhs == rhs
-                Ok(sway::Expression::from(sway::BinaryExpression {
-                    operator: "==".into(),
-                    lhs: self.translate_expression(translated_definition, scope, lhs)?,
-                    rhs: self.translate_expression(translated_definition, scope, rhs)?,
-                }))
-            }
-
-            solidity::Expression::NotEqual(_, lhs, rhs) => {
-                // lhs != rhs
-                Ok(sway::Expression::from(sway::BinaryExpression {
-                    operator: "!=".into(),
-                    lhs: self.translate_expression(translated_definition, scope, lhs)?,
-                    rhs: self.translate_expression(translated_definition, scope, rhs)?,
-                }))
-            }
-
-            solidity::Expression::And(_, lhs, rhs) => {
-                // lhs && rhs
-                Ok(sway::Expression::from(sway::BinaryExpression {
-                    operator: "&&".into(),
-                    lhs: self.translate_expression(translated_definition, scope, lhs)?,
-                    rhs: self.translate_expression(translated_definition, scope, rhs)?,
-                }))
-            }
-
-            solidity::Expression::Or(_, lhs, rhs) => {
-                // lhs || rhs
-                Ok(sway::Expression::from(sway::BinaryExpression {
-                    operator: "||".into(),
-                    lhs: self.translate_expression(translated_definition, scope, lhs)?,
-                    rhs: self.translate_expression(translated_definition, scope, rhs)?,
-                }))
-            }
+            solidity::Expression::Multiply(_, lhs, rhs) => self.translate_binary_expression(translated_definition, scope, "*", lhs, rhs),
+            solidity::Expression::Divide(_, lhs, rhs) => self.translate_binary_expression(translated_definition, scope, "/", lhs, rhs),
+            solidity::Expression::Modulo(_, lhs, rhs) => self.translate_binary_expression(translated_definition, scope, "%", lhs, rhs),
+            solidity::Expression::Add(_, lhs, rhs) => self.translate_binary_expression(translated_definition, scope, "+", lhs, rhs),
+            solidity::Expression::Subtract(_, lhs, rhs) => self.translate_binary_expression(translated_definition, scope, "-", lhs, rhs),
+            solidity::Expression::ShiftLeft(_, lhs, rhs) => self.translate_binary_expression(translated_definition, scope, "<<", lhs, rhs),
+            solidity::Expression::ShiftRight(_, lhs, rhs) => self.translate_binary_expression(translated_definition, scope, ">>", lhs, rhs),
+            solidity::Expression::BitwiseAnd(_, lhs, rhs) => self.translate_binary_expression(translated_definition, scope, "&", lhs, rhs),
+            solidity::Expression::BitwiseXor(_, lhs, rhs) => self.translate_binary_expression(translated_definition, scope, "^", lhs, rhs),
+            solidity::Expression::BitwiseOr(_, lhs, rhs) => self.translate_binary_expression(translated_definition, scope, "|", lhs, rhs),
+            solidity::Expression::Less(_, lhs, rhs) => self.translate_binary_expression(translated_definition, scope, "<", lhs, rhs),
+            solidity::Expression::More(_, lhs, rhs) => self.translate_binary_expression(translated_definition, scope, ">", lhs, rhs),
+            solidity::Expression::LessEqual(_, lhs, rhs) => self.translate_binary_expression(translated_definition, scope, "<=", lhs, rhs),
+            solidity::Expression::MoreEqual(_, lhs, rhs) => self.translate_binary_expression(translated_definition, scope, ">=", lhs, rhs),
+            solidity::Expression::Equal(_, lhs, rhs) => self.translate_binary_expression(translated_definition, scope, "==", lhs, rhs),
+            solidity::Expression::NotEqual(_, lhs, rhs) => self.translate_binary_expression(translated_definition, scope, "!=", lhs, rhs),
+            solidity::Expression::And(_, lhs, rhs) => self.translate_binary_expression(translated_definition, scope, "&&", lhs, rhs),
+            solidity::Expression::Or(_, lhs, rhs) => self.translate_binary_expression(translated_definition, scope, "||", lhs, rhs),
 
             solidity::Expression::ConditionalOperator(_, condition, then_value, else_value) => {
                 // if condition { then_value } else { else_value }
@@ -2404,6 +2261,21 @@ impl Project {
             solidity::Expression::New(_, _) => todo!("translate new expression: {expression:#?}"),
             solidity::Expression::Delete(_, _) => todo!("translate delete expression: {expression:#?}"),
         }
+    }
+
+    fn translate_binary_expression(
+        &mut self,
+        translated_definition: &TranslatedDefinition,
+        scope: &mut TranslationScope,
+        operator: &str,
+        lhs: &solidity::Expression,
+        rhs: &solidity::Expression,
+    ) -> Result<sway::Expression, Error> {
+        Ok(sway::Expression::from(sway::BinaryExpression {
+            operator: operator.into(),
+            lhs: self.translate_expression(translated_definition, scope, lhs)?,
+            rhs: self.translate_expression(translated_definition, scope, rhs)?,
+        }))
     }
 
     fn translate_variable_access_expression<'a>(
