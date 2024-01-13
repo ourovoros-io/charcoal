@@ -515,7 +515,7 @@ impl Project {
         
         // Handle all other variable definitions
         let old_name = variable_definition.name.as_ref().unwrap().name.clone();
-        let new_name = self.translate_naming_convention(old_name.as_str(), Case::Snake); // TODO: keep track of original name
+        let new_name = self.translate_naming_convention(old_name.as_str(), Case::Snake);
 
         // Add the storage variable for function scopes
         storage_variables.push(TranslatedVariable {
@@ -530,7 +530,7 @@ impl Project {
 
         // Add the storage field to the storage block
         translated_definition.get_storage().fields.push(sway::StorageField {
-            name: new_name.clone(), // TODO: keep track of original name
+            name: new_name.clone(),
             type_name: variable_type_name.clone(),
             value: sway::Expression::create_value_expression(
                 &variable_type_name,
@@ -556,7 +556,7 @@ impl Project {
                 ],
             }),
             is_public: false,
-            name: new_name.clone(), // TODO: keep track of original name
+            name: new_name.clone(),
             generic_parameters: None,
             parameters: sway::ParameterList::default(), // TODO: create parameters for StorageMap getter functions
             return_type: Some(variable_type_name.clone()), // TODO: get proper return type for StorageMap getter functions
@@ -676,7 +676,7 @@ impl Project {
             parameters: sway::ParameterList {
                 entries: function_definition.params.iter().map(|(_, p)| {
                     sway::Parameter {
-                        name: self.translate_naming_convention(p.as_ref().unwrap().name.as_ref().unwrap().name.as_str(), Case::Snake), // TODO: keep track of original name
+                        name: self.translate_naming_convention(p.as_ref().unwrap().name.as_ref().unwrap().name.as_str(), Case::Snake),
                         type_name: self.translate_type_name(&translated_definition, &p.as_ref().unwrap().ty),
                     }
                 }).collect(),
@@ -995,13 +995,13 @@ impl Project {
             },
 
             is_public: false,
-            name: new_name.clone(), // TODO: keep track of original name
+            name: new_name.clone(),
             generic_parameters: None,
 
             parameters: sway::ParameterList {
                 entries: function_definition.params.iter().map(|(_, p)| {
                     sway::Parameter {
-                        name: self.translate_naming_convention(p.as_ref().unwrap().name.as_ref().unwrap().name.as_str(), Case::Snake), // TODO: keep track of original name
+                        name: self.translate_naming_convention(p.as_ref().unwrap().name.as_ref().unwrap().name.as_str(), Case::Snake),
                         type_name: self.translate_type_name(&translated_definition, &p.as_ref().unwrap().ty),
                     }
                 }).collect(),
