@@ -1338,10 +1338,13 @@ impl Project {
                             return Ok(sway::Expression::create_todo(Some("block.gaslimit".into())))
                         }
 
-                        // TODO: find out the appropriate sway version of `block.number`
                         ("block", "number") => {
-                            // todo!("block.number")
-                            return Ok(sway::Expression::create_todo(Some("block.number".into())))
+                            // std::block::height()
+                            return Ok(sway::Expression::from(sway::FunctionCall {
+                                function: sway::Expression::Identifier("std::block::height".into()),
+                                generic_parameters: None,
+                                parameters: vec![],
+                            }))
                         }
 
                         // TODO: find out the appropriate sway version of `block.prevrandao`
@@ -1350,16 +1353,25 @@ impl Project {
                             return Ok(sway::Expression::create_todo(Some("block.prevrandao".into())))
                         }
 
-                        // TODO: find out the appropriate sway version of `block.timestamp`
                         ("block", "timestamp") => {
-                            // todo!("block.timestamp")
-                            return Ok(sway::Expression::create_todo(Some("block.timestamp".into())))
+                            // std::block::timestamp()
+                            return Ok(sway::Expression::from(sway::FunctionCall {
+                                function: sway::Expression::Identifier("std::block::timestamp".into()),
+                                generic_parameters: None,
+                                parameters: vec![],
+                            }))
                         }
 
-                        // TODO: find out the appropriate sway version of `msg.data`
                         ("msg", "data") => {
-                            // todo!("msg.data")
-                            return Ok(sway::Expression::create_todo(Some("msg.data".into())))
+                            // std::inputs::input_message_data(0, 0)
+                            return Ok(sway::Expression::from(sway::FunctionCall {
+                                function: sway::Expression::Identifier("std::inputs::input_message_data".into()),
+                                generic_parameters: None,
+                                parameters: vec![
+                                    sway::Expression::from(sway::Literal::DecInt(0)),
+                                    sway::Expression::from(sway::Literal::DecInt(0)),
+                                ],
+                            }))
                         }
 
                         ("msg", "sender") => {
@@ -1384,16 +1396,31 @@ impl Project {
                             return Ok(sway::Expression::create_todo(Some("msg.sig".into())))
                         }
 
-                        // TODO: find out the appropriate sway version of `msg.value`
                         ("msg", "value") => {
-                            // todo!("msg.value")
-                            return Ok(sway::Expression::create_todo(Some("msg.value".into())))
+                            // std::context::msg_amount()
+                            return Ok(sway::Expression::from(sway::FunctionCall {
+                                function: sway::Expression::Identifier("std::context::msg_amount".into()),
+                                generic_parameters: None,
+                                parameters: vec![],
+                            }))
                         }
 
-                        // TODO: find out the appropriate sway version of `tx.gasprice`
                         ("tx", "gasprice") => {
-                            // todo!("tx.gasprice")
-                            return Ok(sway::Expression::create_todo(Some("tx.gasprice".into())))
+                            // std::tx::tx_gas_price().unwrap_or(0)
+                            return Ok(sway::Expression::from(sway::FunctionCall {
+                                function: sway::Expression::from(sway::MemberAccess {
+                                    expression: sway::Expression::from(sway::FunctionCall {
+                                        function: sway::Expression::Identifier("std::tx::tx_gas_price".to_string()),
+                                        generic_parameters: None,
+                                        parameters: vec![],
+                                    }),
+                                    member: "unwrap_or".into(),
+                                }),
+                                generic_parameters: None,
+                                parameters: vec![
+                                    sway::Expression::from(sway::Literal::DecInt(0)),
+                                ],
+                            }))
                         }
 
                         // TODO: find out the appropriate sway version of `tx.origin`
