@@ -1502,6 +1502,20 @@ impl Project {
                             }))
                         }
 
+                        "gasleft" => {
+                            // gasleft() => std::registers::global_gas()
+
+                            if parameters.len() != 0 {
+                                panic!("Invalid gasleft call: {expression:#?}");
+                            }
+
+                            Ok(sway::Expression::from(sway::FunctionCall {
+                                function: sway::Expression::Identifier("std::registers::global_gas".into()),
+                                generic_parameters: None,
+                                parameters,
+                            }))
+                        }
+
                         "addmod" => {
                             // addmod(x, y, k) => (x + y) % k
 
