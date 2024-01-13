@@ -2186,13 +2186,13 @@ impl Project {
             solidity::Expression::AssignDivide(_, lhs, rhs) => self.translate_assignment_expression(translated_definition, scope, "/=", lhs.as_ref(), rhs.as_ref()),
             solidity::Expression::AssignModulo(_, lhs, rhs) => self.translate_assignment_expression(translated_definition, scope, "%=", lhs.as_ref(), rhs.as_ref()),
             
-            solidity::Expression::PreIncrement(loc, x) => {
+            solidity::Expression::PreIncrement(loc, x) | solidity::Expression::PostIncrement(loc, x) => {
                 // x += 1
 
                 //
                 // NOTE:
                 // For standalone expressions, this is a standard incrementation without returning the value.
-                // If a pre-increment expression is encountered as the value in an assignment, we do return the value.
+                // If a pre-increment or post-increment expression is encountered as the value in an assignment, we do return the value.
                 //
 
                 self.translate_assignment_expression(
@@ -2204,49 +2204,13 @@ impl Project {
                 )
             }
 
-            solidity::Expression::PreDecrement(loc, x) => {
+            solidity::Expression::PreDecrement(loc, x) | solidity::Expression::PostDecrement(loc, x) => {
                 // x -= 1
 
                 //
                 // NOTE:
                 // For standalone expressions, this is a standard decrementation without returning the value.
-                // If a pre-decrement expression is encountered as the value in an assignment, we do return the value.
-                //
-
-                self.translate_assignment_expression(
-                    translated_definition,
-                    scope,
-                    "-=",
-                    x.as_ref(),
-                    &solidity::Expression::NumberLiteral(loc.clone(), "1".into(), "".into(), None),
-                )
-            }
-
-            solidity::Expression::PostIncrement(loc, x) => {
-                // x += 1
-                
-                //
-                // NOTE:
-                // For standalone expressions, this is a standard incrementation without returning the value.
-                // If a post-increment expression is encountered as the value in an assignment, we do return the value.
-                //
-
-                self.translate_assignment_expression(
-                    translated_definition,
-                    scope,
-                    "+=",
-                    x.as_ref(),
-                    &solidity::Expression::NumberLiteral(loc.clone(), "1".into(), "".into(), None),
-                )
-            }
-
-            solidity::Expression::PostDecrement(loc, x) => {
-                // x -= 1
-
-                //
-                // NOTE:
-                // For standalone expressions, this is a standard decrementation without returning the value.
-                // If a post-decrement expression is encountered as the value in an assignment, we do return the value.
+                // If a pre-decrement or post-decrement expression is encountered as the value in an assignment, we do return the value.
                 //
 
                 self.translate_assignment_expression(
