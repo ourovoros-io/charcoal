@@ -788,17 +788,19 @@ impl Project {
             }
 
             let create_attributes = |has_storage_read: bool, has_storage_write: bool| -> Option<sway::AttributeList> {
-                if has_storage_read || has_storage_read {
-                    let mut parameters = vec![];
+                let mut parameters = vec![];
 
-                    if has_storage_read {
-                        parameters.push("read".to_string());
-                    }
+                if has_storage_read {
+                    parameters.push("read".to_string());
+                }
 
-                    if has_storage_write {
-                        parameters.push("write".to_string());
-                    }
-                    
+                if has_storage_write {
+                    parameters.push("write".to_string());
+                }
+                
+                if parameters.is_empty() {
+                    None
+                } else {
                     Some(sway::AttributeList {
                         attributes: vec![
                             sway::Attribute {
@@ -807,8 +809,6 @@ impl Project {
                             },
                         ],
                     })
-                } else {
-                    None
                 }
             };
 
@@ -2432,7 +2432,6 @@ impl Project {
     ) -> Result<sway::Expression, Error> {
         let (variable, expression) = self.translate_variable_access_expression(translated_definition, scope, lhs)?;
 
-        variable.read_count += 1;
         variable.mutation_count += 1;
 
         if variable.is_storage {
@@ -2452,20 +2451,24 @@ impl Project {
                             _ => self.translate_expression(translated_definition, scope, rhs)?,
                         }
 
-                        _ => sway::Expression::from(sway::BinaryExpression {
-                            operator: operator.trim_end_matches("=").into(),
+                        _ => {
+                            variable.read_count += 1;
+                            
+                            sway::Expression::from(sway::BinaryExpression {
+                                operator: operator.trim_end_matches("=").into(),
 
-                            lhs: sway::Expression::from(sway::FunctionCall {
-                                function: sway::Expression::from(sway::MemberAccess {
-                                    expression: expression.clone(),
-                                    member: "read".into(),
+                                lhs: sway::Expression::from(sway::FunctionCall {
+                                    function: sway::Expression::from(sway::MemberAccess {
+                                        expression: expression.clone(),
+                                        member: "read".into(),
+                                    }),
+                                    generic_parameters: None,
+                                    parameters: vec![],
                                 }),
-                                generic_parameters: None,
-                                parameters: vec![],
-                            }),
 
-                            rhs: self.translate_expression(translated_definition, scope, rhs)?,
-                        }),
+                                rhs: self.translate_expression(translated_definition, scope, rhs)?,
+                            })
+                        }
                     },
                 ],
             }))
