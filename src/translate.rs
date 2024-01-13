@@ -44,13 +44,13 @@ pub struct TranslationScope {
 
 impl TranslationScope {
     /// Attempts to get a reference to a variable using its old name
-    pub fn find_variable(&self, old_name: &str) -> Option<&TranslatedVariable> {
+    pub fn find_variable_from_old_name(&self, old_name: &str) -> Option<&TranslatedVariable> {
         if let Some(variable) = self.variables.iter().rev().find(|v| v.old_name == old_name) {
             return Some(variable);
         }
 
         if let Some(parent) = self.parent.as_ref() {
-            if let Some(variable) = parent.find_variable(old_name) {
+            if let Some(variable) = parent.find_variable_from_old_name(old_name) {
                 return Some(variable);
             }
         }
@@ -59,13 +59,43 @@ impl TranslationScope {
     }
 
     /// Attempts to get a mutable reference to a variable using its old name
-    pub fn find_variable_mut(&mut self, old_name: &str) -> Option<&mut TranslatedVariable> {
+    pub fn find_variable_from_old_name_mut(&mut self, old_name: &str) -> Option<&mut TranslatedVariable> {
         if let Some(variable) = self.variables.iter_mut().rev().find(|v| v.old_name == old_name) {
             return Some(variable);
         }
 
         if let Some(parent) = self.parent.as_mut() {
-            if let Some(variable) = parent.find_variable_mut(old_name) {
+            if let Some(variable) = parent.find_variable_from_old_name_mut(old_name) {
+                return Some(variable);
+            }
+        }
+
+        None
+    }
+
+    /// Attempts to get a reference to a variable using its new name
+    pub fn find_variable_from_new_name(&self, new_name: &str) -> Option<&TranslatedVariable> {
+        if let Some(variable) = self.variables.iter().rev().find(|v| v.new_name == new_name) {
+            return Some(variable);
+        }
+
+        if let Some(parent) = self.parent.as_ref() {
+            if let Some(variable) = parent.find_variable_from_new_name(new_name) {
+                return Some(variable);
+            }
+        }
+
+        None
+    }
+
+    /// Attempts to get a mutable reference to a variable using its new name
+    pub fn find_variable_from_new_name_mut(&mut self, new_name: &str) -> Option<&mut TranslatedVariable> {
+        if let Some(variable) = self.variables.iter_mut().rev().find(|v| v.new_name == new_name) {
+            return Some(variable);
+        }
+
+        if let Some(parent) = self.parent.as_mut() {
+            if let Some(variable) = parent.find_variable_from_new_name_mut(new_name) {
                 return Some(variable);
             }
         }
@@ -74,13 +104,13 @@ impl TranslationScope {
     }
 
     /// Attempts to get a reference to a function using its old name
-    pub fn find_function(&self, old_name: &str) -> Option<&TranslatedFunction> {
+    pub fn find_function_from_old_name(&self, old_name: &str) -> Option<&TranslatedFunction> {
         if let Some(function) = self.functions.iter().rev().find(|v| v.old_name == old_name) {
             return Some(function);
         }
 
         if let Some(parent) = self.parent.as_ref() {
-            if let Some(function) = parent.find_function(old_name) {
+            if let Some(function) = parent.find_function_from_old_name(old_name) {
                 return Some(function);
             }
         }
@@ -89,13 +119,43 @@ impl TranslationScope {
     }
 
     /// Attempts to get a mutable reference to a function using its old name
-    pub fn find_function_mut(&mut self, old_name: &str) -> Option<&mut TranslatedFunction> {
+    pub fn find_function_from_old_name_mut(&mut self, old_name: &str) -> Option<&mut TranslatedFunction> {
         if let Some(function) = self.functions.iter_mut().rev().find(|v| v.old_name == old_name) {
             return Some(function);
         }
 
         if let Some(parent) = self.parent.as_mut() {
-            if let Some(function) = parent.find_function_mut(old_name) {
+            if let Some(function) = parent.find_function_from_old_name_mut(old_name) {
+                return Some(function);
+            }
+        }
+
+        None
+    }
+
+    /// Attempts to get a reference to a function using its new name
+    pub fn find_function_from_new_name(&self, new_name: &str) -> Option<&TranslatedFunction> {
+        if let Some(function) = self.functions.iter().rev().find(|v| v.new_name == new_name) {
+            return Some(function);
+        }
+
+        if let Some(parent) = self.parent.as_ref() {
+            if let Some(function) = parent.find_function_from_new_name(new_name) {
+                return Some(function);
+            }
+        }
+
+        None
+    }
+
+    /// Attempts to get a mutable reference to a function using its new name
+    pub fn find_function_from_new_name_mut(&mut self, new_name: &str) -> Option<&mut TranslatedFunction> {
+        if let Some(function) = self.functions.iter_mut().rev().find(|v| v.new_name == new_name) {
+            return Some(function);
+        }
+
+        if let Some(parent) = self.parent.as_mut() {
+            if let Some(function) = parent.find_function_from_new_name_mut(new_name) {
                 return Some(function);
             }
         }

@@ -1068,7 +1068,7 @@ impl Project {
         }
 
         // Get the function from the scope
-        let Some(function) = scope.find_function(old_name.as_str()) else {
+        let Some(function) = scope.find_function_from_old_name(old_name.as_str()) else {
             panic!("Failed to find function in scope: {old_name}");
         };
 
@@ -1943,7 +1943,7 @@ impl Project {
                             _ => todo!("translate address cast: {expression:#?}"),
                         }
 
-                        _ => todo!("translate type cast: {expression:#?}"),
+                        _ => Ok(sway::Expression::create_todo(Some(format!("translate type cast: {expression:#?}")))),
                     }
                 }
 
@@ -1999,11 +1999,13 @@ impl Project {
 
                             Ok(sway::Expression::from(sway::BinaryExpression {
                                 operator: "%".into(),
-                                lhs: sway::Expression::from(sway::BinaryExpression {
-                                    operator: "+".into(),
-                                    lhs: parameters[0].clone(),
-                                    rhs: parameters[1].clone(),
-                                }),
+                                lhs: sway::Expression::Tuple(vec![
+                                    sway::Expression::from(sway::BinaryExpression {
+                                        operator: "+".into(),
+                                        lhs: parameters[0].clone(),
+                                        rhs: parameters[1].clone(),
+                                    }),
+                                ]),
                                 rhs: parameters[2].clone(),
                             }))
                         }
@@ -2017,11 +2019,13 @@ impl Project {
 
                             Ok(sway::Expression::from(sway::BinaryExpression {
                                 operator: "%".into(),
-                                lhs: sway::Expression::from(sway::BinaryExpression {
-                                    operator: "*".into(),
-                                    lhs: parameters[0].clone(),
-                                    rhs: parameters[1].clone(),
-                                }),
+                                lhs: sway::Expression::Tuple(vec![
+                                    sway::Expression::from(sway::BinaryExpression {
+                                        operator: "*".into(),
+                                        lhs: parameters[0].clone(),
+                                        rhs: parameters[1].clone(),
+                                    }),
+                                ]),
                                 rhs: parameters[2].clone(),
                             }))
                         }
@@ -2055,7 +2059,7 @@ impl Project {
                         }
 
                         "ripemd160" => {
-                            unimplemented!("ripemd160 is not supported in sway")
+                            Ok(sway::Expression::create_unimplemented(Some(format!("ripemd160 is not supported in sway"))))
                         }
 
                         "ecrecover" => {
@@ -2079,9 +2083,50 @@ impl Project {
                             }))
                         }
 
-                        _ => {
+                        "selfdestruct" => {
                             //
-                            // TODO: do a proper function lookup
+                            // TODO: how should we handle this?
+                            //
+
+                            Ok(sway::Expression::create_unimplemented(Some("selfdestruct is not supported in sway".into())))
+                        }
+
+                        "assert" => {
+                            // assert(x) => assert(x)
+
+                            if parameters.len() != 1 {
+                                panic!("Invalid assert call: {expression:#?}");
+                            }
+
+                            Ok(sway::Expression::from(sway::FunctionCall {
+                                function: sway::Expression::Identifier("assert".into()),
+                                generic_parameters: None,
+                                parameters,
+                            }))
+                        }
+
+                        "require" => {
+                            // require(x, "msg") => require(x, "msg")
+
+                            if parameters.len() != 2 {
+                                panic!("Invalid require call: {expression:#?}");
+                            }
+
+                            Ok(sway::Expression::from(sway::FunctionCall {
+                                function: sway::Expression::Identifier("require".into()),
+                                generic_parameters: None,
+                                parameters,
+                            }))
+                        }
+
+                        old_name => {
+                            // Ensure the function exists in scope
+                            let Some(function) = scope.find_function_from_old_name(old_name) else {
+                                panic!("Failed to find function `{old_name}` in scope");
+                            };
+
+                            //
+                            // TODO: ensure the supplied function call args match the function's parameters
                             //
 
                             // Translate the function call
@@ -2092,6 +2137,238 @@ impl Project {
                             }))
                         }
                     }
+                }
+
+                solidity::Expression::MemberAccess(_, expression, member) => {
+                    match expression.as_ref() {
+                        solidity::Expression::Type(_, ty) => match ty {
+                            solidity::Type::Address => todo!("handle address member access function `{member:#?}`"),
+                            solidity::Type::AddressPayable => todo!("handle address payable member access function `{member:#?}`"),
+                            solidity::Type::Payable => todo!("handle payable member access function `{member:#?}`"),
+                            solidity::Type::Bool => todo!("handle bool member access function `{member:#?}`"),
+
+                            solidity::Type::String => match member.name.as_str() {
+                                "concat" => {
+                                    // string.concat(x) => ???
+    
+                                    //
+                                    // TODO: how should this be handled?
+                                    //
+    
+                                    return Ok(sway::Expression::create_todo(Some(format!("string.concat({args:?})"))));
+                                }
+                                
+                                member => todo!("handle `string.{member} translation")
+                            }
+
+                            solidity::Type::Int(_) => todo!("handle int member access function `{member:#?}`"),
+                            solidity::Type::Uint(_) => todo!("handle uint member access function `{member:#?}`"),
+                            solidity::Type::Bytes(_) => todo!("handle bytes member access function `{member:#?}`"),
+                            solidity::Type::Rational => todo!("handle rational member access function `{member:#?}`"),
+                            
+                            solidity::Type::DynamicBytes => match member.name.as_str() {
+                                "concat" => {
+                                    // bytes.concat(x) => ???
+    
+                                    //
+                                    // TODO: how should this be handled?
+                                    //
+    
+                                    return Ok(sway::Expression::create_todo(Some(format!("bytes.concat({args:?})"))));
+                                }
+                                
+                                member => todo!("handle `bytes.{member} translation")
+                            }
+
+                            solidity::Type::Mapping { loc, key, key_name, value, value_name } => todo!("handle mapping member access function `{member:#?}`"),
+                            solidity::Type::Function { params, attributes, returns } => todo!("handle function member access function `{member:#?}`"),
+                        }
+
+                        solidity::Expression::Variable(solidity::Identifier { name, .. }) => match name.as_str() {
+                            "abi" => match member.name.as_str() {
+                                "decode" => {
+                                    // abi.decode(x) => ???
+
+                                    //
+                                    // TODO: how should this be handled?
+                                    //
+
+                                    return Ok(sway::Expression::create_todo(Some(format!("abi.decode({args:?})"))));
+                                }
+
+                                "encode" => {
+                                    // abi.encode(x) => ???
+
+                                    //
+                                    // TODO: how should this be handled?
+                                    //
+
+                                    return Ok(sway::Expression::create_todo(Some(format!("abi.encode({args:?})"))))
+                                }
+
+                                "encodePacked" => {
+                                    // abi.encodePacked(x) => ???
+
+                                    //
+                                    // TODO: how should this be handled?
+                                    //
+
+                                    return Ok(sway::Expression::create_todo(Some(format!("abi.encodePacked({args:?})"))))
+                                }
+
+                                "encodeWithSignature" => {
+                                    // abi.encodeWithSignature(x) => ???
+
+                                    //
+                                    // TODO: how should this be handled?
+                                    //
+
+                                    return Ok(sway::Expression::create_todo(Some(format!("abi.encodeWithSignature({args:?})"))))
+                                }
+                                
+                                member => todo!("handle `abi.{member}` translation"),
+                            }
+
+                            _ => {}
+                        }
+
+                        _ => {}
+                    }
+
+                    let expression = self.translate_expression(translated_definition, scope, expression)?;
+                    let type_name = self.get_expression_type(scope, &expression)?;
+
+                    match type_name {
+                        sway::TypeName::Identifier { name, generic_parameters } => match name.as_str() {
+                            "Identity" => match member.name.as_str() {
+                                "transfer" => {
+                                    // to.transfer(amount) => std::token::transfer(to, asset_id, amount)
+
+                                    if args.len() != 1 {
+                                        panic!("Malformed address.transfer call, expected 1 argument, found {}", args.len());
+                                    }
+
+                                    //
+                                    // TODO: we need to determine what the asset id being transferred is
+                                    //
+
+                                    Ok(sway::Expression::from(sway::FunctionCall {
+                                        function: sway::Expression::Identifier("std::token::transfer".into()),
+                                        generic_parameters: None,
+                                        parameters: vec![
+                                            expression,
+                                            sway::Expression::create_todo(Some("asset_id".into())),
+                                            self.translate_expression(translated_definition, scope, &args[0])?,
+                                        ],
+                                    }))
+                                }
+
+                                "send" => {
+                                    // to.send(amount) => std::token::transfer(to, asset_id, amount)
+
+                                    if args.len() != 1 {
+                                        panic!("Malformed address.send call, expected 1 argument, found {}", args.len());
+                                    }
+
+                                    //
+                                    // TODO:
+                                    // The `address.send` function in solidity returns a bool, but the `std::token::transfer` in sway has no return type.
+                                    // We need to determine what the asset id being transferred is.
+                                    //
+
+                                    Ok(sway::Expression::from(sway::FunctionCall {
+                                        function: sway::Expression::Identifier("std::token::transfer".into()),
+                                        generic_parameters: None,
+                                        parameters: vec![
+                                            expression,
+                                            sway::Expression::create_todo(Some("asset_id".into())),
+                                            self.translate_expression(translated_definition, scope, &args[0])?,
+                                        ],
+                                    }))
+                                }
+
+                                "delegatecall" => {
+                                    //
+                                    // TODO: is delegatecall possible?
+                                    //
+
+                                    Ok(sway::Expression::create_todo(Some(format!("{expression:?}"))))
+                                }
+
+                                "staticcall" => {
+                                    //
+                                    // TODO: is delegatecall possible?
+                                    //
+
+                                    Ok(sway::Expression::create_todo(Some(format!("{expression:?}"))))
+                                }
+
+                                member => todo!("translate Identity member function call `{member}`: {expression:#?}")
+                            }
+                            
+                            _ => todo!("translate {name} member function call: {expression:#?}")
+                        }
+
+                        sway::TypeName::Array { type_name, length } => todo!("translate array member function call: {expression:#?}"),
+                        sway::TypeName::Tuple { type_names } => todo!("translate tuple member function call: {expression:#?}"),
+                        sway::TypeName::String { length } => todo!("translate string member function call: {expression:#?}"),
+                    }
+                }
+
+                solidity::Expression::FunctionCallBlock(_, function, block) => match function.as_ref() {
+                    solidity::Expression::MemberAccess(_, expression, member) => {
+                        let expression = self.translate_expression(translated_definition, scope, expression)?;
+                        let type_name = self.get_expression_type(scope, &expression)?;
+
+                        match type_name {
+                            sway::TypeName::Identifier { name, generic_parameters } => match name.as_str() {
+                                "Identity" => match member.name.as_str() {
+                                    "call" => {
+                                        // address.call{value: x}("") => std::token::transfer(to, asset_id, amount)
+
+                                        if args.len() != 1 {
+                                            panic!("Malformed address.call call, expected 1 argument, found {}", args.len());
+                                        }
+
+                                        let solidity::Statement::Args(_, block_args) = block.as_ref() else {
+                                            panic!("Malformed address.call call, expected args block, found: {block:#?}");
+                                        };
+
+                                        let Some(value) = block_args.iter().find(|a| a.name.name == "value") else {
+                                            panic!("Malformed address.call call, missing `value` argument in block: {block:#?}");
+                                        };
+
+                                        let value = self.translate_expression(translated_definition, scope, &value.expr)?;
+
+                                        //
+                                        // TODO:
+                                        // The `address.call` function in solidity returns a bool and a return data pointer, but the `std::token::transfer` in sway has no return type.
+                                        // We need to determine what the asset id being transferred is.
+                                        //
+
+                                        Ok(sway::Expression::from(sway::FunctionCall {
+                                            function: sway::Expression::Identifier("std::token::transfer".into()),
+                                            generic_parameters: None,
+                                            parameters: vec![
+                                                expression,
+                                                sway::Expression::create_todo(Some("asset_id".into())),
+                                                value,
+                                            ],
+                                        }))
+                                    }
+
+                                    _ => todo!("translate Identity member function call block `{member}`: {expression:#?}")
+                                }
+                                _ => todo!("translate {name} member function call block: {expression:#?}")
+                            }
+
+                            sway::TypeName::Array { type_name, length } => todo!(),
+                            sway::TypeName::Tuple { type_names } => todo!(),
+                            sway::TypeName::String { length } => todo!(),
+                        } 
+                    }
+
+                    _ => todo!("translate function call block expression: {expression:#?}")
                 }
 
                 _ => todo!("translate function call expression: {expression:#?}"),
@@ -2202,6 +2479,58 @@ impl Project {
         }
     }
 
+    fn get_expression_type(
+        &self,
+        scope: &TranslationScope,
+        expression: &sway::Expression,
+    ) -> Result<sway::TypeName, Error> {
+        match expression {
+            sway::Expression::Literal(literal) => match literal {
+                sway::Literal::Bool(_) => Ok(sway::TypeName::Identifier {
+                    name: "bool".into(),
+                    generic_parameters: None,
+                }),
+                sway::Literal::DecInt(_) => Ok(sway::TypeName::Identifier {
+                    name: "u64".into(), // TODO: is this ok?
+                    generic_parameters: None,
+                }),
+                sway::Literal::HexInt(_) => Ok(sway::TypeName::Identifier {
+                    name: "u64".into(), // TODO: is this ok?
+                    generic_parameters: None,
+                }),
+                sway::Literal::String(s) => Ok(sway::TypeName::String { length: s.len() }),
+            }
+
+            sway::Expression::Identifier(name) => {
+                let Some(variable) = scope.find_variable_from_new_name(name) else {
+                    panic!("Failed to find variable in scope: {name}");
+                };
+
+                // Variable should not be a storage field
+                if variable.is_storage {
+                    panic!("Failed to find variable in scope: {name}");
+                }
+
+                Ok(variable.type_name.clone())
+            }
+
+            sway::Expression::FunctionCall(_) => todo!("get type of function call expression: {expression:#?}"),
+            sway::Expression::Block(_) => todo!("get type of block expression: {expression:#?}"),
+            sway::Expression::Return(_) => todo!("get type of return expression: {expression:#?}"),
+            sway::Expression::Array(_) => todo!("get type of array expression: {expression:#?}"),
+            sway::Expression::ArrayAccess(_) => todo!("get type of array access expression: {expression:#?}"),
+            sway::Expression::MemberAccess(_) => todo!("get type of member access expression: {expression:#?}"),
+            sway::Expression::Tuple(_) => todo!("get type of tuple expression: {expression:#?}"),
+            sway::Expression::If(_) => todo!("get type of if expression: {expression:#?}"),
+            sway::Expression::While(_) => todo!("get type of while expression: {expression:#?}"),
+            sway::Expression::UnaryExpression(_) => todo!("get type of unary expression expression: {expression:#?}"),
+            sway::Expression::BinaryExpression(_) => todo!("get type of binary expression expression: {expression:#?}"),
+            sway::Expression::Constructor(_) => todo!("get type of constructor expression: {expression:#?}"),
+            sway::Expression::Continue => todo!("get type of continue expression: {expression:#?}"),
+            sway::Expression::Break => todo!("get type of break expression: {expression:#?}"),
+        }
+    }
+
     fn translate_unary_expression(
         &mut self,
         translated_definition: &TranslatedDefinition,
@@ -2238,7 +2567,7 @@ impl Project {
     ) -> Result<(&'a mut TranslatedVariable, sway::Expression), Error> {
         match expression {
             solidity::Expression::Variable(solidity::Identifier { name, .. }) => {
-                let Some(variable) = scope.find_variable_mut(name.as_str()) else {
+                let Some(variable) = scope.find_variable_from_old_name_mut(name.as_str()) else {
                     panic!("Failed to find variable in scope: {name}")
                 };
 
