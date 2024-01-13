@@ -429,117 +429,7 @@ impl Project {
         // Collect each storage field ahead of time for contextual reasons
         for part in solidity_definition.parts.iter() {
             let solidity::ContractPart::VariableDefinition(variable_definition) = part else { continue };
-
-            // Translate the variable's type name
-            let variable_type_name = self.translate_type_name(&translated_definition, &variable_definition.ty);
-
-            // Collect information about the variable from its attributes
-            let is_public = variable_definition.attrs.iter().any(|x| matches!(x, solidity::VariableAttribute::Visibility(solidity::Visibility::External(_) | solidity::Visibility::Public(_))));
-            let is_constant = variable_definition.attrs.iter().any(|x| matches!(x, solidity::VariableAttribute::Constant(_)));
-            let is_immutable = variable_definition.attrs.iter().any(|x| matches!(x, solidity::VariableAttribute::Immutable(_)));
-
-            // Handle constant variable definitions
-            if is_constant {
-                let variable_name = self.translate_naming_convention(variable_definition.name.as_ref().unwrap().name.as_str(), Case::ScreamingSnake); // TODO: keep track of original name
-
-                todo!("contract constants");
-                continue;
-            }
-            
-            // Handle immutable variable definitions
-            if is_immutable {
-                let variable_name = self.translate_naming_convention(variable_definition.name.as_ref().unwrap().name.as_str(), Case::Snake); // TODO: keep track of original name
-
-                todo!("immutable variables");
-                continue;
-            }
-            
-            // Handle all other variable definitions
-            let old_name = variable_definition.name.as_ref().unwrap().name.clone();
-            let new_name = self.translate_naming_convention(old_name.as_str(), Case::Snake); // TODO: keep track of original name
-
-            // Add the storage variable for function scopes
-            storage_variables.push(TranslatedVariable {
-                old_name,
-                new_name: new_name.clone(),
-                type_name: variable_type_name.clone(),
-                is_storage: true,
-                statement_index: None,
-                read_count: 0,
-                mutation_count: 0,
-            });
-
-            // Add the storage field to the storage block
-            translated_definition.get_storage().fields.push(sway::StorageField {
-                name: new_name.clone(), // TODO: keep track of original name
-                type_name: variable_type_name.clone(),
-                value: sway::Expression::create_value_expression(
-                    &variable_type_name,
-                    variable_definition.initializer.as_ref().map(|x| self.translate_literal_expression(x)).as_ref(),
-                ),
-            });
-
-            // Generate a getter function if the storage field is public
-            if !is_public {
-                continue;
-            }
-        
-            // Create the function declaration for the abi
-            let mut sway_function = sway::Function {
-                attributes: Some(sway::AttributeList {
-                    attributes: vec![
-                        sway::Attribute {
-                            name: "storage".into(),
-                            parameters: Some(vec![
-                                "read".into(),
-                            ]),
-                        },
-                    ],
-                }),
-                is_public: false,
-                name: new_name.clone(), // TODO: keep track of original name
-                generic_parameters: None,
-                parameters: sway::ParameterList::default(), // TODO: create parameters for StorageMap getter functions
-                return_type: Some(variable_type_name.clone()), // TODO: get proper return type for StorageMap getter functions
-                body: None,
-            };
-
-            // Add the function to the abi
-            translated_definition.get_abi().functions.push(sway_function.clone());
-
-            // Create the body for the toplevel function
-            sway_function.body = Some(sway::Block {
-                statements: vec![],
-                // TODO: change for StorageMap getter functions
-                final_expr: Some(sway::Expression::from(sway::FunctionCall {
-                    function: sway::Expression::from(sway::MemberAccess {
-                        expression: sway::Expression::from(sway::MemberAccess {
-                            expression: sway::Expression::Identifier("storage".into()),
-                            member: new_name.clone(),
-                        }),
-                        member: "read".into(),
-                    }),
-                    generic_parameters: None,
-                    parameters: vec![],
-                })),
-            });
-
-            // Add the toplevel function
-            translated_definition.functions.push(sway_function.clone());
-
-            // Create the body for the contract impl's function wrapper
-            sway_function.body = Some(sway::Block {
-                statements: vec![],
-                // TODO: change for StorageMap getter functions
-                final_expr: Some(sway::Expression::from(sway::FunctionCall {
-                    function: sway::Expression::Identifier(format!("::{}", sway_function.name)),
-                    generic_parameters: None,
-                    parameters: vec![],
-                })),
-            });
-
-            // Add the function wrapper to the contract impl
-            translated_definition.get_contract_impl().items.push(sway::ImplItem::Function(sway_function));
+            self.translate_state_variable(&mut translated_definition, &mut storage_variables, variable_definition)?;
         }
         
         // Keep track of toplevel functions for function scopes
@@ -549,99 +439,16 @@ impl Project {
         for part in solidity_definition.parts.iter() {
             let solidity::ContractPart::FunctionDefinition(function_definition) = part else { continue };
 
-            // Collect information about the function from its type
-            let is_constructor = matches!(function_definition.ty, solidity::FunctionTy::Constructor);
-            let is_fallback = matches!(function_definition.ty, solidity::FunctionTy::Fallback);
-            let is_receive = matches!(function_definition.ty, solidity::FunctionTy::Receive);
             let is_modifier = matches!(function_definition.ty, solidity::FunctionTy::Modifier);
 
             if is_modifier {
                 continue;
             }
-
-            let (old_name, new_name) = if is_constructor {
-                (String::new(), "constructor".to_string())
-            } else if is_fallback {
-                (String::new(), "fallback".to_string())
-            } else if is_receive {
-                (String::new(), "receive".to_string())
-            } else {
-                let old_name = function_definition.name.as_ref().unwrap().name.clone();
-                let new_name = self.translate_naming_convention(old_name.as_str(), Case::Snake);
-                (old_name, new_name)
-            };
-
-            // Create a scope for modifier invocation translations
-            let mut scope = TranslationScope {
-                parent: None,
-                variables: storage_variables.clone(),
-                functions: vec![],
-            };
-
-            // Add the function parameters to the scope
-            scope.variables.extend(
-                function_definition.params.iter().map(|(_, p)| {
-                    let old_name = p.as_ref().unwrap().name.as_ref().unwrap().name.clone();
-                    let new_name = self.translate_naming_convention(old_name.as_str(), Case::Snake);
-                    let type_name = self.translate_type_name(&translated_definition, &p.as_ref().unwrap().ty);
-
-                    TranslatedVariable {
-                        old_name,
-                        new_name,
-                        type_name,
-                        is_storage: false,
-                        statement_index: None,
-                        read_count: 0,
-                        mutation_count: 0,
-                    }
-                })
-            );
-
-            let mut modifiers = vec![];
-            
-            // Translate the function's modifier invocations
-            for attr in function_definition.attributes.iter() {
-                let solidity::FunctionAttribute::BaseOrModifier(_, base) = attr else { continue };
-
-                let old_name = base.name.identifiers.iter().map(|i| i.name.clone()).collect::<Vec<_>>().join(".");
-                let new_name = self.translate_naming_convention(old_name.as_str(), Case::Snake);
-
-                modifiers.push(sway::FunctionCall {
-                    function: sway::Expression::Identifier(new_name),
-                    generic_parameters: None,
-                    parameters: base.args.as_ref()
-                        .map(|args| args.iter().map(|a| self.translate_expression(&translated_definition, &mut scope, a)).collect::<Result<Vec<_>, _>>())
-                        .unwrap_or_else(|| Ok(vec![]))?,
-                });
-            }
-
+    
             // Add the toplevel function to the list of toplevel functions for the toplevel scope
-            functions.push(TranslatedFunction {
-                old_name,
-                new_name,
-                parameters: sway::ParameterList {
-                    entries: function_definition.params.iter().map(|(_, p)| {
-                        sway::Parameter {
-                            name: self.translate_naming_convention(p.as_ref().unwrap().name.as_ref().unwrap().name.as_str(), Case::Snake), // TODO: keep track of original name
-                            type_name: self.translate_type_name(&translated_definition, &p.as_ref().unwrap().ty),
-                        }
-                    }).collect(),
-                },
-                modifiers,
-                return_type: if function_definition.returns.is_empty() {
-                    None
-                } else {
-                    Some(if function_definition.returns.len() == 1 {
-                        self.translate_type_name(&translated_definition, &function_definition.returns[0].1.as_ref().unwrap().ty)
-                    } else {
-                        sway::TypeName::Tuple {
-                            type_names: function_definition.returns.iter().map(|(_, p)| {
-                                self.translate_type_name(&translated_definition, &p.as_ref().unwrap().ty)
-                            }).collect(),
-                        }
-                    })
-                },
-            });
+            functions.push(
+                self.translate_function_declaration(&translated_definition, &storage_variables, function_definition)?
+            );
         }
 
         // Translate each modifier
@@ -654,441 +461,20 @@ impl Project {
                 continue;
             }
             
-            let old_name = function_definition.name.as_ref().unwrap().name.clone();
-            let new_name = self.translate_naming_convention(old_name.as_str(), Case::Snake);
-
-            let mut modifier = TranslatedModifier {
-                old_name,
-                new_name,
-                parameters: sway::ParameterList::default(),
-                has_underscore: false,
-                pre_body: None,
-                post_body: None,
-            };
-
-            let mut scope = TranslationScope {
-                parent: None,
-                variables: storage_variables.clone(),
-                functions: functions.clone(),
-            };
-
-            for (_, p) in function_definition.params.iter() {
-                let old_name = p.as_ref().unwrap().name.as_ref().unwrap().name.clone();
-                let new_name = self.translate_naming_convention(old_name.as_str(), Case::Snake);
-                let type_name = self.translate_type_name(&translated_definition, &p.as_ref().unwrap().ty);
-
-                modifier.parameters.entries.push(sway::Parameter {
-                    name: new_name.clone(),
-                    type_name: type_name.clone(),
-                });
-
-                scope.variables.push(TranslatedVariable {
-                    old_name,
-                    new_name,
-                    type_name,
-                    is_storage: false,
-                    statement_index: None,
-                    read_count: 0,
-                    mutation_count: 0,
-                });
-            }
-
-            let solidity::Statement::Block { statements, .. } = function_definition.body.as_ref().unwrap() else {
-                panic!("Invalid modifier body, expected block, found: {:#?}", function_definition.body);
-            };
-
-            let mut current_body: &mut Option<sway::Block> = &mut modifier.pre_body;
-            let mut current_scope = scope.clone();
-
-            let mut has_pre_storage_read = false;
-            let mut has_pre_storage_write = false;
-
-            let mut has_post_storage_read = false;
-            let mut has_post_storage_write = false;
-
-            let mut has_storage_read = &mut has_pre_storage_read;
-            let mut has_storage_write = &mut has_pre_storage_write;
-
-            for statement in statements.iter() {
-                // If we encounter the underscore statement, every following statement goes into the modifier's post_body block.
-                if let solidity::Statement::Expression(_, solidity::Expression::Variable(solidity::Identifier { name, .. })) = statement {
-                    if name == "_" {
-                        modifier.has_underscore = true;
-                        
-                        if let Some(block) = current_body.as_mut() {
-                            for variable in current_scope.variables.iter() {
-                                if variable.is_storage {
-                                    if variable.read_count != 0 {
-                                        *has_storage_read = true;
-                                    }
-
-                                    if variable.mutation_count != 0 {
-                                        *has_storage_write = true;
-                                    }
-                                }
-                            }
-
-                            self.finalize_block_translation(&current_scope, block)?;
-                        }
-
-                        current_body = &mut modifier.post_body;
-                        current_scope = scope.clone();
-
-                        has_storage_read = &mut has_post_storage_read;
-                        has_storage_write = &mut has_post_storage_write;
-
-                        continue;
-                    }
-                }
-
-                // Create the current body block if it hasn't already been.
-                if current_body.is_none() {
-                    *current_body = Some(sway::Block::default());
-                }
-
-                let block = current_body.as_mut().unwrap();
-
-                // Translate the statement
-                let sway_statement = self.translate_statement(&translated_definition, &mut current_scope, statement)?;
-
-                // Store the index of the sway statement
-                let statement_index = block.statements.len();
-
-                // Add the sway statement to the sway block
-                block.statements.push(sway_statement);
-
-                // If the sway statement is a variable declaration, keep track of its statement index
-                if let Some(sway::Statement::Let(sway_variable)) = block.statements.last() {
-                    let mut store_variable_statement_index = |id: &sway::LetIdentifier| {
-                        let scope_entry = scope.variables.iter_mut().rev().find(|v| v.new_name == id.name).unwrap();
-                        scope_entry.statement_index = Some(statement_index);
-                    };
-
-                    match &sway_variable.pattern {
-                        sway::LetPattern::Identifier(id) => store_variable_statement_index(id),
-                        sway::LetPattern::Tuple(ids) => ids.iter().for_each(store_variable_statement_index),
-                    }
-                }
-            }
-
-            for variable in current_scope.variables.iter() {
-                if variable.is_storage {
-                    if variable.read_count != 0 {
-                        *has_storage_read = true;
-                    }
-
-                    if variable.mutation_count != 0 {
-                        *has_storage_write = true;
-                    }
-                }
-            }
-
-            if let Some(block) = current_body.as_mut() {
-                self.finalize_block_translation(&current_scope, block)?;
-            }
-
-            let create_attributes = |has_storage_read: bool, has_storage_write: bool| -> Option<sway::AttributeList> {
-                let mut parameters = vec![];
-
-                if has_storage_read {
-                    parameters.push("read".to_string());
-                }
-
-                if has_storage_write {
-                    parameters.push("write".to_string());
-                }
-                
-                if parameters.is_empty() {
-                    None
-                } else {
-                    Some(sway::AttributeList {
-                        attributes: vec![
-                            sway::Attribute {
-                                name: "storage".into(),
-                                parameters: Some(parameters),
-                            },
-                        ],
-                    })
-                }
-            };
-
-            // Ensure that an underscore statement was encountered while translating the modifier
-            if !modifier.has_underscore {
-                panic!("Malformed modifier missing underscore statement: {}", modifier.old_name);
-            }
-
-            // Generate toplevel modifier functions
-            match (modifier.pre_body.as_ref(), modifier.post_body.as_ref()) {
-                (Some(pre_body), Some(post_body)) => {
-                    translated_definition.functions.push(sway::Function {
-                        attributes: create_attributes(has_pre_storage_read, has_pre_storage_write),
-                        is_public: false,
-                        name: format!("{}_pre", modifier.new_name),
-                        generic_parameters: None,
-                        parameters: modifier.parameters.clone(),
-                        return_type: None,
-                        body: Some(pre_body.clone()),
-                    });
-
-                    translated_definition.functions.push(sway::Function {
-                        attributes: create_attributes(has_post_storage_read, has_post_storage_write),
-                        is_public: false,
-                        name: format!("{}_post", modifier.new_name),
-                        generic_parameters: None,
-                        parameters: modifier.parameters.clone(),
-                        return_type: None,
-                        body: Some(post_body.clone()),
-                    });
-                }
-
-                (Some(pre_body), None) => {
-                    translated_definition.functions.push(sway::Function {
-                        attributes: create_attributes(has_pre_storage_read, has_pre_storage_write),
-                        is_public: false,
-                        name: modifier.new_name.clone(),
-                        generic_parameters: None,
-                        parameters: modifier.parameters.clone(),
-                        return_type: None,
-                        body: Some(pre_body.clone()),
-                    });
-                }
-
-                (None, Some(post_body)) => {
-                    translated_definition.functions.push(sway::Function {
-                        attributes: create_attributes(has_post_storage_read, has_post_storage_write),
-                        is_public: false,
-                        name: modifier.new_name.clone(),
-                        generic_parameters: None,
-                        parameters: modifier.parameters.clone(),
-                        return_type: None,
-                        body: Some(post_body.clone()),
-                    });
-                }
-
-                (None, None) => {
-                    panic!("Malformed modifier missing pre and post bodies");
-                }
-            }
-            
-            // Add the translated modifier to the translated definition
-            translated_definition.modifiers.push(modifier);
+            self.translate_modifier_definition(&mut translated_definition, &storage_variables, &functions, function_definition)?;
         }
 
         // Translate each function
         for part in solidity_definition.parts.iter() {
             let solidity::ContractPart::FunctionDefinition(function_definition) = part else { continue };
 
-            // Collect information about the function from its type
-            let is_constructor = matches!(function_definition.ty, solidity::FunctionTy::Constructor);
-            let is_fallback = matches!(function_definition.ty, solidity::FunctionTy::Fallback);
-            let is_receive = matches!(function_definition.ty, solidity::FunctionTy::Receive);
             let is_modifier = matches!(function_definition.ty, solidity::FunctionTy::Modifier);
-
-            // Collect information about the function from its attributes
-            let is_public = function_definition.attributes.iter().any(|x| matches!(x, solidity::FunctionAttribute::Visibility(solidity::Visibility::External(_) | solidity::Visibility::Public(_))));
-            let is_constant = function_definition.attributes.iter().any(|x| matches!(x, solidity::FunctionAttribute::Mutability(solidity::Mutability::Constant(_))));
-            let is_pure = function_definition.attributes.iter().any(|x| matches!(x, solidity::FunctionAttribute::Mutability(solidity::Mutability::Pure(_))));
-            let is_view = function_definition.attributes.iter().any(|x| matches!(x, solidity::FunctionAttribute::Mutability(solidity::Mutability::View(_))));
-            let is_payable = function_definition.attributes.iter().any(|x| matches!(x, solidity::FunctionAttribute::Mutability(solidity::Mutability::Payable(_))));
-            let is_virtual = function_definition.attributes.iter().any(|x| matches!(x, solidity::FunctionAttribute::Virtual(_)));
-            let is_override = function_definition.attributes.iter().any(|x| matches!(x, solidity::FunctionAttribute::Override(_, _)));
-
-            //
-            // TODO:
-            // Handle virtual functions
-            // Handle function overrides
-            //
-
-            let (old_name, new_name) = if is_constructor {
-                (String::new(), "constructor".to_string())
-            } else if is_fallback {
-                (String::new(), "fallback".to_string())
-            } else if is_receive {
-                (String::new(), "receive".to_string())
-            } else {
-                let old_name = function_definition.name.as_ref().unwrap().name.clone();
-                let new_name = self.translate_naming_convention(old_name.as_str(), Case::Snake);
-                (old_name, new_name)
-            };
 
             if is_modifier {
                 continue;
             }
-            
-            // Create the function declaration
-            let mut sway_function = sway::Function {
-                attributes: if is_constant || is_pure {
-                    None
-                } else {
-                    let mut attributes = vec![];
-                    
-                    attributes.push(sway::Attribute {
-                        name: "storage".into(),
-                        parameters: Some(
-                            if is_view {
-                                vec!["read".into()]
-                            } else {
-                                vec!["read".into(), "write".into()]
-                            }
-                        ),
-                    });
 
-                    if is_payable {
-                        attributes.push(sway::Attribute {
-                            name: "payable".into(),
-                            parameters: None,
-                        });
-                    }
-
-                    Some(sway::AttributeList { attributes })
-                },
-
-                is_public: false,
-                name: new_name.clone(), // TODO: keep track of original name
-                generic_parameters: None,
-
-                parameters: sway::ParameterList {
-                    entries: function_definition.params.iter().map(|(_, p)| {
-                        sway::Parameter {
-                            name: self.translate_naming_convention(p.as_ref().unwrap().name.as_ref().unwrap().name.as_str(), Case::Snake), // TODO: keep track of original name
-                            type_name: self.translate_type_name(&translated_definition, &p.as_ref().unwrap().ty),
-                        }
-                    }).collect(),
-                },
-
-                return_type: if function_definition.returns.is_empty() {
-                    None
-                } else {
-                    Some(if function_definition.returns.len() == 1 {
-                        self.translate_type_name(&translated_definition, &function_definition.returns[0].1.as_ref().unwrap().ty)
-                    } else {
-                        sway::TypeName::Tuple {
-                            type_names: function_definition.returns.iter().map(|(_, p)| {
-                                self.translate_type_name(&translated_definition, &p.as_ref().unwrap().ty)
-                            }).collect(),
-                        }
-                    })
-                },
-
-                body: None,
-            };
-
-            // Add the function declaration to the abi if it's public
-            if is_public {
-                translated_definition.get_abi().functions.push(sway_function.clone());
-            }
-
-            // Convert the statements in the function's body (if any)
-            let Some(solidity::Statement::Block { statements, .. }) = function_definition.body.as_ref() else { continue };
-
-            // Create the scope for the body of the toplevel function
-            let mut scope = TranslationScope {
-                parent: None,
-                variables: storage_variables.clone(),
-                functions: functions.clone(),
-            };
-
-            // Add the function parameters to the scope
-            scope.variables.extend(
-                function_definition.params.iter().map(|(_, p)| {
-                    let old_name = p.as_ref().unwrap().name.as_ref().unwrap().name.clone();
-                    let new_name = self.translate_naming_convention(old_name.as_str(), Case::Snake);
-                    let type_name = self.translate_type_name(&translated_definition, &p.as_ref().unwrap().ty);
-
-                    TranslatedVariable {
-                        old_name,
-                        new_name,
-                        type_name,
-                        is_storage: false,
-                        statement_index: None,
-                        read_count: 0,
-                        mutation_count: 0,
-                    }
-                })
-            );
-
-            // Translate the body for the toplevel function
-            let mut function_body = self.translate_block(&translated_definition, scope.clone(), statements.as_slice())?;
-
-            // Check if the final statement returns a value and change it to be the final expression of the block
-            if let Some(sway::Statement::Expression(sway::Expression::Return(Some(value)))) = function_body.statements.last().cloned() {
-                function_body.statements.pop();
-                function_body.final_expr = Some(*value);
-            }
-
-            // Get the function from the scope
-            let Some(function) = scope.find_function(old_name.as_str()) else {
-                panic!("Failed to find function in scope: {old_name}");
-            };
-
-            // Propagate modifier pre and post functions into the function's body
-            let mut modifier_pre_calls = vec![];
-            let mut modifier_post_calls = vec![];
-
-            for modifier_invocation in function.modifiers.iter() {
-                let sway::Expression::Identifier(new_name) = &modifier_invocation.function else {
-                    panic!("Malformed modifier invocation: {modifier_invocation:#?}");
-                };
-                
-                let Some(modifier) = translated_definition.modifiers.iter().find(|v| v.new_name == *new_name) else {
-                    panic!("Failed to find modifier: {new_name}");
-                };
-
-                if modifier.pre_body.is_some() && modifier.post_body.is_some() {
-                    modifier_pre_calls.push(sway::FunctionCall {
-                        function: sway::Expression::Identifier(format!("{}_pre", modifier.new_name)),
-                        generic_parameters: None,
-                        parameters: modifier_invocation.parameters.clone(),
-                    });
-
-                    modifier_post_calls.push(sway::FunctionCall {
-                        function: sway::Expression::Identifier(format!("{}_post", modifier.new_name)),
-                        generic_parameters: None,
-                        parameters: modifier_invocation.parameters.clone(),
-                    });
-                } else if modifier.pre_body.is_some() {
-                    modifier_pre_calls.push(sway::FunctionCall {
-                        function: sway::Expression::Identifier(modifier.new_name.clone()),
-                        generic_parameters: None,
-                        parameters: modifier_invocation.parameters.clone(),
-                    });
-                } else if modifier.post_body.is_some() {
-                    modifier_post_calls.push(sway::FunctionCall {
-                        function: sway::Expression::Identifier(modifier.new_name.clone()),
-                        generic_parameters: None,
-                        parameters: modifier_invocation.parameters.clone(),
-                    });
-                }
-            }
-
-            for modifier_pre_call in modifier_pre_calls.iter().rev() {
-                function_body.statements.insert(0, sway::Statement::from(sway::Expression::from(modifier_pre_call.clone())));
-            }
-
-            for modifier_post_call in modifier_post_calls.iter().rev() {
-                function_body.statements.push(sway::Statement::from(sway::Expression::from(modifier_post_call.clone())));
-            }
-
-            // Create the body for the toplevel function
-            sway_function.body = Some(function_body);
-
-            // Add the toplevel function
-            translated_definition.functions.push(sway_function.clone());
-
-            if is_public {
-                // Create the body for the contract impl's function wrapper
-                sway_function.body = Some(sway::Block {
-                    statements: vec![],
-                    final_expr: Some(sway::Expression::from(sway::FunctionCall {
-                        function: sway::Expression::Identifier(format!("::{}", sway_function.name)),
-                        generic_parameters: None,
-                        parameters: sway_function.parameters.entries.iter().map(|p| sway::Expression::Identifier(p.name.clone())).collect(),
-                    })),
-                });
-
-                // Add the function wrapper to the contract impl
-                translated_definition.get_contract_impl().items.push(sway::ImplItem::Function(sway_function));
-            }
+            self.translate_function_definition(&mut translated_definition, &storage_variables, &functions, function_definition)?;
         }
 
         println!("// First translation pass of \"{}\" in \"{}\":", translated_definition.name, translated_definition.path.to_string_lossy());
@@ -1096,6 +482,665 @@ impl Project {
 
         self.translated_definitions.push(translated_definition);
         
+        Ok(())
+    }
+
+    fn translate_state_variable(
+        &mut self,
+        translated_definition: &mut TranslatedDefinition,
+        storage_variables: &mut Vec<TranslatedVariable>,
+        variable_definition: &solidity::VariableDefinition,
+    ) -> Result<(), Error> {
+        // Translate the variable's type name
+        let variable_type_name = self.translate_type_name(&translated_definition, &variable_definition.ty);
+
+        // Collect information about the variable from its attributes
+        let is_public = variable_definition.attrs.iter().any(|x| matches!(x, solidity::VariableAttribute::Visibility(solidity::Visibility::External(_) | solidity::Visibility::Public(_))));
+        let is_constant = variable_definition.attrs.iter().any(|x| matches!(x, solidity::VariableAttribute::Constant(_)));
+        let is_immutable = variable_definition.attrs.iter().any(|x| matches!(x, solidity::VariableAttribute::Immutable(_)));
+
+        // Handle constant variable definitions
+        if is_constant {
+            let variable_name = self.translate_naming_convention(variable_definition.name.as_ref().unwrap().name.as_str(), Case::ScreamingSnake); // TODO: keep track of original name
+
+            todo!("contract constants");
+        }
+        
+        // Handle immutable variable definitions
+        if is_immutable {
+            let variable_name = self.translate_naming_convention(variable_definition.name.as_ref().unwrap().name.as_str(), Case::Snake); // TODO: keep track of original name
+
+            todo!("immutable variables");
+        }
+        
+        // Handle all other variable definitions
+        let old_name = variable_definition.name.as_ref().unwrap().name.clone();
+        let new_name = self.translate_naming_convention(old_name.as_str(), Case::Snake); // TODO: keep track of original name
+
+        // Add the storage variable for function scopes
+        storage_variables.push(TranslatedVariable {
+            old_name,
+            new_name: new_name.clone(),
+            type_name: variable_type_name.clone(),
+            is_storage: true,
+            statement_index: None,
+            read_count: 0,
+            mutation_count: 0,
+        });
+
+        // Add the storage field to the storage block
+        translated_definition.get_storage().fields.push(sway::StorageField {
+            name: new_name.clone(), // TODO: keep track of original name
+            type_name: variable_type_name.clone(),
+            value: sway::Expression::create_value_expression(
+                &variable_type_name,
+                variable_definition.initializer.as_ref().map(|x| self.translate_literal_expression(x)).as_ref(),
+            ),
+        });
+
+        // Generate a getter function if the storage field is public
+        if !is_public {
+            return Ok(());
+        }
+    
+        // Create the function declaration for the abi
+        let mut sway_function = sway::Function {
+            attributes: Some(sway::AttributeList {
+                attributes: vec![
+                    sway::Attribute {
+                        name: "storage".into(),
+                        parameters: Some(vec![
+                            "read".into(),
+                        ]),
+                    },
+                ],
+            }),
+            is_public: false,
+            name: new_name.clone(), // TODO: keep track of original name
+            generic_parameters: None,
+            parameters: sway::ParameterList::default(), // TODO: create parameters for StorageMap getter functions
+            return_type: Some(variable_type_name.clone()), // TODO: get proper return type for StorageMap getter functions
+            body: None,
+        };
+
+        // Add the function to the abi
+        translated_definition.get_abi().functions.push(sway_function.clone());
+
+        // Create the body for the toplevel function
+        sway_function.body = Some(sway::Block {
+            statements: vec![],
+            // TODO: change for StorageMap getter functions
+            final_expr: Some(sway::Expression::from(sway::FunctionCall {
+                function: sway::Expression::from(sway::MemberAccess {
+                    expression: sway::Expression::from(sway::MemberAccess {
+                        expression: sway::Expression::Identifier("storage".into()),
+                        member: new_name.clone(),
+                    }),
+                    member: "read".into(),
+                }),
+                generic_parameters: None,
+                parameters: vec![],
+            })),
+        });
+
+        // Add the toplevel function
+        translated_definition.functions.push(sway_function.clone());
+
+        // Create the body for the contract impl's function wrapper
+        sway_function.body = Some(sway::Block {
+            statements: vec![],
+            // TODO: change for StorageMap getter functions
+            final_expr: Some(sway::Expression::from(sway::FunctionCall {
+                function: sway::Expression::Identifier(format!("::{}", sway_function.name)),
+                generic_parameters: None,
+                parameters: vec![],
+            })),
+        });
+
+        // Add the function wrapper to the contract impl
+        translated_definition.get_contract_impl().items.push(sway::ImplItem::Function(sway_function));
+
+        Ok(())
+    }
+
+    fn translate_function_declaration(
+        &mut self,
+        translated_definition: &TranslatedDefinition,
+        storage_variables: &Vec<TranslatedVariable>,
+        function_definition: &solidity::FunctionDefinition,
+    ) -> Result<TranslatedFunction, Error> {
+        // Collect information about the function from its type
+        let is_constructor = matches!(function_definition.ty, solidity::FunctionTy::Constructor);
+        let is_fallback = matches!(function_definition.ty, solidity::FunctionTy::Fallback);
+        let is_receive = matches!(function_definition.ty, solidity::FunctionTy::Receive);
+
+        let (old_name, new_name) = if is_constructor {
+            (String::new(), "constructor".to_string())
+        } else if is_fallback {
+            (String::new(), "fallback".to_string())
+        } else if is_receive {
+            (String::new(), "receive".to_string())
+        } else {
+            let old_name = function_definition.name.as_ref().unwrap().name.clone();
+            let new_name = self.translate_naming_convention(old_name.as_str(), Case::Snake);
+            (old_name, new_name)
+        };
+
+        // Create a scope for modifier invocation translations
+        let mut scope = TranslationScope {
+            parent: None,
+            variables: storage_variables.clone(),
+            functions: vec![],
+        };
+
+        // Add the function parameters to the scope
+        scope.variables.extend(
+            function_definition.params.iter().map(|(_, p)| {
+                let old_name = p.as_ref().unwrap().name.as_ref().unwrap().name.clone();
+                let new_name = self.translate_naming_convention(old_name.as_str(), Case::Snake);
+                let type_name = self.translate_type_name(&translated_definition, &p.as_ref().unwrap().ty);
+
+                TranslatedVariable {
+                    old_name,
+                    new_name,
+                    type_name,
+                    is_storage: false,
+                    statement_index: None,
+                    read_count: 0,
+                    mutation_count: 0,
+                }
+            })
+        );
+
+        let mut modifiers = vec![];
+        
+        // Translate the function's modifier invocations
+        for attr in function_definition.attributes.iter() {
+            let solidity::FunctionAttribute::BaseOrModifier(_, base) = attr else { continue };
+
+            let old_name = base.name.identifiers.iter().map(|i| i.name.clone()).collect::<Vec<_>>().join(".");
+            let new_name = self.translate_naming_convention(old_name.as_str(), Case::Snake);
+
+            modifiers.push(sway::FunctionCall {
+                function: sway::Expression::Identifier(new_name),
+                generic_parameters: None,
+                parameters: base.args.as_ref()
+                    .map(|args| args.iter().map(|a| self.translate_expression(&translated_definition, &mut scope, a)).collect::<Result<Vec<_>, _>>())
+                    .unwrap_or_else(|| Ok(vec![]))?,
+            });
+        }
+
+        Ok(TranslatedFunction {
+            old_name,
+            new_name,
+            parameters: sway::ParameterList {
+                entries: function_definition.params.iter().map(|(_, p)| {
+                    sway::Parameter {
+                        name: self.translate_naming_convention(p.as_ref().unwrap().name.as_ref().unwrap().name.as_str(), Case::Snake), // TODO: keep track of original name
+                        type_name: self.translate_type_name(&translated_definition, &p.as_ref().unwrap().ty),
+                    }
+                }).collect(),
+            },
+            modifiers,
+            return_type: if function_definition.returns.is_empty() {
+                None
+            } else {
+                Some(if function_definition.returns.len() == 1 {
+                    self.translate_type_name(&translated_definition, &function_definition.returns[0].1.as_ref().unwrap().ty)
+                } else {
+                    sway::TypeName::Tuple {
+                        type_names: function_definition.returns.iter().map(|(_, p)| {
+                            self.translate_type_name(&translated_definition, &p.as_ref().unwrap().ty)
+                        }).collect(),
+                    }
+                })
+            },
+        })
+    }
+
+    fn translate_modifier_definition(
+        &mut self,
+        translated_definition: &mut TranslatedDefinition,
+        storage_variables: &Vec<TranslatedVariable>,
+        functions: &Vec<TranslatedFunction>,
+        function_definition: &solidity::FunctionDefinition,
+    ) -> Result<(), Error> {
+        let old_name = function_definition.name.as_ref().unwrap().name.clone();
+        let new_name = self.translate_naming_convention(old_name.as_str(), Case::Snake);
+
+        let mut modifier = TranslatedModifier {
+            old_name,
+            new_name,
+            parameters: sway::ParameterList::default(),
+            has_underscore: false,
+            pre_body: None,
+            post_body: None,
+        };
+
+        let mut scope = TranslationScope {
+            parent: None,
+            variables: storage_variables.clone(),
+            functions: functions.clone(),
+        };
+
+        for (_, p) in function_definition.params.iter() {
+            let old_name = p.as_ref().unwrap().name.as_ref().unwrap().name.clone();
+            let new_name = self.translate_naming_convention(old_name.as_str(), Case::Snake);
+            let type_name = self.translate_type_name(&translated_definition, &p.as_ref().unwrap().ty);
+
+            modifier.parameters.entries.push(sway::Parameter {
+                name: new_name.clone(),
+                type_name: type_name.clone(),
+            });
+
+            scope.variables.push(TranslatedVariable {
+                old_name,
+                new_name,
+                type_name,
+                is_storage: false,
+                statement_index: None,
+                read_count: 0,
+                mutation_count: 0,
+            });
+        }
+
+        let solidity::Statement::Block { statements, .. } = function_definition.body.as_ref().unwrap() else {
+            panic!("Invalid modifier body, expected block, found: {:#?}", function_definition.body);
+        };
+
+        let mut current_body: &mut Option<sway::Block> = &mut modifier.pre_body;
+        let mut current_scope = scope.clone();
+
+        let mut has_pre_storage_read = false;
+        let mut has_pre_storage_write = false;
+
+        let mut has_post_storage_read = false;
+        let mut has_post_storage_write = false;
+
+        let mut has_storage_read = &mut has_pre_storage_read;
+        let mut has_storage_write = &mut has_pre_storage_write;
+
+        for statement in statements.iter() {
+            // If we encounter the underscore statement, every following statement goes into the modifier's post_body block.
+            if let solidity::Statement::Expression(_, solidity::Expression::Variable(solidity::Identifier { name, .. })) = statement {
+                if name == "_" {
+                    modifier.has_underscore = true;
+                    
+                    if let Some(block) = current_body.as_mut() {
+                        for variable in current_scope.variables.iter() {
+                            if variable.is_storage {
+                                if variable.read_count != 0 {
+                                    *has_storage_read = true;
+                                }
+
+                                if variable.mutation_count != 0 {
+                                    *has_storage_write = true;
+                                }
+                            }
+                        }
+
+                        self.finalize_block_translation(&current_scope, block)?;
+                    }
+
+                    current_body = &mut modifier.post_body;
+                    current_scope = scope.clone();
+
+                    has_storage_read = &mut has_post_storage_read;
+                    has_storage_write = &mut has_post_storage_write;
+
+                    continue;
+                }
+            }
+
+            // Create the current body block if it hasn't already been.
+            if current_body.is_none() {
+                *current_body = Some(sway::Block::default());
+            }
+
+            let block = current_body.as_mut().unwrap();
+
+            // Translate the statement
+            let sway_statement = self.translate_statement(&translated_definition, &mut current_scope, statement)?;
+
+            // Store the index of the sway statement
+            let statement_index = block.statements.len();
+
+            // Add the sway statement to the sway block
+            block.statements.push(sway_statement);
+
+            // If the sway statement is a variable declaration, keep track of its statement index
+            if let Some(sway::Statement::Let(sway_variable)) = block.statements.last() {
+                let mut store_variable_statement_index = |id: &sway::LetIdentifier| {
+                    let scope_entry = scope.variables.iter_mut().rev().find(|v| v.new_name == id.name).unwrap();
+                    scope_entry.statement_index = Some(statement_index);
+                };
+
+                match &sway_variable.pattern {
+                    sway::LetPattern::Identifier(id) => store_variable_statement_index(id),
+                    sway::LetPattern::Tuple(ids) => ids.iter().for_each(store_variable_statement_index),
+                }
+            }
+        }
+
+        for variable in current_scope.variables.iter() {
+            if variable.is_storage {
+                if variable.read_count != 0 {
+                    *has_storage_read = true;
+                }
+
+                if variable.mutation_count != 0 {
+                    *has_storage_write = true;
+                }
+            }
+        }
+
+        if let Some(block) = current_body.as_mut() {
+            self.finalize_block_translation(&current_scope, block)?;
+        }
+
+        let create_attributes = |has_storage_read: bool, has_storage_write: bool| -> Option<sway::AttributeList> {
+            let mut parameters = vec![];
+
+            if has_storage_read {
+                parameters.push("read".to_string());
+            }
+
+            if has_storage_write {
+                parameters.push("write".to_string());
+            }
+            
+            if parameters.is_empty() {
+                None
+            } else {
+                Some(sway::AttributeList {
+                    attributes: vec![
+                        sway::Attribute {
+                            name: "storage".into(),
+                            parameters: Some(parameters),
+                        },
+                    ],
+                })
+            }
+        };
+
+        // Ensure that an underscore statement was encountered while translating the modifier
+        if !modifier.has_underscore {
+            panic!("Malformed modifier missing underscore statement: {}", modifier.old_name);
+        }
+
+        // Generate toplevel modifier functions
+        match (modifier.pre_body.as_ref(), modifier.post_body.as_ref()) {
+            (Some(pre_body), Some(post_body)) => {
+                translated_definition.functions.push(sway::Function {
+                    attributes: create_attributes(has_pre_storage_read, has_pre_storage_write),
+                    is_public: false,
+                    name: format!("{}_pre", modifier.new_name),
+                    generic_parameters: None,
+                    parameters: modifier.parameters.clone(),
+                    return_type: None,
+                    body: Some(pre_body.clone()),
+                });
+
+                translated_definition.functions.push(sway::Function {
+                    attributes: create_attributes(has_post_storage_read, has_post_storage_write),
+                    is_public: false,
+                    name: format!("{}_post", modifier.new_name),
+                    generic_parameters: None,
+                    parameters: modifier.parameters.clone(),
+                    return_type: None,
+                    body: Some(post_body.clone()),
+                });
+            }
+
+            (Some(pre_body), None) => {
+                translated_definition.functions.push(sway::Function {
+                    attributes: create_attributes(has_pre_storage_read, has_pre_storage_write),
+                    is_public: false,
+                    name: modifier.new_name.clone(),
+                    generic_parameters: None,
+                    parameters: modifier.parameters.clone(),
+                    return_type: None,
+                    body: Some(pre_body.clone()),
+                });
+            }
+
+            (None, Some(post_body)) => {
+                translated_definition.functions.push(sway::Function {
+                    attributes: create_attributes(has_post_storage_read, has_post_storage_write),
+                    is_public: false,
+                    name: modifier.new_name.clone(),
+                    generic_parameters: None,
+                    parameters: modifier.parameters.clone(),
+                    return_type: None,
+                    body: Some(post_body.clone()),
+                });
+            }
+
+            (None, None) => {
+                panic!("Malformed modifier missing pre and post bodies");
+            }
+        }
+        
+        // Add the translated modifier to the translated definition
+        translated_definition.modifiers.push(modifier);
+
+        Ok(())
+    }
+
+    fn translate_function_definition(
+        &mut self,
+        translated_definition: &mut TranslatedDefinition,
+        storage_variables: &Vec<TranslatedVariable>,
+        functions: &Vec<TranslatedFunction>,
+        function_definition: &solidity::FunctionDefinition,
+    ) -> Result<(), Error> {
+        // Collect information about the function from its type
+        let is_constructor = matches!(function_definition.ty, solidity::FunctionTy::Constructor);
+        let is_fallback = matches!(function_definition.ty, solidity::FunctionTy::Fallback);
+        let is_receive = matches!(function_definition.ty, solidity::FunctionTy::Receive);
+
+        // Collect information about the function from its attributes
+        let is_public = function_definition.attributes.iter().any(|x| matches!(x, solidity::FunctionAttribute::Visibility(solidity::Visibility::External(_) | solidity::Visibility::Public(_))));
+        let is_constant = function_definition.attributes.iter().any(|x| matches!(x, solidity::FunctionAttribute::Mutability(solidity::Mutability::Constant(_))));
+        let is_pure = function_definition.attributes.iter().any(|x| matches!(x, solidity::FunctionAttribute::Mutability(solidity::Mutability::Pure(_))));
+        let is_view = function_definition.attributes.iter().any(|x| matches!(x, solidity::FunctionAttribute::Mutability(solidity::Mutability::View(_))));
+        let is_payable = function_definition.attributes.iter().any(|x| matches!(x, solidity::FunctionAttribute::Mutability(solidity::Mutability::Payable(_))));
+        let is_virtual = function_definition.attributes.iter().any(|x| matches!(x, solidity::FunctionAttribute::Virtual(_)));
+        let is_override = function_definition.attributes.iter().any(|x| matches!(x, solidity::FunctionAttribute::Override(_, _)));
+
+        //
+        // TODO:
+        // Handle virtual functions
+        // Handle function overrides
+        //
+
+        let (old_name, new_name) = if is_constructor {
+            (String::new(), "constructor".to_string())
+        } else if is_fallback {
+            (String::new(), "fallback".to_string())
+        } else if is_receive {
+            (String::new(), "receive".to_string())
+        } else {
+            let old_name = function_definition.name.as_ref().unwrap().name.clone();
+            let new_name = self.translate_naming_convention(old_name.as_str(), Case::Snake);
+            (old_name, new_name)
+        };
+
+        // Create the function declaration
+        let mut sway_function = sway::Function {
+            attributes: if is_constant || is_pure {
+                None
+            } else {
+                let mut attributes = vec![];
+                
+                attributes.push(sway::Attribute {
+                    name: "storage".into(),
+                    parameters: Some(
+                        if is_view {
+                            vec!["read".into()]
+                        } else {
+                            vec!["read".into(), "write".into()]
+                        }
+                    ),
+                });
+
+                if is_payable {
+                    attributes.push(sway::Attribute {
+                        name: "payable".into(),
+                        parameters: None,
+                    });
+                }
+
+                Some(sway::AttributeList { attributes })
+            },
+
+            is_public: false,
+            name: new_name.clone(), // TODO: keep track of original name
+            generic_parameters: None,
+
+            parameters: sway::ParameterList {
+                entries: function_definition.params.iter().map(|(_, p)| {
+                    sway::Parameter {
+                        name: self.translate_naming_convention(p.as_ref().unwrap().name.as_ref().unwrap().name.as_str(), Case::Snake), // TODO: keep track of original name
+                        type_name: self.translate_type_name(&translated_definition, &p.as_ref().unwrap().ty),
+                    }
+                }).collect(),
+            },
+
+            return_type: if function_definition.returns.is_empty() {
+                None
+            } else {
+                Some(if function_definition.returns.len() == 1 {
+                    self.translate_type_name(&translated_definition, &function_definition.returns[0].1.as_ref().unwrap().ty)
+                } else {
+                    sway::TypeName::Tuple {
+                        type_names: function_definition.returns.iter().map(|(_, p)| {
+                            self.translate_type_name(&translated_definition, &p.as_ref().unwrap().ty)
+                        }).collect(),
+                    }
+                })
+            },
+
+            body: None,
+        };
+
+        // Add the function declaration to the abi if it's public
+        if is_public {
+            translated_definition.get_abi().functions.push(sway_function.clone());
+        }
+
+        // Convert the statements in the function's body (if any)
+        let Some(solidity::Statement::Block { statements, .. }) = function_definition.body.as_ref() else { return Ok(()) };
+
+        // Create the scope for the body of the toplevel function
+        let mut scope = TranslationScope {
+            parent: None,
+            variables: storage_variables.clone(),
+            functions: functions.clone(),
+        };
+
+        // Add the function parameters to the scope
+        scope.variables.extend(
+            function_definition.params.iter().map(|(_, p)| {
+                let old_name = p.as_ref().unwrap().name.as_ref().unwrap().name.clone();
+                let new_name = self.translate_naming_convention(old_name.as_str(), Case::Snake);
+                let type_name = self.translate_type_name(&translated_definition, &p.as_ref().unwrap().ty);
+
+                TranslatedVariable {
+                    old_name,
+                    new_name,
+                    type_name,
+                    is_storage: false,
+                    statement_index: None,
+                    read_count: 0,
+                    mutation_count: 0,
+                }
+            })
+        );
+
+        // Translate the body for the toplevel function
+        let mut function_body = self.translate_block(&translated_definition, scope.clone(), statements.as_slice())?;
+
+        // Check if the final statement returns a value and change it to be the final expression of the block
+        if let Some(sway::Statement::Expression(sway::Expression::Return(Some(value)))) = function_body.statements.last().cloned() {
+            function_body.statements.pop();
+            function_body.final_expr = Some(*value);
+        }
+
+        // Get the function from the scope
+        let Some(function) = scope.find_function(old_name.as_str()) else {
+            panic!("Failed to find function in scope: {old_name}");
+        };
+
+        // Propagate modifier pre and post functions into the function's body
+        let mut modifier_pre_calls = vec![];
+        let mut modifier_post_calls = vec![];
+
+        for modifier_invocation in function.modifiers.iter() {
+            let sway::Expression::Identifier(new_name) = &modifier_invocation.function else {
+                panic!("Malformed modifier invocation: {modifier_invocation:#?}");
+            };
+            
+            let Some(modifier) = translated_definition.modifiers.iter().find(|v| v.new_name == *new_name) else {
+                panic!("Failed to find modifier: {new_name}");
+            };
+
+            if modifier.pre_body.is_some() && modifier.post_body.is_some() {
+                modifier_pre_calls.push(sway::FunctionCall {
+                    function: sway::Expression::Identifier(format!("{}_pre", modifier.new_name)),
+                    generic_parameters: None,
+                    parameters: modifier_invocation.parameters.clone(),
+                });
+
+                modifier_post_calls.push(sway::FunctionCall {
+                    function: sway::Expression::Identifier(format!("{}_post", modifier.new_name)),
+                    generic_parameters: None,
+                    parameters: modifier_invocation.parameters.clone(),
+                });
+            } else if modifier.pre_body.is_some() {
+                modifier_pre_calls.push(sway::FunctionCall {
+                    function: sway::Expression::Identifier(modifier.new_name.clone()),
+                    generic_parameters: None,
+                    parameters: modifier_invocation.parameters.clone(),
+                });
+            } else if modifier.post_body.is_some() {
+                modifier_post_calls.push(sway::FunctionCall {
+                    function: sway::Expression::Identifier(modifier.new_name.clone()),
+                    generic_parameters: None,
+                    parameters: modifier_invocation.parameters.clone(),
+                });
+            }
+        }
+
+        for modifier_pre_call in modifier_pre_calls.iter().rev() {
+            function_body.statements.insert(0, sway::Statement::from(sway::Expression::from(modifier_pre_call.clone())));
+        }
+
+        for modifier_post_call in modifier_post_calls.iter().rev() {
+            function_body.statements.push(sway::Statement::from(sway::Expression::from(modifier_post_call.clone())));
+        }
+
+        // Create the body for the toplevel function
+        sway_function.body = Some(function_body);
+
+        // Add the toplevel function
+        translated_definition.functions.push(sway_function.clone());
+
+        if is_public {
+            // Create the body for the contract impl's function wrapper
+            sway_function.body = Some(sway::Block {
+                statements: vec![],
+                final_expr: Some(sway::Expression::from(sway::FunctionCall {
+                    function: sway::Expression::Identifier(format!("::{}", sway_function.name)),
+                    generic_parameters: None,
+                    parameters: sway_function.parameters.entries.iter().map(|p| sway::Expression::Identifier(p.name.clone())).collect(),
+                })),
+            });
+
+            // Add the function wrapper to the contract impl
+            translated_definition.get_contract_impl().items.push(sway::ImplItem::Function(sway_function));
+        }
+
         Ok(())
     }
 
