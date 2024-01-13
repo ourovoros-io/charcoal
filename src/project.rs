@@ -817,37 +817,59 @@ impl Project {
                 panic!("Malformed modifier missing underscore statement: {}", modifier.old_name);
             }
 
-            // Ensure that the modifier has at least a pre or a post body
-            if modifier.pre_body.is_none() && modifier.post_body.is_none() {
-                panic!("Malformed modifier contains no body");
+            // Generate toplevel modifier functions
+            match (modifier.pre_body.as_ref(), modifier.post_body.as_ref()) {
+                (Some(pre_body), Some(post_body)) => {
+                    translated_definition.functions.push(sway::Function {
+                        attributes: create_attributes(has_pre_storage_read, has_pre_storage_write),
+                        is_public: false,
+                        name: format!("{}_pre", modifier.new_name),
+                        generic_parameters: None,
+                        parameters: modifier.parameters.clone(),
+                        return_type: None,
+                        body: Some(pre_body.clone()),
+                    });
+
+                    translated_definition.functions.push(sway::Function {
+                        attributes: create_attributes(has_post_storage_read, has_post_storage_write),
+                        is_public: false,
+                        name: format!("{}_post", modifier.new_name),
+                        generic_parameters: None,
+                        parameters: modifier.parameters.clone(),
+                        return_type: None,
+                        body: Some(post_body.clone()),
+                    });
+                }
+
+                (Some(pre_body), None) => {
+                    translated_definition.functions.push(sway::Function {
+                        attributes: create_attributes(has_pre_storage_read, has_pre_storage_write),
+                        is_public: false,
+                        name: modifier.new_name.clone(),
+                        generic_parameters: None,
+                        parameters: modifier.parameters.clone(),
+                        return_type: None,
+                        body: Some(pre_body.clone()),
+                    });
+                }
+
+                (None, Some(post_body)) => {
+                    translated_definition.functions.push(sway::Function {
+                        attributes: create_attributes(has_post_storage_read, has_post_storage_write),
+                        is_public: false,
+                        name: modifier.new_name.clone(),
+                        generic_parameters: None,
+                        parameters: modifier.parameters.clone(),
+                        return_type: None,
+                        body: Some(post_body.clone()),
+                    });
+                }
+
+                (None, None) => {
+                    panic!("Malformed modifier missing pre and post bodies");
+                }
             }
             
-            // Generate a toplevel pre function
-            if let Some(pre_body) = modifier.pre_body.as_ref() {
-                translated_definition.functions.push(sway::Function {
-                    attributes: create_attributes(has_pre_storage_read, has_pre_storage_write),
-                    is_public: false,
-                    name: format!("{}_pre", modifier.new_name),
-                    generic_parameters: None,
-                    parameters: modifier.parameters.clone(),
-                    return_type: None,
-                    body: Some(pre_body.clone()),
-                });
-            }
-
-            // Generate a toplevel post function
-            if let Some(post_body) = modifier.post_body.as_ref() {
-                translated_definition.functions.push(sway::Function {
-                    attributes: create_attributes(has_post_storage_read, has_post_storage_write),
-                    is_public: false,
-                    name: format!("{}_post", modifier.new_name),
-                    generic_parameters: None,
-                    parameters: modifier.parameters.clone(),
-                    return_type: None,
-                    body: Some(post_body.clone()),
-                });
-            }
-
             // Add the translated modifier to the translated definition
             translated_definition.modifiers.push(modifier);
         }
