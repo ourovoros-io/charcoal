@@ -15,10 +15,30 @@ pub struct TranslatedVariable {
     pub mutation_count: usize,
 }
 
+#[derive(Clone, Debug)]
+pub struct TranslatedFunction {
+    pub old_name: String,
+    pub new_name: String,
+    pub parameters: sway::ParameterList,
+    pub modifiers: Vec<sway::FunctionCall>,
+    pub return_type: Option<sway::TypeName>,
+}
+
+#[derive(Clone, Debug)]
+pub struct TranslatedModifier {
+    pub old_name: String,
+    pub new_name: String,
+    pub parameters: sway::ParameterList,
+    pub has_underscore: bool,
+    pub pre_body: Option<sway::Block>,
+    pub post_body: Option<sway::Block>,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct TranslationScope {
     pub parent: Option<Box<TranslationScope>>,
     pub variables: Vec<TranslatedVariable>,
+    pub functions: Vec<TranslatedFunction>,
 }
 
 impl TranslationScope {
@@ -51,6 +71,36 @@ impl TranslationScope {
 
         None
     }
+
+    /// Attempts to get a reference to a function using its old name
+    pub fn find_function(&self, old_name: &str) -> Option<&TranslatedFunction> {
+        if let Some(function) = self.functions.iter().rev().find(|v| v.old_name == old_name) {
+            return Some(function);
+        }
+
+        if let Some(parent) = self.parent.as_ref() {
+            if let Some(function) = parent.find_function(old_name) {
+                return Some(function);
+            }
+        }
+
+        None
+    }
+
+    /// Attempts to get a mutable reference to a function using its old name
+    pub fn find_function_mut(&mut self, old_name: &str) -> Option<&mut TranslatedFunction> {
+        if let Some(function) = self.functions.iter_mut().rev().find(|v| v.old_name == old_name) {
+            return Some(function);
+        }
+
+        if let Some(parent) = self.parent.as_mut() {
+            if let Some(function) = parent.find_function_mut(old_name) {
+                return Some(function);
+            }
+        }
+
+        None
+    }
 }
 
 pub struct TranslatedDefinition {
@@ -67,6 +117,7 @@ pub struct TranslatedDefinition {
     pub abi: Option<sway::Abi>,
     pub configurable: Option<sway::Configurable>,
     pub storage: Option<sway::Storage>,
+    pub modifiers: Vec<TranslatedModifier>,
     pub functions: Vec<sway::Function>,
     pub impls: Vec<sway::Impl>,
 }
@@ -167,6 +218,7 @@ impl TranslatedDefinition {
             abi: None,
             configurable: None,
             storage: None,
+            modifiers: vec![],
             functions: vec![],
             impls: vec![],
         }
@@ -261,5 +313,23 @@ impl TranslatedDefinition {
         }
 
         self.impls.iter_mut().find(|i| find_contract_impl(*i)).unwrap()
+    }
+
+    /// Attempts to get a reference to a modifier using its old name
+    pub fn find_modifier(&self, old_name: &str) -> Option<&TranslatedModifier> {
+        if let Some(modifier) = self.modifiers.iter().find(|v| v.old_name == old_name) {
+            return Some(modifier);
+        }
+
+        None
+    }
+
+    /// Attempts to get a mutable reference to a modifier using its old name
+    pub fn find_modifier_mut(&mut self, old_name: &str) -> Option<&mut TranslatedModifier> {
+        if let Some(modifier) = self.modifiers.iter_mut().find(|v| v.old_name == old_name) {
+            return Some(modifier);
+        }
+
+        None
     }
 }
