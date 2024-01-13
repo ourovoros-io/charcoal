@@ -465,6 +465,7 @@ impl Project {
                 type_name: variable_type_name.clone(),
                 is_storage: true,
                 statement_index: None,
+                read_count: 0,
                 mutation_count: 0,
             });
 
@@ -590,6 +591,7 @@ impl Project {
                         type_name,
                         is_storage: false,
                         statement_index: None,
+                        read_count: 0,
                         mutation_count: 0,
                     }
                 })
@@ -686,6 +688,7 @@ impl Project {
                     type_name,
                     is_storage: false,
                     statement_index: None,
+                    read_count: 0,
                     mutation_count: 0,
                 });
             }
@@ -697,6 +700,15 @@ impl Project {
             let mut current_body: &mut Option<sway::Block> = &mut modifier.pre_body;
             let mut current_scope = scope.clone();
 
+            let mut has_pre_storage_read = false;
+            let mut has_pre_storage_write = false;
+
+            let mut has_post_storage_read = false;
+            let mut has_post_storage_write = false;
+
+            let mut has_storage_read = &mut has_pre_storage_read;
+            let mut has_storage_write = &mut has_pre_storage_write;
+
             for statement in statements.iter() {
                 // If we encounter the underscore statement, every following statement goes into the modifier's post_body block.
                 if let solidity::Statement::Expression(_, solidity::Expression::Variable(solidity::Identifier { name, .. })) = statement {
@@ -704,11 +716,26 @@ impl Project {
                         modifier.has_underscore = true;
                         
                         if let Some(block) = current_body.as_mut() {
+                            for variable in current_scope.variables.iter() {
+                                if variable.is_storage {
+                                    if variable.read_count != 0 {
+                                        *has_storage_read = true;
+                                    }
+
+                                    if variable.mutation_count != 0 {
+                                        *has_storage_write = true;
+                                    }
+                                }
+                            }
+
                             self.finalize_block_translation(&current_scope, block)?;
                         }
 
                         current_body = &mut modifier.post_body;
                         current_scope = scope.clone();
+
+                        has_storage_read = &mut has_post_storage_read;
+                        has_storage_write = &mut has_post_storage_write;
 
                         continue;
                     }
@@ -744,62 +771,81 @@ impl Project {
                 }
             }
 
+            for variable in current_scope.variables.iter() {
+                if variable.is_storage {
+                    if variable.read_count != 0 {
+                        *has_storage_read = true;
+                    }
+
+                    if variable.mutation_count != 0 {
+                        *has_storage_write = true;
+                    }
+                }
+            }
+
             if let Some(block) = current_body.as_mut() {
                 self.finalize_block_translation(&current_scope, block)?;
             }
+
+            let create_attributes = |has_storage_read: bool, has_storage_write: bool| -> Option<sway::AttributeList> {
+                if has_storage_read || has_storage_read {
+                    let mut parameters = vec![];
+
+                    if has_storage_read {
+                        parameters.push("read".to_string());
+                    }
+
+                    if has_storage_write {
+                        parameters.push("write".to_string());
+                    }
+                    
+                    Some(sway::AttributeList {
+                        attributes: vec![
+                            sway::Attribute {
+                                name: "storage".into(),
+                                parameters: Some(parameters),
+                            },
+                        ],
+                    })
+                } else {
+                    None
+                }
+            };
 
             // Ensure that an underscore statement was encountered while translating the modifier
             if !modifier.has_underscore {
                 panic!("Malformed modifier missing underscore statement: {}", modifier.old_name);
             }
 
-            //
-            // TODO:
-            // Generate toplevel pre and post functions.
-            // If a modifier only has a pre body, or only has a post body, don't tack _pre or _post onto the name, just use the original modifier name.
-            //
+            // Ensure that the modifier has at least a pre or a post body
+            if modifier.pre_body.is_none() && modifier.post_body.is_none() {
+                panic!("Malformed modifier contains no body");
+            }
+            
+            // Generate a toplevel pre function
+            if let Some(pre_body) = modifier.pre_body.as_ref() {
+                translated_definition.functions.push(sway::Function {
+                    attributes: create_attributes(has_pre_storage_read, has_pre_storage_write),
+                    is_public: false,
+                    name: format!("{}_pre", modifier.new_name),
+                    generic_parameters: None,
+                    parameters: modifier.parameters.clone(),
+                    return_type: None,
+                    body: Some(pre_body.clone()),
+                });
+            }
 
-            match (modifier.pre_body.as_ref(), modifier.post_body.as_ref()) {
-                (Some(pre_body), Some(post_body)) => {
-                    // Generate a pre function
-                    translated_definition.functions.push(sway::Function {
-                        attributes: None, // TODO: we need to check for storage read/write
-                        is_public: false,
-                        name: format!("{}_pre", modifier.new_name),
-                        generic_parameters: None,
-                        parameters: modifier.parameters.clone(),
-                        return_type: None,
-                        body: Some(pre_body.clone()),
-                    });
-
-                    // Generate a post function
-                    translated_definition.functions.push(sway::Function {
-                        attributes: None, // TODO: we need to check for storage read/write
-                        is_public: false,
-                        name: format!("{}_post", modifier.new_name),
-                        generic_parameters: None,
-                        parameters: modifier.parameters.clone(),
-                        return_type: None,
-                        body: Some(post_body.clone()),
-                    });
-                }
-
-                (Some(body), None) | (None, Some(body)) => {
-                    // Only generate a single function
-                    translated_definition.functions.push(sway::Function {
-                        attributes: None, // TODO: we need to check for storage read/write
-                        is_public: false,
-                        name: modifier.new_name.clone(),
-                        generic_parameters: None,
-                        parameters: modifier.parameters.clone(),
-                        return_type: None,
-                        body: Some(body.clone()),
-                    });
-                }
-
-                (None, None) => {
-                    panic!("Malformed modifier contains no body");
-                }
+            // Generate a toplevel post function
+            if let Some(post_body) = modifier.post_body.as_ref() {
+                translated_definition.functions.push(sway::Function {
+                    attributes: create_attributes(has_post_storage_read, has_post_storage_write),
+                    is_public: false,
+                    name: format!("{}_post", modifier.new_name),
+                    generic_parameters: None,
+                    parameters: modifier.parameters.clone(),
+                    return_type: None,
+                    body: Some(post_body.clone()),
+                });
             }
 
             // Add the translated modifier to the translated definition
@@ -933,6 +979,7 @@ impl Project {
                         type_name,
                         is_storage: false,
                         statement_index: None,
+                        read_count: 0,
                         mutation_count: 0,
                     }
                 })
@@ -1222,6 +1269,7 @@ impl Project {
                                 type_name: self.translate_type_name(translated_definition, &p.ty),
                                 is_storage: false,
                                 statement_index: None,
+                                read_count: 0,
                                 mutation_count: 0,
                             });
                         }
@@ -1306,6 +1354,7 @@ impl Project {
                     type_name,
                     is_storage: false,
                     statement_index: None,
+                    read_count: 0,
                     mutation_count: 0,
                 });
 
@@ -1563,6 +1612,7 @@ impl Project {
                 //
 
                 let (variable, expression) = self.translate_variable_access_expression(translated_definition, scope, expression)?;
+                variable.read_count += 1;
                 
                 if variable.is_storage {
                     Ok(sway::Expression::from(sway::FunctionCall {
@@ -1594,6 +1644,7 @@ impl Project {
                 //
 
                 let (variable, expression) = self.translate_variable_access_expression(translated_definition, scope, expression)?;
+                variable.read_count += 1;
 
                 if variable.is_storage {
                     Ok(sway::Expression::from(sway::FunctionCall {
@@ -2359,6 +2410,9 @@ impl Project {
     ) -> Result<sway::Expression, Error> {
         let (variable, expression) = self.translate_variable_access_expression(translated_definition, scope, lhs)?;
 
+        variable.read_count += 1;
+        variable.mutation_count += 1;
+
         if variable.is_storage {
             Ok(sway::Expression::from(sway::FunctionCall {
                 function: sway::Expression::from(sway::MemberAccess {
@@ -2394,8 +2448,6 @@ impl Project {
                 ],
             }))
         } else {
-            variable.mutation_count += 1;
-
             Ok(sway::Expression::from(sway::BinaryExpression {
                 operator: operator.into(),
                 lhs: self.translate_expression(translated_definition, scope, lhs)?,
@@ -2429,6 +2481,7 @@ impl Project {
         );
 
         let (variable, expression) = self.translate_variable_access_expression(translated_definition, scope, x)?;
+        variable.read_count += 1;
 
         Ok(sway::Expression::from(sway::Block {
             statements: vec![assignment],
@@ -2468,6 +2521,7 @@ impl Project {
         );
 
         let (variable, expression) = self.translate_variable_access_expression(translated_definition, scope, x)?;
+        variable.read_count += 1;
 
         let variable_name = if variable.is_storage {
             variable.new_name.clone()

@@ -12,6 +12,7 @@ pub struct TranslatedVariable {
     pub type_name: sway::TypeName,
     pub is_storage: bool,
     pub statement_index: Option<usize>,
+    pub read_count: usize,
     pub mutation_count: usize,
 }
 
