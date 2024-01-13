@@ -558,16 +558,16 @@ impl Project {
                 continue;
             }
 
-            let old_name = function_definition.name.as_ref().unwrap().name.clone();
-
-            let new_name = if is_constructor {
-                "constructor".to_string()
+            let (old_name, new_name) = if is_constructor {
+                (String::new(), "constructor".to_string())
             } else if is_fallback {
-                "fallback".to_string()
+                (String::new(), "fallback".to_string())
             } else if is_receive {
-                "receive".to_string()
+                (String::new(), "receive".to_string())
             } else {
-                self.translate_naming_convention(old_name.as_str(), Case::Snake)
+                let old_name = function_definition.name.as_ref().unwrap().name.clone();
+                let new_name = self.translate_naming_convention(old_name.as_str(), Case::Snake);
+                (old_name, new_name)
             };
 
             // Create a scope for modifier invocation translations
@@ -831,16 +831,16 @@ impl Project {
             // Handle function overrides
             //
 
-            let old_name = function_definition.name.as_ref().unwrap().name.clone();
-
-            let new_name = if is_constructor {
-                "constructor".to_string()
+            let (old_name, new_name) = if is_constructor {
+                (String::new(), "constructor".to_string())
             } else if is_fallback {
-                "fallback".to_string()
+                (String::new(), "fallback".to_string())
             } else if is_receive {
-                "receive".to_string()
+                (String::new(), "receive".to_string())
             } else {
-                self.translate_naming_convention(old_name.as_str(), Case::Snake)
+                let old_name = function_definition.name.as_ref().unwrap().name.clone();
+                let new_name = self.translate_naming_convention(old_name.as_str(), Case::Snake);
+                (old_name, new_name)
             };
 
             if is_modifier {
