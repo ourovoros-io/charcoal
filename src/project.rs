@@ -2120,10 +2120,14 @@ impl Project {
                         }
 
                         old_name => {
-                            // Ensure the function exists in scope
-                            let Some(function) = scope.find_function_from_old_name(old_name) else {
-                                panic!("Failed to find function `{old_name}` in scope");
-                            };
+                            //
+                            // TODO:
+                            // Ensure the function exists in scope.
+                            // We need to propagate functions from inherited contracts, or this will fail.
+                            //
+                            // let Some(function) = scope.find_function_from_old_name(old_name) else {
+                            //     panic!("Failed to find function `{old_name}` in scope");
+                            // };
 
                             //
                             // TODO: ensure the supplied function call args match the function's parameters
@@ -2297,7 +2301,7 @@ impl Project {
 
                                 "staticcall" => {
                                     //
-                                    // TODO: is delegatecall possible?
+                                    // TODO: is staticcall possible?
                                     //
 
                                     Ok(sway::Expression::create_todo(Some(format!("{expression:?}"))))
