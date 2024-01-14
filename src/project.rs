@@ -1251,26 +1251,77 @@ impl Project {
         statement: &solidity::Statement
     ) -> Result<sway::Statement, Error> {
         match statement {
-            solidity::Statement::Block { statements, .. } => self.translate_block_statement(translated_definition, scope, statements),
-            solidity::Statement::Assembly { dialect, flags, block, .. } => todo!("translate assembly statement: {statement:#?}"),
-            solidity::Statement::Args(_, named_arguments) => todo!("translate args statement: {statement:?}"),
-            solidity::Statement::If(_, condition, then_body, else_if) => self.translate_if_statement(translated_definition, scope, condition, then_body, else_if),
-            solidity::Statement::While(_, condition, body) => self.translate_while_statement(translated_definition, scope, condition, body),
-            solidity::Statement::Expression(_, expression) => self.translate_expression_statement(translated_definition, scope, expression),
-            solidity::Statement::VariableDefinition(_, variable_declaration, initializer) => self.translate_variable_definition_statement(translated_definition, scope, variable_declaration, initializer),
-            solidity::Statement::For(_, initialization, condition, update, body) => self.translate_for_statement(translated_definition, scope, initialization, condition, update, body),
-            solidity::Statement::DoWhile(_, body, condition) => todo!("translate do while statement: {statement:#?}"),
-            solidity::Statement::Continue(_) => Ok(sway::Statement::from(sway::Expression::Continue)),
-            solidity::Statement::Break(_) => Ok(sway::Statement::from(sway::Expression::Break)),
-            solidity::Statement::Return(_, expression) => self.translate_return_statement(translated_definition, scope, expression),
-            solidity::Statement::Revert(_, error_type, parameters) => self.translate_revert_statement(translated_definition, scope, error_type, parameters),
-            solidity::Statement::RevertNamedArgs(_, _, _) => todo!("translate revert named args statement: {statement:#?}"),
-            solidity::Statement::Emit(_, expression) => self.translate_emit_statement(translated_definition, scope, expression),
-            solidity::Statement::Try(_, _, _, _) => todo!("translate try statement: {statement:#?}"),
-            solidity::Statement::Error(_) => panic!("Encountered a statement that was not parsed correctly"),
+            solidity::Statement::Block { statements, .. } => {
+                self.translate_block_statement(translated_definition, scope, statements)
+            }
+
+            solidity::Statement::Assembly { dialect, flags, block, .. } => {
+                self.translate_assembly_statement(translated_definition, scope, dialect, flags, block)
+            }
+
+            solidity::Statement::Args(_, named_arguments) => {
+                self.translate_args_statement(translated_definition, scope, named_arguments)
+            }
+
+            solidity::Statement::If(_, condition, then_body, else_if) => {
+                self.translate_if_statement(translated_definition, scope, condition, then_body, else_if)
+            }
+
+            solidity::Statement::While(_, condition, body) => {
+                self.translate_while_statement(translated_definition, scope, condition, body)
+            }
+
+            solidity::Statement::Expression(_, expression) => {
+                self.translate_expression_statement(translated_definition, scope, expression)
+            }
+
+            solidity::Statement::VariableDefinition(_, variable_declaration, initializer) => {
+                self.translate_variable_definition_statement(translated_definition, scope, variable_declaration, initializer)
+            }
+
+            solidity::Statement::For(_, initialization, condition, update, body) => {
+                self.translate_for_statement(translated_definition, scope, initialization, condition, update, body)
+            }
+
+            solidity::Statement::DoWhile(_, body, condition) => {
+                todo!("translate do while statement: {statement:#?}")
+            }
+
+            solidity::Statement::Continue(_) => {
+                Ok(sway::Statement::from(sway::Expression::Continue))
+            }
+
+            solidity::Statement::Break(_) => {
+                Ok(sway::Statement::from(sway::Expression::Break))
+            }
+
+            solidity::Statement::Return(_, expression) => {
+                self.translate_return_statement(translated_definition, scope, expression)
+            }
+
+            solidity::Statement::Revert(_, error_type, parameters) => {
+                self.translate_revert_statement(translated_definition, scope, error_type, parameters)
+            }
+
+            solidity::Statement::RevertNamedArgs(_, _, _) => {
+                todo!("translate revert named args statement: {statement:#?}")
+            }
+
+            solidity::Statement::Emit(_, expression) => {
+                self.translate_emit_statement(translated_definition, scope, expression)
+            }
+
+            solidity::Statement::Try(_, _, _, _) => {
+                todo!("translate try statement: {statement:#?}")
+            }
+
+            solidity::Statement::Error(_) => {
+                panic!("Encountered a statement that was not parsed correctly")
+            }
         }
     }
-
+    
+    #[inline]
     fn translate_block_statement(
         &mut self,
         translated_definition: &TranslatedDefinition,
@@ -1287,7 +1338,30 @@ impl Project {
             self.translate_block(translated_definition, scope, statements)?
         )))
     }
-
+    
+    #[inline]
+    fn translate_assembly_statement(
+        &mut self,
+        translated_definition: &TranslatedDefinition,
+        scope: &mut TranslationScope,
+        dialect: &Option<solidity::StringLiteral>,
+        flags: &Option<Vec<solidity::StringLiteral>>,
+        block: &solidity::YulBlock,
+    ) -> Result<sway::Statement, Error> {
+        todo!("translate assembly statement")
+    }
+    
+    #[inline]
+    fn translate_args_statement(
+        &mut self,
+        translated_definition: &TranslatedDefinition,
+        scope: &mut TranslationScope,
+        named_arguments: &Vec<solidity::NamedArgument>,
+    ) -> Result<sway::Statement, Error> {
+        todo!("translate args statement")
+    }
+    
+    #[inline]
     fn translate_if_statement(
         &mut self,
         translated_definition: &TranslatedDefinition,
@@ -1334,7 +1408,8 @@ impl Project {
             else_if,
         })))
     }
-
+    
+    #[inline]
     fn translate_while_statement(
         &mut self,
         translated_definition: &TranslatedDefinition,
@@ -1353,7 +1428,8 @@ impl Project {
             },
         })))
     }
-
+    
+    #[inline]
     fn translate_expression_statement(
         &mut self,
         translated_definition: &TranslatedDefinition,
@@ -1428,7 +1504,8 @@ impl Project {
             self.translate_expression(translated_definition, scope, expression)?
         ))
     }
-
+    
+    #[inline]
     fn translate_variable_definition_statement(
         &mut self,
         translated_definition: &TranslatedDefinition,
@@ -1473,7 +1550,8 @@ impl Project {
 
         Ok(statement)
     }
-
+    
+    #[inline]
     fn translate_for_statement(
         &mut self,
         translated_definition: &TranslatedDefinition,
@@ -1534,7 +1612,8 @@ impl Project {
             final_expr: None,
         })))
     }
-
+    
+    #[inline]
     fn translate_return_statement(
         &mut self,
         translated_definition: &TranslatedDefinition,
@@ -1551,7 +1630,8 @@ impl Project {
             }
         )))
     }
-
+    
+    #[inline]
     fn translate_revert_statement(
         &mut self,
         translated_definition: &TranslatedDefinition,
@@ -1639,7 +1719,8 @@ impl Project {
 
         todo!("translate revert statement")
     }
-
+    
+    #[inline]
     fn translate_emit_statement(
         &mut self,
         translated_definition: &TranslatedDefinition,
@@ -2590,7 +2671,8 @@ impl Project {
             sway::Expression::Break => todo!("get type of break expression: {expression:#?}"),
         }
     }
-
+    
+    #[inline]
     fn translate_unary_expression(
         &mut self,
         translated_definition: &TranslatedDefinition,
@@ -2603,7 +2685,8 @@ impl Project {
             expression: self.translate_expression(translated_definition, scope, expression)?,
         }))
     }
-
+    
+    #[inline]
     fn translate_binary_expression(
         &mut self,
         translated_definition: &TranslatedDefinition,
@@ -2680,6 +2763,7 @@ impl Project {
         }
     }
 
+    #[inline]
     fn translate_assignment_expression(
         &mut self,
         translated_definition: &TranslatedDefinition,
@@ -2745,6 +2829,7 @@ impl Project {
         }
     }
 
+    #[inline]
     fn translate_pre_operator_expression(
         &mut self,
         translated_definition: &TranslatedDefinition,
@@ -2785,6 +2870,7 @@ impl Project {
         }))
     }
 
+    #[inline]
     fn translate_post_operator_expression(
         &mut self,
         translated_definition: &TranslatedDefinition,
