@@ -302,6 +302,9 @@ impl Project {
             inherits.clone()
         );
 
+        // Translate import directives
+        self.translate_import_directives(&mut translated_definition, import_directives)?;
+
         // Propagate inherited definitions
         self.propagate_inherited_definitions(import_directives, inherits.as_slice(), &mut translated_definition)?;
 
@@ -406,7 +409,7 @@ impl Project {
         for part in solidity_definition.parts.iter() {
             let solidity::ContractPart::Using(using) = part else { continue };
 
-            todo!("using-for statements")
+            todo!("using-for statements: {part:#?}")
         }
 
         // Collect each storage field ahead of time for contextual reasons
@@ -485,6 +488,36 @@ impl Project {
         Ok(())
     }
 
+    fn translate_import_directives(
+        &mut self,
+        translated_definition: &mut TranslatedDefinition,
+        import_directives: &[solidity::Import],
+    ) -> Result<(), Error> {
+        let source_unit_directory = translated_definition.path.parent().map(|p| PathBuf::from(p)).unwrap();
+
+        for import_directive in import_directives.iter() {
+            let filename = match import_directive {
+                solidity::Import::Plain(solidity::ImportPath::Filename(filename), _) => filename,
+                solidity::Import::Rename(solidity::ImportPath::Filename(filename), _, _) => filename,
+                _ => panic!("Unsupported import directive: {import_directive:#?}"),
+            };
+
+            if filename.string.starts_with("@") {
+                todo!("handle global import paths (i.e: node_modules)")
+            }
+
+            let import_path = source_unit_directory.join(filename.string.clone())
+                .canonicalize()
+                .map_err(|e| Error::Wrapped(Box::new(e)))?;
+
+            if !self.translated_definitions.iter().any(|t| t.path == import_path) {
+                self.translate(&import_path)?;
+            }
+        }
+
+        Ok(())
+    }
+
     fn propagate_inherited_definitions(
         &mut self,
         import_directives: &[solidity::Import],
@@ -520,16 +553,9 @@ impl Project {
                     .canonicalize()
                     .map_err(|e| Error::Wrapped(Box::new(e)))?;
 
-                match self.translated_definitions.iter().find(|t| t.path == import_path && t.name == *inherit) {
-                    Some(t) => {
-                        inherited_definition = Some(t);
-                        break;
-                    }
-
-                    None => {
-                        self.translate(&import_path)?;
-                        inherited_definition = self.translated_definitions.iter().find(|t| t.path == import_path && t.name == *inherit);
-                    }
+                if let Some(t) = self.translated_definitions.iter().find(|t| t.path == import_path && t.name == *inherit) {
+                    inherited_definition = Some(t);
+                    break;
                 }
             }
 
