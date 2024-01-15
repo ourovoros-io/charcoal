@@ -349,6 +349,32 @@ impl Display for TypeName {
     }
 }
 
+impl TypeName {
+    pub fn has_storage_map(&self) -> bool {
+        match self {
+            TypeName::Identifier { name, generic_parameters } => {
+                if name == "StorageMap" {
+                    return true;
+                }
+
+                if let Some(generic_parameters) = generic_parameters.as_ref() {
+                    for generic_parameter in generic_parameters.entries.iter() {
+                        if generic_parameter.name.has_storage_map() {
+                            return true;
+                        }
+                    }
+                }
+
+                false
+            }
+
+            TypeName::Array { type_name, .. } => type_name.has_storage_map(),
+            TypeName::Tuple { type_names } => type_names.iter().any(|t| t.has_storage_map()),
+            TypeName::String { .. } => false,
+        }
+    }
+}
+
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 #[derive(Clone, Debug, PartialEq)]

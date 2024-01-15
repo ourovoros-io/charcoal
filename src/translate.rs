@@ -1,11 +1,12 @@
 use crate::sway;
 use solang_parser::pt as solidity;
 use std::{
+    collections::HashMap,
     fmt::Display,
     path::{Path, PathBuf},
 };
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct TranslatedVariable {
     pub old_name: String,
     pub new_name: String,
@@ -16,7 +17,7 @@ pub struct TranslatedVariable {
     pub mutation_count: usize,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct TranslatedFunction {
     pub old_name: String,
     pub new_name: String,
@@ -25,7 +26,7 @@ pub struct TranslatedFunction {
     pub return_type: Option<sway::TypeName>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct TranslatedModifier {
     pub old_name: String,
     pub new_name: String,
@@ -35,7 +36,7 @@ pub struct TranslatedModifier {
     pub post_body: Option<sway::Block>,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct TranslationScope {
     pub parent: Option<Box<TranslationScope>>,
     pub variables: Vec<TranslatedVariable>,
@@ -97,6 +98,20 @@ impl TranslationScope {
         if let Some(parent) = self.parent.as_mut() {
             if let Some(variable) = parent.find_variable_from_new_name_mut(new_name) {
                 return Some(variable);
+            }
+        }
+
+        None
+    }
+
+    pub fn find_function<F: Copy + FnMut(&&TranslatedFunction) -> bool>(&self, f: F) -> Option<&TranslatedFunction> {
+        if let Some(function) = self.functions.iter().find(f) {
+            return Some(function);
+        }
+
+        if let Some(parent) = self.parent.as_ref() {
+            if let Some(function) = parent.find_function(f) {
+                return Some(function);
             }
         }
 
@@ -165,12 +180,10 @@ impl TranslationScope {
 }
 
 pub struct TranslatedDefinition {
-    /// The path to the file that the original definition is located in.
     pub path: PathBuf,
-
     pub toplevel_scope: TranslationScope,
-
     pub kind: solidity::ContractTy,
+    pub uses: Vec<sway::Use>,
     pub name: String,
     pub inherits: Vec<String>,
     pub type_definitions: Vec<sway::TypeDefinition>,
@@ -182,6 +195,9 @@ pub struct TranslatedDefinition {
     pub storage: Option<sway::Storage>,
     pub modifiers: Vec<TranslatedModifier>,
     pub functions: Vec<sway::Function>,
+    pub function_name_counts: HashMap<String, usize>,
+    pub function_names: HashMap<String, String>,
+    pub function_call_counts: HashMap<String, usize>,
     pub impls: Vec<sway::Impl>,
 }
 
@@ -189,7 +205,16 @@ impl Display for TranslatedDefinition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut written = 0usize;
 
-        for x in self.type_definitions.iter() {
+        for use_entry in self.uses.iter() {
+            writeln!(f, "{}", sway::TabbedDisplayer(use_entry))?;
+            written += 1;
+        }
+
+        for (i, x) in self.type_definitions.iter().enumerate() {
+            if i == 0 && written > 0 {
+                writeln!(f)?;
+            }
+
             writeln!(f, "{}", sway::TabbedDisplayer(x))?;
             written += 1;
         }
@@ -273,6 +298,7 @@ impl TranslatedDefinition {
             path: path.as_ref().into(),
             toplevel_scope: TranslationScope::default(),
             kind,
+            uses: vec![],
             name: name.to_string(),
             inherits: inherits.iter().map(|i| i.to_string()).collect(),
             type_definitions: vec![],
@@ -284,6 +310,9 @@ impl TranslatedDefinition {
             storage: None,
             modifiers: vec![],
             functions: vec![],
+            function_name_counts: HashMap::new(),
+            function_names: HashMap::new(),
+            function_call_counts: HashMap::new(),
             impls: vec![],
         }
     }

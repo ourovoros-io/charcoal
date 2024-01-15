@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use solang_parser::diagnostics::Diagnostic;
 
+#[derive(Debug)]
 pub enum Error {
     Wrapped(Box<dyn std::error::Error>),
     MissingContractFile,

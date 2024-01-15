@@ -230,9 +230,45 @@ impl Project {
         format!("{prefix}{}{postfix}", name.to_case(case))
     }
 
+    fn translate_function_name(
+        &mut self,
+        translated_definition: &mut TranslatedDefinition,
+        function_definition: &solidity::FunctionDefinition,
+    ) -> String {
+        let mut signature = function_definition.name.as_ref().map(|i| i.name.clone()).unwrap_or_default();
+        
+        signature.push('(');
+        
+        for (i, (_, parameter)) in function_definition.params.iter().enumerate() {
+            signature = format!(
+                "{signature}{}{}",
+                if i > 0 { ", " } else { "" },
+                parameter.as_ref().unwrap().ty.to_string(),
+            );
+        }
+
+        signature.push(')');
+
+        if !translated_definition.function_names.contains_key(&signature) {
+            let old_name = function_definition.name.as_ref().map(|i| i.name.clone()).unwrap_or_default();
+            let mut new_name = self.translate_naming_convention(old_name.as_str(), Case::Snake);
+
+            let count = translated_definition.function_name_counts.entry(new_name.clone()).or_insert(0);
+            *count += 1;
+
+            if *count > 1 {
+                new_name = format!("{new_name}{}", *count);
+            }
+
+            translated_definition.function_names.insert(signature.clone(), new_name);
+        }
+
+        translated_definition.function_names.get(&signature).unwrap().clone()
+    }
+
     fn translate_type_name(
         &mut self,
-        translated_definition: &TranslatedDefinition,
+        translated_definition: &mut TranslatedDefinition,
         type_name: &solidity::Expression,
     ) -> sway::TypeName {
         //
@@ -351,13 +387,15 @@ impl Project {
         for part in solidity_definition.parts.iter() {
             let solidity::ContractPart::TypeDefinition(type_definition) = part else { continue };
             
+            let underlying_type = self.translate_type_name(&mut translated_definition, &type_definition.ty);
+
             translated_definition.type_definitions.push(sway::TypeDefinition {
                 is_public: true,
                 name: sway::TypeName::Identifier {
                     name: type_definition.name.name.clone(),
                     generic_parameters: None,
                 },
-                underlying_type: Some(self.translate_type_name(&translated_definition, &type_definition.ty)),
+                underlying_type: Some(underlying_type),
             });
         }
 
@@ -365,7 +403,7 @@ impl Project {
         for part in solidity_definition.parts.iter() {
             let solidity::ContractPart::StructDefinition(struct_definition) = part else { continue };
 
-            translated_definition.structs.push(sway::Struct {
+            let struct_definition = sway::Struct {
                 attributes: None,
                 is_public: true,
                 name: struct_definition.name.as_ref().unwrap().name.clone(),
@@ -374,10 +412,12 @@ impl Project {
                     sway::StructField {
                         is_public: true,
                         name: self.translate_naming_convention(f.name.as_ref().unwrap().name.as_str(), Case::Snake), // TODO: keep track of original name
-                        type_name: self.translate_type_name(&translated_definition, &f.ty),
+                        type_name: self.translate_type_name(&mut translated_definition, &f.ty),
                     }
                 }).collect(),
-            });
+            };
+
+            translated_definition.structs.push(struct_definition);
         }
 
         // Collect each enum ahead of time for contextual reasons
@@ -392,36 +432,48 @@ impl Project {
             match part {
                 solidity::ContractPart::EventDefinition(event_definition) => {
                     let type_name = if event_definition.fields.len() == 1 {
-                        self.translate_type_name(&translated_definition, &event_definition.fields[0].ty)
+                        self.translate_type_name(&mut translated_definition, &event_definition.fields[0].ty)
                     } else {
                         sway::TypeName::Tuple {
                             type_names: event_definition.fields.iter().map(|f| {
-                                self.translate_type_name(&translated_definition, &f.ty)
+                                self.translate_type_name(&mut translated_definition, &f.ty)
                             }).collect(),
                         }
                     };
 
-                    translated_definition.get_events_enum().variants.push(sway::EnumVariant {
+                    let events_enum = translated_definition.get_events_enum();
+
+                    let variant = sway::EnumVariant {
                         name: event_definition.name.as_ref().unwrap().name.clone(),
                         type_name,
-                    });
+                    };
+
+                    if !events_enum.variants.contains(&variant) {
+                        events_enum.variants.push(variant);
+                    }
                 }
 
                 solidity::ContractPart::ErrorDefinition(error_definition) => {
                     let type_name = if error_definition.fields.len() == 1 {
-                        self.translate_type_name(&translated_definition, &error_definition.fields[0].ty)
+                        self.translate_type_name(&mut translated_definition, &error_definition.fields[0].ty)
                     } else {
                         sway::TypeName::Tuple {
                             type_names: error_definition.fields.iter().map(|f| {
-                                self.translate_type_name(&translated_definition, &f.ty)
+                                self.translate_type_name(&mut translated_definition, &f.ty)
                             }).collect(),
                         }
                     };
 
-                    translated_definition.get_errors_enum().variants.push(sway::EnumVariant {
+                    let errors_enum = translated_definition.get_errors_enum();
+
+                    let variant = sway::EnumVariant {
                         name: error_definition.name.as_ref().unwrap().name.clone(),
                         type_name,
-                    });
+                    };
+
+                    if !errors_enum.variants.contains(&variant) {
+                        errors_enum.variants.push(variant);
+                    }
                 }
                 
                 _ => {}
@@ -452,9 +504,8 @@ impl Project {
             }
     
             // Add the toplevel function to the list of toplevel functions for the toplevel scope
-            translated_definition.toplevel_scope.functions.push(
-                self.translate_function_declaration(&translated_definition, function_definition)?
-            );
+            let function = self.translate_function_declaration(&mut translated_definition, function_definition)?;
+            translated_definition.toplevel_scope.functions.push(function);
         }
 
         // Translate each modifier
@@ -481,6 +532,27 @@ impl Project {
             }
 
             self.translate_function_definition(&mut translated_definition, function_definition)?;
+        }
+
+        // Look for toplevel functions that are never called, move their implementation to the abi wrapper function if it exists
+        let function_names = translated_definition.functions.iter().map(|f| f.name.clone()).collect::<Vec<_>>();
+
+        for function_name in function_names {
+            let (None | Some(0)) = translated_definition.function_call_counts.get(&function_name) else { continue };
+            let Some((toplevel_function_index, _)) = translated_definition.functions.iter().enumerate().find(|(_, f)| f.name == function_name) else { continue };
+            let body = translated_definition.functions[toplevel_function_index].body.clone();
+
+            let Some(contract_impl) = translated_definition.find_contract_impl_mut() else { continue };
+            let Some(contract_impl_function) = contract_impl.items.iter_mut()
+                .map(|i| match i {
+                    sway::ImplItem::Function(f) => Some(f),
+                    _ => None,
+                })
+                .filter_map(|i| i)
+                .find(|f| f.name == function_name) else { continue };
+            
+            contract_impl_function.body = body;
+            translated_definition.functions.remove(toplevel_function_index);
         }
 
         println!("// First translation pass of \"{}\" in \"{}\":", translated_definition.name, translated_definition.path.to_string_lossy());
@@ -541,45 +613,101 @@ impl Project {
             translated_definition.toplevel_scope.functions.extend(inherited_definition.toplevel_scope.functions.clone());
 
             // Extend the type definitions
-            translated_definition.type_definitions.extend(inherited_definition.type_definitions.clone());
+            for inherited_type_definition in inherited_definition.type_definitions.iter() {
+                if !translated_definition.type_definitions.contains(inherited_type_definition) {
+                    translated_definition.type_definitions.push(inherited_type_definition.clone());
+                }
+            }
 
             // Extend the structs
-            translated_definition.structs.extend(inherited_definition.structs.clone());
+            for inherited_struct in inherited_definition.structs.iter() {
+                if !translated_definition.structs.contains(inherited_struct) {
+                    translated_definition.structs.push(inherited_struct.clone());
+                }
+            }
 
             // Extend the events enum
             if let Some(inherited_events_enum) = inherited_definition.events_enum.as_ref() {
-                translated_definition.get_events_enum().variants.extend(inherited_events_enum.variants.clone());
+                let events_enum = translated_definition.get_events_enum();
+
+                for inherited_variant in inherited_events_enum.variants.iter() {
+                    if !events_enum.variants.contains(inherited_variant) {
+                        events_enum.variants.push(inherited_variant.clone());
+                    }
+                }
             }
 
             // Extend the errors enum
             if let Some(inherited_errors_enum) = inherited_definition.errors_enum.as_ref() {
-                translated_definition.get_errors_enum().variants.extend(inherited_errors_enum.variants.clone());
+                let errors_enum = translated_definition.get_errors_enum();
+
+                for inherited_variant in inherited_errors_enum.variants.iter() {
+                    if !errors_enum.variants.contains(inherited_variant) {
+                        errors_enum.variants.push(inherited_variant.clone());
+                    }
+                }
             }
 
             // Extend the abi
             if let Some(inherited_abi) = inherited_definition.abi.as_ref() {
-                translated_definition.get_abi().functions.extend(inherited_abi.functions.clone());
+                let abi = translated_definition.get_abi();
+
+                for inherited_function in inherited_abi.functions.iter() {
+                    if !abi.functions.contains(inherited_function) {
+                        abi.functions.push(inherited_function.clone());
+                    }
+                }
             }
 
             // Extend the configurable fields
             if let Some(inherited_configurable) = inherited_definition.configurable.as_ref() {
-                translated_definition.get_configurable().fields.extend(inherited_configurable.fields.clone());
+                let configurable = translated_definition.get_configurable();
+
+                for inherited_field in inherited_configurable.fields.iter() {
+                    if !configurable.fields.contains(inherited_field) {
+                        configurable.fields.push(inherited_field.clone());
+                    }
+                }
             }
 
             // Extend the storage fields
             if let Some(inherited_storage) = inherited_definition.storage.as_ref() {
-                translated_definition.get_storage().fields.extend(inherited_storage.fields.clone());
+                let storage = translated_definition.get_storage();
+
+                for inherited_field in inherited_storage.fields.iter() {
+                    if !storage.fields.contains(inherited_field) {
+                        storage.fields.push(inherited_field.clone());
+                    }
+                }
             }
 
             // Extend the modifiers
-            translated_definition.modifiers.extend(inherited_definition.modifiers.clone());
+            for inherited_modifier in inherited_definition.modifiers.iter() {
+                if !translated_definition.modifiers.contains(inherited_modifier) {
+                    translated_definition.modifiers.push(inherited_modifier.clone());
+                }
+            }
 
             // Extend the functions
-            translated_definition.functions.extend(inherited_definition.functions.clone());
+            for inherited_function in inherited_definition.functions.iter() {
+                if !translated_definition.functions.contains(inherited_function) {
+                    translated_definition.functions.push(inherited_function.clone());
+
+                    if let Some(function_call_count) = inherited_definition.function_call_counts.get(&inherited_function.name) {
+                        *translated_definition.function_call_counts.entry(inherited_function.name.clone()).or_insert(0) += *function_call_count;
+                    }
+                }
+            }
 
             // Extend the contract impl block
             if let Some(inherited_impl) = inherited_definition.find_contract_impl() {
-                translated_definition.get_contract_impl().items.extend(inherited_impl.items.clone());
+                let contract_impl = translated_definition.get_contract_impl();
+
+                for inherited_impl_item in inherited_impl.items.iter() {
+                    if !contract_impl.items.contains(inherited_impl_item) {
+                        contract_impl.items.push(inherited_impl_item.clone());
+                    }
+                }
             }
         }
 
@@ -592,7 +720,30 @@ impl Project {
         variable_definition: &solidity::VariableDefinition,
     ) -> Result<(), Error> {
         // Translate the variable's type name
-        let variable_type_name = self.translate_type_name(&translated_definition, &variable_definition.ty);
+        let variable_type_name = self.translate_type_name(translated_definition, &variable_definition.ty);
+
+        // Ensure std::hash::Hash is imported for StorageMap storage fields
+        if variable_type_name.has_storage_map() {
+            if !translated_definition.uses.iter().any(|u| {
+                let sway::UseTree::Path { prefix: prefix1, suffix } = &u.tree else { return false };
+                let sway::UseTree::Path { prefix: prefix2, suffix } = suffix.as_ref() else { return false };
+                let sway::UseTree::Name { name } = suffix.as_ref() else { return false };
+                prefix1 == "std" && prefix2 == "hash" && name == "Hash"
+            }) {
+                translated_definition.uses.push(sway::Use {
+                    is_public: false,
+                    tree: sway::UseTree::Path {
+                        prefix: "std".into(),
+                        suffix: Box::new(sway::UseTree::Path {
+                            prefix: "hash".into(),
+                            suffix: Box::new(sway::UseTree::Name {
+                                name: "Hash".into(),
+                            }),
+                        }),
+                    },
+                });
+            }
+        }
 
         // Collect information about the variable from its attributes
         let is_public = variable_definition.attrs.iter().any(|x| matches!(x, solidity::VariableAttribute::Visibility(solidity::Visibility::External(_) | solidity::Visibility::Public(_))));
@@ -722,7 +873,7 @@ impl Project {
 
     fn translate_function_declaration(
         &mut self,
-        translated_definition: &TranslatedDefinition,
+        translated_definition: &mut TranslatedDefinition,
         function_definition: &solidity::FunctionDefinition,
     ) -> Result<TranslatedFunction, Error> {
         // Collect information about the function from its type
@@ -738,7 +889,7 @@ impl Project {
             (String::new(), "receive".to_string())
         } else {
             let old_name = function_definition.name.as_ref().unwrap().name.clone();
-            let new_name = self.translate_naming_convention(old_name.as_str(), Case::Snake);
+            let new_name = self.translate_function_name(translated_definition, function_definition);
             (old_name, new_name)
         };
 
@@ -754,7 +905,7 @@ impl Project {
             function_definition.params.iter().map(|(_, p)| {
                 let old_name = p.as_ref().unwrap().name.as_ref().unwrap().name.clone();
                 let new_name = self.translate_naming_convention(old_name.as_str(), Case::Snake);
-                let type_name = self.translate_type_name(&translated_definition, &p.as_ref().unwrap().ty);
+                let type_name = self.translate_type_name(translated_definition, &p.as_ref().unwrap().ty);
 
                 TranslatedVariable {
                     old_name,
@@ -781,7 +932,7 @@ impl Project {
                 function: sway::Expression::Identifier(new_name),
                 generic_parameters: None,
                 parameters: base.args.as_ref()
-                    .map(|args| args.iter().map(|a| self.translate_expression(&translated_definition, &mut scope, a)).collect::<Result<Vec<_>, _>>())
+                    .map(|args| args.iter().map(|a| self.translate_expression(translated_definition, &mut scope, a)).collect::<Result<Vec<_>, _>>())
                     .unwrap_or_else(|| Ok(vec![]))?,
             });
         }
@@ -793,7 +944,7 @@ impl Project {
                 entries: function_definition.params.iter().map(|(_, p)| {
                     sway::Parameter {
                         name: self.translate_naming_convention(p.as_ref().unwrap().name.as_ref().unwrap().name.as_str(), Case::Snake),
-                        type_name: self.translate_type_name(&translated_definition, &p.as_ref().unwrap().ty),
+                        type_name: self.translate_type_name(translated_definition, &p.as_ref().unwrap().ty),
                     }
                 }).collect(),
             },
@@ -802,11 +953,11 @@ impl Project {
                 None
             } else {
                 Some(if function_definition.returns.len() == 1 {
-                    self.translate_type_name(&translated_definition, &function_definition.returns[0].1.as_ref().unwrap().ty)
+                    self.translate_type_name(translated_definition, &function_definition.returns[0].1.as_ref().unwrap().ty)
                 } else {
                     sway::TypeName::Tuple {
                         type_names: function_definition.returns.iter().map(|(_, p)| {
-                            self.translate_type_name(&translated_definition, &p.as_ref().unwrap().ty)
+                            self.translate_type_name(translated_definition, &p.as_ref().unwrap().ty)
                         }).collect(),
                     }
                 })
@@ -840,7 +991,7 @@ impl Project {
         for (_, p) in function_definition.params.iter() {
             let old_name = p.as_ref().unwrap().name.as_ref().unwrap().name.clone();
             let new_name = self.translate_naming_convention(old_name.as_str(), Case::Snake);
-            let type_name = self.translate_type_name(&translated_definition, &p.as_ref().unwrap().ty);
+            let type_name = self.translate_type_name(translated_definition, &p.as_ref().unwrap().ty);
 
             modifier.parameters.entries.push(sway::Parameter {
                 name: new_name.clone(),
@@ -914,7 +1065,7 @@ impl Project {
             let block = current_body.as_mut().unwrap();
 
             // Translate the statement
-            let sway_statement = self.translate_statement(&translated_definition, &mut current_scope, statement)?;
+            let sway_statement = self.translate_statement(translated_definition, &mut current_scope, statement)?;
 
             // Store the index of the sway statement
             let statement_index = block.statements.len();
@@ -1074,7 +1225,7 @@ impl Project {
             (String::new(), "receive".to_string())
         } else {
             let old_name = function_definition.name.as_ref().unwrap().name.clone();
-            let new_name = self.translate_naming_convention(old_name.as_str(), Case::Snake);
+            let new_name = self.translate_function_name(translated_definition, function_definition);
             (old_name, new_name)
         };
 
@@ -1114,7 +1265,7 @@ impl Project {
                 entries: function_definition.params.iter().map(|(_, p)| {
                     sway::Parameter {
                         name: self.translate_naming_convention(p.as_ref().unwrap().name.as_ref().unwrap().name.as_str(), Case::Snake),
-                        type_name: self.translate_type_name(&translated_definition, &p.as_ref().unwrap().ty),
+                        type_name: self.translate_type_name(translated_definition, &p.as_ref().unwrap().ty),
                     }
                 }).collect(),
             },
@@ -1123,11 +1274,11 @@ impl Project {
                 None
             } else {
                 Some(if function_definition.returns.len() == 1 {
-                    self.translate_type_name(&translated_definition, &function_definition.returns[0].1.as_ref().unwrap().ty)
+                    self.translate_type_name(translated_definition, &function_definition.returns[0].1.as_ref().unwrap().ty)
                 } else {
                     sway::TypeName::Tuple {
                         type_names: function_definition.returns.iter().map(|(_, p)| {
-                            self.translate_type_name(&translated_definition, &p.as_ref().unwrap().ty)
+                            self.translate_type_name(translated_definition, &p.as_ref().unwrap().ty)
                         }).collect(),
                     }
                 })
@@ -1163,7 +1314,7 @@ impl Project {
             function_definition.params.iter().map(|(_, p)| {
                 let old_name = p.as_ref().unwrap().name.as_ref().unwrap().name.clone();
                 let new_name = self.translate_naming_convention(old_name.as_str(), Case::Snake);
-                let type_name = self.translate_type_name(&translated_definition, &p.as_ref().unwrap().ty);
+                let type_name = self.translate_type_name(translated_definition, &p.as_ref().unwrap().ty);
 
                 TranslatedVariable {
                     old_name,
@@ -1178,7 +1329,7 @@ impl Project {
         );
 
         // Translate the body for the toplevel function
-        let mut function_body = self.translate_block(&translated_definition, scope.clone(), statements.as_slice())?;
+        let mut function_body = self.translate_block(translated_definition, scope.clone(), statements.as_slice())?;
 
         // Check if the final statement returns a value and change it to be the final expression of the block
         if let Some(sway::Statement::Expression(sway::Expression::Return(Some(value)))) = function_body.statements.last().cloned() {
@@ -1275,7 +1426,7 @@ impl Project {
 
     fn translate_block(
         &mut self,
-        translated_definition: &TranslatedDefinition,
+        translated_definition: &mut TranslatedDefinition,
         mut scope: TranslationScope,
         statements: &[solidity::Statement]
     ) -> Result<sway::Block, Error> {
@@ -1375,7 +1526,7 @@ impl Project {
 
     fn translate_statement(
         &mut self,
-        translated_definition: &TranslatedDefinition,
+        translated_definition: &mut TranslatedDefinition,
         scope: &mut TranslationScope,
         statement: &solidity::Statement
     ) -> Result<sway::Statement, Error> {
@@ -1453,7 +1604,7 @@ impl Project {
     #[inline]
     fn translate_block_statement(
         &mut self,
-        translated_definition: &TranslatedDefinition,
+        translated_definition: &mut TranslatedDefinition,
         scope: &mut TranslationScope,
         statements: &[solidity::Statement],
     ) -> Result<sway::Statement, Error> {
@@ -1471,7 +1622,7 @@ impl Project {
     #[inline]
     fn translate_assembly_statement(
         &mut self,
-        translated_definition: &TranslatedDefinition,
+        translated_definition: &mut TranslatedDefinition,
         scope: &mut TranslationScope,
         dialect: &Option<solidity::StringLiteral>,
         flags: &Option<Vec<solidity::StringLiteral>>,
@@ -1483,7 +1634,7 @@ impl Project {
     #[inline]
     fn translate_args_statement(
         &mut self,
-        translated_definition: &TranslatedDefinition,
+        translated_definition: &mut TranslatedDefinition,
         scope: &mut TranslationScope,
         named_arguments: &Vec<solidity::NamedArgument>,
     ) -> Result<sway::Statement, Error> {
@@ -1493,7 +1644,7 @@ impl Project {
     #[inline]
     fn translate_if_statement(
         &mut self,
-        translated_definition: &TranslatedDefinition,
+        translated_definition: &mut TranslatedDefinition,
         scope: &mut TranslationScope,
         condition: &solidity::Expression,
         then_body: &solidity::Statement,
@@ -1541,7 +1692,7 @@ impl Project {
     #[inline]
     fn translate_while_statement(
         &mut self,
-        translated_definition: &TranslatedDefinition,
+        translated_definition: &mut TranslatedDefinition,
         scope: &mut TranslationScope,
         condition: &solidity::Expression,
         body: &solidity::Statement,
@@ -1561,7 +1712,7 @@ impl Project {
     #[inline]
     fn translate_expression_statement(
         &mut self,
-        translated_definition: &TranslatedDefinition,
+        translated_definition: &mut TranslatedDefinition,
         scope: &mut TranslationScope,
         expression: &solidity::Expression,
     ) -> Result<sway::Statement, Error> {
@@ -1637,7 +1788,7 @@ impl Project {
     #[inline]
     fn translate_variable_definition_statement(
         &mut self,
-        translated_definition: &TranslatedDefinition,
+        translated_definition: &mut TranslatedDefinition,
         scope: &mut TranslationScope,
         variable_declaration: &solidity::VariableDeclaration,
         initializer: &Option<solidity::Expression>,
@@ -1683,7 +1834,7 @@ impl Project {
     #[inline]
     fn translate_for_statement(
         &mut self,
-        translated_definition: &TranslatedDefinition,
+        translated_definition: &mut TranslatedDefinition,
         scope: &mut TranslationScope,
         initialization: &Option<Box<solidity::Statement>>,
         condition: &Option<Box<solidity::Expression>>,
@@ -1745,7 +1896,7 @@ impl Project {
     #[inline]
     fn translate_return_statement(
         &mut self,
-        translated_definition: &TranslatedDefinition,
+        translated_definition: &mut TranslatedDefinition,
         scope: &mut TranslationScope,
         expression: &Option<solidity::Expression>,
     ) -> Result<sway::Statement, Error> {
@@ -1763,7 +1914,7 @@ impl Project {
     #[inline]
     fn translate_revert_statement(
         &mut self,
-        translated_definition: &TranslatedDefinition,
+        translated_definition: &mut TranslatedDefinition,
         scope: &mut TranslationScope,
         error_type: &Option<solidity::IdentifierPath>,
         parameters: &Vec<solidity::Expression>,
@@ -1852,7 +2003,7 @@ impl Project {
     #[inline]
     fn translate_emit_statement(
         &mut self,
-        translated_definition: &TranslatedDefinition,
+        translated_definition: &mut TranslatedDefinition,
         scope: &mut TranslationScope,
         expression: &solidity::Expression,
     ) -> Result<sway::Statement, Error> {
@@ -1897,7 +2048,7 @@ impl Project {
 
     fn translate_expression(
         &mut self,
-        translated_definition: &TranslatedDefinition,
+        translated_definition: &mut TranslatedDefinition,
         scope: &mut TranslationScope,
         expression: &solidity::Expression,
     ) -> Result<sway::Expression, Error> {
@@ -2189,6 +2340,27 @@ impl Project {
                     match ty {
                         solidity::Type::Address => match &args[0] {
                             solidity::Expression::NumberLiteral(_, value, _, _) if value == "0" => {
+                                // Ensure std::constants::ZERO_B256 is imported
+                                if !translated_definition.uses.iter().any(|u| {
+                                    let sway::UseTree::Path { prefix: prefix1, suffix } = &u.tree else { return false };
+                                    let sway::UseTree::Path { prefix: prefix2, suffix } = suffix.as_ref() else { return false };
+                                    let sway::UseTree::Name { name } = suffix.as_ref() else { return false };
+                                    prefix1 == "std" && prefix2 == "constants" && name == "ZERO_B256"
+                                }) {
+                                    translated_definition.uses.push(sway::Use {
+                                        is_public: false,
+                                        tree: sway::UseTree::Path {
+                                            prefix: "std".into(),
+                                            suffix: Box::new(sway::UseTree::Path {
+                                                prefix: "constants".into(),
+                                                suffix: Box::new(sway::UseTree::Name {
+                                                    name: "ZERO_B256".into(),
+                                                }),
+                                            }),
+                                        },
+                                    });
+                                }
+
                                 // Create a zero address expression
                                 // Identity::Address(Address::from(ZERO_B256))
                                 Ok(sway::Expression::from(sway::FunctionCall {
@@ -2387,13 +2559,30 @@ impl Project {
 
                         old_name => {
                             // Ensure the function exists in scope
-                            let Some(function) = scope.find_function_from_old_name(old_name) else {
+                            let Some(function) = scope.find_function(|f| {
+                                // Ensure the function's old name matches the function call we're translating
+                                if f.old_name != old_name {
+                                    return false;
+                                }
+                                
+                                // Ensure the supplied function call args match the function's parameters
+                                if parameters.len() != f.parameters.entries.len() {
+                                    return false;
+                                }
+
+                                for (i, parameter) in parameters.iter().enumerate() {
+                                    if self.get_expression_type(scope, parameter).unwrap() != f.parameters.entries[i].type_name {
+                                        return false;
+                                    }
+                                }
+
+                                true
+                            }) else {
                                 panic!("Failed to find function `{old_name}` in scope");
                             };
 
-                            //
-                            // TODO: ensure the supplied function call args match the function's parameters
-                            //
+                            // Increase the call count of the function
+                            *translated_definition.function_call_counts.entry(function.new_name.clone()).or_insert(0) += 1;
 
                             // Translate the function call
                             Ok(sway::Expression::from(sway::FunctionCall {
@@ -2780,7 +2969,18 @@ impl Project {
                 Ok(variable.type_name.clone())
             }
 
-            sway::Expression::FunctionCall(_) => todo!("get type of function call expression: {expression:#?}"),
+            sway::Expression::FunctionCall(function_call) => match &function_call.function {
+                sway::Expression::Identifier(name) => match name.as_str() {
+                    s if s.starts_with("Identity::") => Ok(sway::TypeName::Identifier {
+                        name: "Identity".into(),
+                        generic_parameters: None,
+                    }),
+
+                    _ => todo!("get type of function call expression: {expression:#?}"),
+                }
+                _ => todo!("get type of function call expression: {expression:#?}"),
+            }
+
             sway::Expression::Block(_) => todo!("get type of block expression: {expression:#?}"),
             sway::Expression::Return(_) => todo!("get type of return expression: {expression:#?}"),
             sway::Expression::Array(_) => todo!("get type of array expression: {expression:#?}"),
@@ -2790,7 +2990,9 @@ impl Project {
             sway::Expression::If(_) => todo!("get type of if expression: {expression:#?}"),
             sway::Expression::While(_) => todo!("get type of while expression: {expression:#?}"),
             sway::Expression::UnaryExpression(_) => todo!("get type of unary expression expression: {expression:#?}"),
-            sway::Expression::BinaryExpression(_) => todo!("get type of binary expression expression: {expression:#?}"),
+
+            sway::Expression::BinaryExpression(binary_expression) => self.get_expression_type(scope, &binary_expression.lhs),
+
             sway::Expression::Constructor(_) => todo!("get type of constructor expression: {expression:#?}"),
             sway::Expression::Continue => todo!("get type of continue expression: {expression:#?}"),
             sway::Expression::Break => todo!("get type of break expression: {expression:#?}"),
@@ -2800,7 +3002,7 @@ impl Project {
     #[inline]
     fn translate_unary_expression(
         &mut self,
-        translated_definition: &TranslatedDefinition,
+        translated_definition: &mut TranslatedDefinition,
         scope: &mut TranslationScope,
         operator: &str,
         expression: &solidity::Expression,
@@ -2814,7 +3016,7 @@ impl Project {
     #[inline]
     fn translate_binary_expression(
         &mut self,
-        translated_definition: &TranslatedDefinition,
+        translated_definition: &mut TranslatedDefinition,
         scope: &mut TranslationScope,
         operator: &str,
         lhs: &solidity::Expression,
@@ -2829,7 +3031,7 @@ impl Project {
 
     fn translate_variable_access_expression<'a>(
         &mut self,
-        translated_definition: &TranslatedDefinition,
+        translated_definition: &mut TranslatedDefinition,
         scope: &'a mut TranslationScope,
         expression: &solidity::Expression,
     ) -> Result<(&'a mut TranslatedVariable, sway::Expression), Error> {
@@ -2891,7 +3093,7 @@ impl Project {
     #[inline]
     fn translate_assignment_expression(
         &mut self,
-        translated_definition: &TranslatedDefinition,
+        translated_definition: &mut TranslatedDefinition,
         scope: &mut TranslationScope,
         operator: &str,
         lhs: &solidity::Expression,
@@ -2957,7 +3159,7 @@ impl Project {
     #[inline]
     fn translate_pre_operator_expression(
         &mut self,
-        translated_definition: &TranslatedDefinition,
+        translated_definition: &mut TranslatedDefinition,
         scope: &mut TranslationScope,
         loc: &solidity::Loc,
         x: &solidity::Expression,
@@ -2998,7 +3200,7 @@ impl Project {
     #[inline]
     fn translate_post_operator_expression(
         &mut self,
-        translated_definition: &TranslatedDefinition,
+        translated_definition: &mut TranslatedDefinition,
         scope: &mut TranslationScope,
         loc: &solidity::Loc,
         x: &solidity::Expression,
