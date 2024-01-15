@@ -25,7 +25,7 @@ impl<T: TabbedDisplay> Display for TabbedDisplayer<'_, T> {
 
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum ModuleKind {
     Contract,
     Library,
@@ -46,7 +46,7 @@ impl Display for ModuleKind {
 
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Module {
     pub kind: ModuleKind,
     pub items: Vec<ModuleItem>,
@@ -168,7 +168,7 @@ impl TabbedDisplay for Module {
 
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum ModuleItem {
     Use(Use),
     TypeDefinition(TypeDefinition),
@@ -203,7 +203,7 @@ impl TabbedDisplay for ModuleItem {
 
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Use {
     pub is_public: bool,
     pub tree: UseTree,
@@ -221,7 +221,7 @@ impl Display for Use {
 
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum UseTree {
     Path {
         prefix: String,
@@ -254,7 +254,7 @@ impl Display for UseTree {
 
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct GenericParameter {
     pub name: TypeName,
     pub implements: Vec<TypeName>,
@@ -274,7 +274,7 @@ impl Display for GenericParameter {
 
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct GenericParameterList {
     pub entries: Vec<GenericParameter>,
 }
@@ -287,7 +287,7 @@ impl Display for GenericParameterList {
 
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Attribute {
     pub name: String,
     pub parameters: Option<Vec<String>>,
@@ -307,7 +307,7 @@ impl Display for Attribute {
 
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct AttributeList {
     pub attributes: Vec<Attribute>,
 }
@@ -320,7 +320,7 @@ impl Display for AttributeList {
 
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum TypeName {
     Identifier {
         name: String,
@@ -351,7 +351,7 @@ impl Display for TypeName {
 
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct TypeDefinition {
     pub is_public: bool,
     pub name: TypeName,
@@ -376,7 +376,7 @@ impl Display for TypeDefinition {
 
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Constant {
     pub is_public: bool,
     pub name: String,
@@ -403,7 +403,7 @@ impl TabbedDisplay for Constant {
 
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Literal {
     Bool(bool),
     DecInt(u64),
@@ -424,7 +424,7 @@ impl Display for Literal {
 
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Struct {
     pub attributes: Option<AttributeList>,
     pub is_public: bool,
@@ -466,7 +466,7 @@ impl TabbedDisplay for Struct {
 
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct StructField {
     pub is_public: bool,
     pub name: String,
@@ -485,7 +485,7 @@ impl Display for StructField {
 
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Enum {
     pub attributes: Option<AttributeList>,
     pub is_public: bool,
@@ -527,7 +527,7 @@ impl TabbedDisplay for Enum {
 
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct EnumVariant {
     pub name: String,
     pub type_name: TypeName,
@@ -541,7 +541,7 @@ impl Display for EnumVariant {
 
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Abi {
     pub name: String,
     pub inherits: Vec<String>,
@@ -574,7 +574,7 @@ impl TabbedDisplay for Abi {
 
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Trait {
     pub attributes: Option<AttributeList>,
     pub is_public: bool,
@@ -616,7 +616,7 @@ impl TabbedDisplay for Trait {
 
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum TraitItem {
     Constant(Constant),
     TypeName(GenericParameter),
@@ -635,7 +635,7 @@ impl TabbedDisplay for TraitItem {
 
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Storage {
     pub fields: Vec<StorageField>,
 }
@@ -656,7 +656,7 @@ impl TabbedDisplay for Storage {
 
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct StorageField {
     pub name: String,
     pub type_name: TypeName,
@@ -672,7 +672,7 @@ impl TabbedDisplay for StorageField {
 
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Configurable {
     pub fields: Vec<ConfigurableField>,
 }
@@ -693,7 +693,7 @@ impl TabbedDisplay for Configurable {
 
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ConfigurableField {
     pub name: String,
     pub type_name: TypeName,
@@ -709,7 +709,7 @@ impl TabbedDisplay for ConfigurableField {
 
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Function {
     pub attributes: Option<AttributeList>,
     pub is_public: bool,
@@ -760,7 +760,7 @@ impl TabbedDisplay for Function {
 
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Parameter {
     pub name: String,
     pub type_name: TypeName,
@@ -774,7 +774,7 @@ impl Display for Parameter {
 
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct ParameterList {
     pub entries: Vec<Parameter>,
 }
@@ -787,7 +787,7 @@ impl Display for ParameterList {
 
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Impl {
     pub generic_parameters: Option<GenericParameterList>,
     pub type_name: TypeName,
@@ -830,7 +830,7 @@ impl TabbedDisplay for Impl {
 
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum ImplItem {
     Constant(Constant),
     TypeDefinition(TypeDefinition),
@@ -849,7 +849,7 @@ impl TabbedDisplay for ImplItem {
 
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Block {
     pub statements: Vec<Statement>,
     pub final_expr: Option<Expression>,
@@ -877,7 +877,7 @@ impl TabbedDisplay for Block {
 
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Statement {
     Let(Let),
     Expression(Expression),
@@ -922,7 +922,7 @@ impl_stmt_from!(Expression);
 
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Let {
     pub pattern: LetPattern,
     pub type_name: Option<TypeName>,
@@ -948,7 +948,7 @@ impl TabbedDisplay for Let {
 
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum LetPattern {
     Identifier(LetIdentifier),
     Tuple(Vec<LetIdentifier>),
@@ -965,7 +965,7 @@ impl Display for LetPattern {
 
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct LetIdentifier {
     pub is_mutable: bool,
     pub name: String,
@@ -983,7 +983,7 @@ impl Display for LetIdentifier {
 
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Expression {
     Literal(Literal),
     Identifier(String),
@@ -1237,7 +1237,7 @@ impl Expression {
 
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct FunctionCall {
     pub function: Expression,
     pub generic_parameters: Option<GenericParameterList>,
@@ -1268,7 +1268,7 @@ impl TabbedDisplay for FunctionCall {
 
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Array {
     pub elements: Vec<Expression>,
 }
@@ -1291,7 +1291,7 @@ impl Display for Array {
 
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ArrayAccess {
     pub expression: Expression,
     pub index: Expression,
@@ -1308,7 +1308,7 @@ impl Display for ArrayAccess {
 
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct MemberAccess {
     pub expression: Expression,
     pub member: String,
@@ -1323,7 +1323,7 @@ impl Display for MemberAccess {
 
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct If {
     pub condition: Option<Expression>,
     pub then_body: Block,
@@ -1351,7 +1351,7 @@ impl TabbedDisplay for If {
 
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct While {
     pub condition: Expression,
     pub body: Block,
@@ -1368,7 +1368,7 @@ impl TabbedDisplay for While {
 
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct UnaryExpression {
     pub operator: String,
     pub expression: Expression,
@@ -1383,7 +1383,7 @@ impl Display for UnaryExpression {
 
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct BinaryExpression {
     pub operator: String,
     pub lhs: Expression,
@@ -1400,7 +1400,7 @@ impl TabbedDisplay for BinaryExpression {
 
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Constructor {
     pub type_name: TypeName,
     pub fields: Vec<ConstructorField>,
@@ -1426,7 +1426,7 @@ impl TabbedDisplay for Constructor {
 
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ConstructorField {
     pub name: String,
     pub value: Expression,

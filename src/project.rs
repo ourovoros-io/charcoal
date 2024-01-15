@@ -5,7 +5,7 @@ use crate::{
     Options,
 };
 use convert_case::{Case, Casing};
-use solang_parser::pt as solidity;
+use solang_parser::pt::{self as solidity, SourceUnitPart};
 use std::{
     cell::RefCell,
     collections::HashMap,
@@ -89,6 +89,14 @@ impl Project {
             // Get the parsed source unit
             let source_unit = solidity_source_units.borrow().get(source_unit_path).unwrap().clone();
 
+            // Collect import directives ahead of time for contextual reasons
+            let mut import_directives = vec![];
+
+            for source_unit_part in source_unit.0.iter() {
+                let solidity::SourceUnitPart::ImportDirective(import_directive) = source_unit_part else { continue };
+                import_directives.push(import_directive.clone());
+            }
+
             // Handle the first translation pass
             for source_unit_part in source_unit.0.iter() {
                 match source_unit_part {
@@ -101,7 +109,7 @@ impl Project {
                     }
         
                     solidity::SourceUnitPart::ContractDefinition(contract_definition) => {
-                        self.translate_contract_definition(&source_unit_path, contract_definition)?;
+                        self.translate_contract_definition(&source_unit_path, import_directives.as_slice(), contract_definition)?;
                     }
         
                     solidity::SourceUnitPart::EnumDefinition(_) => {
@@ -322,6 +330,7 @@ impl Project {
     fn translate_contract_definition(
         &mut self,
         source_unit_path: &Path,
+        import_directives: &[solidity::Import],
         solidity_definition: &solidity::ContractDefinition,
     ) -> Result<(), Error> {
         let definition_name = solidity_definition.name.as_ref().unwrap().name.clone();
@@ -334,6 +343,9 @@ impl Project {
             definition_name.clone(),
             inherits.clone()
         );
+
+        // Propagate inherited definitions
+        self.propagate_inherited_definitions(import_directives, inherits.as_slice(), &mut translated_definition)?;
 
         // Collect each type definition ahead of time for contextual reasons
         for part in solidity_definition.parts.iter() {
@@ -423,18 +435,12 @@ impl Project {
             todo!("using-for statements")
         }
 
-        // Keep track of storage variables for function scopes
-        let mut storage_variables = vec![];
-
         // Collect each storage field ahead of time for contextual reasons
         for part in solidity_definition.parts.iter() {
             let solidity::ContractPart::VariableDefinition(variable_definition) = part else { continue };
-            self.translate_state_variable(&mut translated_definition, &mut storage_variables, variable_definition)?;
+            self.translate_state_variable(&mut translated_definition, variable_definition)?;
         }
         
-        // Keep track of toplevel functions for function scopes
-        let mut functions = vec![];
-
         // Collect each toplevel function ahead of time for contextual reasons
         for part in solidity_definition.parts.iter() {
             let solidity::ContractPart::FunctionDefinition(function_definition) = part else { continue };
@@ -446,8 +452,8 @@ impl Project {
             }
     
             // Add the toplevel function to the list of toplevel functions for the toplevel scope
-            functions.push(
-                self.translate_function_declaration(&translated_definition, &storage_variables, function_definition)?
+            translated_definition.toplevel_scope.functions.push(
+                self.translate_function_declaration(&translated_definition, function_definition)?
             );
         }
 
@@ -461,7 +467,7 @@ impl Project {
                 continue;
             }
             
-            self.translate_modifier_definition(&mut translated_definition, &storage_variables, &functions, function_definition)?;
+            self.translate_modifier_definition(&mut translated_definition, function_definition)?;
         }
 
         // Translate each function
@@ -474,7 +480,7 @@ impl Project {
                 continue;
             }
 
-            self.translate_function_definition(&mut translated_definition, &storage_variables, &functions, function_definition)?;
+            self.translate_function_definition(&mut translated_definition, function_definition)?;
         }
 
         println!("// First translation pass of \"{}\" in \"{}\":", translated_definition.name, translated_definition.path.to_string_lossy());
@@ -485,10 +491,104 @@ impl Project {
         Ok(())
     }
 
+    fn propagate_inherited_definitions(
+        &mut self,
+        import_directives: &[solidity::Import],
+        inherits: &[String],
+        translated_definition: &mut TranslatedDefinition,
+    ) -> Result<(), Error> {
+        let source_unit_directory = translated_definition.path.parent().map(|p| PathBuf::from(p)).unwrap();
+
+        for inherit in inherits.iter() {
+            let mut inherited_definition = None;
+
+            // Find inherited import directive
+            for import_directive in import_directives.iter() {
+                let filename = match import_directive {
+                    solidity::Import::Plain(solidity::ImportPath::Filename(filename), _) => filename,
+                    
+                    solidity::Import::Rename(solidity::ImportPath::Filename(filename), identifiers, _) => {
+                        if !identifiers.iter().any(|i| i.0.name == *inherit) {
+                            continue;
+                        }
+
+                        filename
+                    }
+
+                    _ => panic!("Unsupported import directive: {import_directive:#?}"),
+                };
+
+                if filename.string.starts_with("@") {
+                    todo!("handle global import paths (i.e: node_modules)")
+                }
+
+                let import_path = source_unit_directory.join(filename.string.clone())
+                    .canonicalize()
+                    .map_err(|e| Error::Wrapped(Box::new(e)))?;
+
+                if let Some(t) = self.translated_definitions.iter().find(|t| t.path == import_path && t.name == *inherit) {
+                    inherited_definition = Some(t);
+                    break;
+                }
+            }
+
+            let Some(inherited_definition) = inherited_definition else {
+                panic!("Failed to find inherited definition \"{inherit}\"");
+            };
+
+            // Extend the toplevel scope
+            translated_definition.toplevel_scope.variables.extend(inherited_definition.toplevel_scope.variables.clone());
+            translated_definition.toplevel_scope.functions.extend(inherited_definition.toplevel_scope.functions.clone());
+
+            // Extend the type definitions
+            translated_definition.type_definitions.extend(inherited_definition.type_definitions.clone());
+
+            // Extend the structs
+            translated_definition.structs.extend(inherited_definition.structs.clone());
+
+            // Extend the events enum
+            if let Some(inherited_events_enum) = inherited_definition.events_enum.as_ref() {
+                translated_definition.get_events_enum().variants.extend(inherited_events_enum.variants.clone());
+            }
+
+            // Extend the errors enum
+            if let Some(inherited_errors_enum) = inherited_definition.errors_enum.as_ref() {
+                translated_definition.get_errors_enum().variants.extend(inherited_errors_enum.variants.clone());
+            }
+
+            // Extend the abi
+            if let Some(inherited_abi) = inherited_definition.abi.as_ref() {
+                translated_definition.get_abi().functions.extend(inherited_abi.functions.clone());
+            }
+
+            // Extend the configurable fields
+            if let Some(inherited_configurable) = inherited_definition.configurable.as_ref() {
+                translated_definition.get_configurable().fields.extend(inherited_configurable.fields.clone());
+            }
+
+            // Extend the storage fields
+            if let Some(inherited_storage) = inherited_definition.storage.as_ref() {
+                translated_definition.get_storage().fields.extend(inherited_storage.fields.clone());
+            }
+
+            // Extend the modifiers
+            translated_definition.modifiers.extend(inherited_definition.modifiers.clone());
+
+            // Extend the functions
+            translated_definition.functions.extend(inherited_definition.functions.clone());
+
+            // Extend the contract impl block
+            if let Some(inherited_impl) = inherited_definition.find_contract_impl() {
+                translated_definition.get_contract_impl().items.extend(inherited_impl.items.clone());
+            }
+        }
+
+        Ok(())
+    }
+
     fn translate_state_variable(
         &mut self,
         translated_definition: &mut TranslatedDefinition,
-        storage_variables: &mut Vec<TranslatedVariable>,
         variable_definition: &solidity::VariableDefinition,
     ) -> Result<(), Error> {
         // Translate the variable's type name
@@ -518,7 +618,7 @@ impl Project {
         let new_name = self.translate_naming_convention(old_name.as_str(), Case::Snake);
 
         // Add the storage variable for function scopes
-        storage_variables.push(TranslatedVariable {
+        translated_definition.toplevel_scope.variables.push(TranslatedVariable {
             old_name,
             new_name: new_name.clone(),
             type_name: variable_type_name.clone(),
@@ -563,8 +663,15 @@ impl Project {
             body: None,
         };
 
-        // Add the function to the abi
-        translated_definition.get_abi().functions.push(sway_function.clone());
+        if let Some(abi) = translated_definition.abi.as_mut() {
+            // Only add the function to the abi if it doesn't already exist
+            if !abi.functions.contains(&sway_function) {
+                abi.functions.push(sway_function.clone());
+            }
+        } else {
+            // Add the function to the abi
+            translated_definition.get_abi().functions.push(sway_function.clone());
+        }
 
         // Create the body for the toplevel function
         sway_function.body = Some(sway::Block {
@@ -597,8 +704,18 @@ impl Project {
             })),
         });
 
-        // Add the function wrapper to the contract impl
-        translated_definition.get_contract_impl().items.push(sway::ImplItem::Function(sway_function));
+        // Create the function wrapper item for the contract impl block
+        let impl_item = sway::ImplItem::Function(sway_function);
+
+        if let Some(contract_impl) = translated_definition.find_contract_impl_mut() {
+            // Only add the function wrapper to the contract impl if it doesn't already exist
+            if !contract_impl.items.contains(&impl_item) {
+                contract_impl.items.push(impl_item);
+            }
+        } else {
+            // Add the function wrapper to the contract impl
+            translated_definition.get_contract_impl().items.push(impl_item);
+        }
 
         Ok(())
     }
@@ -606,7 +723,6 @@ impl Project {
     fn translate_function_declaration(
         &mut self,
         translated_definition: &TranslatedDefinition,
-        storage_variables: &Vec<TranslatedVariable>,
         function_definition: &solidity::FunctionDefinition,
     ) -> Result<TranslatedFunction, Error> {
         // Collect information about the function from its type
@@ -628,8 +744,8 @@ impl Project {
 
         // Create a scope for modifier invocation translations
         let mut scope = TranslationScope {
-            parent: None,
-            variables: storage_variables.clone(),
+            parent: Some(Box::new(translated_definition.toplevel_scope.clone())),
+            variables: vec![],
             functions: vec![],
         };
 
@@ -701,8 +817,6 @@ impl Project {
     fn translate_modifier_definition(
         &mut self,
         translated_definition: &mut TranslatedDefinition,
-        storage_variables: &Vec<TranslatedVariable>,
-        functions: &Vec<TranslatedFunction>,
         function_definition: &solidity::FunctionDefinition,
     ) -> Result<(), Error> {
         let old_name = function_definition.name.as_ref().unwrap().name.clone();
@@ -718,9 +832,9 @@ impl Project {
         };
 
         let mut scope = TranslationScope {
-            parent: None,
-            variables: storage_variables.clone(),
-            functions: functions.clone(),
+            parent: Some(Box::new(translated_definition.toplevel_scope.clone())),
+            variables: vec![],
+            functions: vec![],
         };
 
         for (_, p) in function_definition.params.iter() {
@@ -930,8 +1044,6 @@ impl Project {
     fn translate_function_definition(
         &mut self,
         translated_definition: &mut TranslatedDefinition,
-        storage_variables: &Vec<TranslatedVariable>,
-        functions: &Vec<TranslatedFunction>,
         function_definition: &solidity::FunctionDefinition,
     ) -> Result<(), Error> {
         // Collect information about the function from its type
@@ -1024,9 +1136,16 @@ impl Project {
             body: None,
         };
 
-        // Add the function declaration to the abi if it's public
         if is_public {
-            translated_definition.get_abi().functions.push(sway_function.clone());
+            if let Some(abi) = translated_definition.abi.as_mut() {
+                // Only add the function to the abi if it doesn't already exist
+                if !abi.functions.contains(&sway_function) {
+                    abi.functions.push(sway_function.clone());
+                }
+            } else {
+                // Add the function to the abi
+                translated_definition.get_abi().functions.push(sway_function.clone());
+            }
         }
 
         // Convert the statements in the function's body (if any)
@@ -1034,9 +1153,9 @@ impl Project {
 
         // Create the scope for the body of the toplevel function
         let mut scope = TranslationScope {
-            parent: None,
-            variables: storage_variables.clone(),
-            functions: functions.clone(),
+            parent: Some(Box::new(translated_definition.toplevel_scope.clone())),
+            variables: vec![],
+            functions: vec![],
         };
 
         // Add the function parameters to the scope
@@ -1137,8 +1256,18 @@ impl Project {
                 })),
             });
 
-            // Add the function wrapper to the contract impl
-            translated_definition.get_contract_impl().items.push(sway::ImplItem::Function(sway_function));
+            // Create the function wrapper item for the contract impl block
+            let impl_item = sway::ImplItem::Function(sway_function);
+
+            if let Some(contract_impl) = translated_definition.find_contract_impl_mut() {
+                // Only add the function wrapper to the contract impl if it doesn't already exist
+                if !contract_impl.items.contains(&impl_item) {
+                    contract_impl.items.push(impl_item);
+                }
+            } else {
+                // Add the function wrapper to the contract impl
+                translated_definition.get_contract_impl().items.push(impl_item);
+            }
         }
 
         Ok(())
@@ -2257,14 +2386,10 @@ impl Project {
                         }
 
                         old_name => {
-                            //
-                            // TODO:
-                            // Ensure the function exists in scope.
-                            // We need to propagate functions from inherited contracts, or this will fail.
-                            //
-                            // let Some(function) = scope.find_function_from_old_name(old_name) else {
-                            //     panic!("Failed to find function `{old_name}` in scope");
-                            // };
+                            // Ensure the function exists in scope
+                            let Some(function) = scope.find_function_from_old_name(old_name) else {
+                                panic!("Failed to find function `{old_name}` in scope");
+                            };
 
                             //
                             // TODO: ensure the supplied function call args match the function's parameters

@@ -168,6 +168,8 @@ pub struct TranslatedDefinition {
     /// The path to the file that the original definition is located in.
     pub path: PathBuf,
 
+    pub toplevel_scope: TranslationScope,
+
     pub kind: solidity::ContractTy,
     pub name: String,
     pub inherits: Vec<String>,
@@ -269,6 +271,7 @@ impl TranslatedDefinition {
     pub fn new<P: AsRef<Path>, S: ToString>(path: P, kind: solidity::ContractTy, name: S, inherits: Vec<S>) -> Self {
         Self {
             path: path.as_ref().into(),
+            toplevel_scope: TranslationScope::default(),
             kind,
             name: name.to_string(),
             inherits: inherits.iter().map(|i| i.to_string()).collect(),
@@ -320,7 +323,7 @@ impl TranslatedDefinition {
         if self.abi.is_none() {
             self.abi = Some(sway::Abi {
                 name: self.name.clone(),
-                inherits: self.inherits.clone(),
+                inherits: vec![],
                 functions: vec![],
             });
         }
@@ -350,15 +353,25 @@ impl TranslatedDefinition {
         self.storage.as_mut().unwrap()
     }
 
-    /// Gets the translated definition's implementation for `Contract`. If it doesn't exist, it gets created.
-    pub fn get_contract_impl(&mut self) -> &mut sway::Impl {
-        let find_contract_impl = |i: &sway::Impl| {
+    pub fn find_contract_impl(&self) -> Option<&sway::Impl> {
+        self.impls.iter().find(|i| {
             let sway::TypeName::Identifier { name: type_name, .. } = &i.type_name else { return false };
             let Some(sway::TypeName::Identifier { name: for_type_name, .. }) = i.for_type_name.as_ref() else { return false };
             *type_name == self.name && for_type_name == "Contract"
-        };
+        })
+    }
 
-        if !self.impls.iter_mut().any(|i| find_contract_impl(i)) {
+    pub fn find_contract_impl_mut(&mut self) -> Option<&mut sway::Impl> {
+        self.impls.iter_mut().find(|i| {
+            let sway::TypeName::Identifier { name: type_name, .. } = &i.type_name else { return false };
+            let Some(sway::TypeName::Identifier { name: for_type_name, .. }) = i.for_type_name.as_ref() else { return false };
+            *type_name == self.name && for_type_name == "Contract"
+        })
+    }
+
+    /// Gets the translated definition's implementation for `Contract`. If it doesn't exist, it gets created.
+    pub fn get_contract_impl(&mut self) -> &mut sway::Impl {
+        if self.find_contract_impl().is_none() {
             self.impls.push(sway::Impl {
                 generic_parameters: None,
                 type_name: sway::TypeName::Identifier {
@@ -373,6 +386,6 @@ impl TranslatedDefinition {
             });
         }
 
-        self.impls.iter_mut().find(|i| find_contract_impl(*i)).unwrap()
+        self.find_contract_impl_mut().unwrap()
     }
 }
