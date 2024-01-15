@@ -12,6 +12,9 @@ use structopt::{clap::AppSettings, StructOpt};
 #[structopt(global_settings = &[AppSettings::ColoredHelp, AppSettings::ArgRequiredElseHelp])]
 pub struct Options {
     #[structopt(long)]
+    pub definition_name: Option<String>,
+
+    #[structopt(long)]
     pub contract_files: Vec<PathBuf>,
 }
 
@@ -28,7 +31,7 @@ fn translate_project() -> Result<(), Error> {
     let mut project = Project::default();
     
     for contract_file in options.contract_files.iter() {
-        project.translate(&contract_file)?;
+        project.translate(options.definition_name.clone(), &contract_file)?;
     }
 
     Ok(())

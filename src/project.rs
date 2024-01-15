@@ -65,7 +65,7 @@ impl Project {
         }
     }
 
-    pub fn translate(&mut self, source_unit_path: &Path) -> Result<(), Error> {
+    pub fn translate(&mut self, definition_name: Option<String>, source_unit_path: &Path) -> Result<(), Error> {
         let solidity_source_units = self.solidity_source_units.clone();
 
         // Ensure the source unit has been parsed
@@ -96,6 +96,12 @@ impl Project {
                 }
     
                 solidity::SourceUnitPart::ContractDefinition(contract_definition) => {
+                    if let Some(definition_name) = definition_name.as_ref() {
+                        if contract_definition.name.as_ref().unwrap().name != *definition_name {
+                            continue;
+                        }
+                    }
+
                     self.translate_contract_definition(&source_unit_path, import_directives.as_slice(), contract_definition)?;
                 }
     
@@ -496,22 +502,34 @@ impl Project {
         let source_unit_directory = translated_definition.path.parent().map(|p| PathBuf::from(p)).unwrap();
 
         for import_directive in import_directives.iter() {
-            let filename = match import_directive {
-                solidity::Import::Plain(solidity::ImportPath::Filename(filename), _) => filename,
-                solidity::Import::Rename(solidity::ImportPath::Filename(filename), _, _) => filename,
-                _ => panic!("Unsupported import directive: {import_directive:#?}"),
+            let mut translate_import_directive = |definition_name: Option<String>, filename: &solidity::StringLiteral| -> Result<(), Error> {
+                if filename.string.starts_with("@") {
+                    todo!("handle global import paths (i.e: node_modules)")
+                }
+    
+                let import_path = source_unit_directory.join(filename.string.clone())
+                    .canonicalize()
+                    .map_err(|e| Error::Wrapped(Box::new(e)))?;
+    
+                if !self.translated_definitions.iter().any(|t| t.path == import_path) {
+                    self.translate(definition_name, &import_path)?;
+                }
+
+                Ok(())
             };
 
-            if filename.string.starts_with("@") {
-                todo!("handle global import paths (i.e: node_modules)")
-            }
+            match import_directive {
+                solidity::Import::Plain(solidity::ImportPath::Filename(filename), _) => {
+                    translate_import_directive(None, filename)?;
+                }
 
-            let import_path = source_unit_directory.join(filename.string.clone())
-                .canonicalize()
-                .map_err(|e| Error::Wrapped(Box::new(e)))?;
+                solidity::Import::Rename(solidity::ImportPath::Filename(filename), identifiers, _) => {
+                    for (identifier, _) in identifiers.iter() {
+                        translate_import_directive(Some(identifier.name.clone()), filename)?;
+                    }
+                }
 
-            if !self.translated_definitions.iter().any(|t| t.path == import_path) {
-                self.translate(&import_path)?;
+                _ => panic!("Unsupported import directive: {import_directive:#?}"),
             }
         }
 
