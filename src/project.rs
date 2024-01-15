@@ -2,10 +2,9 @@ use crate::{
     errors::Error,
     sway::{self, LetIdentifier},
     translate::{TranslatedDefinition, TranslationScope, TranslatedVariable, TranslatedFunction, TranslatedModifier},
-    Options,
 };
 use convert_case::{Case, Casing};
-use solang_parser::pt::{self as solidity, SourceUnitPart};
+use solang_parser::pt as solidity;
 use std::{
     cell::RefCell,
     collections::HashMap,
@@ -18,20 +17,6 @@ pub struct Project {
     line_ranges: HashMap<PathBuf, Vec<(usize, usize)>>,
     solidity_source_units: Rc<RefCell<HashMap<PathBuf, solidity::SourceUnit>>>,
     translated_definitions: Vec<TranslatedDefinition>,
-}
-
-impl TryFrom<&Options> for Project {
-    type Error = Error;
-
-    fn try_from(options: &Options) -> Result<Self, Self::Error> {
-        let mut project = Project::default();
-
-        for path in options.contract_files.iter() {
-            project.parse_solidity_source_unit(path)?;
-        }
-
-        Ok(project)
-    }
 }
 
 impl Project {
@@ -80,74 +65,75 @@ impl Project {
         }
     }
 
-    pub fn translate(&mut self) -> Result<(), Error> {
+    pub fn translate(&mut self, source_unit_path: &Path) -> Result<(), Error> {
         let solidity_source_units = self.solidity_source_units.clone();
-        let translation_queue = self.create_translation_queue()?;
 
-        // Translate source units through translation queue
-        for source_unit_path in translation_queue.iter() {
-            // Get the parsed source unit
-            let source_unit = solidity_source_units.borrow().get(source_unit_path).unwrap().clone();
+        // Ensure the source unit has been parsed
+        if !solidity_source_units.borrow().contains_key(source_unit_path) {
+            self.parse_solidity_source_unit(source_unit_path)?;
+        }
 
-            // Collect import directives ahead of time for contextual reasons
-            let mut import_directives = vec![];
+        // Get the parsed source unit
+        let source_unit = solidity_source_units.borrow().get(source_unit_path).unwrap().clone();
 
-            for source_unit_part in source_unit.0.iter() {
-                let solidity::SourceUnitPart::ImportDirective(import_directive) = source_unit_part else { continue };
-                import_directives.push(import_directive.clone());
-            }
+        // Collect import directives ahead of time for contextual reasons
+        let mut import_directives = vec![];
 
-            // Handle the first translation pass
-            for source_unit_part in source_unit.0.iter() {
-                match source_unit_part {
-                    solidity::SourceUnitPart::PragmaDirective(_, _, _) => {
-                        // TODO: check if any are actually important
-                    }
-        
-                    solidity::SourceUnitPart::ImportDirective(_) => {
-                        // NOTE: we don't need to handle this because we did already for the conversion queue
-                    }
-        
-                    solidity::SourceUnitPart::ContractDefinition(contract_definition) => {
-                        self.translate_contract_definition(&source_unit_path, import_directives.as_slice(), contract_definition)?;
-                    }
-        
-                    solidity::SourceUnitPart::EnumDefinition(_) => {
-                        todo!("toplevel enums")
-                    }
-        
-                    solidity::SourceUnitPart::StructDefinition(_) => {
-                        todo!("toplevel structs")
-                    }
-        
-                    solidity::SourceUnitPart::EventDefinition(_) => {
-                        unimplemented!("toplevel custom events")
-                    }
-        
-                    solidity::SourceUnitPart::ErrorDefinition(_) => {
-                        unimplemented!("toplevel custom errors")
-                    }
-        
-                    solidity::SourceUnitPart::FunctionDefinition(_) => {
-                        unimplemented!("toplevel functions")
-                    }
-        
-                    solidity::SourceUnitPart::VariableDefinition(_) => {
-                        unimplemented!("toplevel variable definitions")
-                    }
-        
-                    solidity::SourceUnitPart::TypeDefinition(_) => {
-                        unimplemented!("toplevel type definitions")
-                    }
-        
-                    solidity::SourceUnitPart::Annotation(_) => {}
-        
-                    solidity::SourceUnitPart::Using(_) => {
-                        unimplemented!("toplevel using-for statements")
-                    }
-        
-                    solidity::SourceUnitPart::StraySemicolon(_) => {}
+        for source_unit_part in source_unit.0.iter() {
+            let solidity::SourceUnitPart::ImportDirective(import_directive) = source_unit_part else { continue };
+            import_directives.push(import_directive.clone());
+        }
+
+        // Handle the first translation pass
+        for source_unit_part in source_unit.0.iter() {
+            match source_unit_part {
+                solidity::SourceUnitPart::PragmaDirective(_, _, _) => {
+                    // TODO: check if any are actually important
                 }
+    
+                solidity::SourceUnitPart::ImportDirective(_) => {
+                    // NOTE: we don't need to handle this because we did already for the conversion queue
+                }
+    
+                solidity::SourceUnitPart::ContractDefinition(contract_definition) => {
+                    self.translate_contract_definition(&source_unit_path, import_directives.as_slice(), contract_definition)?;
+                }
+    
+                solidity::SourceUnitPart::EnumDefinition(_) => {
+                    todo!("toplevel enums")
+                }
+    
+                solidity::SourceUnitPart::StructDefinition(_) => {
+                    todo!("toplevel structs")
+                }
+    
+                solidity::SourceUnitPart::EventDefinition(_) => {
+                    unimplemented!("toplevel custom events")
+                }
+    
+                solidity::SourceUnitPart::ErrorDefinition(_) => {
+                    unimplemented!("toplevel custom errors")
+                }
+    
+                solidity::SourceUnitPart::FunctionDefinition(_) => {
+                    unimplemented!("toplevel functions")
+                }
+    
+                solidity::SourceUnitPart::VariableDefinition(_) => {
+                    unimplemented!("toplevel variable definitions")
+                }
+    
+                solidity::SourceUnitPart::TypeDefinition(_) => {
+                    unimplemented!("toplevel type definitions")
+                }
+    
+                solidity::SourceUnitPart::Annotation(_) => {}
+    
+                solidity::SourceUnitPart::Using(_) => {
+                    unimplemented!("toplevel using-for statements")
+                }
+    
+                solidity::SourceUnitPart::StraySemicolon(_) => {}
             }
         }
 
@@ -158,70 +144,6 @@ impl Project {
         //
 
         Ok(())
-    }
-
-    fn create_translation_queue(&mut self) -> Result<Vec<PathBuf>, Error> {
-        let mut translation_queue: Vec<PathBuf> = vec![];
-        let mut source_unit_paths = self.solidity_source_units.borrow().keys().cloned().collect::<Vec<_>>();
-
-        while let Some(source_unit_path) = source_unit_paths.pop() {
-            let source_unit_directory = source_unit_path.parent().unwrap();
-
-            let mut queue_import_path = |import_path: &solidity::ImportPath| -> Result<(), Error> {
-                match import_path {
-                    solidity::ImportPath::Filename(filename) => {
-                        if filename.string.starts_with("@") {
-                            todo!("handle global import paths (i.e: node_modules)")
-                        }
-
-                        // Get the canonical path of the imported source unit
-                        let import_path = source_unit_directory.join(filename.string.clone()).canonicalize().map_err(|e| Error::Wrapped(Box::new(e)))?;
-                        source_unit_paths.push(import_path.clone());
-                        
-                        // If a source unit is already queued, move it to the top of the queue
-                        if let Some((index, _)) = translation_queue.iter().enumerate().find(|(_, p)| import_path.to_string_lossy() == p.to_string_lossy()) {
-                            translation_queue.remove(index);
-                            translation_queue.insert(0, import_path);
-                        }
-                        // If a source unit is not queued, add it to the end of the queue
-                        else {
-                            translation_queue.push(import_path);
-                        }
-                    }
-
-                    solidity::ImportPath::Path(path) => todo!("Experimental solidity import path: {path}"),
-                }
-
-                Ok(())
-            };
-            
-            // Parse the source unit if it has not been parsed already
-            if !self.solidity_source_units.borrow().contains_key(&source_unit_path) {
-                self.parse_solidity_source_unit(&source_unit_path)?;
-            }
-
-            // Get the parsed source unit
-            let source_unit = self.solidity_source_units.borrow().get(&source_unit_path).unwrap().clone();
-
-            for source_unit_part in source_unit.0.iter() {
-                // Only check import directives
-                let solidity::SourceUnitPart::ImportDirective(import_directive) = source_unit_part else { continue };
-
-                // Queue the imported source unit for translation
-                match import_directive {
-                    solidity::Import::Plain(import_path, _) => queue_import_path(import_path)?,
-                    solidity::Import::GlobalSymbol(import_path, _, _) => queue_import_path(import_path)?,
-                    solidity::Import::Rename(import_path, _, _) => queue_import_path(import_path)?,
-                }
-            }
-
-            // Add the source unit path to the end of the translation queue
-            if !translation_queue.contains(&source_unit_path) {
-                translation_queue.push(source_unit_path);
-            }
-        }
-
-        Ok(translation_queue)
     }
 
     fn translate_naming_convention(&mut self, name: &str, case: Case) -> String {
@@ -598,14 +520,21 @@ impl Project {
                     .canonicalize()
                     .map_err(|e| Error::Wrapped(Box::new(e)))?;
 
-                if let Some(t) = self.translated_definitions.iter().find(|t| t.path == import_path && t.name == *inherit) {
-                    inherited_definition = Some(t);
-                    break;
+                match self.translated_definitions.iter().find(|t| t.path == import_path && t.name == *inherit) {
+                    Some(t) => {
+                        inherited_definition = Some(t);
+                        break;
+                    }
+
+                    None => {
+                        self.translate(&import_path)?;
+                        inherited_definition = self.translated_definitions.iter().find(|t| t.path == import_path && t.name == *inherit);
+                    }
                 }
             }
 
             let Some(inherited_definition) = inherited_definition else {
-                panic!("Failed to find inherited definition \"{inherit}\"");
+                panic!("Failed to find inherited definition \"{inherit}\" for \"{}\"", translated_definition.name);
             };
 
             // Extend the toplevel scope
@@ -2583,7 +2512,7 @@ impl Project {
                                 }
 
                                 for (i, parameter) in parameters.iter().enumerate() {
-                                    if self.get_expression_type(scope, parameter).unwrap() != f.parameters.entries[i].type_name {
+                                    if scope.get_expression_type(parameter).unwrap() != f.parameters.entries[i].type_name {
                                         return false;
                                     }
                                 }
@@ -2703,7 +2632,7 @@ impl Project {
                     }
 
                     let expression = self.translate_expression(translated_definition, scope, expression)?;
-                    let type_name = self.get_expression_type(scope, &expression)?;
+                    let type_name = scope.get_expression_type(&expression)?;
 
                     match type_name {
                         sway::TypeName::Identifier { name, generic_parameters } => match name.as_str() {
@@ -2785,7 +2714,7 @@ impl Project {
                 solidity::Expression::FunctionCallBlock(_, function, block) => match function.as_ref() {
                     solidity::Expression::MemberAccess(_, expression, member) => {
                         let expression = self.translate_expression(translated_definition, scope, expression)?;
-                        let type_name = self.get_expression_type(scope, &expression)?;
+                        let type_name = scope.get_expression_type(&expression)?;
 
                         match type_name {
                             sway::TypeName::Identifier { name, generic_parameters } => match name.as_str() {
@@ -2946,71 +2875,6 @@ impl Project {
         }
     }
 
-    fn get_expression_type(
-        &self,
-        scope: &TranslationScope,
-        expression: &sway::Expression,
-    ) -> Result<sway::TypeName, Error> {
-        match expression {
-            sway::Expression::Literal(literal) => match literal {
-                sway::Literal::Bool(_) => Ok(sway::TypeName::Identifier {
-                    name: "bool".into(),
-                    generic_parameters: None,
-                }),
-                sway::Literal::DecInt(_) => Ok(sway::TypeName::Identifier {
-                    name: "u64".into(), // TODO: is this ok?
-                    generic_parameters: None,
-                }),
-                sway::Literal::HexInt(_) => Ok(sway::TypeName::Identifier {
-                    name: "u64".into(), // TODO: is this ok?
-                    generic_parameters: None,
-                }),
-                sway::Literal::String(s) => Ok(sway::TypeName::String { length: s.len() }),
-            }
-
-            sway::Expression::Identifier(name) => {
-                let Some(variable) = scope.find_variable_from_new_name(name) else {
-                    panic!("Failed to find variable in scope: {name}");
-                };
-
-                // Variable should not be a storage field
-                if variable.is_storage {
-                    panic!("Failed to find variable in scope: {name}");
-                }
-
-                Ok(variable.type_name.clone())
-            }
-
-            sway::Expression::FunctionCall(function_call) => match &function_call.function {
-                sway::Expression::Identifier(name) => match name.as_str() {
-                    s if s.starts_with("Identity::") => Ok(sway::TypeName::Identifier {
-                        name: "Identity".into(),
-                        generic_parameters: None,
-                    }),
-
-                    _ => todo!("get type of function call expression: {expression:#?}"),
-                }
-                _ => todo!("get type of function call expression: {expression:#?}"),
-            }
-
-            sway::Expression::Block(_) => todo!("get type of block expression: {expression:#?}"),
-            sway::Expression::Return(_) => todo!("get type of return expression: {expression:#?}"),
-            sway::Expression::Array(_) => todo!("get type of array expression: {expression:#?}"),
-            sway::Expression::ArrayAccess(_) => todo!("get type of array access expression: {expression:#?}"),
-            sway::Expression::MemberAccess(_) => todo!("get type of member access expression: {expression:#?}"),
-            sway::Expression::Tuple(_) => todo!("get type of tuple expression: {expression:#?}"),
-            sway::Expression::If(_) => todo!("get type of if expression: {expression:#?}"),
-            sway::Expression::While(_) => todo!("get type of while expression: {expression:#?}"),
-            sway::Expression::UnaryExpression(_) => todo!("get type of unary expression expression: {expression:#?}"),
-
-            sway::Expression::BinaryExpression(binary_expression) => self.get_expression_type(scope, &binary_expression.lhs),
-
-            sway::Expression::Constructor(_) => todo!("get type of constructor expression: {expression:#?}"),
-            sway::Expression::Continue => todo!("get type of continue expression: {expression:#?}"),
-            sway::Expression::Break => todo!("get type of break expression: {expression:#?}"),
-        }
-    }
-    
     #[inline]
     fn translate_unary_expression(
         &mut self,

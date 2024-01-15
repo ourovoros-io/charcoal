@@ -25,6 +25,11 @@ fn translate_project() -> Result<(), Error> {
     let options = Options::from_args_safe()
         .map_err(|e| Error::Wrapped(Box::new(e)))?;
 
-    let mut project = Project::try_from(&options)?;
-    project.translate()
+    let mut project = Project::default();
+    
+    for contract_file in options.contract_files.iter() {
+        project.translate(&contract_file)?;
+    }
+
+    Ok(())
 }

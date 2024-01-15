@@ -1,4 +1,4 @@
-use crate::sway;
+use crate::{sway, errors::Error};
 use solang_parser::pt as solidity;
 use std::{
     collections::HashMap,
@@ -176,6 +176,70 @@ impl TranslationScope {
         }
 
         None
+    }
+
+    pub fn get_expression_type(
+        &self,
+        expression: &sway::Expression,
+    ) -> Result<sway::TypeName, Error> {
+        match expression {
+            sway::Expression::Literal(literal) => match literal {
+                sway::Literal::Bool(_) => Ok(sway::TypeName::Identifier {
+                    name: "bool".into(),
+                    generic_parameters: None,
+                }),
+                sway::Literal::DecInt(_) => Ok(sway::TypeName::Identifier {
+                    name: "u64".into(), // TODO: is this ok?
+                    generic_parameters: None,
+                }),
+                sway::Literal::HexInt(_) => Ok(sway::TypeName::Identifier {
+                    name: "u64".into(), // TODO: is this ok?
+                    generic_parameters: None,
+                }),
+                sway::Literal::String(s) => Ok(sway::TypeName::String { length: s.len() }),
+            }
+
+            sway::Expression::Identifier(name) => {
+                let Some(variable) = self.find_variable_from_new_name(name) else {
+                    panic!("Failed to find variable in scope: {name}");
+                };
+
+                // Variable should not be a storage field
+                if variable.is_storage {
+                    panic!("Failed to find variable in scope: {name}");
+                }
+
+                Ok(variable.type_name.clone())
+            }
+
+            sway::Expression::FunctionCall(function_call) => match &function_call.function {
+                sway::Expression::Identifier(name) => match name.as_str() {
+                    s if s.starts_with("Identity::") => Ok(sway::TypeName::Identifier {
+                        name: "Identity".into(),
+                        generic_parameters: None,
+                    }),
+
+                    _ => todo!("get type of function call expression: {expression:#?}"),
+                }
+                _ => todo!("get type of function call expression: {expression:#?}"),
+            }
+
+            sway::Expression::Block(_) => todo!("get type of block expression: {expression:#?}"),
+            sway::Expression::Return(_) => todo!("get type of return expression: {expression:#?}"),
+            sway::Expression::Array(_) => todo!("get type of array expression: {expression:#?}"),
+            sway::Expression::ArrayAccess(_) => todo!("get type of array access expression: {expression:#?}"),
+            sway::Expression::MemberAccess(_) => todo!("get type of member access expression: {expression:#?}"),
+            sway::Expression::Tuple(_) => todo!("get type of tuple expression: {expression:#?}"),
+            sway::Expression::If(_) => todo!("get type of if expression: {expression:#?}"),
+            sway::Expression::While(_) => todo!("get type of while expression: {expression:#?}"),
+            sway::Expression::UnaryExpression(_) => todo!("get type of unary expression expression: {expression:#?}"),
+
+            sway::Expression::BinaryExpression(binary_expression) => self.get_expression_type(&binary_expression.lhs),
+
+            sway::Expression::Constructor(_) => todo!("get type of constructor expression: {expression:#?}"),
+            sway::Expression::Continue => todo!("get type of continue expression: {expression:#?}"),
+            sway::Expression::Break => todo!("get type of break expression: {expression:#?}"),
+        }
     }
 }
 
