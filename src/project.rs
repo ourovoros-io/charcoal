@@ -2586,7 +2586,7 @@ impl Project {
 
                             // Translate the function call
                             Ok(sway::Expression::from(sway::FunctionCall {
-                                function: sway::Expression::Identifier(self.translate_naming_convention(name.as_str(), Case::Snake)),
+                                function: sway::Expression::Identifier(function.new_name.clone()),
                                 generic_parameters: None,
                                 parameters,
                             }))
