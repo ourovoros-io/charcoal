@@ -688,6 +688,18 @@ impl Project {
                 }
             }
 
+            // Extend function name mapping
+            for (signature, function_name) in inherited_definition.function_names.iter() {
+                if !translated_definition.function_names.contains_key(signature) {
+                    translated_definition.function_names.insert(signature.clone(), function_name.clone());
+                }
+            }
+
+            // Extend function name count mapping
+            for (function_name, count) in inherited_definition.function_name_counts.iter() {
+                *translated_definition.function_name_counts.entry(function_name.clone()).or_insert(0) += *count;
+            }
+
             // Extend the functions
             for inherited_function in inherited_definition.functions.iter() {
                 if !translated_definition.functions.contains(inherited_function) {
