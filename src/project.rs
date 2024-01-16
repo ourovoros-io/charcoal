@@ -274,7 +274,38 @@ impl Project {
                 solidity::Type::Function { params, attributes, returns } => todo!("function types"),
             }
 
-            _ => unimplemented!("type name expression: {type_name:?}"),
+            solidity::Expression::Variable(solidity::Identifier { name, .. }) => {
+                // Check if type is a type definition
+                if translated_definition.type_definitions.iter().any(|t| match &t.name {
+                    sway::TypeName::Identifier { name: type_name, generic_parameters: None } if type_name == name => true,
+                    _ => false,
+                }) {
+                    return sway::TypeName::Identifier {
+                        name: name.clone(),
+                        generic_parameters: None,
+                    };
+                }
+                
+                // Check if type is a struct
+                if translated_definition.structs.iter().any(|t| t.name == *name) {
+                    return sway::TypeName::Identifier {
+                        name: name.clone(),
+                        generic_parameters: None,
+                    };
+                }
+                
+                // Check if type is an enum
+                if translated_definition.enums.iter().any(|t| t.name == *name) {
+                    return sway::TypeName::Identifier {
+                        name: name.clone(),
+                        generic_parameters: None,
+                    };
+                }
+                
+                todo!("type name variable expression: {type_name:#?}")
+            }
+
+            _ => unimplemented!("type name expression: {type_name:#?}"),
         }
     }
 
@@ -354,8 +385,17 @@ impl Project {
         // Collect each enum ahead of time for contextual reasons
         for part in solidity_definition.parts.iter() {
             let solidity::ContractPart::EnumDefinition(enum_definition) = part else { continue };
-
-            todo!("enum definitions")
+            
+            translated_definition.enums.push(sway::Enum {
+                attributes: None,
+                is_public: false,
+                name: enum_definition.name.as_ref().unwrap().name.clone(),
+                generic_parameters: None,
+                variants: enum_definition.values.iter().map(|v| sway::EnumVariant {
+                    name: v.as_ref().unwrap().name.clone(),
+                    type_name: sway::TypeName::Tuple { type_names: vec![] },
+                }).collect(),
+            });
         }
 
         // Collect each event and error ahead of time for contextual reasons
@@ -2131,13 +2171,23 @@ impl Project {
 
             solidity::Expression::ArraySlice(_, _, _, _) => todo!("translate array slice expression: {expression:#?}"),
             
-            solidity::Expression::List(_, _) => {
+            solidity::Expression::List(_, parameters) => {
                 //
                 // NOTE:
-                // These are handled at the statement level, since it's an assignment to a list of variable declarations.
+                // Assignments are handled at the statement level, since it's an assignment to a list of variable declarations.
                 //
 
-                unimplemented!("list expression: {expression:#?}")
+                // Ensure all elements of the list have no name (value-only tuple)
+                if !parameters.iter().all(|(_, p)| p.as_ref().unwrap().name.is_none()) {
+                    unimplemented!("non-value list expression: {expression:#?}")
+                }
+
+                // Create a tuple expression
+                Ok(sway::Expression::Tuple(
+                    parameters.iter()
+                        .map(|(_, p)| self.translate_expression(translated_definition, scope, &p.as_ref().unwrap().ty))
+                        .collect::<Result<Vec<_>, _>>()?
+                ))
             }
 
             solidity::Expression::Parenthesis(_, x) => {

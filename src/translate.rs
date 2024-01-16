@@ -252,6 +252,7 @@ pub struct TranslatedDefinition {
     pub inherits: Vec<String>,
     pub type_definitions: Vec<sway::TypeDefinition>,
     pub structs: Vec<sway::Struct>,
+    pub enums: Vec<sway::Enum>,
     pub events_enum: Option<sway::Enum>,
     pub errors_enum: Option<sway::Enum>,
     pub abi: Option<sway::Abi>,
@@ -284,6 +285,17 @@ impl Display for TranslatedDefinition {
         }
 
         for (i, x) in self.structs.iter().enumerate() {
+            if i == 0 && written > 0 {
+                writeln!(f)?;
+            } else if i > 0 {
+                writeln!(f)?;
+            }
+
+            writeln!(f, "{}", sway::TabbedDisplayer(x))?;
+            written += 1;
+        }
+    
+        for (i, x) in self.enums.iter().enumerate() {
             if i == 0 && written > 0 {
                 writeln!(f)?;
             } else if i > 0 {
@@ -367,6 +379,7 @@ impl TranslatedDefinition {
             inherits: inherits.iter().map(|i| i.to_string()).collect(),
             type_definitions: vec![],
             structs: vec![],
+            enums: vec![],
             events_enum: None,
             errors_enum: None,
             abi: None,
