@@ -1353,8 +1353,60 @@ impl Project {
             })
         );
 
+        let mut return_parameters = vec![];
+
+        // Add the function's named return parameters to the scope
+        for (_, return_parameter) in function_definition.returns.iter() {
+            let Some(return_parameter) = return_parameter else { continue };
+            let Some(old_name) = return_parameter.name.as_ref().map(|n| n.name.clone()) else { continue };
+            let new_name = self.translate_naming_convention(old_name.as_str(), Case::Snake);
+            let type_name = self.translate_type_name(translated_definition, &return_parameter.ty);
+
+            let translated_variable = TranslatedVariable {
+                old_name,
+                new_name,
+                type_name,
+                is_storage: false,
+                statement_index: None,
+                read_count: 0,
+                mutation_count: 0,
+            };
+
+            return_parameters.push(translated_variable.clone());
+            scope.variables.push(translated_variable);
+        }
+
         // Translate the body for the toplevel function
         let mut function_body = self.translate_block(translated_definition, scope.clone(), statements.as_slice())?;
+
+        // Propagate the return variable declarations
+        for return_parameter in return_parameters.iter().rev() {
+            function_body.statements.insert(0, sway::Statement::Let(sway::Let {
+                pattern: sway::LetPattern::Identifier(sway::LetIdentifier {
+                    is_mutable: false,
+                    name: return_parameter.new_name.clone(),
+                }),
+                type_name: Some(return_parameter.type_name.clone()),
+                value: Some(sway::Expression::create_value_expression(&return_parameter.type_name, None)),
+            }));
+        }
+
+        // If the function returns values but doesn't end in a return statement, propagate the return variables
+        if !return_parameters.is_empty() {
+            if !matches!(function_body.statements.last(), Some(sway::Statement::Expression(sway::Expression::Return(_)))) {
+                function_body.statements.push(sway::Statement::from(sway::Expression::Return(Some(Box::new(
+                    if return_parameters.len() == 1 {
+                        sway::Expression::Identifier(
+                            return_parameters[0].new_name.clone()
+                        )
+                    } else {
+                        sway::Expression::Tuple(
+                            return_parameters.iter().map(|p| sway::Expression::Identifier(p.new_name.clone())).collect()
+                        )
+                    }
+                )))));
+            }
+        }
 
         // Check if the final statement returns a value and change it to be the final expression of the block
         if let Some(sway::Statement::Expression(sway::Expression::Return(Some(value)))) = function_body.statements.last().cloned() {
@@ -1651,9 +1703,234 @@ impl Project {
         scope: &mut TranslationScope,
         dialect: &Option<solidity::StringLiteral>,
         flags: &Option<Vec<solidity::StringLiteral>>,
-        block: &solidity::YulBlock,
+        yul_block: &solidity::YulBlock,
     ) -> Result<sway::Statement, Error> {
+        let mut block = sway::Block::default();
+
+        for yul_statement in yul_block.statements.iter() {
+            match yul_statement {
+                solidity::YulStatement::Assign(_, identifiers, value) => {
+                    let identifiers = identifiers.iter()
+                        .map(|i| self.translate_yul_expression(translated_definition, scope, i))
+                        .collect::<Result<Vec<_>, _>>()?;
+
+                    let value = self.translate_yul_expression(translated_definition, scope, value)?;
+                    
+                    return Ok(sway::Statement::from(sway::Expression::from(sway::BinaryExpression {
+                        operator: "=".into(),
+                        lhs: if identifiers.len() == 1 {
+                            identifiers[0].clone()
+                        } else {
+                            sway::Expression::Tuple(identifiers)
+                        },
+                        rhs: value,
+                    })));
+                }
+                
+                solidity::YulStatement::VariableDeclaration(_, identifiers, value) => {
+                    // Collect variable translations for the scope
+                    let mut variables = vec![];
+    
+                    for p in identifiers.iter() {
+                        variables.push(TranslatedVariable {
+                            old_name: p.id.name.clone(),
+                            new_name: self.translate_naming_convention(p.id.name.as_str(), Case::Snake),
+                            type_name: sway::TypeName::Identifier { name: "u64".into(), generic_parameters: None }, // TODO: is this ok?
+                            is_storage: false,
+                            statement_index: None,
+                            read_count: 0,
+                            mutation_count: 0,
+                        });
+                    }
+    
+                    scope.variables.extend(variables.clone());
+    
+                    // Create the variable declaration statement
+                    return Ok(sway::Statement::from(sway::Let {
+                        pattern: if variables.len() == 1 {
+                            sway::LetPattern::Identifier(sway::LetIdentifier {
+                                is_mutable: false,
+                                name: variables[0].new_name.clone(),
+                            })
+                        } else {
+                            sway::LetPattern::Tuple(
+                                variables.iter()
+                                    .map(|p| LetIdentifier {
+                                        is_mutable: false,
+                                        name: p.new_name.clone(),
+                                    })
+                                    .collect()
+                            )
+                        },
+    
+                        type_name: None,
+                        
+                        value: if let Some(value) = value.as_ref() {
+                            Some(self.translate_yul_expression(translated_definition, scope, value)?)
+                        } else {
+                            None
+                        },
+                    }));
+                }
+
+                solidity::YulStatement::If(_, _, _) => todo!("yul if statement: {yul_statement:#?}"),
+                solidity::YulStatement::For(_) => todo!("yul for statement: {yul_statement:#?}"),
+                solidity::YulStatement::Switch(_) => todo!("yul switch statement: {yul_statement:#?}"),
+                solidity::YulStatement::Leave(_) => todo!("yul leave statement: {yul_statement:#?}"),
+                solidity::YulStatement::Break(_) => todo!("yul break statement: {yul_statement:#?}"),
+                solidity::YulStatement::Continue(_) => todo!("yul continue statement: {yul_statement:#?}"),
+                solidity::YulStatement::Block(_) => todo!("yul block statement: {yul_statement:#?}"),
+                solidity::YulStatement::FunctionDefinition(_) => todo!("yul function definition statement: {yul_statement:#?}"),
+                solidity::YulStatement::FunctionCall(_) => todo!("yul function call statement: {yul_statement:#?}"),
+                solidity::YulStatement::Error(_) => todo!("yul error statement: {yul_statement:#?}"),
+            }
+        }
         todo!("translate assembly statement")
+    }
+
+    fn translate_yul_expression(
+        &mut self,
+        translated_definition: &mut TranslatedDefinition,
+        scope: &mut TranslationScope,
+        expression: &solidity::YulExpression,
+    ) -> Result<sway::Expression, Error> {
+        match expression {
+            solidity::YulExpression::BoolLiteral(_, value, _) => Ok(sway::Expression::from(sway::Literal::Bool(*value))),
+            solidity::YulExpression::NumberLiteral(_, value, _, _) => Ok(sway::Expression::from(sway::Literal::DecInt(value.parse().unwrap()))),
+            solidity::YulExpression::HexNumberLiteral(_, value, _) => Ok(sway::Expression::from(sway::Literal::HexInt(u64::from_str_radix(value, 16).unwrap()))),
+            solidity::YulExpression::HexStringLiteral(_, _) => todo!("yul hex string literal expression: {expression:#?}"),
+            solidity::YulExpression::StringLiteral(string_literal, _) => Ok(sway::Expression::from(sway::Literal::String(string_literal.string.clone()))),
+            
+            solidity::YulExpression::Variable(solidity::Identifier { name, .. }) => {
+                let Some(variable) = scope.find_variable_from_old_name(name.as_str()) else {
+                    panic!("Failed to find variable in scope: \"{name}\"");
+                };
+
+                if variable.is_storage {
+                    Ok(sway::Expression::from(sway::FunctionCall {
+                        function: sway::Expression::from(sway::MemberAccess {
+                            expression: sway::Expression::from(sway::MemberAccess {
+                                expression: sway::Expression::Identifier("storage".into()),
+                                member: variable.new_name.clone(),
+                            }),
+                            member: "read".into(),
+                        }),
+                        generic_parameters: None,
+                        parameters: vec![],
+                    }))
+                } else {
+                    Ok(sway::Expression::Identifier(variable.new_name.clone()))
+                }
+            }
+
+            solidity::YulExpression::FunctionCall(function_call) => {
+                let parameters = function_call.arguments.iter()
+                    .map(|a| self.translate_yul_expression(translated_definition, scope, a))
+                    .collect::<Result<Vec<_>, _>>()?;
+
+                match function_call.id.name.as_str() {
+                    "add" => {
+                        if parameters.len() != 2 {
+                            panic!("Invalid yul add function call, expected 2 parameters, found {}", parameters.len());
+                        }
+
+                        Ok(sway::Expression::from(sway::BinaryExpression {
+                            operator: "+".into(),
+                            lhs: parameters[0].clone(),
+                            rhs: parameters[1].clone(),
+                        }))
+                    }
+
+                    "sub" => {
+                        if parameters.len() != 2 {
+                            panic!("Invalid yul sub function call, expected 2 parameters, found {}", parameters.len());
+                        }
+
+                        Ok(sway::Expression::from(sway::BinaryExpression {
+                            operator: "-".into(),
+                            lhs: parameters[0].clone(),
+                            rhs: parameters[1].clone(),
+                        }))
+                    }
+
+                    "mul" => {
+                        if parameters.len() != 2 {
+                            panic!("Invalid yul mul function call, expected 2 parameters, found {}", parameters.len());
+                        }
+
+                        Ok(sway::Expression::from(sway::BinaryExpression {
+                            operator: "*".into(),
+                            lhs: parameters[0].clone(),
+                            rhs: parameters[1].clone(),
+                        }))
+                    }
+
+                    "div" => {
+                        if parameters.len() != 2 {
+                            panic!("Invalid yul div function call, expected 2 parameters, found {}", parameters.len());
+                        }
+
+                        Ok(sway::Expression::from(sway::BinaryExpression {
+                            operator: "/".into(),
+                            lhs: parameters[0].clone(),
+                            rhs: parameters[1].clone(),
+                        }))
+                    }
+
+                    "not" => {
+                        if parameters.len() != 1 {
+                            panic!("Invalid yul not function call, expected 1 parameter, found {}", parameters.len());
+                        }
+
+                        Ok(sway::Expression::from(sway::BinaryExpression {
+                            operator: "!=".into(),
+                            lhs: parameters[0].clone(),
+                            rhs: sway::Expression::from(sway::Literal::DecInt(0)),
+                        }))
+                    }
+
+                    "addmod" => {
+                        if parameters.len() != 3 {
+                            panic!("Invalid yul addmod function call, expected 3 parameters, found {}", parameters.len());
+                        }
+
+                        Ok(sway::Expression::from(sway::BinaryExpression {
+                            operator: "%".into(),
+                            lhs: sway::Expression::Tuple(vec![
+                                sway::Expression::from(sway::BinaryExpression {
+                                    operator: "+".into(),
+                                    lhs: parameters[0].clone(),
+                                    rhs: parameters[1].clone(),
+                                }),
+                            ]),
+                            rhs: parameters[3].clone(),
+                        }))
+                    }
+
+                    "mulmod" => {
+                        if parameters.len() != 3 {
+                            panic!("Invalid yul addmod function call, expected 3 parameters, found {}", parameters.len());
+                        }
+
+                        Ok(sway::Expression::from(sway::BinaryExpression {
+                            operator: "%".into(),
+                            lhs: sway::Expression::Tuple(vec![
+                                sway::Expression::from(sway::BinaryExpression {
+                                    operator: "*".into(),
+                                    lhs: parameters[0].clone(),
+                                    rhs: parameters[1].clone(),
+                                }),
+                            ]),
+                            rhs: parameters[2].clone(),
+                        }))
+                    }
+
+                    name => todo!("look up yul function in scope: \"{name}\"")
+                }
+            }
+
+            solidity::YulExpression::SuffixAccess(_, _, _) => todo!("yul suffix access expression: {expression:#?}"),
+        }
     }
     
     #[inline]
