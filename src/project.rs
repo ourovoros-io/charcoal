@@ -185,7 +185,7 @@ impl Project {
             *count += 1;
 
             if *count > 1 {
-                new_name = format!("{new_name}{}", *count);
+                new_name = format!("{new_name}_{}", *count);
             }
 
             translated_definition.function_names.insert(signature.clone(), new_name);
@@ -962,7 +962,8 @@ impl Project {
             });
         }
 
-        Ok(TranslatedFunction {
+        // Translate the function
+        let translated_function = TranslatedFunction {
             old_name,
             new_name,
             parameters: sway::ParameterList {
@@ -987,7 +988,12 @@ impl Project {
                     }
                 })
             },
-        })
+        };
+
+        // Unbox the inner scope
+        translated_definition.toplevel_scope = *scope.parent.as_ref().unwrap().clone();
+
+        Ok(translated_function)
     }
 
     fn translate_modifier_definition(
@@ -1214,6 +1220,9 @@ impl Project {
         // Add the translated modifier to the translated definition
         translated_definition.modifiers.push(modifier);
 
+        // Unbox the inner scope
+        translated_definition.toplevel_scope = *scope.parent.as_ref().unwrap().clone();
+
         Ok(())
     }
 
@@ -1377,7 +1386,7 @@ impl Project {
         }
 
         // Translate the body for the toplevel function
-        let mut function_body = self.translate_block(translated_definition, scope.clone(), statements.as_slice())?;
+        let mut function_body = self.translate_block(translated_definition, &mut scope, statements.as_slice())?;
 
         // Propagate the return variable declarations
         for return_parameter in return_parameters.iter().rev() {
@@ -1498,13 +1507,16 @@ impl Project {
             }
         }
 
+        // Unbox the inner scope
+        translated_definition.toplevel_scope = *scope.parent.as_ref().unwrap().clone();
+
         Ok(())
     }
 
     fn translate_block(
         &mut self,
         translated_definition: &mut TranslatedDefinition,
-        mut scope: TranslationScope,
+        scope: &mut TranslationScope,
         statements: &[solidity::Statement]
     ) -> Result<sway::Block, Error> {
         let mut block = sway::Block::default();
@@ -1512,7 +1524,7 @@ impl Project {
         // Translate each of the statements in the block
         for statement in statements {
             // Translate the statement
-            let sway_statement = self.translate_statement(translated_definition, &mut scope, statement)?;
+            let sway_statement = self.translate_statement(translated_definition, scope, statement)?;
 
             // Store the index of the sway statement
             let statement_index = block.statements.len();
@@ -1691,15 +1703,21 @@ impl Project {
         scope: &mut TranslationScope,
         statements: &[solidity::Statement],
     ) -> Result<sway::Statement, Error> {
-        let scope = TranslationScope {
+        let mut inner_scope = TranslationScope {
             parent: Some(Box::new(scope.clone())),
             variables: vec![],
             functions: vec![],
         };
 
-        Ok(sway::Statement::from(sway::Expression::from(
-            self.translate_block(translated_definition, scope, statements)?
-        )))
+        // Translate the block
+        let translated_block = sway::Statement::from(sway::Expression::from(
+            self.translate_block(translated_definition, &mut inner_scope, statements)?
+        ));
+
+        // Unbox the inner scope
+        *scope = *inner_scope.parent.as_ref().unwrap().clone();
+
+        Ok(translated_block)
     }
     
     #[inline]
@@ -1720,9 +1738,21 @@ impl Project {
                         .map(|i| self.translate_yul_expression(translated_definition, scope, i))
                         .collect::<Result<Vec<_>, _>>()?;
 
+                    for identifier in identifiers.iter() {
+                        let sway::Expression::Identifier(name) = identifier else {
+                            panic!("Expected identifier, found: {identifier:#?}")
+                        };
+
+                        let Some(variable) = scope.find_variable_from_new_name_mut(&name) else {
+                            panic!("Failed to find variable in scope: \"{name}\"");
+                        };
+
+                        variable.mutation_count += 1;
+                    }
+
                     let value = self.translate_yul_expression(translated_definition, scope, value)?;
                     
-                    return Ok(sway::Statement::from(sway::Expression::from(sway::BinaryExpression {
+                    block.statements.push(sway::Statement::from(sway::Expression::from(sway::BinaryExpression {
                         operator: "=".into(),
                         lhs: if identifiers.len() == 1 {
                             identifiers[0].clone()
@@ -1752,7 +1782,7 @@ impl Project {
                     scope.variables.extend(variables.clone());
     
                     // Create the variable declaration statement
-                    return Ok(sway::Statement::from(sway::Let {
+                    block.statements.push(sway::Statement::from(sway::Let {
                         pattern: if variables.len() == 1 {
                             sway::LetPattern::Identifier(sway::LetIdentifier {
                                 is_mutable: false,
@@ -1791,7 +1821,8 @@ impl Project {
                 solidity::YulStatement::Error(_) => todo!("yul error statement: {yul_statement:#?}"),
             }
         }
-        todo!("translate assembly statement")
+        
+        Ok(sway::Statement::from(sway::Expression::from(block)))
     }
 
     fn translate_yul_expression(
@@ -1878,6 +1909,30 @@ impl Project {
 
                         Ok(sway::Expression::from(sway::BinaryExpression {
                             operator: "/".into(),
+                            lhs: parameters[0].clone(),
+                            rhs: parameters[1].clone(),
+                        }))
+                    }
+
+                    "lt" => {
+                        if parameters.len() != 2 {
+                            panic!("Invalid yul lt function call, expected 2 parameters, found {}", parameters.len());
+                        }
+
+                        Ok(sway::Expression::from(sway::BinaryExpression {
+                            operator: "<".into(),
+                            lhs: parameters[0].clone(),
+                            rhs: parameters[1].clone(),
+                        }))
+                    }
+
+                    "gt" => {
+                        if parameters.len() != 2 {
+                            panic!("Invalid yul gt function call, expected 2 parameters, found {}", parameters.len());
+                        }
+
+                        Ok(sway::Expression::from(sway::BinaryExpression {
+                            operator: ">".into(),
                             lhs: parameters[0].clone(),
                             rhs: parameters[1].clone(),
                         }))
