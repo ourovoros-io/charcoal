@@ -1,7 +1,13 @@
 use crate::{
     errors::Error,
-    sway::{self, LetIdentifier},
-    translate::{TranslatedDefinition, TranslationScope, TranslatedVariable, TranslatedFunction, TranslatedModifier},
+    sway,
+    translate::{
+        TranslatedDefinition,
+        TranslatedFunction,
+        TranslatedModifier,
+        TranslatedVariable,
+        TranslationScope,
+    },
 };
 use convert_case::{Case, Casing};
 use solang_parser::pt as solidity;
@@ -1589,7 +1595,7 @@ impl Project {
                     statement => panic!("Expected let statement, found: {statement:?}"),
                 };
 
-                let mark_let_identifier_mutable = |id: &mut LetIdentifier| {
+                let mark_let_identifier_mutable = |id: &mut sway::LetIdentifier| {
                     if id.name == variable.new_name {
                         id.is_mutable = true;
                     }
@@ -1830,7 +1836,7 @@ impl Project {
                         } else {
                             sway::LetPattern::Tuple(
                                 variables.iter()
-                                    .map(|p| LetIdentifier {
+                                    .map(|p| sway::LetIdentifier {
                                         is_mutable: false,
                                         name: p.new_name.clone(),
                                     })
@@ -2145,19 +2151,17 @@ impl Project {
                 return Ok(sway::Statement::from(sway::Let {
                     pattern: sway::LetPattern::Tuple(
                         parameters.iter()
-                            .map(|(_, p)| {
-                                LetIdentifier {
-                                    is_mutable: false,
-                                    name: if let Some(p) = p.as_ref() {
-                                        if let Some(name) = p.name.as_ref() {
-                                            self.translate_naming_convention(name.name.as_str(), Case::Snake)
-                                        } else {
-                                            "_".into()
-                                        }
+                            .map(|(_, p)| sway::LetIdentifier {
+                                is_mutable: false,
+                                name: if let Some(p) = p.as_ref() {
+                                    if let Some(name) = p.name.as_ref() {
+                                        self.translate_naming_convention(name.name.as_str(), Case::Snake)
                                     } else {
                                         "_".into()
-                                    },
-                                }
+                                    }
+                                } else {
+                                    "_".into()
+                                },
                             })
                             .collect()
                     ),
