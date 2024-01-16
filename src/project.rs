@@ -3250,7 +3250,28 @@ impl Project {
             solidity::Expression::Negate(_, x) => self.translate_unary_expression(translated_definition, scope, "-", x),
 
             solidity::Expression::Power(_, lhs, rhs) => {
-                // lhs.pow(rhs)
+                // lhs ** rhs => lhs.pow(rhs)
+
+                // Ensure std::math::Power is imported for the pow function
+                if !translated_definition.uses.iter().any(|u| {
+                    let sway::UseTree::Path { prefix: prefix1, suffix } = &u.tree else { return false };
+                    let sway::UseTree::Path { prefix: prefix2, suffix } = suffix.as_ref() else { return false };
+                    let sway::UseTree::Name { name } = suffix.as_ref() else { return false };
+                    prefix1 == "std" && prefix2 == "math" && name == "Power"
+                }) {
+                    translated_definition.uses.push(sway::Use {
+                        is_public: false,
+                        tree: sway::UseTree::Path {
+                            prefix: "std".into(),
+                            suffix: Box::new(sway::UseTree::Path {
+                                prefix: "math".into(),
+                                suffix: Box::new(sway::UseTree::Name {
+                                    name: "Power".into(),
+                                }),
+                            }),
+                        },
+                    });
+                }
 
                 let lhs = self.translate_expression(translated_definition, scope, lhs.as_ref())?;
                 let rhs = self.translate_expression(translated_definition, scope, rhs.as_ref())?;
