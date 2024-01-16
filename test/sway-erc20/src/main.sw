@@ -133,11 +133,11 @@ fn _burn(account: Identity, value: u64) {
 
 #[storage(read, write)]
 fn _approve(owner: Identity, spender: Identity, value: u64) {
-    _approve2(owner, spender, value, true);
+    _approve_2(owner, spender, value, true);
 }
 
 #[storage(read, write)]
-fn _approve2(owner: Identity, spender: Identity, value: u64, emit_event: bool) {
+fn _approve_2(owner: Identity, spender: Identity, value: u64, emit_event: bool) {
     if owner == Identity::Address(Address::from(ZERO_B256)) {
         log(ERC20Error::ERC20InvalidApprover(Identity::Address(Address::from(ZERO_B256))));
         revert(0);
@@ -160,7 +160,7 @@ fn _spend_allowance(owner: Identity, spender: Identity, value: u64) {
             log(ERC20Error::ERC20InsufficientAllowance((spender, current_allowance, value)));
             revert(0);
         }
-        _approve2(owner, spender, current_allowance - value, false);
+        _approve_2(owner, spender, current_allowance - value, false);
     }
 }
 

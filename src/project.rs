@@ -3249,7 +3249,23 @@ impl Project {
             solidity::Expression::UnaryPlus(_, x) => self.translate_expression(translated_definition, scope, x),
             solidity::Expression::Negate(_, x) => self.translate_unary_expression(translated_definition, scope, "-", x),
 
-            solidity::Expression::Power(_, _, _) => Ok(sway::Expression::create_todo(Some(format!("translate power expression: {expression:?}")))),
+            solidity::Expression::Power(_, lhs, rhs) => {
+                // lhs.pow(rhs)
+
+                let lhs = self.translate_expression(translated_definition, scope, lhs.as_ref())?;
+                let rhs = self.translate_expression(translated_definition, scope, rhs.as_ref())?;
+
+                Ok(sway::Expression::from(sway::FunctionCall {
+                    function: sway::Expression::from(sway::MemberAccess {
+                        expression: lhs,
+                        member: "pow".into(),
+                    }),
+                    generic_parameters: None,
+                    parameters: vec![
+                        rhs,
+                    ],
+                }))
+            }
 
             solidity::Expression::Multiply(_, lhs, rhs) => self.translate_binary_expression(translated_definition, scope, "*", lhs, rhs),
             solidity::Expression::Divide(_, lhs, rhs) => self.translate_binary_expression(translated_definition, scope, "/", lhs, rhs),
