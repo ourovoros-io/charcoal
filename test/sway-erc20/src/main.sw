@@ -3,6 +3,22 @@ contract;
 use std::hash::Hash;
 use std::constants::ZERO_B256;
 
+// enum Rounding {
+//     Floor, // Toward negative infinity
+//     Ceil, // Toward positive infinity
+//     Trunc, // Toward zero
+//     Expand // Away from zero
+// }
+
+type Rounding = u8;
+
+impl Rounding {
+    const FLOOR: Rounding = 0;
+    const CEIL: Rounding = 1;
+    const TRUNC: Rounding = 2;
+    const EXPAND: Rounding = 3;
+}
+
 enum ERC20Event {
     Transfer: (Identity, Identity, u64),
     Approval: (Identity, Identity, u64),

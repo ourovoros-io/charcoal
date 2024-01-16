@@ -437,8 +437,8 @@ pub enum Literal {
     String(String),
 }
 
-impl Display for Literal {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl TabbedDisplay for Literal {
+    fn tabbed_fmt(&self, _depth: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Literal::Bool(x) => write!(f, "{x}"),
             Literal::DecInt(x) => write!(f, "{x}"),
@@ -1033,7 +1033,7 @@ pub enum Expression {
 impl TabbedDisplay for Expression {
     fn tabbed_fmt(&self, depth: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Expression::Literal(x) => write!(f, "{x}"),
+            Expression::Literal(x) => x.tabbed_fmt(depth, f),
             Expression::Identifier(x) => write!(f, "{x}"),
             Expression::FunctionCall(x) => x.tabbed_fmt(depth, f),
             Expression::Block(x) => x.tabbed_fmt(depth, f),
@@ -1041,11 +1041,11 @@ impl TabbedDisplay for Expression {
                 write!(f, "return")?;
                 if let Some(x) = x.as_ref() {
                     write!(f, " ")?;
-                    x.tabbed_fmt(0, f)?;
+                    x.tabbed_fmt(depth, f)?;
                 }
                 Ok(())
             }
-            Expression::Array(x) => write!(f, "{x}"),
+            Expression::Array(x) => x.tabbed_fmt(depth, f),
             Expression::ArrayAccess(x) => x.tabbed_fmt(depth, f),
             Expression::MemberAccess(x) => x.tabbed_fmt(depth, f),
             Expression::If(x) => x.tabbed_fmt(depth, f),
@@ -1056,7 +1056,7 @@ impl TabbedDisplay for Expression {
                     if i > 0 {
                         write!(f, ", ")?;
                     }
-                    expr.tabbed_fmt(0, f)?;
+                    expr.tabbed_fmt(depth, f)?;
                 }
                 write!(f, ")")
             }
@@ -1132,7 +1132,7 @@ impl Expression {
 
     pub fn create_value_expression(type_name: &TypeName, value: Option<&Expression>) -> Expression {
         match type_name {
-            TypeName::Identifier { name, generic_parameters } => match name.as_str() {
+            TypeName::Identifier { name, .. } => match name.as_str() {
                 "bool" => match value {
                     None => Expression::Literal(Literal::Bool(false)),
                     Some(Expression::Literal(Literal::Bool(value))) => Expression::Literal(Literal::Bool(*value)),
@@ -1272,7 +1272,7 @@ pub struct FunctionCall {
 
 impl TabbedDisplay for FunctionCall {
     fn tabbed_fmt(&self, depth: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.function.tabbed_fmt(0, f)?;
+        self.function.tabbed_fmt(depth, f)?;
         
         if let Some(generic_parameters) = self.generic_parameters.as_ref() {
             write!(f, "::{generic_parameters}")?;
@@ -1299,8 +1299,8 @@ pub struct Array {
     pub elements: Vec<Expression>,
 }
 
-impl Display for Array {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl TabbedDisplay for Array {
+    fn tabbed_fmt(&self, depth: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "[")?;
 
         for (i, element) in self.elements.iter().enumerate() {
@@ -1308,7 +1308,7 @@ impl Display for Array {
                 write!(f, ", ")?;
             }
 
-            element.tabbed_fmt(0, f)?;
+            element.tabbed_fmt(depth, f)?;
         }
 
         write!(f, "]")
@@ -1323,11 +1323,11 @@ pub struct ArrayAccess {
     pub index: Expression,
 }
 
-impl Display for ArrayAccess {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.expression.tabbed_fmt(0, f)?;
+impl TabbedDisplay for ArrayAccess {
+    fn tabbed_fmt(&self, depth: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.expression.tabbed_fmt(depth, f)?;
         write!(f, "[")?;
-        self.index.tabbed_fmt(0, f)?;
+        self.index.tabbed_fmt(depth, f)?;
         write!(f, "]")
     }
 }
@@ -1340,9 +1340,9 @@ pub struct MemberAccess {
     pub member: String,
 }
 
-impl Display for MemberAccess {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.expression.tabbed_fmt(0, f)?;
+impl TabbedDisplay for MemberAccess {
+    fn tabbed_fmt(&self, depth: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.expression.tabbed_fmt(depth, f)?;
         write!(f, ".{}", self.member)
     }
 }
@@ -1400,10 +1400,10 @@ pub struct UnaryExpression {
     pub expression: Expression,
 }
 
-impl Display for UnaryExpression {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl TabbedDisplay for UnaryExpression {
+    fn tabbed_fmt(&self, depth: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.operator)?;
-        self.expression.tabbed_fmt(0, f)
+        self.expression.tabbed_fmt(depth, f)
     }
 }
 
