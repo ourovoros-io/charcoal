@@ -1344,27 +1344,30 @@ impl Project {
         };
 
         // Add the function parameters to the scope
-        scope.variables.extend(
-            function_definition.params.iter().map(|(_, p)| {
-                let old_name = p.as_ref().unwrap().name.as_ref().unwrap().name.clone();
-                let new_name = self.translate_naming_convention(old_name.as_str(), Case::Snake);
-                let type_name = self.translate_type_name(translated_definition, &p.as_ref().unwrap().ty);
+        let mut parameters = vec![];
 
-                TranslatedVariable {
-                    old_name,
-                    new_name,
-                    type_name,
-                    is_storage: false,
-                    statement_index: None,
-                    read_count: 0,
-                    mutation_count: 0,
-                }
-            })
-        );
+        for (_, p) in function_definition.params.iter() {
+            let old_name = p.as_ref().unwrap().name.as_ref().unwrap().name.clone();
+            let new_name = self.translate_naming_convention(old_name.as_str(), Case::Snake);
+            let type_name = self.translate_type_name(translated_definition, &p.as_ref().unwrap().ty);
 
-        let mut return_parameters = vec![];
+            let translated_variable = TranslatedVariable {
+                old_name,
+                new_name,
+                type_name,
+                is_storage: false,
+                statement_index: None,
+                read_count: 0,
+                mutation_count: 0,
+            };
+
+            parameters.push(translated_variable.clone());
+            scope.variables.push(translated_variable);
+        }
 
         // Add the function's named return parameters to the scope
+        let mut return_parameters = vec![];
+
         for (_, return_parameter) in function_definition.returns.iter() {
             let Some(return_parameter) = return_parameter else { continue };
             let Some(old_name) = return_parameter.name.as_ref().map(|n| n.name.clone()) else { continue };
@@ -1387,6 +1390,24 @@ impl Project {
 
         // Translate the body for the toplevel function
         let mut function_body = self.translate_block(translated_definition, &mut scope, statements.as_slice())?;
+
+        // Check for parameters that were mutated and make them local variables
+        for parameter in parameters.iter().rev() {
+            let Some(variable) = scope.find_variable_from_new_name(&parameter.new_name) else {
+                panic!("Failed to find variable in scope: \"{}\"", parameter.new_name);
+            };
+
+            if variable.mutation_count > 0 {
+                function_body.statements.insert(0, sway::Statement::Let(sway::Let {
+                    pattern: sway::LetPattern::Identifier(sway::LetIdentifier {
+                        is_mutable: true,
+                        name: parameter.new_name.clone(),
+                    }),
+                    type_name: Some(parameter.type_name.clone()),
+                    value: Some(sway::Expression::Identifier(parameter.new_name.clone())),
+                }));
+            }
+        }
 
         // Propagate the return variable declarations
         for return_parameter in return_parameters.iter().rev() {
