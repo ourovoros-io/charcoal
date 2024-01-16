@@ -256,16 +256,16 @@ impl Display for UseTree {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct GenericParameter {
-    pub name: TypeName,
-    pub implements: Vec<TypeName>,
+    pub type_name: TypeName,
+    pub implements: Option<Vec<TypeName>>,
 }
 
 impl Display for GenericParameter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.name)?;
+        write!(f, "{}", self.type_name)?;
 
-        if !self.implements.is_empty() {
-            write!(f, ": {}", self.implements.iter().map(|x| format!("{x}")).collect::<Vec<_>>().join(" + "))?;
+        if let Some(implements) = self.implements.as_ref() {
+            write!(f, ": {}", implements.iter().map(|x| format!("{x}")).collect::<Vec<_>>().join(" + "))?;
         }
 
         Ok(())
@@ -359,7 +359,7 @@ impl TypeName {
 
                 if let Some(generic_parameters) = generic_parameters.as_ref() {
                     for generic_parameter in generic_parameters.entries.iter() {
-                        if generic_parameter.name.has_storage_map() {
+                        if generic_parameter.type_name.has_storage_map() {
                             return true;
                         }
                     }

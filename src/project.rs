@@ -266,12 +266,12 @@ impl Project {
                     generic_parameters: Some(sway::GenericParameterList {
                         entries: vec![
                             sway::GenericParameter {
-                                name: self.translate_type_name(translated_definition, key.as_ref()),
-                                implements: vec![],
+                                type_name: self.translate_type_name(translated_definition, key.as_ref()),
+                                implements: None,
                             },
                             sway::GenericParameter {
-                                name: self.translate_type_name(translated_definition, value.as_ref()),
-                                implements: vec![],
+                                type_name: self.translate_type_name(translated_definition, value.as_ref()),
+                                implements: None,
                             },
                         ],
                     }),
@@ -309,6 +309,38 @@ impl Project {
                 }
                 
                 todo!("type name variable expression: {type_name:#?}")
+            }
+
+            solidity::Expression::ArraySubscript(_, type_name, length) => match length.as_ref() {
+                Some(length) => sway::TypeName::Array {
+                    type_name: Box::new(self.translate_type_name(translated_definition, type_name)),
+                    length: {
+                        // Create an empty scope to translate the array length expression
+                        let mut scope = TranslationScope {
+                            parent: None,
+                            variables: vec![],
+                            functions: vec![],
+                        };
+
+                        match self.translate_expression(translated_definition, &mut scope, length.as_ref()) {
+                            Ok(sway::Expression::Literal(sway::Literal::DecInt(length) | sway::Literal::HexInt(length))) => length as usize,
+                            Ok(_) => panic!("Invalid array length expression: {length:#?}"),
+                            Err(e) => panic!("Failed to translate array length expression: {e}"),
+                        }
+                    },
+                },
+
+                None => sway::TypeName::Identifier {
+                    name: "Vec".into(),
+                    generic_parameters: Some(sway::GenericParameterList {
+                        entries: vec![
+                            sway::GenericParameter {
+                                type_name: self.translate_type_name(translated_definition, type_name),
+                                implements: None,
+                            },
+                        ],
+                    }),
+                },
             }
 
             _ => unimplemented!("type name expression: {type_name:#?}"),

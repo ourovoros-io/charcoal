@@ -255,6 +255,7 @@ pub struct TranslatedDefinition {
     pub enums: Vec<sway::Enum>,
     pub events_enum: Option<sway::Enum>,
     pub errors_enum: Option<sway::Enum>,
+    pub constants: Vec<sway::Constant>,
     pub abi: Option<sway::Abi>,
     pub configurable: Option<sway::Configurable>,
     pub storage: Option<sway::Storage>,
@@ -324,6 +325,15 @@ impl Display for TranslatedDefinition {
             written += 1;
         }
         
+        for (i, x) in self.constants.iter().enumerate() {
+            if i == 0 && written > 0 {
+                writeln!(f)?;
+            }
+
+            writeln!(f, "{}", sway::TabbedDisplayer(x))?;
+            written += 1;
+        }
+        
         if let Some(x) = self.abi.as_ref() {
             if written > 0 {
                 writeln!(f)?;
@@ -382,6 +392,7 @@ impl TranslatedDefinition {
             enums: vec![],
             events_enum: None,
             errors_enum: None,
+            constants: vec![],
             abi: None,
             configurable: None,
             storage: None,
