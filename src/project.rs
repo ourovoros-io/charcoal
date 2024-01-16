@@ -1598,6 +1598,12 @@ impl Project {
             }
         }
 
+        // If the last statement is a block, flatten it
+        if let Some(sway::Statement::Expression(sway::Expression::Block(inner_block))) = block.statements.last().cloned() {
+            block.statements.pop();
+            block.statements.extend(inner_block.statements);
+        }
+
         Ok(())
     }
 
@@ -2693,7 +2699,7 @@ impl Project {
                             _ => todo!("translate address cast: {expression:#?}"),
                         }
 
-                        _ => Ok(sway::Expression::create_todo(Some(format!("translate type cast: {expression:#?}")))),
+                        _ => Ok(sway::Expression::create_todo(Some(format!("translate type cast: {expression:?}")))),
                     }
                 }
 
@@ -3149,7 +3155,7 @@ impl Project {
             solidity::Expression::UnaryPlus(_, x) => self.translate_expression(translated_definition, scope, x),
             solidity::Expression::Negate(_, x) => self.translate_unary_expression(translated_definition, scope, "-", x),
 
-            solidity::Expression::Power(_, _, _) => todo!("translate power expression: {expression:#?}"),
+            solidity::Expression::Power(_, _, _) => Ok(sway::Expression::create_todo(Some(format!("translate power expression: {expression:?}")))),
 
             solidity::Expression::Multiply(_, lhs, rhs) => self.translate_binary_expression(translated_definition, scope, "*", lhs, rhs),
             solidity::Expression::Divide(_, lhs, rhs) => self.translate_binary_expression(translated_definition, scope, "/", lhs, rhs),
