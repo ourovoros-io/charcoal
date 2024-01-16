@@ -1602,7 +1602,7 @@ impl Project {
             }
         }
 
-        // Check block for sub-blocks that don't contain variable declarations and flatten them
+        // Check block for sub-blocks that don't contain shadowing variable declarations and flatten them
         for i in (0..block.statements.len()).rev() {
             let mut statements = None;
 
@@ -1612,8 +1612,26 @@ impl Project {
                 let mut var_count = 0;
 
                 for statement in sub_block.statements.iter() {
-                    if let sway::Statement::Let(_) = statement {
-                        var_count += 1;
+                    let sway::Statement::Let(sway::Let { pattern, .. }) = statement else { continue };
+
+                    let mut check_let_identifier = |identifier: &sway::LetIdentifier| {
+                        if let Some(scope) = scope.parent.as_ref() {
+                            if scope.find_variable_from_new_name(&identifier.name).is_some() {
+                                var_count += 1;
+                            }
+                        }
+                    };
+
+                    match pattern {
+                        sway::LetPattern::Identifier(identifier) => {
+                            check_let_identifier(identifier);
+                        }
+
+                        sway::LetPattern::Tuple(identifiers) => {
+                            for identifier in identifiers.iter() {
+                                check_let_identifier(identifier);
+                            }
+                        }
                     }
                 }
 
