@@ -1413,7 +1413,7 @@ impl Project {
         for return_parameter in return_parameters.iter().rev() {
             function_body.statements.insert(0, sway::Statement::Let(sway::Let {
                 pattern: sway::LetPattern::Identifier(sway::LetIdentifier {
-                    is_mutable: false,
+                    is_mutable: true,
                     name: return_parameter.new_name.clone(),
                 }),
                 type_name: Some(return_parameter.type_name.clone()),
