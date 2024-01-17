@@ -43,6 +43,12 @@ pub struct TranslationScope {
     pub functions: Vec<TranslatedFunction>,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct TranslatedEnum {
+    pub type_definition: sway::TypeDefinition,
+    pub variants_impl: sway::Impl,
+}
+
 impl TranslationScope {
     /// Attempts to get a reference to a variable using its old name
     pub fn find_variable_from_old_name(&self, old_name: &str) -> Option<&TranslatedVariable> {
@@ -239,6 +245,8 @@ impl TranslationScope {
             sway::Expression::Constructor(_) => todo!("get type of constructor expression: {expression:#?}"),
             sway::Expression::Continue => todo!("get type of continue expression: {expression:#?}"),
             sway::Expression::Break => todo!("get type of break expression: {expression:#?}"),
+            
+            sway::Expression::TypeCast(x) => Ok(x.type_name.clone()),
         }
     }
 }
@@ -252,7 +260,7 @@ pub struct TranslatedDefinition {
     pub inherits: Vec<String>,
     pub type_definitions: Vec<sway::TypeDefinition>,
     pub structs: Vec<sway::Struct>,
-    pub enums: Vec<sway::Enum>,
+    pub enums: Vec<TranslatedEnum>,
     pub events_enum: Option<sway::Enum>,
     pub errors_enum: Option<sway::Enum>,
     pub constants: Vec<sway::Constant>,
@@ -285,6 +293,19 @@ impl Display for TranslatedDefinition {
             written += 1;
         }
 
+        for (i, x) in self.enums.iter().enumerate() {
+            if i == 0 && written > 0 {
+                writeln!(f)?;
+            } else if i > 0 {
+                writeln!(f)?;
+            }
+
+            writeln!(f, "{}", sway::TabbedDisplayer(&x.type_definition))?;
+            writeln!(f)?;
+            writeln!(f, "{}", sway::TabbedDisplayer(&x.variants_impl))?;
+            written += 1;
+        }
+
         for (i, x) in self.structs.iter().enumerate() {
             if i == 0 && written > 0 {
                 writeln!(f)?;
@@ -295,18 +316,7 @@ impl Display for TranslatedDefinition {
             writeln!(f, "{}", sway::TabbedDisplayer(x))?;
             written += 1;
         }
-    
-        for (i, x) in self.enums.iter().enumerate() {
-            if i == 0 && written > 0 {
-                writeln!(f)?;
-            } else if i > 0 {
-                writeln!(f)?;
-            }
-
-            writeln!(f, "{}", sway::TabbedDisplayer(x))?;
-            written += 1;
-        }
-    
+        
         if let Some(x) = self.events_enum.as_ref() {
             if written > 0 {
                 writeln!(f)?;
@@ -388,8 +398,8 @@ impl TranslatedDefinition {
             name: name.to_string(),
             inherits: inherits.iter().map(|i| i.to_string()).collect(),
             type_definitions: vec![],
-            structs: vec![],
             enums: vec![],
+            structs: vec![],
             events_enum: None,
             errors_enum: None,
             constants: vec![],

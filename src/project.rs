@@ -6,7 +6,7 @@ use crate::{
         TranslatedFunction,
         TranslatedModifier,
         TranslatedVariable,
-        TranslationScope,
+        TranslationScope, TranslatedEnum,
     },
 };
 use convert_case::{Case, Casing};
@@ -301,7 +301,10 @@ impl Project {
                 }
                 
                 // Check if type is an enum
-                if translated_definition.enums.iter().any(|t| t.name == *name) {
+                if translated_definition.enums.iter().any(|t| match &t.type_definition.name {
+                    sway::TypeName::Identifier { name: type_name, generic_parameters: None } => type_name == name,
+                    _ => false,
+                }) {
                     return sway::TypeName::Identifier {
                         name: name.clone(),
                         generic_parameters: None,
@@ -423,16 +426,42 @@ impl Project {
         // Collect each enum ahead of time for contextual reasons
         for part in solidity_definition.parts.iter() {
             let solidity::ContractPart::EnumDefinition(enum_definition) = part else { continue };
-            
-            translated_definition.enums.push(sway::Enum {
-                attributes: None,
+
+            // Create the enum's type definition
+            let type_definition = sway::TypeDefinition {
                 is_public: false,
-                name: enum_definition.name.as_ref().unwrap().name.clone(),
+                name: sway::TypeName::Identifier {
+                    name: enum_definition.name.as_ref().unwrap().name.clone(),
+                    generic_parameters: None,
+                },
+                underlying_type: Some(sway::TypeName::Identifier {
+                    name: "u8".into(),
+                    generic_parameters: None,
+                }),
+            };
+            
+            // Create the enum's variants impl block
+            let mut variants_impl = sway::Impl {
                 generic_parameters: None,
-                variants: enum_definition.values.iter().map(|v| sway::EnumVariant {
-                    name: v.as_ref().unwrap().name.clone(),
-                    type_name: sway::TypeName::Tuple { type_names: vec![] },
-                }).collect(),
+                type_name: type_definition.name.clone(),
+                for_type_name: None,
+                items: vec![],
+            };
+
+            // Add each variant to the variants impl block
+            for (i, value) in enum_definition.values.iter().enumerate() {
+                variants_impl.items.push(sway::ImplItem::Constant(sway::Constant {
+                    is_public: true,
+                    name: self.translate_naming_convention(value.as_ref().unwrap().name.as_str(), Case::ScreamingSnake),
+                    type_name: type_definition.name.clone(),
+                    value: Some(sway::Expression::from(sway::Literal::DecInt(i as u64))),
+                }));
+            }
+
+            // Add the translated enum to the translated definition
+            translated_definition.enums.push(TranslatedEnum {
+                type_definition,
+                variants_impl,
             });
         }
 
@@ -2829,7 +2858,21 @@ impl Project {
                             _ => todo!("translate address cast: {expression:#?}"),
                         }
 
-                        _ => Ok(sway::Expression::create_todo(Some(format!("translate type cast: {expression:?}")))),
+                        solidity::Type::Uint(bits) => Ok(sway::Expression::from(sway::TypeCast {
+                            expression: self.translate_expression(translated_definition, scope, &args[0])?,
+                            type_name: sway::TypeName::Identifier {
+                                name: match *bits {
+                                    8 => "u8".into(),
+                                    16 => "u16".into(),
+                                    32 => "u32".into(),
+                                    bits if bits >= 64 => "u64".into(), // TODO: is this ok?
+                                    bits => panic!("Unsupport type: uint{bits}"),
+                                },
+                                generic_parameters: None,
+                            },
+                        })),
+
+                        _ => todo!("translate type cast: {expression:#?}"),
                     }
                 }
 
