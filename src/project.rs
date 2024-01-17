@@ -451,7 +451,7 @@ impl Project {
             // Add each variant to the variants impl block
             for (i, value) in enum_definition.values.iter().enumerate() {
                 variants_impl.items.push(sway::ImplItem::Constant(sway::Constant {
-                    is_public: true,
+                    is_public: false,
                     name: self.translate_naming_convention(value.as_ref().unwrap().name.as_str(), Case::ScreamingSnake),
                     type_name: type_definition.name.clone(),
                     value: Some(sway::Expression::from(sway::Literal::DecInt(i as u64))),
@@ -1471,7 +1471,7 @@ impl Project {
                         name: parameter.new_name.clone(),
                     }),
                     type_name: Some(parameter.type_name.clone()),
-                    value: Some(sway::Expression::Identifier(parameter.new_name.clone())),
+                    value: sway::Expression::Identifier(parameter.new_name.clone()),
                 }));
             }
         }
@@ -1484,7 +1484,7 @@ impl Project {
                     name: return_parameter.new_name.clone(),
                 }),
                 type_name: Some(return_parameter.type_name.clone()),
-                value: Some(sway::Expression::create_value_expression(&return_parameter.type_name, None)),
+                value: sway::Expression::create_value_expression(&return_parameter.type_name, None),
             }));
         }
 
@@ -1908,9 +1908,15 @@ impl Project {
                         type_name: None,
                         
                         value: if let Some(value) = value.as_ref() {
-                            Some(self.translate_yul_expression(translated_definition, scope, value)?)
+                            self.translate_yul_expression(translated_definition, scope, value)?
                         } else {
-                            None
+                            sway::Expression::create_value_expression(
+                                &sway::TypeName::Identifier {
+                                    name: "u64".into(), // TODO: is this ok?
+                                    generic_parameters: None,
+                                },
+                                None,
+                            )
                         },
                     }));
                 }
@@ -2242,7 +2248,7 @@ impl Project {
                             .collect(),
                     }),
                     
-                    value: Some(self.translate_expression(translated_definition, scope, rhs.as_ref())?),
+                    value: self.translate_expression(translated_definition, scope, rhs.as_ref())?,
                 }));
             }
         }
@@ -2273,15 +2279,15 @@ impl Project {
             type_name: Some(type_name.clone()),
 
             value: if let Some(x) = initializer.as_ref() {
-                Some(match x {
+                match x {
                     solidity::Expression::PreIncrement(loc, x) => self.translate_pre_operator_expression(translated_definition, scope, loc, x, "+=")?,
                     solidity::Expression::PreDecrement(loc, x) => self.translate_pre_operator_expression(translated_definition, scope, loc, x, "-=")?,
                     solidity::Expression::PostIncrement(loc, x) => self.translate_post_operator_expression(translated_definition, scope, loc, x, "+=")?,
                     solidity::Expression::PostDecrement(loc, x) => self.translate_post_operator_expression(translated_definition, scope, loc, x, "-=")?,
                     _ => self.translate_expression(translated_definition, scope, x)?,
-                })
+                }
             } else {
-                None
+                sway::Expression::create_value_expression(&type_name, None)
             },
         });
 
@@ -3696,20 +3702,18 @@ impl Project {
                         name: variable_name.clone(),
                     }),
                     type_name: None,
-                    value: Some(
-                        if variable.is_storage {
-                            sway::Expression::from(sway::FunctionCall {
-                                function: sway::Expression::from(sway::MemberAccess {
-                                    expression,
-                                    member: "read".into(),
-                                }),
-                                generic_parameters: None,
-                                parameters: vec![],
-                            })
-                        } else {
-                            expression
-                        }
-                    ),
+                    value: if variable.is_storage {
+                        sway::Expression::from(sway::FunctionCall {
+                            function: sway::Expression::from(sway::MemberAccess {
+                                expression,
+                                member: "read".into(),
+                            }),
+                            generic_parameters: None,
+                            parameters: vec![],
+                        })
+                    } else {
+                        expression
+                    },
                 }),
                 assignment,
             ],

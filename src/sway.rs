@@ -956,7 +956,7 @@ impl_stmt_from!(Expression);
 pub struct Let {
     pub pattern: LetPattern,
     pub type_name: Option<TypeName>,
-    pub value: Option<Expression>,
+    pub value: Expression,
 }
 
 impl TabbedDisplay for Let {
@@ -967,12 +967,8 @@ impl TabbedDisplay for Let {
             write!(f, ": {type_name}")?;
         }
 
-        if let Some(value) = self.value.as_ref() {
-            write!(f, " = ")?;
-            value.tabbed_fmt(depth, f)?;
-        }
-        
-        Ok(())
+        write!(f, " = ")?;
+        self.value.tabbed_fmt(depth, f)
     }
 }
 
