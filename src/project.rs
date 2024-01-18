@@ -3012,22 +3012,76 @@ impl Project {
                             _ => todo!("translate address cast: {expression:#?}"),
                         }
 
-                        // TODO: fix this to use u8::try_from(x).unwrap(), etc
-                        //
-                        // solidity::Type::Uint(bits) => Ok(sway::Expression::from(sway::TypeCast {
-                        //     expression: self.translate_expression(translated_definition, scope, &args[0])?,
-                        //     type_name: sway::TypeName::Identifier {
-                        //         name: match *bits {
-                        //             8 => "u8".into(),
-                        //             16 => "u16".into(),
-                        //             32 => "u32".into(),
-                        //             64 => "u64".into(),
-                        //             256 => "u256".into(),
-                        //             bits => panic!("Unsupport type: uint{bits}"),
-                        //         },
-                        //         generic_parameters: None,
-                        //     },
-                        // })),
+                        solidity::Type::Uint(bits) => {
+                            let value = self.translate_expression(translated_definition, scope, &args[0])?;
+                            let mut type_name = scope.get_expression_type(&value)?;
+
+                            for type_definition in translated_definition.type_definitions.iter() {
+                                if type_definition.name == type_name {
+                                    type_name = type_definition.underlying_type.as_ref().unwrap().clone();
+                                    break;
+                                }
+                            }
+
+                            for translated_enum in translated_definition.enums.iter() {
+                                if translated_enum.type_definition.name == type_name {
+                                    type_name = translated_enum.type_definition.underlying_type.as_ref().unwrap().clone();
+                                    break;
+                                }
+                            }
+
+                            let create_uint_try_from_unwrap_expression = |from_bits: usize, to_bits: usize, value: sway::Expression| -> Result<sway::Expression, Error> {
+                                if from_bits == to_bits {
+                                    return Ok(value);
+                                }
+
+                                Ok(sway::Expression::from(sway::FunctionCall {
+                                    function: sway::Expression::from(sway::MemberAccess {
+                                        expression: sway::Expression::from(sway::FunctionCall {
+                                            function: sway::Expression::Identifier(format!("u{to_bits}::try_from")),
+                                            generic_parameters: None,
+                                            parameters: vec![value],
+                                        }),
+                                        member: "unwrap".into(),
+                                    }),
+                                    generic_parameters: None,
+                                    parameters: vec![],
+                                }))
+                            };
+
+                            match type_name {
+                                sway::TypeName::Identifier { name, .. } => match name.as_str() {
+                                    "u8" => match bits {
+                                        8 | 16 | 32 | 64 | 256 => create_uint_try_from_unwrap_expression(8, *bits as usize, value),
+                                        _ => todo!("unsupported uint{bits} cast: {} - {expression:#?}", expression.to_string()),
+                                    }
+
+                                    "u16" => match bits {
+                                        8 | 16 | 32 | 64 | 256 => create_uint_try_from_unwrap_expression(16, *bits as usize, value),
+                                        _ => todo!("unsupported uint{bits} cast: {} - {expression:#?}", expression.to_string()),
+                                    }
+
+                                    "u32" => match bits {
+                                        8 | 16 | 32 | 64 | 256 => create_uint_try_from_unwrap_expression(32, *bits as usize, value),
+                                        _ => todo!("unsupported uint{bits} cast: {} - {expression:#?}", expression.to_string()),
+                                    }
+
+                                    "u64" => match bits {
+                                        8 | 16 | 32 | 64 | 256 => create_uint_try_from_unwrap_expression(64, *bits as usize, value),
+                                        _ => todo!("unsupported uint{bits} cast: {} - {expression:#?}", expression.to_string()),
+                                    }
+
+                                    "u256" => match bits {
+                                        8 | 16 | 32 | 64 | 256 => create_uint_try_from_unwrap_expression(256, *bits as usize, value),
+                                        _ => todo!("unsupported uint{bits} cast: {} - {expression:#?}", expression.to_string()),
+                                    }
+
+                                    _ => todo!("translate {name} type cast: {} - {expression:#?}", expression.to_string())
+                                }
+
+                                _ => todo!("translate type cast: {expression:#?}"),
+                            }
+                        }
 
                         _ => todo!("translate type cast: {expression:#?}"),
                     }
