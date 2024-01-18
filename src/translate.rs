@@ -513,4 +513,27 @@ impl TranslatedDefinition {
 
         self.find_contract_impl_mut().unwrap()
     }
+
+    // Gets the base underlying type of the supplied type name
+    pub fn get_underlying_type(&self, type_name: &sway::TypeName) -> sway::TypeName {
+        // Check to see if the expression's type is a type definition and get the underlying type
+        for type_definition in self.type_definitions.iter() {
+            if &type_definition.name == type_name {
+                return self.get_underlying_type(
+                    type_definition.underlying_type.as_ref().unwrap(),
+                );
+            }
+        }
+
+        // If we didn't find a type definition, check to see if an enum exists and get its underlying type
+        for translated_enum in self.enums.iter() {
+            if &translated_enum.type_definition.name == type_name {
+                return self.get_underlying_type(
+                    translated_enum.type_definition.underlying_type.as_ref().unwrap(),
+                );
+            }
+        }
+
+        type_name.clone()
+    }
 }
