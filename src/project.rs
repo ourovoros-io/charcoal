@@ -3036,12 +3036,12 @@ impl Project {
                             };
 
                             match type_name {
-                                sway::TypeName::Identifier { name, .. } => match bits {
-                                    8 | 16 | 32 | 64 | 256 if name == "u8" => create_uint_try_from_unwrap_expression(8, *bits as usize, value),
-                                    8 | 16 | 32 | 64 | 256 if name == "u16" => create_uint_try_from_unwrap_expression(16, *bits as usize, value),
-                                    8 | 16 | 32 | 64 | 256 if name == "u32" => create_uint_try_from_unwrap_expression(32, *bits as usize, value),
-                                    8 | 16 | 32 | 64 | 256 if name == "u64" => create_uint_try_from_unwrap_expression(64, *bits as usize, value),
-                                    8 | 16 | 32 | 64 | 256 if name == "u256" => create_uint_try_from_unwrap_expression(256, *bits as usize, value),
+                                sway::TypeName::Identifier { name, .. } => match (name.as_str(), bits) {
+                                    ("u8", 8 | 16 | 32 | 64 | 256) => create_uint_try_from_unwrap_expression(8, *bits as usize, value),
+                                    ("u16", 8 | 16 | 32 | 64 | 256) => create_uint_try_from_unwrap_expression(16, *bits as usize, value),
+                                    ("u32", 8 | 16 | 32 | 64 | 256) => create_uint_try_from_unwrap_expression(32, *bits as usize, value),
+                                    ("u64", 8 | 16 | 32 | 64 | 256) => create_uint_try_from_unwrap_expression(64, *bits as usize, value),
+                                    ("u256", 8 | 16 | 32 | 64 | 256) => create_uint_try_from_unwrap_expression(256, *bits as usize, value),
                                     _ => todo!("translate {name} type cast: {} - {expression:#?}", expression.to_string())
                                 }
 
