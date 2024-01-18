@@ -1027,7 +1027,6 @@ pub enum Expression {
     Constructor(Box<Constructor>),
     Continue,
     Break,
-    TypeCast(Box<TypeCast>),
     // TODO: finish
 }
 
@@ -1066,7 +1065,6 @@ impl TabbedDisplay for Expression {
             Expression::Constructor(x) => x.tabbed_fmt(depth, f),
             Expression::Continue => write!(f, "continue"),
             Expression::Break => write!(f, "break"),
-            Expression::TypeCast(x) => x.tabbed_fmt(depth, f),
         }
     }
 }
@@ -1102,7 +1100,6 @@ impl_expr_box_from!(While);
 impl_expr_box_from!(UnaryExpression);
 impl_expr_box_from!(BinaryExpression);
 impl_expr_box_from!(Constructor);
-impl_expr_box_from!(TypeCast);
 
 impl Expression {
     pub fn create_todo(msg: Option<String>) -> Expression {
@@ -1111,7 +1108,7 @@ impl Expression {
             generic_parameters: None,
             parameters: if let Some(msg) = msg {
                 vec![
-                    Expression::Literal(Literal::String(msg)),
+                    Expression::Literal(Literal::String(msg.replace("\\", "\\\\").replace("\"", "\\\""))),
                 ]
             } else {
                 vec![]
@@ -1142,7 +1139,7 @@ impl Expression {
                     Some(value) => panic!("Invalid bool value expression: {value:#?}"),
                 }
 
-                "u8" | "u16" | "u32" | "u64" => match value {
+                "u8" | "u16" | "u32" | "u64" | "u256" => match value {
                     None => Expression::Literal(Literal::DecInt(0)),
                     Some(value) if matches!(value, Expression::Literal(Literal::DecInt(_) | Literal::HexInt(_))) => value.clone(),
                     Some(value) => panic!("Invalid {name} value expression: {value:#?}"),
@@ -1465,21 +1462,6 @@ impl TabbedDisplay for ConstructorField {
     fn tabbed_fmt(&self, depth: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}: ", self.name)?;
         self.value.tabbed_fmt(depth, f)
-    }
-}
-
-// -------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct TypeCast {
-    pub expression: Expression,
-    pub type_name: TypeName,
-}
-
-impl TabbedDisplay for TypeCast {
-    fn tabbed_fmt(&self, depth: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.expression.tabbed_fmt(depth, f)?;
-        write!(f, " as {}", self.type_name)
     }
 }
 

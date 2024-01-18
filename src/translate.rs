@@ -245,8 +245,6 @@ impl TranslationScope {
             sway::Expression::Constructor(_) => todo!("get type of constructor expression: {expression:#?}"),
             sway::Expression::Continue => todo!("get type of continue expression: {expression:#?}"),
             sway::Expression::Break => todo!("get type of break expression: {expression:#?}"),
-            
-            sway::Expression::TypeCast(x) => Ok(x.type_name.clone()),
         }
     }
 }
