@@ -15,6 +15,7 @@ pub struct TranslatedVariable {
     pub statement_index: Option<usize>,
     pub read_count: usize,
     pub mutation_count: usize,
+    pub is_configurable: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -268,7 +269,9 @@ pub struct TranslatedDefinition {
     pub modifiers: Vec<TranslatedModifier>,
     pub functions: Vec<sway::Function>,
     pub function_name_counts: HashMap<String, usize>,
+    pub storage_fields_name_counts: HashMap<String, usize>,
     pub function_names: HashMap<String, String>,
+    pub storage_fields_names: HashMap<String, String>,
     pub function_call_counts: HashMap<String, usize>,
     pub impls: Vec<sway::Impl>,
 }
@@ -279,6 +282,22 @@ impl Display for TranslatedDefinition {
 
         for use_entry in self.uses.iter() {
             writeln!(f, "{}", sway::TabbedDisplayer(use_entry))?;
+            written += 1;
+        }
+
+        for (i, x) in self.configurable.iter().enumerate() {
+            if i == 0 && written > 0 {
+                writeln!(f)?;
+            } else if i > 0 {
+                writeln!(f)?;
+            }
+
+            writeln!(f, "{}", sway::TabbedDisplayer(x))?;
+            written += 1;
+        }
+
+        for x in self.constants.iter() {
+            writeln!(f, "{}", sway::TabbedDisplayer(x))?;
             written += 1;
         }
 
@@ -333,14 +352,6 @@ impl Display for TranslatedDefinition {
             written += 1;
         }
         
-        for (i, x) in self.constants.iter().enumerate() {
-            if i == 0 && written > 0 {
-                writeln!(f)?;
-            }
-
-            writeln!(f, "{}", sway::TabbedDisplayer(x))?;
-            written += 1;
-        }
         
         if let Some(x) = self.abi.as_ref() {
             if written > 0 {
@@ -407,7 +418,9 @@ impl TranslatedDefinition {
             modifiers: vec![],
             functions: vec![],
             function_name_counts: HashMap::new(),
+            storage_fields_name_counts: HashMap::new(),
             function_names: HashMap::new(),
+            storage_fields_names: HashMap::new(),
             function_call_counts: HashMap::new(),
             impls: vec![],
         }
