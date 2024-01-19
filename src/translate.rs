@@ -284,6 +284,22 @@ impl Display for TranslatedDefinition {
             written += 1;
         }
 
+        for (i, x) in self.configurable.iter().enumerate() {
+            if i == 0 && written > 0 {
+                writeln!(f)?;
+            } else if i > 0 {
+                writeln!(f)?;
+            }
+
+            writeln!(f, "{}", sway::TabbedDisplayer(x))?;
+            written += 1;
+        }
+
+        for x in self.constants.iter() {
+            writeln!(f, "{}", sway::TabbedDisplayer(x))?;
+            written += 1;
+        }
+
         for (i, x) in self.type_definitions.iter().enumerate() {
             if i == 0 && written > 0 {
                 writeln!(f)?;
@@ -335,14 +351,6 @@ impl Display for TranslatedDefinition {
             written += 1;
         }
         
-        for (i, x) in self.constants.iter().enumerate() {
-            if i == 0 && written > 0 {
-                writeln!(f)?;
-            }
-
-            writeln!(f, "{}", sway::TabbedDisplayer(x))?;
-            written += 1;
-        }
         
         if let Some(x) = self.abi.as_ref() {
             if written > 0 {

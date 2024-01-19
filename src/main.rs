@@ -31,7 +31,7 @@ fn translate_project() -> Result<(), Error> {
     let mut project = Project::default();
     
     for contract_file in options.contract_files.iter() {
-        project.translate(options.definition_name.clone(), &contract_file)?;
+        project.translate(options.definition_name.clone(), contract_file)?;
     }
 
     Ok(())

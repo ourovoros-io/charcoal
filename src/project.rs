@@ -54,20 +54,20 @@ impl Project {
         Ok(())
     }
 
-    /// Loads line ranges in a specfic file `path` from the provided `source` text.
+    /// Loads line ranges in a specific file `path` from the provided `source` text.
     fn load_line_ranges(&mut self, path: PathBuf, source: &str) {
         let mut line_range = (0usize, 0usize);
 
         for (i, c) in source.chars().enumerate() {
             if c == '\n' {
                 line_range.1 = i;
-                self.line_ranges.entry(path.clone()).or_insert(vec![]).push(line_range);
+                self.line_ranges.entry(path.clone()).or_default().push(line_range);
                 line_range = (i + 1, 0);
             }
         }
 
         if line_range.1 > line_range.0 {
-            self.line_ranges.entry(path.clone()).or_insert(vec![]).push(line_range);
+            self.line_ranges.entry(path.clone()).or_default().push(line_range);
         }
     }
 
@@ -108,7 +108,7 @@ impl Project {
                         }
                     }
 
-                    self.translate_contract_definition(&source_unit_path, import_directives.as_slice(), contract_definition)?;
+                    self.translate_contract_definition(source_unit_path, import_directives.as_slice(), contract_definition)?;
                 }
     
                 solidity::SourceUnitPart::EnumDefinition(_) => {
@@ -177,7 +177,7 @@ impl Project {
             signature = format!(
                 "{signature}{}{}",
                 if i > 0 { ", " } else { "" },
-                parameter.as_ref().unwrap().ty.to_string(),
+                parameter.as_ref().unwrap().ty,
             );
         }
 
@@ -582,11 +582,10 @@ impl Project {
 
             let Some(contract_impl) = translated_definition.find_contract_impl_mut() else { continue };
             let Some(contract_impl_function) = contract_impl.items.iter_mut()
-                .map(|i| match i {
+                .filter_map(|i| match i {
                     sway::ImplItem::Function(f) => Some(f),
                     _ => None,
                 })
-                .filter_map(|i| i)
                 .find(|f| f.name == function_name) else { continue };
             
             contract_impl_function.body = body;
@@ -606,11 +605,11 @@ impl Project {
         translated_definition: &mut TranslatedDefinition,
         import_directives: &[solidity::Import],
     ) -> Result<(), Error> {
-        let source_unit_directory = translated_definition.path.parent().map(|p| PathBuf::from(p)).unwrap();
+        let source_unit_directory = translated_definition.path.parent().map(PathBuf::from).unwrap();
 
         for import_directive in import_directives.iter() {
             let mut translate_import_directive = |definition_name: Option<String>, filename: &solidity::StringLiteral| -> Result<(), Error> {
-                if filename.string.starts_with("@") {
+                if filename.string.starts_with('@') {
                     todo!("handle global import paths (i.e: node_modules)")
                 }
     
@@ -649,7 +648,7 @@ impl Project {
         inherits: &[String],
         translated_definition: &mut TranslatedDefinition,
     ) -> Result<(), Error> {
-        let source_unit_directory = translated_definition.path.parent().map(|p| PathBuf::from(p)).unwrap();
+        let source_unit_directory = translated_definition.path.parent().map(PathBuf::from).unwrap();
 
         for inherit in inherits.iter() {
             let mut inherited_definition = None;
@@ -670,7 +669,7 @@ impl Project {
                     _ => panic!("Unsupported import directive: {import_directive:#?}"),
                 };
 
-                if filename.string.starts_with("@") {
+                if filename.string.starts_with('@') {
                     todo!("handle global import paths (i.e: node_modules)")
                 }
 
@@ -815,8 +814,7 @@ impl Project {
         let variable_type_name = self.translate_type_name(translated_definition, &variable_definition.ty);
 
         // Ensure std::hash::Hash is imported for StorageMap storage fields
-        if variable_type_name.has_storage_map() {
-            if !translated_definition.uses.iter().any(|u| {
+        if variable_type_name.has_storage_map() && !translated_definition.uses.iter().any(|u| {
                 let sway::UseTree::Path { prefix: prefix1, suffix } = &u.tree else { return false };
                 let sway::UseTree::Path { prefix: prefix2, suffix } = suffix.as_ref() else { return false };
                 let sway::UseTree::Name { name } = suffix.as_ref() else { return false };
@@ -834,7 +832,6 @@ impl Project {
                         }),
                     },
                 });
-            }
         }
 
         // Collect information about the variable from its attributes
@@ -846,14 +843,52 @@ impl Project {
         if is_constant {
             let variable_name = self.translate_naming_convention(variable_definition.name.as_ref().unwrap().name.as_str(), Case::ScreamingSnake); // TODO: keep track of original name
 
-            todo!("contract constants");
+            translated_definition.constants.push(sway::Constant {
+                is_public,
+                name: variable_name.clone(),
+                type_name: variable_type_name.clone(),
+                value: Some(sway::Expression::create_value_expression(
+                    &variable_type_name,
+                    variable_definition.initializer.as_ref().map(|x| {
+                        self.translate_literal_expression(x)
+                    }).as_ref(),
+                )),
+            });
         }
         
         // Handle immutable variable definitions
         if is_immutable {
             let variable_name = self.translate_naming_convention(variable_definition.name.as_ref().unwrap().name.as_str(), Case::Snake); // TODO: keep track of original name
 
-            todo!("immutable variables");
+            let solidity_variable_name = variable_definition.name.as_ref().unwrap().name.as_str();
+                let variable_name = self.translate_naming_convention(solidity_variable_name, Case::Snake); 
+                translated_definition.get_configurable().fields.push(sway::ConfigurableField {
+                    name: variable_name.clone(), 
+                    type_name: variable_type_name.clone(),
+                    value: sway::Expression::create_value_expression(
+                        &variable_type_name,
+                        {
+                            let mut out = None;
+                            
+                            // for func in translated_definition.functions.iter() {
+                            //     let solidity::ContractPart::FunctionDefinition(function_definition) = func else { continue };
+                            //     let solidity::FunctionTy::Constructor = function_definition.ty else { continue };
+                            //     let solidity::Statement::Block { statements, .. } = function_definition.body.as_ref().unwrap() else { continue };
+                            //     for st in statements.iter() {
+                            //         let solidity::Statement::Expression(_, solidity::Expression::Assign(_, lhs, rhs), ) = st else { continue; };
+                            //         let solidity::Expression::Variable(indent) = *lhs.to_owned() else { continue; };
+                            //         if indent.name == solidity_variable_name {
+                            //             out = Some(self.translate_literal_expression( rhs));
+                            //             break;
+                            //         }
+                            //     }   
+                            // }
+                               
+                            
+                            out.clone().as_ref()
+                        }
+                    ),
+                });
         }
         
         // Handle all other variable definitions
@@ -1489,8 +1524,7 @@ impl Project {
         }
 
         // If the function returns values but doesn't end in a return statement, propagate the return variables
-        if !return_parameters.is_empty() {
-            if !matches!(function_body.statements.last(), Some(sway::Statement::Expression(sway::Expression::Return(_)))) {
+        if !return_parameters.is_empty() && !matches!(function_body.statements.last(), Some(sway::Statement::Expression(sway::Expression::Return(_)))) {
                 function_body.statements.push(sway::Statement::from(sway::Expression::Return(Some(Box::new(
                     if return_parameters.len() == 1 {
                         sway::Expression::Identifier(
@@ -1502,7 +1536,6 @@ impl Project {
                         )
                     }
                 )))));
-            }
         }
 
         // Check if the final statement returns a value and change it to be the final expression of the block
@@ -1634,7 +1667,7 @@ impl Project {
             }
         }
 
-        self.finalize_block_translation(&scope, &mut block)?;
+        self.finalize_block_translation(scope, &mut block)?;
 
         Ok(block)
     }
@@ -1849,7 +1882,7 @@ impl Project {
                             panic!("Expected identifier, found: {identifier:#?}")
                         };
 
-                        let Some(variable) = scope.find_variable_from_new_name_mut(&name) else {
+                        let Some(variable) = scope.find_variable_from_new_name_mut(name) else {
                             panic!("Failed to find variable in scope: \"{name}\"");
                         };
 
@@ -2111,7 +2144,7 @@ impl Project {
         &mut self,
         translated_definition: &mut TranslatedDefinition,
         scope: &mut TranslationScope,
-        named_arguments: &Vec<solidity::NamedArgument>,
+        named_arguments: &[solidity::NamedArgument],
     ) -> Result<sway::Statement, Error> {
         todo!("translate args statement")
     }
@@ -2914,7 +2947,7 @@ impl Project {
                         "gasleft" => {
                             // gasleft() => std::registers::global_gas()
 
-                            if parameters.len() != 0 {
+                            if !parameters.is_empty() {
                                 panic!("Invalid gasleft call: {expression:#?}");
                             }
 
@@ -2994,7 +3027,7 @@ impl Project {
                         }
 
                         "ripemd160" => {
-                            Ok(sway::Expression::create_unimplemented(Some(format!("ripemd160 is not supported in sway"))))
+                            Ok(sway::Expression::create_unimplemented(Some("ripemd160 is not supported in sway".into())))
                         }
 
                         "ecrecover" => {
@@ -3441,7 +3474,7 @@ impl Project {
                     scope,
                     "+=",
                     x.as_ref(),
-                    &solidity::Expression::NumberLiteral(loc.clone(), "1".into(), "".into(), None),
+                    &solidity::Expression::NumberLiteral(*loc, "1".into(), "".into(), None),
                 )
             }
 
@@ -3459,7 +3492,7 @@ impl Project {
                     scope,
                     "-=",
                     x.as_ref(),
-                    &solidity::Expression::NumberLiteral(loc.clone(), "1".into(), "".into(), None),
+                    &solidity::Expression::NumberLiteral(*loc, "1".into(), "".into(), None),
                 )
             }
             
@@ -3593,7 +3626,7 @@ impl Project {
                             variable.read_count += 1;
                             
                             sway::Expression::from(sway::BinaryExpression {
-                                operator: operator.trim_end_matches("=").into(),
+                                operator: operator.trim_end_matches('=').into(),
 
                                 lhs: sway::Expression::from(sway::FunctionCall {
                                     function: sway::Expression::from(sway::MemberAccess {
@@ -3640,7 +3673,7 @@ impl Project {
                 scope,
                 operator,
                 x,
-                &solidity::Expression::NumberLiteral(loc.clone(), "1".into(), "".into(), None),
+                &solidity::Expression::NumberLiteral(*loc, "1".into(), "".into(), None),
             )?
         );
 
@@ -3681,7 +3714,7 @@ impl Project {
                 scope,
                 operator,
                 x,
-                &solidity::Expression::NumberLiteral(loc.clone(), "1".into(), "".into(), None),
+                &solidity::Expression::NumberLiteral(*loc, "1".into(), "".into(), None),
             )?
         );
 
