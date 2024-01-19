@@ -78,7 +78,7 @@ impl Project {
         if !solidity_source_units.borrow().contains_key(source_unit_path) {
             self.parse_solidity_source_unit(source_unit_path)?;
         }
-
+        println!("// Translating \"{}\":", source_unit_path.to_string_lossy());
         // Get the parsed source unit
         let source_unit = solidity_source_units.borrow().get(source_unit_path).unwrap().clone();
 
@@ -198,6 +198,28 @@ impl Project {
         }
 
         translated_definition.function_names.get(&signature).unwrap().clone()
+    }
+
+    fn translate_storage_name(
+        &mut self,
+        translated_definition: &mut TranslatedDefinition,
+        name: String,
+    ) -> String {
+        
+        if !translated_definition.storage_fields_names.contains_key(&name) {
+            let mut new_name = self.translate_naming_convention(name.as_str(), Case::Snake);
+
+            let count = translated_definition.storage_fields_name_counts.entry(new_name.clone()).or_insert(0);
+            *count += 1;
+
+            if *count > 1 {
+                new_name = format!("{new_name}_{}", *count);
+            }
+
+            translated_definition.storage_fields_names.insert(name.clone(), new_name);
+        }
+
+        translated_definition.storage_fields_names.get(&name).unwrap().clone()
     }
 
     fn translate_type_name(
@@ -841,11 +863,13 @@ impl Project {
 
         // Handle constant variable definitions
         if is_constant {
-            let variable_name = self.translate_naming_convention(variable_definition.name.as_ref().unwrap().name.as_str(), Case::ScreamingSnake); // TODO: keep track of original name
+            // Handle all other variable definitions
+            let old_name = variable_definition.name.as_ref().unwrap().name.clone();
+            let new_name = self.translate_naming_convention(old_name.as_str(), Case::ScreamingSnake);
 
             translated_definition.constants.push(sway::Constant {
                 is_public,
-                name: variable_name.clone(),
+                name: new_name.clone(),
                 type_name: variable_type_name.clone(),
                 value: Some(sway::Expression::create_value_expression(
                     &variable_type_name,
@@ -854,11 +878,26 @@ impl Project {
                     }).as_ref(),
                 )),
             });
+            
+            // Add the storage variable for function scopes
+            translated_definition.toplevel_scope.variables.push(TranslatedVariable {
+                old_name,
+                new_name: new_name.clone(),
+                type_name: variable_type_name.clone(),
+                is_storage: true,
+                statement_index: None,
+                read_count: 0,
+                mutation_count: 0,
+                is_configurable: false,
+            });
+            return Ok(())
         }
         
         // Handle immutable variable definitions
         if is_immutable {
-            let variable_name = self.translate_naming_convention(variable_definition.name.as_ref().unwrap().name.as_str(), Case::Snake); // TODO: keep track of original name
+            // Handle all other variable definitions
+            let old_name = variable_definition.name.as_ref().unwrap().name.clone();
+            let new_name = self.translate_naming_convention(old_name.as_str(), Case::ScreamingSnake);
 
             let solidity_variable_name = variable_definition.name.as_ref().unwrap().name.as_str();
                 let variable_name = self.translate_naming_convention(solidity_variable_name, Case::Snake); 
@@ -867,28 +906,10 @@ impl Project {
                     type_name: variable_type_name.clone(),
                     value: sway::Expression::create_value_expression(
                         &variable_type_name,
-                        {
-                            let mut out = None;
-                            
-                            // for func in translated_definition.functions.iter() {
-                            //     let solidity::ContractPart::FunctionDefinition(function_definition) = func else { continue };
-                            //     let solidity::FunctionTy::Constructor = function_definition.ty else { continue };
-                            //     let solidity::Statement::Block { statements, .. } = function_definition.body.as_ref().unwrap() else { continue };
-                            //     for st in statements.iter() {
-                            //         let solidity::Statement::Expression(_, solidity::Expression::Assign(_, lhs, rhs), ) = st else { continue; };
-                            //         let solidity::Expression::Variable(indent) = *lhs.to_owned() else { continue; };
-                            //         if indent.name == solidity_variable_name {
-                            //             out = Some(self.translate_literal_expression( rhs));
-                            //             break;
-                            //         }
-                            //     }   
-                            // }
-                               
-                            
-                            out.clone().as_ref()
-                        }
+                        variable_definition.initializer.as_ref().map(|x| self.translate_literal_expression(x)).as_ref(),
                     ),
                 });
+                return Ok(())
         }
         
         // Handle all other variable definitions
@@ -904,6 +925,7 @@ impl Project {
             statement_index: None,
             read_count: 0,
             mutation_count: 0,
+            is_configurable: false,
         });
 
         // Add the storage field to the storage block
@@ -1042,6 +1064,7 @@ impl Project {
                     statement_index: None,
                     read_count: 0,
                     mutation_count: 0,
+                    is_configurable: false,
                 }
             })
         );
@@ -1139,6 +1162,7 @@ impl Project {
                 statement_index: None,
                 read_count: 0,
                 mutation_count: 0,
+                is_configurable: false,
             });
         }
 
@@ -1461,6 +1485,7 @@ impl Project {
                 statement_index: None,
                 read_count: 0,
                 mutation_count: 0,
+                is_configurable: false,
             };
 
             parameters.push(translated_variable.clone());
@@ -1484,6 +1509,7 @@ impl Project {
                 statement_index: None,
                 read_count: 0,
                 mutation_count: 0,
+                is_configurable: false,
             };
 
             return_parameters.push(translated_variable.clone());
@@ -1492,6 +1518,49 @@ impl Project {
 
         // Translate the body for the toplevel function
         let mut function_body = self.translate_block(translated_definition, &mut scope, statements.as_slice())?;
+
+        if is_constructor {
+            let name =  self.translate_storage_name(translated_definition, "initialized".into());
+            translated_definition.get_storage().fields.push(sway::StorageField{
+                name: name.clone(),
+                type_name: sway::TypeName::Identifier { name: "bool".into(), generic_parameters: None },
+                value: sway::Expression::create_value_expression(&sway::TypeName::Identifier { name: "bool".into(), generic_parameters: None }, Some(&sway::Expression::Literal(sway::Literal::Bool(false)))),
+            });
+            function_body.statements.insert(0, sway::Statement::from(sway::Expression::from(sway::FunctionCall {
+                function: sway::Expression::from(sway::Expression::Identifier("require".into())),
+                generic_parameters: None,
+                parameters: vec![
+                    sway::Expression::from(sway::UnaryExpression{ 
+                        operator: "!".into(),
+                        expression: sway::Expression::from(sway::FunctionCall{ 
+                            function: sway::Expression::from(sway::MemberAccess{ 
+                                expression: sway::Expression::from(sway::MemberAccess{ 
+                                    expression: sway::Expression::Identifier("storage".into()),
+                                    member: name.clone(),
+                                }),
+                                member: "read".into(), 
+                            }) , 
+                            generic_parameters: None, 
+                            parameters: vec![], 
+                        })
+                    }),
+                    sway::Expression::from(sway::Literal::String("Contract is already initialized".into())),
+                ],
+            })));
+            function_body.statements.push(sway::Statement::from(sway::Expression::from(sway::FunctionCall {
+                function: sway::Expression::from(sway::MemberAccess{ 
+                    expression: sway::Expression::from(sway::MemberAccess{ 
+                        expression: sway::Expression::Identifier("storage".into()),
+                        member: name.clone(),
+                    }),
+                    member: "write".into(), 
+                }),
+                generic_parameters: None,
+                parameters: vec![
+                    sway::Expression::from(sway::Literal::Bool(true)),
+                ],
+            })));
+        }
 
         // Check for parameters that were mutated and make them local variables
         for parameter in parameters.iter().rev() {
@@ -1915,6 +1984,7 @@ impl Project {
                             statement_index: None,
                             read_count: 0,
                             mutation_count: 0,
+                            is_configurable: false,
                         });
                     }
     
@@ -2242,6 +2312,7 @@ impl Project {
                         statement_index: None,
                         read_count: 0,
                         mutation_count: 0,
+                        is_configurable: false,
                     });
                 }
 
@@ -2332,6 +2403,7 @@ impl Project {
             statement_index: None,
             read_count: 0,
             mutation_count: 0,
+            is_configurable: false,
         });
 
         Ok(statement)

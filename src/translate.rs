@@ -15,6 +15,7 @@ pub struct TranslatedVariable {
     pub statement_index: Option<usize>,
     pub read_count: usize,
     pub mutation_count: usize,
+    pub is_configurable: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -270,7 +271,9 @@ pub struct TranslatedDefinition {
     pub modifiers: Vec<TranslatedModifier>,
     pub functions: Vec<sway::Function>,
     pub function_name_counts: HashMap<String, usize>,
+    pub storage_fields_name_counts: HashMap<String, usize>,
     pub function_names: HashMap<String, String>,
+    pub storage_fields_names: HashMap<String, String>,
     pub function_call_counts: HashMap<String, usize>,
     pub impls: Vec<sway::Impl>,
 }
@@ -417,7 +420,9 @@ impl TranslatedDefinition {
             modifiers: vec![],
             functions: vec![],
             function_name_counts: HashMap::new(),
+            storage_fields_name_counts: HashMap::new(),
             function_names: HashMap::new(),
+            storage_fields_names: HashMap::new(),
             function_call_counts: HashMap::new(),
             impls: vec![],
         }
