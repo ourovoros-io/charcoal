@@ -236,6 +236,7 @@ impl TranslationScope {
             sway::Expression::MemberAccess(_) => todo!("get type of member access expression: {expression:#?}"),
             sway::Expression::Tuple(_) => todo!("get type of tuple expression: {expression:#?}"),
             sway::Expression::If(_) => todo!("get type of if expression: {expression:#?}"),
+            sway::Expression::Match(_) => todo!("get type of match expression: {expression:#?}"),
             sway::Expression::While(_) => todo!("get type of while expression: {expression:#?}"),
             sway::Expression::UnaryExpression(_) => todo!("get type of unary expression expression: {expression:#?}"),
 
@@ -258,8 +259,8 @@ pub struct TranslatedDefinition {
     pub type_definitions: Vec<sway::TypeDefinition>,
     pub structs: Vec<sway::Struct>,
     pub enums: Vec<TranslatedEnum>,
-    pub events_enum: Option<sway::Enum>,
-    pub errors_enum: Option<sway::Enum>,
+    pub events_enum: Option<(sway::Enum, sway::Impl)>,
+    pub errors_enum: Option<(sway::Enum, sway::Impl)>,
     pub constants: Vec<sway::Constant>,
     pub abi: Option<sway::Abi>,
     pub configurable: Option<sway::Configurable>,
@@ -334,24 +335,27 @@ impl Display for TranslatedDefinition {
             written += 1;
         }
         
-        if let Some(x) = self.events_enum.as_ref() {
+        if let Some((events_enum, abi_encode_impl)) = self.events_enum.as_ref() {
             if written > 0 {
                 writeln!(f)?;
             }
 
-            writeln!(f, "{}", sway::TabbedDisplayer(x))?;
+            writeln!(f, "{}", sway::TabbedDisplayer(events_enum))?;
+            writeln!(f)?;
+            writeln!(f, "{}", sway::TabbedDisplayer(abi_encode_impl))?;
             written += 1;
         }
 
-        if let Some(x) = self.errors_enum.as_ref() {
+        if let Some((errors_enum, abi_encode_impl)) = self.errors_enum.as_ref() {
             if written > 0 {
                 writeln!(f)?;
             }
 
-            writeln!(f, "{}", sway::TabbedDisplayer(x))?;
+            writeln!(f, "{}", sway::TabbedDisplayer(errors_enum))?;
+            writeln!(f)?;
+            writeln!(f, "{}", sway::TabbedDisplayer(abi_encode_impl))?;
             written += 1;
         }
-        
         
         if let Some(x) = self.abi.as_ref() {
             if written > 0 {
@@ -417,40 +421,64 @@ impl TranslatedDefinition {
             storage: None,
             modifiers: vec![],
             functions: vec![],
-            function_name_counts: HashMap::new(),
-            storage_fields_name_counts: HashMap::new(),
-            function_names: HashMap::new(),
-            storage_fields_names: HashMap::new(),
-            function_call_counts: HashMap::new(),
             impls: vec![],
+            function_name_counts: HashMap::new(),
+            function_names: HashMap::new(),
+            function_call_counts: HashMap::new(),
+            storage_fields_name_counts: HashMap::new(),
+            storage_fields_names: HashMap::new(),
         }
     }
 
     /// Gets the events enum for the translated definition. If it doesn't exist, it gets created.
-    pub fn get_events_enum(&mut self) -> &mut sway::Enum {
+    pub fn get_events_enum(&mut self) -> &mut (sway::Enum, sway::Impl) {
         if self.events_enum.is_none() {
-            self.events_enum = Some(sway::Enum {
-                attributes: None,
-                is_public: false,
-                name: format!("{}Event", self.name),
-                generic_parameters: None,
-                variants: vec![],
-            });
+            let name = format!("{}Event", self.name);
+
+            self.events_enum = Some((
+                sway::Enum {
+                    name: name.clone(),
+                    ..Default::default()
+                },
+                sway::Impl {
+                    type_name: sway::TypeName::Identifier {
+                        name: "core::codec::AbiEncode".into(),
+                        generic_parameters: None,
+                    },
+                    for_type_name: Some(sway::TypeName::Identifier {
+                        name,
+                        generic_parameters: None,
+                    }),
+                    ..Default::default()
+                }
+            ));
         }
 
         self.events_enum.as_mut().unwrap()
     }
 
     /// Gets the errors enum for the translated definition. If it doesn't exist, it gets created.
-    pub fn get_errors_enum(&mut self) -> &mut sway::Enum {
+    pub fn get_errors_enum(&mut self) -> &mut (sway::Enum, sway::Impl) {
         if self.errors_enum.is_none() {
-            self.errors_enum = Some(sway::Enum {
-                attributes: None,
-                is_public: false,
-                name: format!("{}Error", self.name),
-                generic_parameters: None,
-                variants: vec![],
-            });
+            let name = format!("{}Error", self.name);
+
+            self.errors_enum = Some((
+                sway::Enum {
+                    name: name.clone(),
+                    ..Default::default()
+                },
+                sway::Impl {
+                    type_name: sway::TypeName::Identifier {
+                        name: "core::codec::AbiEncode".into(),
+                        generic_parameters: None,
+                    },
+                    for_type_name: Some(sway::TypeName::Identifier {
+                        name,
+                        generic_parameters: None,
+                    }),
+                    ..Default::default()
+                }
+            ));
         }
 
         self.errors_enum.as_mut().unwrap()

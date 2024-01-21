@@ -1,6 +1,5 @@
 contract;
 
-use core::codec::*;
 use std::hash::Hash;
 use std::constants::ZERO_B256;
 
@@ -9,33 +8,33 @@ enum ERC20Event {
     Approval: (Identity, Identity, u256),
 }
 
-impl AbiEncode for ERC20Event {
-    fn abi_encode(self, ref mut buffer: Buffer) {
-        match self {
+impl core::codec::AbiEncode for ERC20Event {
+    fn abi_encode(self, ref mut buffer: core::codec::Buffer) {
+        match self{
             ERC20Event::Transfer((a, b, c)) => {
                 "Transfer".abi_encode(buffer);
-                match a {
-                    Identity::Address(x) => x.into().abi_encode(buffer),
-                    Identity::ContractId(x) => x.into().abi_encode(buffer),
+                match a{
+                    Identity::Address(x) => x.abi_encode(buffer),
+                    Identity::ContractId(x) => x.abi_encode(buffer),
                 }
-                match b {
-                    Identity::Address(x) => x.into().abi_encode(buffer),
-                    Identity::ContractId(x) => x.into().abi_encode(buffer),
+                match b{
+                    Identity::Address(x) => x.abi_encode(buffer),
+                    Identity::ContractId(x) => x.abi_encode(buffer),
                 }
                 c.abi_encode(buffer);
-            }
+            },
             ERC20Event::Approval((a, b, c)) => {
                 "Approval".abi_encode(buffer);
-                match a {
-                    Identity::Address(x) => x.into().abi_encode(buffer),
-                    Identity::ContractId(x) => x.into().abi_encode(buffer),
+                match a{
+                    Identity::Address(x) => x.abi_encode(buffer),
+                    Identity::ContractId(x) => x.abi_encode(buffer),
                 }
-                match b {
-                    Identity::Address(x) => x.into().abi_encode(buffer),
-                    Identity::ContractId(x) => x.into().abi_encode(buffer),
+                match b{
+                    Identity::Address(x) => x.abi_encode(buffer),
+                    Identity::ContractId(x) => x.abi_encode(buffer),
                 }
                 c.abi_encode(buffer);
-            }
+            },
         }
     }
 }
@@ -49,55 +48,55 @@ enum ERC20Error {
     ERC20InvalidSpender: Identity,
 }
 
-impl AbiEncode for ERC20Error {
-    fn abi_encode(self, ref mut buffer: Buffer) {
-        match self {
+impl core::codec::AbiEncode for ERC20Error {
+    fn abi_encode(self, ref mut buffer: core::codec::Buffer) {
+        match self{
             ERC20Error::ERC20InsufficientBalance((a, b, c)) => {
                 "ERC20InsufficientBalance".abi_encode(buffer);
-                match a {
-                    Identity::Address(x) => x.into().abi_encode(buffer),
-                    Identity::ContractId(x) => x.into().abi_encode(buffer),
+                match a{
+                    Identity::Address(x) => x.abi_encode(buffer),
+                    Identity::ContractId(x) => x.abi_encode(buffer),
                 }
                 b.abi_encode(buffer);
                 c.abi_encode(buffer);
-            }
+            },
             ERC20Error::ERC20InvalidSender(a) => {
                 "ERC20InvalidSender".abi_encode(buffer);
-                match a {
-                    Identity::Address(x) => x.into().abi_encode(buffer),
-                    Identity::ContractId(x) => x.into().abi_encode(buffer),
+                match a{
+                    Identity::Address(x) => x.abi_encode(buffer),
+                    Identity::ContractId(x) => x.abi_encode(buffer),
                 }
-            }
+            },
             ERC20Error::ERC20InvalidReceiver(a) => {
                 "ERC20InvalidReceiver".abi_encode(buffer);
-                match a {
-                    Identity::Address(x) => x.into().abi_encode(buffer),
-                    Identity::ContractId(x) => x.into().abi_encode(buffer),
+                match a{
+                    Identity::Address(x) => x.abi_encode(buffer),
+                    Identity::ContractId(x) => x.abi_encode(buffer),
                 }
-            }
+            },
             ERC20Error::ERC20InsufficientAllowance((a, b, c)) => {
                 "ERC20InsufficientAllowance".abi_encode(buffer);
-                match a {
-                    Identity::Address(x) => x.into().abi_encode(buffer),
-                    Identity::ContractId(x) => x.into().abi_encode(buffer),
+                match a{
+                    Identity::Address(x) => x.abi_encode(buffer),
+                    Identity::ContractId(x) => x.abi_encode(buffer),
                 }
                 b.abi_encode(buffer);
                 c.abi_encode(buffer);
-            }
+            },
             ERC20Error::ERC20InvalidApprover(a) => {
                 "ERC20InvalidApprover".abi_encode(buffer);
-                match a {
-                    Identity::Address(x) => x.into().abi_encode(buffer),
-                    Identity::ContractId(x) => x.into().abi_encode(buffer),
+                match a{
+                    Identity::Address(x) => x.abi_encode(buffer),
+                    Identity::ContractId(x) => x.abi_encode(buffer),
                 }
-            }
+            },
             ERC20Error::ERC20InvalidSpender(a) => {
                 "ERC20InvalidSpender".abi_encode(buffer);
-                match a {
-                    Identity::Address(x) => x.into().abi_encode(buffer),
-                    Identity::ContractId(x) => x.into().abi_encode(buffer),
+                match a{
+                    Identity::Address(x) => x.abi_encode(buffer),
+                    Identity::ContractId(x) => x.abi_encode(buffer),
                 }
-            }
+            },
         }
     }
 }
@@ -129,6 +128,9 @@ abi ERC20 {
 
     #[storage(read)]
     fn decimals() -> u8;
+
+    #[storage(read, write)]
+    fn constructor(name_: str[32], symbol_: str[32]);
 }
 
 storage {
@@ -137,6 +139,7 @@ storage {
     _total_supply: u256 = 0,
     _name: str[32] = __to_str_array("                                "),
     _symbol: str[32] = __to_str_array("                                "),
+    initialized: bool = false,
 }
 
 #[storage(read)]
@@ -152,12 +155,6 @@ fn _msg_data() -> std::bytes::Bytes {
 #[storage(read)]
 fn _context_suffix_length() -> u256 {
     0
-}
-
-#[storage(read, write)]
-fn constructor(name_: str[32], symbol_: str[32]) {
-    storage._name.write(name_);
-    storage._symbol.write(symbol_);
 }
 
 #[storage(read)]
@@ -250,6 +247,14 @@ fn _spend_allowance(owner: Identity, spender: Identity, value: u256) {
 }
 
 impl ERC20 for Contract {
+    #[storage(read, write)]
+    fn constructor(name_: str[32], symbol_: str[32]) {
+        require(!storage.initialized.read(), "Contract is already initialized");
+        storage._name.write(name_);
+        storage._symbol.write(symbol_);
+        storage.initialized.write(true);
+    }
+
     #[storage(read)]
     fn name() -> str[32] {
         storage._name.read()

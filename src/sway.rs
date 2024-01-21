@@ -517,7 +517,7 @@ impl Display for StructField {
 
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Enum {
     pub attributes: Option<AttributeList>,
     pub is_public: bool,
@@ -792,15 +792,31 @@ impl TabbedDisplay for Function {
 
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Parameter {
+    pub is_ref: bool,
+    pub is_mut: bool,
     pub name: String,
-    pub type_name: TypeName,
+    pub type_name: Option<TypeName>,
 }
 
 impl Display for Parameter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}: {}", self.name, self.type_name)
+        if self.is_ref {
+            write!(f, "ref ")?;
+        }
+
+        if self.is_mut {
+            write!(f, "mut ")?;
+        }
+        
+        write!(f, "{}", self.name)?;
+
+        if let Some(type_name) = self.type_name.as_ref() {
+            write!(f, ": {type_name}")?;
+        }
+
+        Ok(())
     }
 }
 
@@ -819,7 +835,7 @@ impl Display for ParameterList {
 
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Impl {
     pub generic_parameters: Option<GenericParameterList>,
     pub type_name: TypeName,
@@ -860,7 +876,7 @@ impl TabbedDisplay for Impl {
             was_constant = matches!(item, ImplItem::Constant(_));
         }
 
-        writeln!(f, "}}")
+        write!(f, "}}")
     }
 }
 
@@ -932,7 +948,7 @@ impl TabbedDisplay for Statement {
                 x.tabbed_fmt(depth, f)?;
 
                 match x {
-                    Expression::Block(_) | Expression::If(_) | Expression::While(_) => {}
+                    Expression::Block(_) | Expression::If(_) | Expression::Match(_) | Expression::While(_) => {}
 
                     _ => write!(f, ";")?,
                 }
@@ -1027,6 +1043,7 @@ pub enum Expression {
     MemberAccess(Box<MemberAccess>),
     Tuple(Vec<Expression>),
     If(Box<If>),
+    Match(Box<Match>),
     While(Box<While>),
     UnaryExpression(Box<UnaryExpression>),
     BinaryExpression(Box<BinaryExpression>),
@@ -1055,6 +1072,7 @@ impl TabbedDisplay for Expression {
             Expression::ArrayAccess(x) => x.tabbed_fmt(depth, f),
             Expression::MemberAccess(x) => x.tabbed_fmt(depth, f),
             Expression::If(x) => x.tabbed_fmt(depth, f),
+            Expression::Match(x) => x.tabbed_fmt(depth, f),
             Expression::While(x) => x.tabbed_fmt(depth, f),
             Expression::Tuple(x) => {
                 write!(f, "(")?;
@@ -1102,6 +1120,7 @@ impl_expr_from!(Array);
 impl_expr_box_from!(ArrayAccess);
 impl_expr_box_from!(MemberAccess);
 impl_expr_box_from!(If);
+impl_expr_box_from!(Match);
 impl_expr_box_from!(While);
 impl_expr_box_from!(UnaryExpression);
 impl_expr_box_from!(BinaryExpression);
@@ -1380,6 +1399,45 @@ impl TabbedDisplay for If {
         }
 
         Ok(())
+    }
+}
+
+// -------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Match {
+    pub expression: Expression,
+    pub branches: Vec<MatchBranch>,
+}
+
+impl TabbedDisplay for Match {
+    fn tabbed_fmt(&self, depth: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "match ")?;
+        self.expression.tabbed_fmt(depth, f)?;
+        writeln!(f, "{{")?;
+
+        for branch in self.branches.iter() {
+            "".tabbed_fmt(depth + 1, f)?;
+            branch.tabbed_fmt(depth + 1, f)?;
+            writeln!(f)?;
+        }
+
+        "}".tabbed_fmt(depth, f)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct MatchBranch {
+    pub pattern: Expression,
+    pub value: Expression,
+}
+
+impl TabbedDisplay for MatchBranch {
+    fn tabbed_fmt(&self, depth: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.pattern.tabbed_fmt(depth, f)?;
+        write!(f, " => ")?;
+        self.value.tabbed_fmt(depth, f)?;
+        write!(f, ",")
     }
 }
 
