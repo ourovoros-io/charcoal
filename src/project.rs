@@ -1091,12 +1091,11 @@ impl Project {
             return Ok(());
         }
 
-        println!("Generating getter function for `storage.{new_name}`");
-
+        // Generate parameters and return type for the public getter function
         let mut parameters = sway::ParameterList::default();
         let mut return_type = variable_type_name.clone();
 
-        if let Some((inner_parameters, inner_return_type)) = variable_type_name.storage_map_getter_parameters_and_return_type() {
+        if let Some((inner_parameters, inner_return_type)) = variable_type_name.getter_function_parameters_and_return_type() {
             parameters = inner_parameters;
             return_type = inner_return_type;
         }
