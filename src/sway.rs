@@ -320,8 +320,11 @@ impl Display for AttributeList {
 
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub enum TypeName {
+    #[default]
+    Undefined,
+
     Identifier {
         name: String,
         generic_parameters: Option<GenericParameterList>,
@@ -341,6 +344,7 @@ pub enum TypeName {
 impl Display for TypeName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            TypeName::Undefined => panic!("Undefined type name"),
             TypeName::Identifier { name, generic_parameters } => write!(f, "{name}{}", if let Some(p) = generic_parameters.as_ref() { format!("{p}") } else { String::new() }),
             TypeName::Array { type_name, length } => write!(f, "[{type_name}; {length}]"),
             TypeName::Tuple { type_names } => write!(f, "({})", type_names.iter().map(|t| format!("{t}")).collect::<Vec<_>>().join(", ")),
@@ -352,6 +356,8 @@ impl Display for TypeName {
 impl TypeName {
     pub fn has_storage_map(&self) -> bool {
         match self {
+            TypeName::Undefined => panic!("Undefined type name"),
+
             TypeName::Identifier { name, generic_parameters } => {
                 if name == "StorageMap" {
                     return true;
@@ -1132,6 +1138,8 @@ impl Expression {
 
     pub fn create_value_expression(type_name: &TypeName, value: Option<&Expression>) -> Expression {
         match type_name {
+            TypeName::Undefined => panic!("Undefined type name"),
+            
             TypeName::Identifier { name, .. } => match name.as_str() {
                 "bool" => match value {
                     None => Expression::Literal(Literal::Bool(false)),

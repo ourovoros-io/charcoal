@@ -6,16 +6,16 @@ use std::{
     path::{Path, PathBuf},
 };
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct TranslatedVariable {
     pub old_name: String,
     pub new_name: String,
     pub type_name: sway::TypeName,
     pub is_storage: bool,
+    pub is_configurable: bool,
     pub statement_index: Option<usize>,
     pub read_count: usize,
     pub mutation_count: usize,
-    pub is_configurable: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -52,63 +52,63 @@ pub struct TranslatedEnum {
 
 impl TranslationScope {
     /// Attempts to get a reference to a variable using its old name
-    pub fn find_variable_from_old_name(&self, old_name: &str) -> Option<&TranslatedVariable> {
+    pub fn get_variable_from_old_name(&self, old_name: &str) -> Result<&TranslatedVariable, Error> {
         if let Some(variable) = self.variables.iter().rev().find(|v| v.old_name == old_name) {
-            return Some(variable);
+            return Ok(variable);
         }
 
         if let Some(parent) = self.parent.as_ref() {
-            if let Some(variable) = parent.find_variable_from_old_name(old_name) {
-                return Some(variable);
+            if let Ok(variable) = parent.get_variable_from_old_name(old_name) {
+                return Ok(variable);
             }
         }
 
-        None
+        Err(Error::VariableNotInScope(old_name.into()))
     }
 
     /// Attempts to get a mutable reference to a variable using its old name
-    pub fn find_variable_from_old_name_mut(&mut self, old_name: &str) -> Option<&mut TranslatedVariable> {
+    pub fn get_variable_from_old_name_mut(&mut self, old_name: &str) -> Result<&mut TranslatedVariable, Error> {
         if let Some(variable) = self.variables.iter_mut().rev().find(|v| v.old_name == old_name) {
-            return Some(variable);
+            return Ok(variable);
         }
 
         if let Some(parent) = self.parent.as_mut() {
-            if let Some(variable) = parent.find_variable_from_old_name_mut(old_name) {
-                return Some(variable);
+            if let Ok(variable) = parent.get_variable_from_old_name_mut(old_name) {
+                return Ok(variable);
             }
         }
 
-        None
+        Err(Error::VariableNotInScope(old_name.into()))
     }
 
     /// Attempts to get a reference to a variable using its new name
-    pub fn find_variable_from_new_name(&self, new_name: &str) -> Option<&TranslatedVariable> {
+    pub fn get_variable_from_new_name(&self, new_name: &str) -> Result<&TranslatedVariable, Error> {
         if let Some(variable) = self.variables.iter().rev().find(|v| v.new_name == new_name) {
-            return Some(variable);
+            return Ok(variable);
         }
 
         if let Some(parent) = self.parent.as_ref() {
-            if let Some(variable) = parent.find_variable_from_new_name(new_name) {
-                return Some(variable);
+            if let Ok(variable) = parent.get_variable_from_new_name(new_name) {
+                return Ok(variable);
             }
         }
 
-        None
+        Err(Error::VariableNotInScope(new_name.into()))
     }
 
     /// Attempts to get a mutable reference to a variable using its new name
-    pub fn find_variable_from_new_name_mut(&mut self, new_name: &str) -> Option<&mut TranslatedVariable> {
+    pub fn get_variable_from_new_name_mut(&mut self, new_name: &str) -> Result<&mut TranslatedVariable, Error> {
         if let Some(variable) = self.variables.iter_mut().rev().find(|v| v.new_name == new_name) {
-            return Some(variable);
+            return Ok(variable);
         }
 
         if let Some(parent) = self.parent.as_mut() {
-            if let Some(variable) = parent.find_variable_from_new_name_mut(new_name) {
-                return Some(variable);
+            if let Ok(variable) = parent.get_variable_from_new_name_mut(new_name) {
+                return Ok(variable);
             }
         }
 
-        None
+        Err(Error::VariableNotInScope(new_name.into()))
     }
 
     pub fn find_function<F: Copy + FnMut(&&TranslatedFunction) -> bool>(&self, f: F) -> Option<&TranslatedFunction> {
@@ -126,63 +126,63 @@ impl TranslationScope {
     }
 
     /// Attempts to get a reference to a function using its old name
-    pub fn find_function_from_old_name(&self, old_name: &str) -> Option<&TranslatedFunction> {
+    pub fn get_function_from_old_name(&self, old_name: &str) -> Result<&TranslatedFunction, Error> {
         if let Some(function) = self.functions.iter().rev().find(|v| v.old_name == old_name) {
-            return Some(function);
+            return Ok(function);
         }
 
         if let Some(parent) = self.parent.as_ref() {
-            if let Some(function) = parent.find_function_from_old_name(old_name) {
-                return Some(function);
+            if let Ok(function) = parent.get_function_from_old_name(old_name) {
+                return Ok(function);
             }
         }
 
-        None
+        Err(Error::FunctionNotInScope(old_name.into()))
     }
 
     /// Attempts to get a mutable reference to a function using its old name
-    pub fn find_function_from_old_name_mut(&mut self, old_name: &str) -> Option<&mut TranslatedFunction> {
+    pub fn get_function_from_old_name_mut(&mut self, old_name: &str) -> Result<&mut TranslatedFunction, Error> {
         if let Some(function) = self.functions.iter_mut().rev().find(|v| v.old_name == old_name) {
-            return Some(function);
+            return Ok(function);
         }
 
         if let Some(parent) = self.parent.as_mut() {
-            if let Some(function) = parent.find_function_from_old_name_mut(old_name) {
-                return Some(function);
+            if let Ok(function) = parent.get_function_from_old_name_mut(old_name) {
+                return Ok(function);
             }
         }
 
-        None
+        Err(Error::FunctionNotInScope(old_name.into()))
     }
 
     /// Attempts to get a reference to a function using its new name
-    pub fn find_function_from_new_name(&self, new_name: &str) -> Option<&TranslatedFunction> {
+    pub fn get_function_from_new_name(&self, new_name: &str) -> Result<&TranslatedFunction, Error> {
         if let Some(function) = self.functions.iter().rev().find(|v| v.new_name == new_name) {
-            return Some(function);
+            return Ok(function);
         }
 
         if let Some(parent) = self.parent.as_ref() {
-            if let Some(function) = parent.find_function_from_new_name(new_name) {
-                return Some(function);
+            if let Ok(function) = parent.get_function_from_new_name(new_name) {
+                return Ok(function);
             }
         }
 
-        None
+        Err(Error::FunctionNotInScope(new_name.into()))
     }
 
     /// Attempts to get a mutable reference to a function using its new name
-    pub fn find_function_from_new_name_mut(&mut self, new_name: &str) -> Option<&mut TranslatedFunction> {
+    pub fn find_function_from_new_name_mut(&mut self, new_name: &str) -> Result<&mut TranslatedFunction, Error> {
         if let Some(function) = self.functions.iter_mut().rev().find(|v| v.new_name == new_name) {
-            return Some(function);
+            return Ok(function);
         }
 
         if let Some(parent) = self.parent.as_mut() {
-            if let Some(function) = parent.find_function_from_new_name_mut(new_name) {
-                return Some(function);
+            if let Ok(function) = parent.find_function_from_new_name_mut(new_name) {
+                return Ok(function);
             }
         }
 
-        None
+        Err(Error::FunctionNotInScope(new_name.into()))
     }
 
     pub fn get_expression_type(
@@ -207,13 +207,11 @@ impl TranslationScope {
             }
 
             sway::Expression::Identifier(name) => {
-                let Some(variable) = self.find_variable_from_new_name(name) else {
-                    panic!("Failed to find variable in scope: {name}");
-                };
+                let variable = self.get_variable_from_new_name(name)?;
 
                 // Variable should not be a storage field
                 if variable.is_storage {
-                    panic!("Failed to find variable in scope: {name}");
+                    return Err(Error::VariableNotInScope(name.clone()));
                 }
 
                 Ok(variable.type_name.clone())
@@ -268,12 +266,14 @@ pub struct TranslatedDefinition {
     pub storage: Option<sway::Storage>,
     pub modifiers: Vec<TranslatedModifier>,
     pub functions: Vec<sway::Function>,
-    pub function_name_counts: HashMap<String, usize>,
-    pub storage_fields_name_counts: HashMap<String, usize>,
-    pub function_names: HashMap<String, String>,
-    pub storage_fields_names: HashMap<String, String>,
-    pub function_call_counts: HashMap<String, usize>,
     pub impls: Vec<sway::Impl>,
+    
+    pub function_name_counts: HashMap<String, usize>,
+    pub function_names: HashMap<String, String>,
+    pub function_call_counts: HashMap<String, usize>,
+
+    pub storage_fields_name_counts: HashMap<String, usize>,
+    pub storage_fields_names: HashMap<String, String>,
 }
 
 impl Display for TranslatedDefinition {

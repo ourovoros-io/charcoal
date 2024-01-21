@@ -7,6 +7,8 @@ pub enum Error {
     MissingContractFile,
     LineNotFound(PathBuf, usize),
     SolangDiagnostics(PathBuf, Vec<(usize, usize)>, Vec<Diagnostic>),
+    VariableNotInScope(String),
+    FunctionNotInScope(String),
 }
 
 impl std::fmt::Display for Error {
@@ -52,6 +54,14 @@ impl std::fmt::Display for Error {
                 }
 
                 Ok(())
+            }
+
+            Error::VariableNotInScope(name) => {
+                write!(f, "error: Variable not found in scope: \"{name}\"")
+            }
+
+            Error::FunctionNotInScope(name) => {
+                write!(f, "error: Function not found in scope: \"{name}\"")
             }
         }
     }

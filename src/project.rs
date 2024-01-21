@@ -3,10 +3,11 @@ use crate::{
     sway,
     translate::{
         TranslatedDefinition,
+        TranslatedEnum,
         TranslatedFunction,
         TranslatedModifier,
         TranslatedVariable,
-        TranslationScope, TranslatedEnum,
+        TranslationScope,
     },
 };
 use convert_case::{Case, Casing};
@@ -78,7 +79,7 @@ impl Project {
         if !solidity_source_units.borrow().contains_key(source_unit_path) {
             self.parse_solidity_source_unit(source_unit_path)?;
         }
-        println!("// Translating \"{}\":", source_unit_path.to_string_lossy());
+        
         // Get the parsed source unit
         let source_unit = solidity_source_units.borrow().get(source_unit_path).unwrap().clone();
 
@@ -203,11 +204,10 @@ impl Project {
     fn translate_storage_name(
         &mut self,
         translated_definition: &mut TranslatedDefinition,
-        name: String,
+        name: &str,
     ) -> String {
-        
-        if !translated_definition.storage_fields_names.contains_key(&name) {
-            let mut new_name = self.translate_naming_convention(name.as_str(), Case::Snake);
+        if !translated_definition.storage_fields_names.contains_key(name) {
+            let mut new_name = self.translate_naming_convention(name, Case::Snake);
 
             let count = translated_definition.storage_fields_name_counts.entry(new_name.clone()).or_insert(0);
             *count += 1;
@@ -216,10 +216,10 @@ impl Project {
                 new_name = format!("{new_name}_{}", *count);
             }
 
-            translated_definition.storage_fields_names.insert(name.clone(), new_name);
+            translated_definition.storage_fields_names.insert(name.into(), new_name);
         }
 
-        translated_definition.storage_fields_names.get(&name).unwrap().clone()
+        translated_definition.storage_fields_names.get(name).unwrap().clone()
     }
 
     fn translate_type_name(
@@ -833,41 +833,45 @@ impl Project {
         translated_definition: &mut TranslatedDefinition,
         variable_definition: &solidity::VariableDefinition,
     ) -> Result<(), Error> {
-        // Translate the variable's type name
-        let variable_type_name = self.translate_type_name(translated_definition, &variable_definition.ty);
-
-        // Ensure std::hash::Hash is imported for StorageMap storage fields
-        if variable_type_name.has_storage_map() && !translated_definition.uses.iter().any(|u| {
-                let sway::UseTree::Path { prefix: prefix1, suffix } = &u.tree else { return false };
-                let sway::UseTree::Path { prefix: prefix2, suffix } = suffix.as_ref() else { return false };
-                let sway::UseTree::Name { name } = suffix.as_ref() else { return false };
-                prefix1 == "std" && prefix2 == "hash" && name == "Hash"
-            }) {
-                translated_definition.uses.push(sway::Use {
-                    is_public: false,
-                    tree: sway::UseTree::Path {
-                        prefix: "std".into(),
-                        suffix: Box::new(sway::UseTree::Path {
-                            prefix: "hash".into(),
-                            suffix: Box::new(sway::UseTree::Name {
-                                name: "Hash".into(),
-                            }),
-                        }),
-                    },
-                });
-        }
-
         // Collect information about the variable from its attributes
         let is_public = variable_definition.attrs.iter().any(|x| matches!(x, solidity::VariableAttribute::Visibility(solidity::Visibility::External(_) | solidity::Visibility::Public(_))));
         let is_constant = variable_definition.attrs.iter().any(|x| matches!(x, solidity::VariableAttribute::Constant(_)));
         let is_immutable = variable_definition.attrs.iter().any(|x| matches!(x, solidity::VariableAttribute::Immutable(_)));
 
+        // Translate the variable's naming convention
+        let old_name = variable_definition.name.as_ref().unwrap().name.clone();
+        let new_name = if is_constant {
+            self.translate_naming_convention(old_name.as_str(), Case::ScreamingSnake)
+        } else {
+            self.translate_storage_name(translated_definition, old_name.as_str())
+        };
+
+        // Translate the variable's type name
+        let variable_type_name = self.translate_type_name(translated_definition, &variable_definition.ty);
+
+        // Ensure std::hash::Hash is imported for StorageMap storage fields
+        if variable_type_name.has_storage_map() && !translated_definition.uses.iter().any(|u| {
+            let sway::UseTree::Path { prefix: prefix1, suffix } = &u.tree else { return false };
+            let sway::UseTree::Path { prefix: prefix2, suffix } = suffix.as_ref() else { return false };
+            let sway::UseTree::Name { name } = suffix.as_ref() else { return false };
+            prefix1 == "std" && prefix2 == "hash" && name == "Hash"
+        }) {
+            translated_definition.uses.push(sway::Use {
+                is_public: false,
+                tree: sway::UseTree::Path {
+                    prefix: "std".into(),
+                    suffix: Box::new(sway::UseTree::Path {
+                        prefix: "hash".into(),
+                        suffix: Box::new(sway::UseTree::Name {
+                            name: "Hash".into(),
+                        }),
+                    }),
+                },
+            });
+        }
+
         // Handle constant variable definitions
         if is_constant {
-            // Handle all other variable definitions
-            let old_name = variable_definition.name.as_ref().unwrap().name.clone();
-            let new_name = self.translate_naming_convention(old_name.as_str(), Case::ScreamingSnake);
-
             translated_definition.constants.push(sway::Constant {
                 is_public,
                 name: new_name.clone(),
@@ -879,64 +883,42 @@ impl Project {
                     }).as_ref(),
                 )),
             });
-            
-            // Add the storage variable for function scopes
-            translated_definition.toplevel_scope.variables.push(TranslatedVariable {
-                old_name,
-                new_name: new_name.clone(),
-                type_name: variable_type_name.clone(),
-                is_storage: true,
-                statement_index: None,
-                read_count: 0,
-                mutation_count: 0,
-                is_configurable: false,
-            });
-            return Ok(())
         }
-        
         // Handle immutable variable definitions
-        if is_immutable {
-            // Handle all other variable definitions
-            let old_name = variable_definition.name.as_ref().unwrap().name.clone();
-            let new_name = self.translate_naming_convention(old_name.as_str(), Case::ScreamingSnake);
+        else if is_immutable {
+            //
+            // TODO: we need to check if the value is supplied to the constructor and remove it from there
+            //
 
-            let solidity_variable_name = variable_definition.name.as_ref().unwrap().name.as_str();
-                let variable_name = self.translate_naming_convention(solidity_variable_name, Case::Snake); 
-                translated_definition.get_configurable().fields.push(sway::ConfigurableField {
-                    name: variable_name.clone(), 
-                    type_name: variable_type_name.clone(),
-                    value: sway::Expression::create_value_expression(
-                        &variable_type_name,
-                        variable_definition.initializer.as_ref().map(|x| self.translate_literal_expression(x)).as_ref(),
-                    ),
-                });
-                return Ok(())
+            translated_definition.get_configurable().fields.push(sway::ConfigurableField {
+                name: new_name.clone(), 
+                type_name: variable_type_name.clone(),
+                value: sway::Expression::create_value_expression(
+                    &variable_type_name,
+                    variable_definition.initializer.as_ref().map(|x| self.translate_literal_expression(x)).as_ref(),
+                ),
+            });
+        }
+        // Handle regular state variable definitions
+        else {
+            translated_definition.get_storage().fields.push(sway::StorageField {
+                name: new_name.clone(),
+                type_name: variable_type_name.clone(),
+                value: sway::Expression::create_value_expression(
+                    &variable_type_name,
+                    variable_definition.initializer.as_ref().map(|x| self.translate_literal_expression(x)).as_ref(),
+                ),
+            });
         }
         
-        // Handle all other variable definitions
-        let old_name = variable_definition.name.as_ref().unwrap().name.clone();
-        let new_name = self.translate_naming_convention(old_name.as_str(), Case::Snake);
-
         // Add the storage variable for function scopes
         translated_definition.toplevel_scope.variables.push(TranslatedVariable {
             old_name,
             new_name: new_name.clone(),
             type_name: variable_type_name.clone(),
-            is_storage: true,
-            statement_index: None,
-            read_count: 0,
-            mutation_count: 0,
-            is_configurable: false,
-        });
-
-        // Add the storage field to the storage block
-        translated_definition.get_storage().fields.push(sway::StorageField {
-            name: new_name.clone(),
-            type_name: variable_type_name.clone(),
-            value: sway::Expression::create_value_expression(
-                &variable_type_name,
-                variable_definition.initializer.as_ref().map(|x| self.translate_literal_expression(x)).as_ref(),
-            ),
+            is_storage: !is_constant && !is_immutable,
+            is_configurable: is_immutable,
+            ..Default::default()
         });
 
         // Generate a getter function if the storage field is public
@@ -1061,11 +1043,7 @@ impl Project {
                     old_name,
                     new_name,
                     type_name,
-                    is_storage: false,
-                    statement_index: None,
-                    read_count: 0,
-                    mutation_count: 0,
-                    is_configurable: false,
+                    ..Default::default()
                 }
             })
         );
@@ -1159,11 +1137,7 @@ impl Project {
                 old_name,
                 new_name,
                 type_name,
-                is_storage: false,
-                statement_index: None,
-                read_count: 0,
-                mutation_count: 0,
-                is_configurable: false,
+                ..Default::default()
             });
         }
 
@@ -1364,13 +1338,18 @@ impl Project {
         let is_receive = matches!(function_definition.ty, solidity::FunctionTy::Receive);
 
         // Collect information about the function from its attributes
-        let is_public = function_definition.attributes.iter().any(|x| matches!(x, solidity::FunctionAttribute::Visibility(solidity::Visibility::External(_) | solidity::Visibility::Public(_))));
+        let mut is_public = function_definition.attributes.iter().any(|x| matches!(x, solidity::FunctionAttribute::Visibility(solidity::Visibility::External(_) | solidity::Visibility::Public(_))));
         let is_constant = function_definition.attributes.iter().any(|x| matches!(x, solidity::FunctionAttribute::Mutability(solidity::Mutability::Constant(_))));
         let is_pure = function_definition.attributes.iter().any(|x| matches!(x, solidity::FunctionAttribute::Mutability(solidity::Mutability::Pure(_))));
         let is_view = function_definition.attributes.iter().any(|x| matches!(x, solidity::FunctionAttribute::Mutability(solidity::Mutability::View(_))));
         let is_payable = function_definition.attributes.iter().any(|x| matches!(x, solidity::FunctionAttribute::Mutability(solidity::Mutability::Payable(_))));
         let is_virtual = function_definition.attributes.iter().any(|x| matches!(x, solidity::FunctionAttribute::Virtual(_)));
         let is_override = function_definition.attributes.iter().any(|x| matches!(x, solidity::FunctionAttribute::Override(_, _)));
+
+        // If the function is a constructor, we consider it public and add an initializer requirement
+        if is_constructor {
+            is_public = true;
+        }
 
         //
         // TODO:
@@ -1482,11 +1461,7 @@ impl Project {
                 old_name,
                 new_name,
                 type_name,
-                is_storage: false,
-                statement_index: None,
-                read_count: 0,
-                mutation_count: 0,
-                is_configurable: false,
+                ..Default::default()
             };
 
             parameters.push(translated_variable.clone());
@@ -1506,11 +1481,7 @@ impl Project {
                 old_name,
                 new_name,
                 type_name,
-                is_storage: false,
-                statement_index: None,
-                read_count: 0,
-                mutation_count: 0,
-                is_configurable: false,
+                ..Default::default()
             };
 
             return_parameters.push(translated_variable.clone());
@@ -1521,40 +1492,55 @@ impl Project {
         let mut function_body = self.translate_block(translated_definition, &mut scope, statements.as_slice())?;
 
         if is_constructor {
-            let name =  self.translate_storage_name(translated_definition, "initialized".into());
-            translated_definition.get_storage().fields.push(sway::StorageField{
+            let name =  self.translate_storage_name(translated_definition, "initialized");
+            let type_name = sway::TypeName::Identifier {
+                name: "bool".into(),
+                generic_parameters: None,
+            };
+
+            // Add the `initialized` field to the storage block
+            translated_definition.get_storage().fields.push(sway::StorageField {
                 name: name.clone(),
-                type_name: sway::TypeName::Identifier { name: "bool".into(), generic_parameters: None },
-                value: sway::Expression::create_value_expression(&sway::TypeName::Identifier { name: "bool".into(), generic_parameters: None }, Some(&sway::Expression::Literal(sway::Literal::Bool(false)))),
+                type_name: type_name.clone(),
+                value: sway::Expression::create_value_expression(
+                    &type_name,
+                    Some(&sway::Expression::from(sway::Literal::Bool(false))),
+                ),
             });
+
+            // Add the `initialized` requirement to the beginning of the function
+            // require(!storage.initialized.read(), "Contract is already initialized");
             function_body.statements.insert(0, sway::Statement::from(sway::Expression::from(sway::FunctionCall {
                 function: sway::Expression::from(sway::Expression::Identifier("require".into())),
                 generic_parameters: None,
                 parameters: vec![
-                    sway::Expression::from(sway::UnaryExpression{ 
+                    sway::Expression::from(sway::UnaryExpression {
                         operator: "!".into(),
-                        expression: sway::Expression::from(sway::FunctionCall{ 
-                            function: sway::Expression::from(sway::MemberAccess{ 
-                                expression: sway::Expression::from(sway::MemberAccess{ 
+                        expression: sway::Expression::from(sway::FunctionCall {
+                            function: sway::Expression::from(sway::MemberAccess {
+                                expression: sway::Expression::from(sway::MemberAccess {
                                     expression: sway::Expression::Identifier("storage".into()),
                                     member: name.clone(),
                                 }),
-                                member: "read".into(), 
-                            }) , 
-                            generic_parameters: None, 
-                            parameters: vec![], 
+                                member: "read".into(),
+                            }),
+                            generic_parameters: None,
+                            parameters: vec![],
                         })
                     }),
                     sway::Expression::from(sway::Literal::String("Contract is already initialized".into())),
                 ],
             })));
+
+            // Set the `initialized` storage field to `true` at the end of the function
+            // storage.initialized.write(true);
             function_body.statements.push(sway::Statement::from(sway::Expression::from(sway::FunctionCall {
-                function: sway::Expression::from(sway::MemberAccess{ 
-                    expression: sway::Expression::from(sway::MemberAccess{ 
+                function: sway::Expression::from(sway::MemberAccess {
+                    expression: sway::Expression::from(sway::MemberAccess {
                         expression: sway::Expression::Identifier("storage".into()),
                         member: name.clone(),
                     }),
-                    member: "write".into(), 
+                    member: "write".into(),
                 }),
                 generic_parameters: None,
                 parameters: vec![
@@ -1565,9 +1551,7 @@ impl Project {
 
         // Check for parameters that were mutated and make them local variables
         for parameter in parameters.iter().rev() {
-            let Some(variable) = scope.find_variable_from_new_name(&parameter.new_name) else {
-                panic!("Failed to find variable in scope: \"{}\"", parameter.new_name);
-            };
+            let variable = scope.get_variable_from_new_name(&parameter.new_name)?;
 
             if variable.mutation_count > 0 {
                 function_body.statements.insert(0, sway::Statement::Let(sway::Let {
@@ -1615,9 +1599,7 @@ impl Project {
         }
 
         // Get the function from the scope
-        let Some(function) = scope.find_function_from_old_name(old_name.as_str()) else {
-            panic!("Failed to find function in scope: {old_name}");
-        };
+        let function = scope.get_function_from_old_name(old_name.as_str())?;
 
         // Propagate modifier pre and post functions into the function's body
         let mut modifier_pre_calls = vec![];
@@ -1789,7 +1771,7 @@ impl Project {
 
                     let mut check_let_identifier = |identifier: &sway::LetIdentifier| {
                         if let Some(scope) = scope.parent.as_ref() {
-                            if scope.find_variable_from_new_name(&identifier.name).is_some() {
+                            if scope.get_variable_from_new_name(&identifier.name).is_ok() {
                                 var_count += 1;
                             }
                         }
@@ -1955,10 +1937,7 @@ impl Project {
                             panic!("Expected identifier, found: {identifier:#?}")
                         };
 
-                        let Some(variable) = scope.find_variable_from_new_name_mut(name) else {
-                            panic!("Failed to find variable in scope: \"{name}\"");
-                        };
-
+                        let variable = scope.get_variable_from_new_name_mut(name)?;
                         variable.mutation_count += 1;
                     }
 
@@ -1987,11 +1966,7 @@ impl Project {
                                 name: "u256".into(),
                                 generic_parameters: None,
                             },
-                            is_storage: false,
-                            statement_index: None,
-                            read_count: 0,
-                            mutation_count: 0,
-                            is_configurable: false,
+                            ..Default::default()
                         });
                     }
     
@@ -2065,9 +2040,7 @@ impl Project {
             solidity::YulExpression::StringLiteral(string_literal, _) => Ok(sway::Expression::from(sway::Literal::String(string_literal.string.clone()))),
             
             solidity::YulExpression::Variable(solidity::Identifier { name, .. }) => {
-                let Some(variable) = scope.find_variable_from_old_name(name.as_str()) else {
-                    panic!("Failed to find variable in scope: \"{name}\"");
-                };
+                let variable = scope.get_variable_from_old_name(name.as_str())?;
 
                 if variable.is_storage {
                     Ok(sway::Expression::from(sway::FunctionCall {
@@ -2323,11 +2296,7 @@ impl Project {
                         old_name: name.name.clone(),
                         new_name: self.translate_naming_convention(name.name.as_str(), Case::Snake),
                         type_name: self.translate_type_name(translated_definition, &p.ty),
-                        is_storage: false,
-                        statement_index: None,
-                        read_count: 0,
-                        mutation_count: 0,
-                        is_configurable: false,
+                        ..Default::default()
                     });
                 }
 
@@ -2398,13 +2367,7 @@ impl Project {
             type_name: Some(type_name.clone()),
 
             value: if let Some(x) = initializer.as_ref() {
-                match x {
-                    solidity::Expression::PreIncrement(loc, x) => self.translate_pre_operator_expression(translated_definition, scope, loc, x, "+=")?,
-                    solidity::Expression::PreDecrement(loc, x) => self.translate_pre_operator_expression(translated_definition, scope, loc, x, "-=")?,
-                    solidity::Expression::PostIncrement(loc, x) => self.translate_post_operator_expression(translated_definition, scope, loc, x, "+=")?,
-                    solidity::Expression::PostDecrement(loc, x) => self.translate_post_operator_expression(translated_definition, scope, loc, x, "-=")?,
-                    _ => self.translate_expression(translated_definition, scope, x)?,
-                }
+                self.translate_pre_or_post_operator_value_expression(translated_definition, scope, x)?
             } else {
                 sway::Expression::create_value_expression(&type_name, None)
             },
@@ -2414,11 +2377,7 @@ impl Project {
             old_name,
             new_name,
             type_name,
-            is_storage: false,
-            statement_index: None,
-            read_count: 0,
-            mutation_count: 0,
-            is_configurable: false,
+            ..Default::default()
         });
 
         Ok(statement)
@@ -2836,6 +2795,8 @@ impl Project {
                                 let type_name = self.translate_type_name(translated_definition, &args[0]);
 
                                 match type_name {
+                                    sway::TypeName::Undefined => panic!("Undefined type name"),
+
                                     sway::TypeName::Identifier { name, generic_parameters } => match (name.as_str(), member.name.as_str()) {
                                         ("u8", "min") => return Ok(sway::Expression::from(sway::FunctionCall {
                                             function: sway::Expression::Identifier("u8::min".into()),
@@ -3025,11 +2986,11 @@ impl Project {
                         }
 
                         (name, member) => {
-                            let Some(variable) = scope.find_variable_from_new_name(name) else {
-                                panic!("Failed to find variable \"{name}\" in scope");
-                            };
+                            let variable = scope.get_variable_from_new_name(name)?;
 
                             match &variable.type_name {
+                                sway::TypeName::Undefined => panic!("Undefined type name"),
+
                                 sway::TypeName::Identifier { name, generic_parameters } => match (name.as_str(), member) {
                                     ("std::bytes::Bytes", "length") => return Ok(sway::Expression::from(sway::FunctionCall {
                                         function: sway::Expression::from(sway::MemberAccess {
@@ -3467,6 +3428,8 @@ impl Project {
                     let type_name = scope.get_expression_type(&expression)?;
 
                     match type_name {
+                        sway::TypeName::Undefined => panic!("Undefined type name"),
+                        
                         sway::TypeName::Identifier { name, generic_parameters } => match name.as_str() {
                             "Identity" => match member.name.as_str() {
                                 "transfer" => {
@@ -3557,6 +3520,8 @@ impl Project {
                         let type_name = scope.get_expression_type(&expression)?;
 
                         match type_name {
+                            sway::TypeName::Undefined => panic!("Undefined type name"),
+                            
                             sway::TypeName::Identifier { name, generic_parameters } => match name.as_str() {
                                 "Identity" => match member.name.as_str() {
                                     "call" => {
@@ -3783,9 +3748,7 @@ impl Project {
         if let solidity::Expression::MemberAccess(_, x, member2) = lhs {
             if let solidity::Expression::MemberAccess(_, x, member1) = x.as_ref() {
                 if let solidity::Expression::Variable(solidity::Identifier { name, .. }) = x.as_ref() {
-                    let Some(variable) = scope.find_variable_from_old_name(name) else {
-                        panic!("Failed to find variable in scope: {name}");
-                    };
+                    let variable = scope.get_variable_from_old_name(name)?;
 
                     match &variable.type_name {
                         sway::TypeName::Identifier { name, generic_parameters: None } if name == "Identity" => {
@@ -3833,35 +3796,31 @@ impl Project {
     ) -> Result<(&'a mut TranslatedVariable, sway::Expression), Error> {
         match expression {
             solidity::Expression::Variable(solidity::Identifier { name, .. }) => {
-                let Some(variable) = scope.find_variable_from_old_name_mut(name.as_str()) else {
-                    panic!("Failed to find variable in scope: {name}")
-                };
-
+                let variable = scope.get_variable_from_old_name_mut(name.as_str())?;
                 let variable_name = variable.new_name.clone();
+                let is_storage = variable.is_storage;
 
-                if variable.is_storage {
-                    Ok((
-                        variable,
+                Ok((
+                    variable,
+                    if is_storage {
                         sway::Expression::from(sway::MemberAccess {
                             expression: sway::Expression::Identifier("storage".into()),
                             member: variable_name,
                         })
-                    ))
-                } else {
-                    Ok((
-                        variable,
+                    } else {
                         sway::Expression::Identifier(variable_name)
-                    ))
-                }
+                    }
+                ))
             }
 
             solidity::Expression::ArraySubscript(_, expression, Some(index)) => {
                 let index = self.translate_expression(translated_definition, scope, index.as_ref())?;
                 let (variable, expression) = self.translate_variable_access_expression(translated_definition, scope, expression)?;
+                let is_storage = variable.is_storage;
 
-                if variable.is_storage {
-                    Ok((
-                        variable,
+                Ok((
+                    variable,
+                    if is_storage {
                         sway::Expression::from(sway::FunctionCall {
                             function: sway::Expression::from(sway::MemberAccess {
                                 expression,
@@ -3870,16 +3829,13 @@ impl Project {
                             generic_parameters: None,
                             parameters: vec![index],
                         })
-                    ))
-                } else {
-                    Ok((
-                        variable,
+                    } else {
                         sway::Expression::from(sway::ArrayAccess {
                             expression,
                             index,
                         })
-                    ))
-                }
+                    }
+                ))
             }
 
             _ => todo!("translate variable access expression: {expression:#?}")
@@ -3908,13 +3864,7 @@ impl Project {
                 generic_parameters: None,
                 parameters: vec![
                     match operator {
-                        "=" => match rhs {
-                            solidity::Expression::PreIncrement(loc, x) => self.translate_pre_operator_expression(translated_definition, scope, loc, x, "+=")?,
-                            solidity::Expression::PreDecrement(loc, x) => self.translate_pre_operator_expression(translated_definition, scope, loc, x, "-=")?,
-                            solidity::Expression::PostIncrement(loc, x) => self.translate_post_operator_expression(translated_definition, scope, loc, x, "+=")?,
-                            solidity::Expression::PostDecrement(loc, x) => self.translate_post_operator_expression(translated_definition, scope, loc, x, "-=")?,
-                            _ => self.translate_expression(translated_definition, scope, rhs)?,
-                        }
+                        "=" => self.translate_pre_or_post_operator_value_expression(translated_definition, scope, rhs)?,
 
                         _ => {
                             variable.read_count += 1;
@@ -3941,14 +3891,24 @@ impl Project {
             Ok(sway::Expression::from(sway::BinaryExpression {
                 operator: operator.into(),
                 lhs: self.translate_expression(translated_definition, scope, lhs)?,
-                rhs: match rhs {
-                    solidity::Expression::PreIncrement(loc, x) => self.translate_pre_operator_expression(translated_definition, scope, loc, x, "+=")?,
-                    solidity::Expression::PreDecrement(loc, x) => self.translate_pre_operator_expression(translated_definition, scope, loc, x, "-=")?,
-                    solidity::Expression::PostIncrement(loc, x) => self.translate_post_operator_expression(translated_definition, scope, loc, x, "+=")?,
-                    solidity::Expression::PostDecrement(loc, x) => self.translate_post_operator_expression(translated_definition, scope, loc, x, "-=")?,
-                    _ => self.translate_expression(translated_definition, scope, rhs)?,
-                }
+                rhs: self.translate_pre_or_post_operator_value_expression(translated_definition, scope, rhs)?,
             }))
+        }
+    }
+
+    #[inline]
+    fn translate_pre_or_post_operator_value_expression(
+        &mut self,
+        translated_definition: &mut TranslatedDefinition,
+        scope: &mut TranslationScope,
+        expression: &solidity::Expression,
+    ) -> Result<sway::Expression, Error> {
+        match expression {
+            solidity::Expression::PreIncrement(loc, x) => self.translate_pre_operator_expression(translated_definition, scope, loc, x, "+="),
+            solidity::Expression::PreDecrement(loc, x) => self.translate_pre_operator_expression(translated_definition, scope, loc, x, "-="),
+            solidity::Expression::PostIncrement(loc, x) => self.translate_post_operator_expression(translated_definition, scope, loc, x, "+="),
+            solidity::Expression::PostDecrement(loc, x) => self.translate_post_operator_expression(translated_definition, scope, loc, x, "-="),
+            _ => self.translate_expression(translated_definition, scope, expression),
         }
     }
 
