@@ -226,6 +226,7 @@ impl Project {
         &mut self,
         translated_definition: &mut TranslatedDefinition,
         type_name: &solidity::Expression,
+        is_storage: bool,
     ) -> sway::TypeName {
         //
         // TODO: check mapping for previously canonicalized user type names?
@@ -289,11 +290,11 @@ impl Project {
                     generic_parameters: Some(sway::GenericParameterList {
                         entries: vec![
                             sway::GenericParameter {
-                                type_name: self.translate_type_name(translated_definition, key.as_ref()),
+                                type_name: self.translate_type_name(translated_definition, key.as_ref(), is_storage),
                                 implements: None,
                             },
                             sway::GenericParameter {
-                                type_name: self.translate_type_name(translated_definition, value.as_ref()),
+                                type_name: self.translate_type_name(translated_definition, value.as_ref(), is_storage),
                                 implements: None,
                             },
                         ],
@@ -339,7 +340,7 @@ impl Project {
 
             solidity::Expression::ArraySubscript(_, type_name, length) => match length.as_ref() {
                 Some(length) => sway::TypeName::Array {
-                    type_name: Box::new(self.translate_type_name(translated_definition, type_name)),
+                    type_name: Box::new(self.translate_type_name(translated_definition, type_name, is_storage)),
                     length: {
                         // Create an empty scope to translate the array length expression
                         let mut scope = TranslationScope {
@@ -357,11 +358,15 @@ impl Project {
                 },
 
                 None => sway::TypeName::Identifier {
-                    name: "Vec".into(),
+                    name: if is_storage {
+                        "StorageVec".into()
+                    } else {
+                        "Vec".into()
+                    },
                     generic_parameters: Some(sway::GenericParameterList {
                         entries: vec![
                             sway::GenericParameter {
-                                type_name: self.translate_type_name(translated_definition, type_name),
+                                type_name: self.translate_type_name(translated_definition, type_name, is_storage),
                                 implements: None,
                             },
                         ],
@@ -413,7 +418,7 @@ impl Project {
         for part in solidity_definition.parts.iter() {
             let solidity::ContractPart::TypeDefinition(type_definition) = part else { continue };
             
-            let underlying_type = self.translate_type_name(&mut translated_definition, &type_definition.ty);
+            let underlying_type = self.translate_type_name(&mut translated_definition, &type_definition.ty, false);
 
             translated_definition.type_definitions.push(sway::TypeDefinition {
                 is_public: true,
@@ -438,7 +443,7 @@ impl Project {
                     sway::StructField {
                         is_public: true,
                         name: self.translate_naming_convention(f.name.as_ref().unwrap().name.as_str(), Case::Snake), // TODO: keep track of original name
-                        type_name: self.translate_type_name(&mut translated_definition, &f.ty),
+                        type_name: self.translate_type_name(&mut translated_definition, &f.ty, false),
                     }
                 }).collect(),
             };
@@ -493,11 +498,11 @@ impl Project {
             match part {
                 solidity::ContractPart::EventDefinition(event_definition) => {
                     let type_name = if event_definition.fields.len() == 1 {
-                        self.translate_type_name(&mut translated_definition, &event_definition.fields[0].ty)
+                        self.translate_type_name(&mut translated_definition, &event_definition.fields[0].ty, false)
                     } else {
                         sway::TypeName::Tuple {
                             type_names: event_definition.fields.iter().map(|f| {
-                                self.translate_type_name(&mut translated_definition, &f.ty)
+                                self.translate_type_name(&mut translated_definition, &f.ty, false)
                             }).collect(),
                         }
                     };
@@ -516,11 +521,11 @@ impl Project {
 
                 solidity::ContractPart::ErrorDefinition(error_definition) => {
                     let type_name = if error_definition.fields.len() == 1 {
-                        self.translate_type_name(&mut translated_definition, &error_definition.fields[0].ty)
+                        self.translate_type_name(&mut translated_definition, &error_definition.fields[0].ty, false)
                     } else {
                         sway::TypeName::Tuple {
                             type_names: error_definition.fields.iter().map(|f| {
-                                self.translate_type_name(&mut translated_definition, &f.ty)
+                                self.translate_type_name(&mut translated_definition, &f.ty, false)
                             }).collect(),
                         }
                     };
@@ -1012,7 +1017,7 @@ impl Project {
         };
 
         // Translate the variable's type name
-        let variable_type_name = self.translate_type_name(translated_definition, &variable_definition.ty);
+        let variable_type_name = self.translate_type_name(translated_definition, &variable_definition.ty, true);
 
         // Ensure std::hash::Hash is imported for StorageMap storage fields
         if variable_type_name.has_storage_map() && !translated_definition.uses.iter().any(|u| {
@@ -1227,7 +1232,7 @@ impl Project {
             function_definition.params.iter().map(|(_, p)| {
                 let old_name = p.as_ref().unwrap().name.as_ref().unwrap().name.clone();
                 let new_name = self.translate_naming_convention(old_name.as_str(), Case::Snake);
-                let type_name = self.translate_type_name(translated_definition, &p.as_ref().unwrap().ty);
+                let type_name = self.translate_type_name(translated_definition, &p.as_ref().unwrap().ty, false);
 
                 TranslatedVariable {
                     old_name,
@@ -1264,7 +1269,7 @@ impl Project {
                 entries: function_definition.params.iter().map(|(_, p)| {
                     sway::Parameter {
                         name: self.translate_naming_convention(p.as_ref().unwrap().name.as_ref().unwrap().name.as_str(), Case::Snake),
-                        type_name: Some(self.translate_type_name(translated_definition, &p.as_ref().unwrap().ty)),
+                        type_name: Some(self.translate_type_name(translated_definition, &p.as_ref().unwrap().ty, false)),
                         ..Default::default()
                     }
                 }).collect(),
@@ -1274,11 +1279,11 @@ impl Project {
                 None
             } else {
                 Some(if function_definition.returns.len() == 1 {
-                    self.translate_type_name(translated_definition, &function_definition.returns[0].1.as_ref().unwrap().ty)
+                    self.translate_type_name(translated_definition, &function_definition.returns[0].1.as_ref().unwrap().ty, false)
                 } else {
                     sway::TypeName::Tuple {
                         type_names: function_definition.returns.iter().map(|(_, p)| {
-                            self.translate_type_name(translated_definition, &p.as_ref().unwrap().ty)
+                            self.translate_type_name(translated_definition, &p.as_ref().unwrap().ty, false)
                         }).collect(),
                     }
                 })
@@ -1317,7 +1322,7 @@ impl Project {
         for (_, p) in function_definition.params.iter() {
             let old_name = p.as_ref().unwrap().name.as_ref().unwrap().name.clone();
             let new_name = self.translate_naming_convention(old_name.as_str(), Case::Snake);
-            let type_name = self.translate_type_name(translated_definition, &p.as_ref().unwrap().ty);
+            let type_name = self.translate_type_name(translated_definition, &p.as_ref().unwrap().ty, false);
 
             modifier.parameters.entries.push(sway::Parameter {
                 name: new_name.clone(),
@@ -1597,7 +1602,7 @@ impl Project {
                 entries: function_definition.params.iter().map(|(_, p)| {
                     sway::Parameter {
                         name: self.translate_naming_convention(p.as_ref().unwrap().name.as_ref().unwrap().name.as_str(), Case::Snake),
-                        type_name: Some(self.translate_type_name(translated_definition, &p.as_ref().unwrap().ty)),
+                        type_name: Some(self.translate_type_name(translated_definition, &p.as_ref().unwrap().ty, false)),
                         ..Default::default()
                     }
                 }).collect(),
@@ -1607,11 +1612,11 @@ impl Project {
                 None
             } else {
                 Some(if function_definition.returns.len() == 1 {
-                    self.translate_type_name(translated_definition, &function_definition.returns[0].1.as_ref().unwrap().ty)
+                    self.translate_type_name(translated_definition, &function_definition.returns[0].1.as_ref().unwrap().ty, false)
                 } else {
                     sway::TypeName::Tuple {
                         type_names: function_definition.returns.iter().map(|(_, p)| {
-                            self.translate_type_name(translated_definition, &p.as_ref().unwrap().ty)
+                            self.translate_type_name(translated_definition, &p.as_ref().unwrap().ty, false)
                         }).collect(),
                     }
                 })
@@ -1648,7 +1653,7 @@ impl Project {
         for (_, p) in function_definition.params.iter() {
             let old_name = p.as_ref().unwrap().name.as_ref().unwrap().name.clone();
             let new_name = self.translate_naming_convention(old_name.as_str(), Case::Snake);
-            let type_name = self.translate_type_name(translated_definition, &p.as_ref().unwrap().ty);
+            let type_name = self.translate_type_name(translated_definition, &p.as_ref().unwrap().ty, false);
 
             let translated_variable = TranslatedVariable {
                 old_name,
@@ -1668,7 +1673,7 @@ impl Project {
             let Some(return_parameter) = return_parameter else { continue };
             let Some(old_name) = return_parameter.name.as_ref().map(|n| n.name.clone()) else { continue };
             let new_name = self.translate_naming_convention(old_name.as_str(), Case::Snake);
-            let type_name = self.translate_type_name(translated_definition, &return_parameter.ty);
+            let type_name = self.translate_type_name(translated_definition, &return_parameter.ty, false);
 
             let translated_variable = TranslatedVariable {
                 old_name,
@@ -2488,7 +2493,7 @@ impl Project {
                     variables.push(TranslatedVariable {
                         old_name: name.name.clone(),
                         new_name: self.translate_naming_convention(name.name.as_str(), Case::Snake),
-                        type_name: self.translate_type_name(translated_definition, &p.ty),
+                        type_name: self.translate_type_name(translated_definition, &p.ty, false),
                         ..Default::default()
                     });
                 }
@@ -2518,7 +2523,7 @@ impl Project {
                         type_names: parameters.iter()
                             .map(|(_, p)| {
                                 if let Some(p) = p.as_ref() {
-                                    self.translate_type_name(translated_definition, &p.ty)
+                                    self.translate_type_name(translated_definition, &p.ty, false)
                                 } else {
                                     sway::TypeName::Identifier {
                                         name: "_".into(),
@@ -2549,7 +2554,7 @@ impl Project {
     ) -> Result<sway::Statement, Error> {
         let old_name = variable_declaration.name.as_ref().unwrap().name.clone();
         let new_name = self.translate_naming_convention(old_name.as_str(), Case::Snake);
-        let type_name = self.translate_type_name(translated_definition, &variable_declaration.ty);
+        let type_name = self.translate_type_name(translated_definition, &variable_declaration.ty, false);
 
         let statement = sway::Statement::from(sway::Let {
             pattern: sway::LetPattern::Identifier(sway::LetIdentifier {
@@ -2985,7 +2990,7 @@ impl Project {
                                     panic!("Invalid type name expression, expected 1 parameter, found {}: {}", args.len(), expression.to_string());
                                 }
 
-                                let type_name = self.translate_type_name(translated_definition, &args[0]);
+                                let type_name = self.translate_type_name(translated_definition, &args[0], false);
 
                                 match type_name {
                                     sway::TypeName::Undefined => panic!("Undefined type name"),
