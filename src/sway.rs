@@ -380,44 +380,45 @@ impl TypeName {
         }
     }
 
-    pub fn getter_function_parameters_and_return_type(&self) -> Option<(ParameterList, TypeName)> {
+    pub fn getter_function_parameters_and_return_type(&self) -> Option<(Vec<(Parameter, bool)>, TypeName)> {
         match self {
             TypeName::Undefined => panic!("Undefined type name"),
 
             TypeName::Identifier { name, generic_parameters: Some(generic_parameters) } => match name.as_str() {
                 "StorageMap" => {
-                    let mut parameters = ParameterList {
-                        entries: vec![
+                    let mut parameters = vec![
+                        (
                             Parameter {
                                 name: "_".into(),
                                 type_name: Some(generic_parameters.entries[0].type_name.clone()),
                                 ..Default::default()
                             },
-                        ],
-                    };
+                            false
+                        ),
+                    ];
     
                     let mut return_type = generic_parameters.entries[1].type_name.clone();
     
                     if let Some((inner_parameters, inner_return_type)) = generic_parameters.entries[1].type_name.getter_function_parameters_and_return_type() {
-                        parameters.entries.extend(inner_parameters.entries);
+                        parameters.extend(inner_parameters);
                         return_type = inner_return_type;
                     }
     
                     let parameter_names: Vec<String> = ('a'..'z').enumerate()
-                        .take_while(|(i, _)| *i < parameters.entries.len())
+                        .take_while(|(i, _)| *i < parameters.len())
                         .map(|(_, c)| c.into())
                         .collect();
     
                     for (i, name) in parameter_names.into_iter().enumerate() {
-                        parameters.entries[i].name = name;
+                        parameters[i].0.name = name;
                     }
     
                     Some((parameters, return_type))
                 }
 
                 "StorageVec" => {
-                    let mut parameters = ParameterList {
-                        entries: vec![
+                    let mut parameters = vec![
+                        (
                             Parameter {
                                 name: "_".into(),
                                 type_name: Some(TypeName::Identifier {
@@ -426,23 +427,24 @@ impl TypeName {
                                 }),
                                 ..Default::default()
                             },
-                        ],
-                    };
+                            true
+                        )
+                    ];
     
                     let mut return_type = generic_parameters.entries[0].type_name.clone();
     
                     if let Some((inner_parameters, inner_return_type)) = generic_parameters.entries[0].type_name.getter_function_parameters_and_return_type() {
-                        parameters.entries.extend(inner_parameters.entries);
+                        parameters.extend(inner_parameters);
                         return_type = inner_return_type;
                     }
     
                     let parameter_names: Vec<String> = ('a'..'z').enumerate()
-                        .take_while(|(i, _)| *i < parameters.entries.len())
+                        .take_while(|(i, _)| *i < parameters.len())
                         .map(|(_, c)| c.into())
                         .collect();
     
                     for (i, name) in parameter_names.into_iter().enumerate() {
-                        parameters.entries[i].name = name;
+                        parameters[i].0.name = name;
                     }
     
                     Some((parameters, return_type))

@@ -359,6 +359,29 @@ impl Project {
 
                 None => sway::TypeName::Identifier {
                     name: if is_storage {
+                        // Ensure that `std::storage::storage_vec::*` is imported
+                        if !translated_definition.uses.iter().any(|u| {
+                            let sway::UseTree::Path { prefix: prefix1, suffix } = &u.tree else { return false };
+                            let sway::UseTree::Path { prefix: prefix2, suffix } = suffix.as_ref() else { return false };
+                            let sway::UseTree::Path { prefix: prefix3, suffix } = suffix.as_ref() else { return false };
+                            let sway::UseTree::Glob = suffix.as_ref() else { return false };
+                            prefix1 == "std" && prefix2 == "storage" && prefix3 == "storage_vec"
+                        }) {
+                            translated_definition.uses.push(sway::Use {
+                                is_public: false,
+                                tree: sway::UseTree::Path {
+                                    prefix: "std".into(),
+                                    suffix: Box::new(sway::UseTree::Path {
+                                        prefix: "storage".into(),
+                                        suffix: Box::new(sway::UseTree::Path {
+                                            prefix: "storage_vec".into(),
+                                            suffix: Box::new(sway::UseTree::Glob),
+                                        }),
+                                    }),
+                                },
+                            });
+                        }
+
                         "StorageVec".into()
                     } else {
                         "Vec".into()
@@ -1097,7 +1120,7 @@ impl Project {
         }
 
         // Generate parameters and return type for the public getter function
-        let mut parameters = sway::ParameterList::default();
+        let mut parameters = vec![];
         let mut return_type = variable_type_name.clone();
 
         if let Some((inner_parameters, inner_return_type)) = variable_type_name.getter_function_parameters_and_return_type() {
@@ -1120,7 +1143,9 @@ impl Project {
             is_public: false,
             name: new_name.clone(),
             generic_parameters: None,
-            parameters: parameters.clone(),
+            parameters: sway::ParameterList {
+                entries: parameters.iter().map(|(p, _)| p.clone()).collect(),
+            },
             return_type: Some(return_type),
             body: None,
         };
@@ -1144,7 +1169,7 @@ impl Project {
                     member: new_name.clone(),
                 });
 
-                for parameter in parameters.entries.iter() {
+                for (parameter, needs_unwrap) in parameters.iter() {
                     expression = sway::Expression::from(sway::FunctionCall {
                         function: sway::Expression::from(sway::MemberAccess {
                             expression,
@@ -1155,6 +1180,17 @@ impl Project {
                             sway::Expression::Identifier(parameter.name.clone()),
                         ],
                     });
+
+                    if *needs_unwrap {
+                        expression = sway::Expression::from(sway::FunctionCall {
+                            function: sway::Expression::from(sway::MemberAccess {
+                                expression,
+                                member: "unwrap".into(),
+                            }),
+                            generic_parameters: None,
+                            parameters: vec![],
+                        });
+                    }
                 }
                 
                 sway::Expression::from(sway::FunctionCall {
