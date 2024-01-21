@@ -10,14 +10,14 @@ enum ERC20Event {
 
 impl core::codec::AbiEncode for ERC20Event {
     fn abi_encode(self, ref mut buffer: core::codec::Buffer) {
-        match self{
+        match self {
             ERC20Event::Transfer((a, b, c)) => {
                 "Transfer".abi_encode(buffer);
-                match a{
+                match a {
                     Identity::Address(x) => x.abi_encode(buffer),
                     Identity::ContractId(x) => x.abi_encode(buffer),
                 }
-                match b{
+                match b {
                     Identity::Address(x) => x.abi_encode(buffer),
                     Identity::ContractId(x) => x.abi_encode(buffer),
                 }
@@ -25,11 +25,11 @@ impl core::codec::AbiEncode for ERC20Event {
             },
             ERC20Event::Approval((a, b, c)) => {
                 "Approval".abi_encode(buffer);
-                match a{
+                match a {
                     Identity::Address(x) => x.abi_encode(buffer),
                     Identity::ContractId(x) => x.abi_encode(buffer),
                 }
-                match b{
+                match b {
                     Identity::Address(x) => x.abi_encode(buffer),
                     Identity::ContractId(x) => x.abi_encode(buffer),
                 }
@@ -50,10 +50,10 @@ enum ERC20Error {
 
 impl core::codec::AbiEncode for ERC20Error {
     fn abi_encode(self, ref mut buffer: core::codec::Buffer) {
-        match self{
+        match self {
             ERC20Error::ERC20InsufficientBalance((a, b, c)) => {
                 "ERC20InsufficientBalance".abi_encode(buffer);
-                match a{
+                match a {
                     Identity::Address(x) => x.abi_encode(buffer),
                     Identity::ContractId(x) => x.abi_encode(buffer),
                 }
@@ -62,21 +62,21 @@ impl core::codec::AbiEncode for ERC20Error {
             },
             ERC20Error::ERC20InvalidSender(a) => {
                 "ERC20InvalidSender".abi_encode(buffer);
-                match a{
+                match a {
                     Identity::Address(x) => x.abi_encode(buffer),
                     Identity::ContractId(x) => x.abi_encode(buffer),
                 }
             },
             ERC20Error::ERC20InvalidReceiver(a) => {
                 "ERC20InvalidReceiver".abi_encode(buffer);
-                match a{
+                match a {
                     Identity::Address(x) => x.abi_encode(buffer),
                     Identity::ContractId(x) => x.abi_encode(buffer),
                 }
             },
             ERC20Error::ERC20InsufficientAllowance((a, b, c)) => {
                 "ERC20InsufficientAllowance".abi_encode(buffer);
-                match a{
+                match a {
                     Identity::Address(x) => x.abi_encode(buffer),
                     Identity::ContractId(x) => x.abi_encode(buffer),
                 }
@@ -85,14 +85,14 @@ impl core::codec::AbiEncode for ERC20Error {
             },
             ERC20Error::ERC20InvalidApprover(a) => {
                 "ERC20InvalidApprover".abi_encode(buffer);
-                match a{
+                match a {
                     Identity::Address(x) => x.abi_encode(buffer),
                     Identity::ContractId(x) => x.abi_encode(buffer),
                 }
             },
             ERC20Error::ERC20InvalidSpender(a) => {
                 "ERC20InvalidSpender".abi_encode(buffer);
-                match a{
+                match a {
                     Identity::Address(x) => x.abi_encode(buffer),
                     Identity::ContractId(x) => x.abi_encode(buffer),
                 }

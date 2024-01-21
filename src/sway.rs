@@ -1414,7 +1414,7 @@ impl TabbedDisplay for Match {
     fn tabbed_fmt(&self, depth: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "match ")?;
         self.expression.tabbed_fmt(depth, f)?;
-        writeln!(f, "{{")?;
+        writeln!(f, " {{")?;
 
         for branch in self.branches.iter() {
             "".tabbed_fmt(depth + 1, f)?;
