@@ -1090,7 +1090,17 @@ impl Project {
         if !is_public {
             return Ok(());
         }
-    
+
+        println!("Generating getter function for `storage.{new_name}`");
+
+        let mut parameters = sway::ParameterList::default();
+        let mut return_type = variable_type_name.clone();
+
+        if let Some((inner_parameters, inner_return_type)) = variable_type_name.storage_map_getter_parameters_and_return_type() {
+            parameters = inner_parameters;
+            return_type = inner_return_type;
+        }
+
         // Create the function declaration for the abi
         let mut sway_function = sway::Function {
             attributes: Some(sway::AttributeList {
@@ -1106,8 +1116,8 @@ impl Project {
             is_public: false,
             name: new_name.clone(),
             generic_parameters: None,
-            parameters: sway::ParameterList::default(), // TODO: create parameters for StorageMap getter functions
-            return_type: Some(variable_type_name.clone()), // TODO: get proper return type for StorageMap getter functions
+            parameters: parameters.clone(),
+            return_type: Some(return_type),
             body: None,
         };
 
@@ -1124,18 +1134,34 @@ impl Project {
         // Create the body for the toplevel function
         sway_function.body = Some(sway::Block {
             statements: vec![],
-            // TODO: change for StorageMap getter functions
-            final_expr: Some(sway::Expression::from(sway::FunctionCall {
-                function: sway::Expression::from(sway::MemberAccess {
-                    expression: sway::Expression::from(sway::MemberAccess {
-                        expression: sway::Expression::Identifier("storage".into()),
-                        member: new_name.clone(),
+            final_expr: Some({
+                let mut expression = sway::Expression::from(sway::MemberAccess {
+                    expression: sway::Expression::Identifier("storage".into()),
+                    member: new_name.clone(),
+                });
+
+                for parameter in parameters.entries.iter() {
+                    expression = sway::Expression::from(sway::FunctionCall {
+                        function: sway::Expression::from(sway::MemberAccess {
+                            expression,
+                            member: "get".into(),
+                        }),
+                        generic_parameters: None,
+                        parameters: vec![
+                            sway::Expression::Identifier(parameter.name.clone()),
+                        ],
+                    });
+                }
+                
+                sway::Expression::from(sway::FunctionCall {
+                    function: sway::Expression::from(sway::MemberAccess {
+                        expression,
+                        member: "read".into(),
                     }),
-                    member: "read".into(),
-                }),
-                generic_parameters: None,
-                parameters: vec![],
-            })),
+                    generic_parameters: None,
+                    parameters: vec![],
+                })
+            }),
         });
 
         // Add the toplevel function
