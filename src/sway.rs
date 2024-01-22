@@ -1281,7 +1281,17 @@ impl Expression {
                     Expression::Array(value.clone())
                 }
 
-                Some(value) => panic!("Invalid array value expression: {value:#?}"),
+                Some(Expression::Literal(Literal::String(s))) => {
+                    if s.len() != *length {
+                        panic!("Invalid array value string, expected {} characters, found {}: \"{s}\"", *length, s.len());
+                    }
+
+                    Expression::Array(Array {
+                        elements: s.chars().map(|c| Expression::Literal(Literal::HexInt((c as u8) as u64))).collect(),
+                    })
+                }
+
+                Some(value) => panic!("Invalid {type_name} array value expression: {value:#?}"),
             }
 
             TypeName::Tuple { type_names } => match value {

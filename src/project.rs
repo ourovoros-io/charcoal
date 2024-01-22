@@ -28,6 +28,7 @@ pub struct Project {
 
 impl Project {
     /// Attempts to parse the file from the supplied `path`.
+    #[inline]
     fn parse_solidity_source_unit<P: AsRef<Path>>(&mut self, path: P) -> Result<(), Error> {
         let path = PathBuf::from(
             path.as_ref()
@@ -56,6 +57,7 @@ impl Project {
     }
 
     /// Loads line ranges in a specific file `path` from the provided `source` text.
+    #[inline]
     fn load_line_ranges(&mut self, path: PathBuf, source: &str) {
         let mut line_range = (0usize, 0usize);
 
@@ -159,12 +161,14 @@ impl Project {
         Ok(())
     }
 
+    #[inline]
     fn translate_naming_convention(&mut self, name: &str, case: Case) -> String {
         let prefix = name.chars().take_while(|c| *c == '_').collect::<String>();
         let postfix = name.chars().rev().take_while(|c| *c == '_').collect::<String>();
         format!("{prefix}{}{postfix}", name.to_case(case))
     }
 
+    #[inline]
     fn translate_function_name(
         &mut self,
         translated_definition: &mut TranslatedDefinition,
@@ -201,6 +205,7 @@ impl Project {
         translated_definition.function_names.get(&signature).unwrap().clone()
     }
 
+    #[inline]
     fn translate_storage_name(
         &mut self,
         translated_definition: &mut TranslatedDefinition,
@@ -256,7 +261,7 @@ impl Project {
                     length: 32, // TODO: is using a fixed 32-character string ok?
                 },
 
-                solidity::Type::Int(bits) => todo!("signed integer types"),
+                solidity::Type::Int(_) => todo!("signed integer types"),
 
                 solidity::Type::Uint(bits) => sway::TypeName::Identifier {
                     name: match *bits {
@@ -401,6 +406,7 @@ impl Project {
         }
     }
 
+    #[inline]
     fn translate_literal_expression(&mut self, value: &solidity::Expression) -> sway::Expression {
         match value {
             solidity::Expression::BoolLiteral(_, value) => sway::Expression::from(sway::Literal::Bool(*value)),
@@ -414,6 +420,7 @@ impl Project {
         }
     }
     
+    #[inline]
     fn translate_contract_definition(
         &mut self,
         source_unit_path: &Path,
@@ -661,6 +668,7 @@ impl Project {
         Ok(())
     }
 
+    #[inline]
     fn translate_import_directives(
         &mut self,
         translated_definition: &mut TranslatedDefinition,
@@ -703,6 +711,7 @@ impl Project {
         Ok(())
     }
 
+    #[inline]
     fn propagate_inherited_definitions(
         &mut self,
         import_directives: &[solidity::Import],
@@ -866,6 +875,7 @@ impl Project {
         Ok(())
     }
 
+    #[inline]
     fn generate_enum_abi_encode_function(
         &mut self,
         sway_enum: &sway::Enum,
@@ -1021,6 +1031,7 @@ impl Project {
         Ok(())
     }
 
+    #[inline]
     fn translate_state_variable(
         &mut self,
         translated_definition: &mut TranslatedDefinition,
@@ -1031,6 +1042,12 @@ impl Project {
         let is_constant = variable_definition.attrs.iter().any(|x| matches!(x, solidity::VariableAttribute::Constant(_)));
         let is_immutable = variable_definition.attrs.iter().any(|x| matches!(x, solidity::VariableAttribute::Immutable(_)));
 
+        // If the state variable is not constant or immutable, it is a storage field
+        let is_storage = !is_constant && !is_immutable;
+
+        // If the state variable is immutable and not a constant, it is a configurable field
+        let is_configurable = is_immutable && !is_constant;
+
         // Translate the variable's naming convention
         let old_name = variable_definition.name.as_ref().unwrap().name.clone();
         let new_name = if is_constant {
@@ -1040,7 +1057,7 @@ impl Project {
         };
 
         // Translate the variable's type name
-        let variable_type_name = self.translate_type_name(translated_definition, &variable_definition.ty, true);
+        let variable_type_name = self.translate_type_name(translated_definition, &variable_definition.ty, is_storage);
 
         // Ensure std::hash::Hash is imported for StorageMap storage fields
         if variable_type_name.has_storage_map() && !translated_definition.uses.iter().any(|u| {
@@ -1109,8 +1126,8 @@ impl Project {
             old_name,
             new_name: new_name.clone(),
             type_name: variable_type_name.clone(),
-            is_storage: !is_constant && !is_immutable,
-            is_configurable: is_immutable,
+            is_storage,
+            is_configurable,
             ..Default::default()
         });
 
@@ -1131,14 +1148,18 @@ impl Project {
         // Create the function declaration for the abi
         let mut sway_function = sway::Function {
             attributes: Some(sway::AttributeList {
-                attributes: vec![
-                    sway::Attribute {
-                        name: "storage".into(),
-                        parameters: Some(vec![
-                            "read".into(),
-                        ]),
-                    },
-                ],
+                attributes: if is_storage {
+                    vec![
+                        sway::Attribute {
+                            name: "storage".into(),
+                            parameters: Some(vec![
+                                "read".into(),
+                            ]),
+                        },
+                    ]
+                } else {
+                    vec![]
+                },
             }),
             is_public: false,
             name: new_name.clone(),
@@ -1163,7 +1184,7 @@ impl Project {
         // Create the body for the toplevel function
         sway_function.body = Some(sway::Block {
             statements: vec![],
-            final_expr: Some({
+            final_expr: Some(if is_storage {
                 let mut expression = sway::Expression::from(sway::MemberAccess {
                     expression: sway::Expression::Identifier("storage".into()),
                     member: new_name.clone(),
@@ -1201,6 +1222,8 @@ impl Project {
                     generic_parameters: None,
                     parameters: vec![],
                 })
+            } else {
+                todo!("Handle getter function for non-storage variables")
             }),
         });
 
@@ -1234,6 +1257,7 @@ impl Project {
         Ok(())
     }
 
+    #[inline]
     fn translate_function_declaration(
         &mut self,
         translated_definition: &mut TranslatedDefinition,
@@ -1332,6 +1356,7 @@ impl Project {
         Ok(translated_function)
     }
 
+    #[inline]
     fn translate_modifier_definition(
         &mut self,
         translated_definition: &mut TranslatedDefinition,
@@ -1560,6 +1585,7 @@ impl Project {
         Ok(())
     }
 
+    #[inline]
     fn translate_function_definition(
         &mut self,
         translated_definition: &mut TranslatedDefinition,
@@ -3654,7 +3680,51 @@ impl Project {
                                 member => todo!("handle `abi.{member}` translation"),
                             }
 
-                            _ => {}
+                            name => {
+                                let old_name = format!("{}_{}", expression.to_string(), member.to_string());
+                                let new_name = self.translate_naming_convention(old_name.as_str(), Case::Snake);
+        
+                                // Check if function is contained in an external definition
+                                if let Some(external_definition) = self.translated_definitions.iter().find(|x| x.name == name) {
+                                    // Check if the member is a function defined in the toplevel scope
+                                    // TODO: we should really check if the functions argument types are correct
+                                    if let Some(external_function_declaration) = external_definition.toplevel_scope.find_function(|f| f.old_name == member.name && f.parameters.entries.len() == args.len()) {
+                                        // Import the function if we haven't already
+                                        if translated_definition.toplevel_scope.get_function_from_old_name(old_name.as_str()).is_err() {
+                                            // Get the external function definition
+                                            let Some(external_function_definition) = external_definition.functions.iter().find(|f| {
+                                                f.name == external_function_declaration.new_name && f.parameters.entries.len() == external_function_declaration.parameters.entries.len()
+                                            }) else {
+                                                panic!("Failed to find external function definition");
+                                            };
+
+                                            // Create the local function definition
+                                            let mut local_function_definition = external_function_definition.clone();
+                                            local_function_definition.name = new_name.clone();
+                                            
+                                            // Add the local function definition to the beginning of the list
+                                            translated_definition.functions.insert(0, local_function_definition);
+
+                                            // Create the local function declaration for the toplevel scope
+                                            let mut local_function_declaration = external_function_declaration.clone();
+                                            local_function_declaration.old_name = old_name.clone();
+                                            local_function_declaration.new_name = new_name.clone();
+
+                                            // Add the local function to the beginning of the toplevel scope
+                                            translated_definition.toplevel_scope.functions.insert(0, local_function_declaration.clone());
+
+                                            // Create the function call
+                                            let function_call = sway::Expression::from(sway::FunctionCall {
+                                                function: sway::Expression::Identifier(new_name),
+                                                generic_parameters: None,
+                                                parameters: args.iter().map(|a| self.translate_expression(translated_definition, scope, a)).collect::<Result<Vec<_>, _>>()?,
+                                            });
+
+                                            return Ok(function_call);
+                                        }
+                                    }
+                                }
+                            }
                         }
 
                         _ => {}

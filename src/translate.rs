@@ -229,22 +229,71 @@ impl TranslationScope {
                 _ => todo!("get type of function call expression: {expression:#?}"),
             }
 
-            sway::Expression::Block(_) => todo!("get type of block expression: {expression:#?}"),
-            sway::Expression::Return(_) => todo!("get type of return expression: {expression:#?}"),
-            sway::Expression::Array(_) => todo!("get type of array expression: {expression:#?}"),
-            sway::Expression::ArrayAccess(_) => todo!("get type of array access expression: {expression:#?}"),
+            sway::Expression::Block(block) => {
+                if let Some(expression) = block.final_expr.as_ref() {
+                    self.get_expression_type(expression)
+                } else {
+                    Ok(sway::TypeName::Tuple { type_names: vec![] })
+                }
+            }
+
+            sway::Expression::Return(value) => {
+                if let Some(value) = value.as_ref() {
+                    self.get_expression_type(value)
+                } else {
+                    Ok(sway::TypeName::Tuple { type_names: vec![] })
+                }
+            }
+
+            sway::Expression::Array(array) => Ok(sway::TypeName::Array {
+                type_name: Box::new(
+                    if let Some(expression) = array.elements.first() {
+                        self.get_expression_type(expression)?
+                    } else {
+                        sway::TypeName::Tuple { type_names: vec![] }
+                    }
+                ),
+                length: array.elements.len(),
+            }),
+
+            sway::Expression::ArrayAccess(array_access) => {
+                let element_type_name = self.get_expression_type(&array_access.expression)?;
+                
+                let sway::TypeName::Array { type_name, .. } = element_type_name else {
+                    panic!("Expected array type, found {element_type_name}");
+                };
+
+                Ok(*type_name.clone())
+            }
+
             sway::Expression::MemberAccess(_) => todo!("get type of member access expression: {expression:#?}"),
-            sway::Expression::Tuple(_) => todo!("get type of tuple expression: {expression:#?}"),
-            sway::Expression::If(_) => todo!("get type of if expression: {expression:#?}"),
-            sway::Expression::Match(_) => todo!("get type of match expression: {expression:#?}"),
-            sway::Expression::While(_) => todo!("get type of while expression: {expression:#?}"),
-            sway::Expression::UnaryExpression(_) => todo!("get type of unary expression expression: {expression:#?}"),
+            
+            sway::Expression::Tuple(tuple) => Ok(sway::TypeName::Tuple {
+                type_names: tuple.iter().map(|x| self.get_expression_type(x)).collect::<Result<Vec<_>, _>>()?,
+            }),
+            
+            sway::Expression::If(if_expr) => {
+                if let Some(expression) = if_expr.then_body.final_expr.as_ref() {
+                    self.get_expression_type(expression)
+                } else {
+                    Ok(sway::TypeName::Tuple { type_names: vec![] })
+                }
+            }
 
+            sway::Expression::Match(match_expr) => {
+                if let Some(branch) = match_expr.branches.first() {
+                    self.get_expression_type(&branch.value)
+                } else {
+                    Ok(sway::TypeName::Tuple { type_names: vec![] })
+                }
+            }
+            
+            sway::Expression::While(_) => Ok(sway::TypeName::Tuple { type_names: vec![] }),
+            sway::Expression::UnaryExpression(unary_expression) => self.get_expression_type(&unary_expression.expression),
             sway::Expression::BinaryExpression(binary_expression) => self.get_expression_type(&binary_expression.lhs),
-
-            sway::Expression::Constructor(_) => todo!("get type of constructor expression: {expression:#?}"),
-            sway::Expression::Continue => todo!("get type of continue expression: {expression:#?}"),
-            sway::Expression::Break => todo!("get type of break expression: {expression:#?}"),
+            sway::Expression::Constructor(constructor) => Ok(constructor.type_name.clone()),
+            sway::Expression::Continue => Ok(sway::TypeName::Tuple { type_names: vec![] }),
+            sway::Expression::Break => Ok(sway::TypeName::Tuple { type_names: vec![] }),
         }
     }
 }
