@@ -2656,11 +2656,92 @@ impl Project {
             }
 
             match &type_name {
-                sway::TypeName::Identifier { name, .. } if name == "Vec" => {
-                    value = Some(sway::Expression::from(sway::FunctionCall {
-                        function: sway::Expression::Identifier("Vec::new".into()),
-                        generic_parameters: None,
-                        parameters: vec![],
+                sway::TypeName::Identifier { name, generic_parameters: Some(generic_parameters) } if name == "Vec" => {
+                    // {
+                    //     let mut v = Vec::with_capacity(length);
+                    //     let mut i = 0;
+                    //     while i < length {
+                    //         v.push(0);
+                    //         i += 1;
+                    //     }
+                    //     v
+                    // }
+
+                    if args.len() != 1 {
+                        panic!("Invalid new array expression: expected 1 argument, found {}", args.len());
+                    }
+
+                    let element_type_name = &generic_parameters.entries.first().unwrap().type_name;
+                    let length = self.translate_expression(translated_definition, scope, &args[0])?;
+
+                    value = Some(sway::Expression::from(sway::Block {
+                        statements: vec![
+                            // let mut v = Vec::with_capacity(length);
+                            sway::Statement::from(sway::Let {
+                                pattern: sway::LetPattern::Identifier(sway::LetIdentifier {
+                                    is_mutable: true,
+                                    name: "v".into(),
+                                }),
+                                type_name: None,
+                                value: sway::Expression::from(sway::FunctionCall {
+                                    function: sway::Expression::Identifier("Vec::with_capacity".into()),
+                                    generic_parameters: None,
+                                    parameters: vec![
+                                        length.clone(),
+                                    ],
+                                }),
+                            }),
+
+                            // let mut i = 0;
+                            sway::Statement::from(sway::Let {
+                                pattern: sway::LetPattern::Identifier(sway::LetIdentifier {
+                                    is_mutable: true,
+                                    name: "i".into(),
+                                }),
+                                type_name: None,
+                                value: sway::Expression::from(sway::Literal::DecInt(0)),
+                            }),
+
+                            // while i < length {
+                            //     v.push(0);
+                            //     i += 1;
+                            // }
+                            sway::Statement::from(sway::Expression::from(sway::While {
+                                // i < length
+                                condition: sway::Expression::from(sway::BinaryExpression {
+                                    operator: "<".into(),
+                                    lhs: sway::Expression::Identifier("i".into()),
+                                    rhs: length.clone(),
+                                }),
+
+                                body: sway::Block {
+                                    statements: vec![
+                                        // v.push(0);
+                                        sway::Statement::from(sway::Expression::from(sway::FunctionCall {
+                                            function: sway::Expression::from(sway::MemberAccess {
+                                                expression: sway::Expression::Identifier("v".into()),
+                                                member: "push".into(),
+                                            }),
+                                            generic_parameters: None,
+                                            parameters: vec![
+                                                sway::Expression::create_value_expression(element_type_name, None),
+                                            ],
+                                        })),
+
+                                        // i += 1;
+                                        sway::Statement::from(sway::Expression::from(sway::BinaryExpression {
+                                            operator: "+=".into(),
+                                            lhs: sway::Expression::Identifier("i".into()),
+                                            rhs: sway::Expression::from(sway::Literal::DecInt(1)),
+                                        })),
+                                    ],
+                                    final_expr: None,
+                                }
+                            }))
+                        ],
+
+                        // v
+                        final_expr: Some(sway::Expression::Identifier("v".into())),
                     }));
                 }
 
