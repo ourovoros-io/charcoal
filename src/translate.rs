@@ -259,11 +259,20 @@ impl TranslationScope {
             sway::Expression::ArrayAccess(array_access) => {
                 let element_type_name = self.get_expression_type(&array_access.expression)?;
                 
-                let sway::TypeName::Array { type_name, .. } = element_type_name else {
-                    panic!("Expected array type, found {element_type_name}");
+                let type_name = match &element_type_name {
+                    sway::TypeName::Identifier {
+                        name,
+                        generic_parameters: Some(generic_parameters),
+                    } if name == "Vec" => {
+                        &generic_parameters.entries.first().unwrap().type_name
+                    }
+
+                    sway::TypeName::Array { type_name, .. } => type_name.as_ref(),
+
+                    _ => todo!("array access for type {element_type_name}"),
                 };
 
-                Ok(*type_name.clone())
+                Ok(type_name.clone())
             }
 
             sway::Expression::MemberAccess(_) => todo!("get type of member access expression: {expression:#?}"),

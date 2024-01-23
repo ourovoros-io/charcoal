@@ -1243,6 +1243,12 @@ impl Expression {
                     Some(value) => panic!("Invalid bool value expression: {value:#?}"),
                 }
 
+                "b256" => match value {
+                    None => Expression::Literal(Literal::DecInt(0)),
+                    Some(value) if matches!(value, Expression::Literal(Literal::DecInt(_) | Literal::HexInt(_))) => value.clone(),
+                    Some(value) => panic!("Invalid {name} value expression: {value:#?}"),
+                }
+
                 "u8" | "u16" | "u32" | "u64" | "u256" => match value {
                     None => Expression::Literal(Literal::DecInt(0)),
                     Some(value) if matches!(value, Expression::Literal(Literal::DecInt(_) | Literal::HexInt(_))) => value.clone(),
