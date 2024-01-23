@@ -914,7 +914,7 @@ impl Project {
                 };
 
                 block.statements.push(sway::Statement::from(match type_name.as_str() {
-                    "u8" | "u16" | "u32" | "u64" | "u256" => sway::Expression::from(sway::FunctionCall {
+                    "u8" | "u16" | "u32" | "u64" | "u256" | "b256" => sway::Expression::from(sway::FunctionCall {
                         function: sway::Expression::from(sway::MemberAccess {
                             expression: sway::Expression::Identifier(name.into()),
                             member: "abi_encode".into(),
@@ -957,7 +957,7 @@ impl Project {
                         })
                     },
 
-                    _ => todo!(),
+                    _ => todo!("encode enum member type: {type_name}"),
                 }));
             };
 
@@ -2474,6 +2474,14 @@ impl Project {
                         Ok(sway::Expression::create_todo(Some(expression.to_string())))
                     }
 
+                    "byte" => {
+                        Ok(sway::Expression::create_todo(Some(expression.to_string())))
+                    }
+
+                    "create2" => {
+                        Ok(sway::Expression::create_todo(Some(expression.to_string())))
+                    }
+
                     name => todo!("look up yul function in scope: \"{name}\"")
                 }
             }
@@ -3096,7 +3104,7 @@ impl Project {
 
             solidity::Expression::HexNumberLiteral(_, value, _) | solidity::Expression::AddressLiteral(_, value) => {
                 Ok(sway::Expression::from(sway::Literal::HexInt(
-                    u64::from_str_radix(value.as_str(), 16)
+                    u64::from_str_radix(value.trim_start_matches("0x"), 16)
                         .map_err(|e| Error::Wrapped(Box::new(e)))?
                 )))
             }
@@ -3483,6 +3491,22 @@ impl Project {
                         }
 
                         (name, member) => {
+                            // Check to see if the variable is an enum
+                            if let Some(translated_enum) = translated_definition.enums.iter().find(|e| match &e.type_definition.name {
+                                sway::TypeName::Identifier { name: enum_name, .. } => enum_name == name,
+                                _ => false
+                            }) {
+                                let new_name = self.translate_naming_convention(member, Case::ScreamingSnake);
+
+                                // Check to see if member is part of translated enum
+                                if let Some(sway::ImplItem::Constant(c)) = translated_enum.variants_impl.items.iter().find(|i| match i {
+                                    sway::ImplItem::Constant(c) => c.name == new_name,
+                                    _ => false,
+                                }) {
+                                    return Ok(sway::Expression::Identifier(format!("{}::{}", name, c.name)));
+                                }
+                            }
+
                             let variable = match scope.get_variable_from_old_name(name) {
                                 Ok(variable) => variable,
                                 Err(e) => panic!("{e}"),
@@ -3568,11 +3592,18 @@ impl Project {
                             }
 
                             solidity::Expression::Variable(solidity::Identifier { name, .. }) if name == "this" => {
-                                //
-                                // TODO: how do we get the address of the current contract?
-                                //
-
-                                Ok(sway::Expression::create_todo(Some(expression.to_string())))
+                                // address(this) => Identity::from(ContractId::this())
+                                Ok(sway::Expression::from(sway::FunctionCall {
+                                    function: sway::Expression::Identifier("Identity::ContractId".into()),
+                                    generic_parameters: None,
+                                    parameters: vec![
+                                        sway::Expression::from(sway::FunctionCall {
+                                            function: sway::Expression::Identifier("ContractId::this".into()),
+                                            generic_parameters: None,
+                                            parameters: vec![],
+                                        }),
+                                    ],
+                                }))
                             }
 
                             _ => todo!("translate address cast: {expression:#?}"),
