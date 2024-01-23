@@ -180,7 +180,7 @@ fn _update(from: Identity, to: Identity, value: u256) {
     if from == Identity::Address(Address::from(ZERO_B256)) {
         storage._total_supply.write(storage._total_supply.read() + value);
     } else {
-        let from_balance: u256 = storage._balances.get(from).read();
+        let from_balance = storage._balances.get(from).read();
         if from_balance < value {
             log(ERC20Error::ERC20InsufficientBalance((from, from_balance, value)));
             revert(0);
@@ -236,7 +236,7 @@ fn _approve_2(owner: Identity, spender: Identity, value: u256, emit_event: bool)
 
 #[storage(read, write)]
 fn _spend_allowance(owner: Identity, spender: Identity, value: u256) {
-    let current_allowance: u256 = allowance(owner, spender);
+    let current_allowance = allowance(owner, spender);
     if current_allowance != u256::max() {
         if current_allowance < value {
             log(ERC20Error::ERC20InsufficientAllowance((spender, current_allowance, value)));
@@ -282,7 +282,7 @@ impl ERC20 for Contract {
 
     #[storage(read, write)]
     fn transfer(to: Identity, value: u256) -> bool {
-        let owner: Identity = _msg_sender();
+        let owner = _msg_sender();
         _transfer(owner, to, value);
         true
     }
@@ -294,14 +294,14 @@ impl ERC20 for Contract {
 
     #[storage(read, write)]
     fn approve(spender: Identity, value: u256) -> bool {
-        let owner: Identity = _msg_sender();
+        let owner = _msg_sender();
         _approve(owner, spender, value);
         true
     }
 
     #[storage(read, write)]
     fn transfer_from(from: Identity, to: Identity, value: u256) -> bool {
-        let spender: Identity = _msg_sender();
+        let spender = _msg_sender();
         _spend_allowance(from, spender, value);
         _transfer(from, to, value);
         true

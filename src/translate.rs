@@ -226,6 +226,38 @@ impl TranslationScope {
 
                     _ => todo!("get type of function call expression: {expression:#?}"),
                 }
+
+                sway::Expression::MemberAccess(member_access) => match member_access.member.as_str() {
+                    "unwrap" => match self.get_expression_type(&member_access.expression)? {
+                        sway::TypeName::Identifier { name, generic_parameters: Some(generic_parameters) } => match name.as_str() {
+                            "Option" => Ok(generic_parameters.entries.first().unwrap().type_name.clone()),
+                            "Result" => Ok(generic_parameters.entries.first().unwrap().type_name.clone()),
+                            _ => todo!("get type of function call expression: {expression:#?}"),
+                        }
+
+                        _ => todo!("get type of function call expression: {expression:#?}"),
+                    }
+                    
+                    "get" => match self.get_expression_type(&member_access.expression)? {
+                        sway::TypeName::Identifier { name, generic_parameters: Some(generic_parameters) } => match name.as_str() {
+                            "Vec" => Ok(sway::TypeName::Identifier {
+                                name: "Option".into(),
+                                generic_parameters: Some(sway::GenericParameterList {
+                                    entries: vec![
+                                        generic_parameters.entries.first().unwrap().clone(),
+                                    ],
+                                }),
+                            }),
+
+                            _ => todo!("get type of function call expression: {expression:#?}"),
+                        }
+                        
+                        _ => todo!("get type of function call expression: {expression:#?}"),
+                    }
+
+                    _ => todo!("get type of function call expression: {expression:#?}"),
+                }
+
                 _ => todo!("get type of function call expression: {expression:#?}"),
             }
 

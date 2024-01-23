@@ -1244,7 +1244,7 @@ impl Expression {
                 }
 
                 "b256" => match value {
-                    None => Expression::Literal(Literal::DecInt(0)),
+                    None => Expression::Identifier("std::constants::ZERO_B256".into()),
                     Some(value) if matches!(value, Expression::Literal(Literal::DecInt(_) | Literal::HexInt(_))) => value.clone(),
                     Some(value) => panic!("Invalid {name} value expression: {value:#?}"),
                 }
