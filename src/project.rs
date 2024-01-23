@@ -2682,7 +2682,7 @@ impl Project {
                                     is_mutable: true,
                                     name: "v".into(),
                                 }),
-                                type_name: None,
+                                type_name: Some(type_name.clone()),
                                 value: sway::Expression::from(sway::FunctionCall {
                                     function: sway::Expression::Identifier("Vec::with_capacity".into()),
                                     generic_parameters: None,
