@@ -140,51 +140,6 @@ impl TranslationScope {
         Err(Error::FunctionNotInScope(old_name.into()))
     }
 
-    /// Attempts to get a mutable reference to a function using its old name
-    pub fn get_function_from_old_name_mut(&mut self, old_name: &str) -> Result<&mut TranslatedFunction, Error> {
-        if let Some(function) = self.functions.iter_mut().rev().find(|v| v.old_name == old_name) {
-            return Ok(function);
-        }
-
-        if let Some(parent) = self.parent.as_mut() {
-            if let Ok(function) = parent.get_function_from_old_name_mut(old_name) {
-                return Ok(function);
-            }
-        }
-
-        Err(Error::FunctionNotInScope(old_name.into()))
-    }
-
-    /// Attempts to get a reference to a function using its new name
-    pub fn get_function_from_new_name(&self, new_name: &str) -> Result<&TranslatedFunction, Error> {
-        if let Some(function) = self.functions.iter().rev().find(|v| v.new_name == new_name) {
-            return Ok(function);
-        }
-
-        if let Some(parent) = self.parent.as_ref() {
-            if let Ok(function) = parent.get_function_from_new_name(new_name) {
-                return Ok(function);
-            }
-        }
-
-        Err(Error::FunctionNotInScope(new_name.into()))
-    }
-
-    /// Attempts to get a mutable reference to a function using its new name
-    pub fn find_function_from_new_name_mut(&mut self, new_name: &str) -> Result<&mut TranslatedFunction, Error> {
-        if let Some(function) = self.functions.iter_mut().rev().find(|v| v.new_name == new_name) {
-            return Ok(function);
-        }
-
-        if let Some(parent) = self.parent.as_mut() {
-            if let Ok(function) = parent.find_function_from_new_name_mut(new_name) {
-                return Ok(function);
-            }
-        }
-
-        Err(Error::FunctionNotInScope(new_name.into()))
-    }
-
     pub fn get_expression_type(
         &self,
         expression: &sway::Expression,

@@ -1821,7 +1821,10 @@ impl Project {
         }
 
         // Get the function from the scope
-        let function = scope.get_function_from_old_name(old_name.as_str())?;
+        let function = match scope.get_function_from_old_name(old_name.as_str()) {
+            Ok(function) => function,
+            Err(e) => panic!("{e}"),
+        };
 
         // Propagate modifier pre and post functions into the function's body
         let mut modifier_pre_calls = vec![];
@@ -3543,10 +3546,22 @@ impl Project {
                             }
 
                             for (i, parameter) in parameters.iter().enumerate() {
-                                if let Some(type_name) = f.parameters.entries[i].type_name.as_ref() {
-                                    if scope.get_expression_type(parameter).unwrap() != *type_name {
-                                        return false;
+                                let Some(parameter_type_name) = f.parameters.entries[i].type_name.as_ref() else { continue };
+
+                                // Don't check literal integer value types
+                                if let sway::Expression::Literal(sway::Literal::DecInt(_) | sway::Literal::HexInt(_)) = parameter {
+                                    if let sway::TypeName::Identifier { name, generic_parameters: None } = parameter_type_name {
+                                        if let "u8" | "u16" | "u32" | "u64" | "u256" = name.as_str() {
+                                            continue;
+                                        }
                                     }
+                                }
+
+                                let value_type_name = scope.get_expression_type(parameter).unwrap();
+
+                                if value_type_name != *parameter_type_name {
+                                    println!("parameter type mismatch: expected {}, found {}", parameter_type_name, value_type_name);
+                                    return false;
                                 }
                             }
 
