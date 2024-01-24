@@ -2430,20 +2430,30 @@ impl Project {
         //     }                    
         // }
 
+        let mut inner_scope = TranslationScope {
+            parent: Some(Box::new(scope.clone())),
+            ..Default::default()
+        };
+
         let mut statements = vec![];
 
         if let Some(initialization) = initialization.as_ref() {
-            let mut statement = self.translate_statement(translated_definition, scope, initialization.as_ref())?;
+            let statement_index = statements.len();
+            let mut statement = self.translate_statement(translated_definition, &mut inner_scope, initialization.as_ref())?;
 
-            // HACK: Mark identifiers as mutable since they aren't being updated for some reason
+            // Store the statement index of variable declaration statements in their scope entries
             if let sway::Statement::Let(sway::Let { pattern, .. }) = &mut statement {
-                let set_let_identifier_as_mutable = |id: &mut sway::LetIdentifier| {
-                    id.is_mutable = true;
+                let mut store_let_identifier_statement_index = |id: &mut sway::LetIdentifier| {
+                    let Ok(variable) = inner_scope.get_variable_from_new_name_mut(id.name.as_str()) else {
+                        panic!("Failed to find variable in scope: \"{id}\"");
+                    };
+
+                    variable.statement_index = Some(statement_index);
                 };
 
                 match pattern {
-                    sway::LetPattern::Identifier(id) => set_let_identifier_as_mutable(id),
-                    sway::LetPattern::Tuple(ids) => ids.iter_mut().for_each(set_let_identifier_as_mutable),
+                    sway::LetPattern::Identifier(id) => store_let_identifier_statement_index(id),
+                    sway::LetPattern::Tuple(ids) => ids.iter_mut().for_each(store_let_identifier_statement_index),
                 }
             }
 
@@ -2451,14 +2461,14 @@ impl Project {
         }
 
         let condition = if let Some(condition) = condition.as_ref() {
-            self.translate_expression(translated_definition, scope, condition.as_ref())?
+            self.translate_expression(translated_definition, &mut inner_scope, condition.as_ref())?
         } else {
             sway::Expression::from(sway::Literal::Bool(true))
         };
 
         let mut body = match body.as_ref() {
             None => sway::Block::default(),
-            Some(body) => match self.translate_statement(translated_definition, scope, body.as_ref())? {
+            Some(body) => match self.translate_statement(translated_definition, &mut inner_scope, body.as_ref())? {
                 sway::Statement::Expression(sway::Expression::Block(block)) => *block,
                 statement => sway::Block {
                     statements: vec![statement],
@@ -2474,7 +2484,7 @@ impl Project {
                     solidity::Expression::PreDecrement(loc, x)
                     | solidity::Expression::PostDecrement(loc, x) => self.translate_assignment_expression(
                         translated_definition,
-                        scope,
+                        &mut inner_scope,
                         "-=",
                         x,
                         &solidity::Expression::NumberLiteral(*loc, "1".into(), "".into(), None),
@@ -2484,13 +2494,13 @@ impl Project {
                     solidity::Expression::PreIncrement(loc, x)
                     | solidity::Expression::PostIncrement(loc, x) => self.translate_assignment_expression(
                         translated_definition,
-                        scope,
+                        &mut inner_scope,
                         "+=",
                         x,
                         &solidity::Expression::NumberLiteral(*loc, "1".into(), "".into(), None),
                     )?,
         
-                    _ => self.translate_expression(translated_definition, scope, update.as_ref())?
+                    _ => self.translate_expression(translated_definition, &mut inner_scope, update.as_ref())?
                 }
             ));
         }
@@ -2502,10 +2512,17 @@ impl Project {
             }))
         );
 
-        Ok(sway::Statement::from(sway::Expression::from(sway::Block {
+        let mut block = sway::Block {
             statements,
             final_expr: None,
-        })))
+        };
+
+        self.finalize_block_translation(&inner_scope, &mut block)?;
+
+        // Unbox the inner scope
+        *scope = *inner_scope.parent.as_ref().unwrap().clone();
+
+        Ok(sway::Statement::from(sway::Expression::from(block)))
     }
     
     #[inline]
