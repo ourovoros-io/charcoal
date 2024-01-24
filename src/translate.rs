@@ -667,4 +667,34 @@ impl TranslatedDefinition {
 
         type_name.clone()
     }
+
+    pub fn ensure_use_declared(&mut self, name: &str) {
+        let mut tree: Option<sway::UseTree> = None;
+        
+        for part in name.split("::").collect::<Vec<_>>().into_iter().rev() {
+            match part {
+                "*" => tree = Some(sway::UseTree::Glob),
+                
+                _ => tree = Some(if let Some(use_tree) = tree.clone() {
+                    sway::UseTree::Path {
+                        prefix: part.into(),
+                        suffix: Box::new(use_tree),
+                    }
+                } else {
+                    sway::UseTree::Name {
+                        name: part.into(),
+                    }
+                }),
+            }
+        }
+
+        let tree = tree.unwrap();
+
+        if !self.uses.iter().any(|u| u.tree == tree) {
+            self.uses.push(sway::Use {
+                is_public: false,
+                tree,
+            });
+        }
+    }
 }

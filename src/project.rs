@@ -372,27 +372,7 @@ impl Project {
                 None => sway::TypeName::Identifier {
                     name: if is_storage {
                         // Ensure that `std::storage::storage_vec::*` is imported
-                        if !translated_definition.uses.iter().any(|u| {
-                            let sway::UseTree::Path { prefix: prefix1, suffix } = &u.tree else { return false };
-                            let sway::UseTree::Path { prefix: prefix2, suffix } = suffix.as_ref() else { return false };
-                            let sway::UseTree::Path { prefix: prefix3, suffix } = suffix.as_ref() else { return false };
-                            let sway::UseTree::Glob = suffix.as_ref() else { return false };
-                            prefix1 == "std" && prefix2 == "storage" && prefix3 == "storage_vec"
-                        }) {
-                            translated_definition.uses.push(sway::Use {
-                                is_public: false,
-                                tree: sway::UseTree::Path {
-                                    prefix: "std".into(),
-                                    suffix: Box::new(sway::UseTree::Path {
-                                        prefix: "storage".into(),
-                                        suffix: Box::new(sway::UseTree::Path {
-                                            prefix: "storage_vec".into(),
-                                            suffix: Box::new(sway::UseTree::Glob),
-                                        }),
-                                    }),
-                                },
-                            });
-                        }
+                        translated_definition.ensure_use_declared("std::storage::storage_vec::*");
 
                         "StorageVec".into()
                     } else {
@@ -1053,25 +1033,7 @@ impl Project {
         let variable_type_name = self.translate_type_name(translated_definition, &variable_definition.ty, is_storage);
 
         // Ensure std::hash::Hash is imported for StorageMap storage fields
-        if variable_type_name.has_storage_map() && !translated_definition.uses.iter().any(|u| {
-            let sway::UseTree::Path { prefix: prefix1, suffix } = &u.tree else { return false };
-            let sway::UseTree::Path { prefix: prefix2, suffix } = suffix.as_ref() else { return false };
-            let sway::UseTree::Name { name } = suffix.as_ref() else { return false };
-            prefix1 == "std" && prefix2 == "hash" && name == "Hash"
-        }) {
-            translated_definition.uses.push(sway::Use {
-                is_public: false,
-                tree: sway::UseTree::Path {
-                    prefix: "std".into(),
-                    suffix: Box::new(sway::UseTree::Path {
-                        prefix: "hash".into(),
-                        suffix: Box::new(sway::UseTree::Name {
-                            name: "Hash".into(),
-                        }),
-                    }),
-                },
-            });
-        }
+        translated_definition.ensure_use_declared("std::hash::Hash");
 
         // Handle constant variable definitions
         if is_constant {
@@ -3300,25 +3262,7 @@ impl Project {
                     solidity::Type::Address => match &arguments[0] {
                         solidity::Expression::NumberLiteral(_, value, _, _) if value == "0" => {
                             // Ensure std::constants::ZERO_B256 is imported
-                            if !translated_definition.uses.iter().any(|u| {
-                                let sway::UseTree::Path { prefix: prefix1, suffix } = &u.tree else { return false };
-                                let sway::UseTree::Path { prefix: prefix2, suffix } = suffix.as_ref() else { return false };
-                                let sway::UseTree::Name { name } = suffix.as_ref() else { return false };
-                                prefix1 == "std" && prefix2 == "constants" && name == "ZERO_B256"
-                            }) {
-                                translated_definition.uses.push(sway::Use {
-                                    is_public: false,
-                                    tree: sway::UseTree::Path {
-                                        prefix: "std".into(),
-                                        suffix: Box::new(sway::UseTree::Path {
-                                            prefix: "constants".into(),
-                                            suffix: Box::new(sway::UseTree::Name {
-                                                name: "ZERO_B256".into(),
-                                            }),
-                                        }),
-                                    },
-                                });
-                            }
+                            translated_definition.ensure_use_declared("std::constants::ZERO_B256");
 
                             // Create a zero address expression
                             // Identity::Address(Address::from(ZERO_B256))
@@ -3950,25 +3894,7 @@ impl Project {
         // lhs ** rhs => lhs.pow(rhs)
 
         // Ensure std::math::Power is imported for the pow function
-        if !translated_definition.uses.iter().any(|u| {
-            let sway::UseTree::Path { prefix: prefix1, suffix } = &u.tree else { return false };
-            let sway::UseTree::Path { prefix: prefix2, suffix } = suffix.as_ref() else { return false };
-            let sway::UseTree::Name { name } = suffix.as_ref() else { return false };
-            prefix1 == "std" && prefix2 == "math" && name == "Power"
-        }) {
-            translated_definition.uses.push(sway::Use {
-                is_public: false,
-                tree: sway::UseTree::Path {
-                    prefix: "std".into(),
-                    suffix: Box::new(sway::UseTree::Path {
-                        prefix: "math".into(),
-                        suffix: Box::new(sway::UseTree::Name {
-                            name: "Power".into(),
-                        }),
-                    }),
-                },
-            });
-        }
+        translated_definition.ensure_use_declared("std::math::Power");
 
         let lhs = self.translate_expression(translated_definition, scope, lhs)?;
         let rhs = self.translate_expression(translated_definition, scope, rhs)?;
