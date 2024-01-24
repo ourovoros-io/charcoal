@@ -3560,7 +3560,6 @@ impl Project {
                                 let value_type_name = scope.get_expression_type(parameter).unwrap();
 
                                 if value_type_name != *parameter_type_name {
-                                    println!("parameter type mismatch: expected {}, found {}", parameter_type_name, value_type_name);
                                     return false;
                                 }
                             }
