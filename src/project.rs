@@ -313,7 +313,7 @@ impl Project {
                     }),
                 },
 
-                solidity::Type::Function { params, attributes, returns } => todo!("function types"),
+                solidity::Type::Function { .. } => todo!("function types"),
             }
 
             solidity::Expression::Variable(solidity::Identifier { name, .. }) => {
@@ -583,7 +583,7 @@ impl Project {
         for part in solidity_definition.parts.iter() {
             let solidity::ContractPart::Using(using) = part else { continue };
 
-            todo!("using-for statements: {} - {part:#?}", part.to_string())
+            todo!("using-for statements: {} - {using:#?}", using.to_string())
         }
 
         // Collect each storage field ahead of time for contextual reasons
@@ -1599,8 +1599,8 @@ impl Project {
         let is_pure = function_definition.attributes.iter().any(|x| matches!(x, solidity::FunctionAttribute::Mutability(solidity::Mutability::Pure(_))));
         let is_view = function_definition.attributes.iter().any(|x| matches!(x, solidity::FunctionAttribute::Mutability(solidity::Mutability::View(_))));
         let is_payable = function_definition.attributes.iter().any(|x| matches!(x, solidity::FunctionAttribute::Mutability(solidity::Mutability::Payable(_))));
-        let is_virtual = function_definition.attributes.iter().any(|x| matches!(x, solidity::FunctionAttribute::Virtual(_)));
-        let is_override = function_definition.attributes.iter().any(|x| matches!(x, solidity::FunctionAttribute::Override(_, _)));
+        let _is_virtual = function_definition.attributes.iter().any(|x| matches!(x, solidity::FunctionAttribute::Virtual(_)));
+        let _is_override = function_definition.attributes.iter().any(|x| matches!(x, solidity::FunctionAttribute::Override(_, _)));
 
         // If the function is a constructor, we consider it public and add an initializer requirement
         if is_constructor {
@@ -2092,7 +2092,7 @@ impl Project {
             solidity::Statement::Expression(_, expression) => self.translate_expression_statement(translated_definition, scope, expression),
             solidity::Statement::VariableDefinition(_, variable_declaration, initializer) => self.translate_variable_definition_statement(translated_definition, scope, variable_declaration, initializer),
             solidity::Statement::For(_, initialization, condition, update, body) => self.translate_for_statement(translated_definition, scope, initialization, condition, update, body),
-            solidity::Statement::DoWhile(_, body, condition) => todo!("translate do while statement: {statement:#?}"),
+            solidity::Statement::DoWhile(_, _, _) => todo!("translate do while statement: {statement:#?}"),
             solidity::Statement::Continue(_) => Ok(sway::Statement::from(sway::Expression::Continue)),
             solidity::Statement::Break(_) => Ok(sway::Statement::from(sway::Expression::Break)),
             solidity::Statement::Return(_, expression) => self.translate_return_statement(translated_definition, scope, expression),
@@ -2131,9 +2131,9 @@ impl Project {
     #[inline]
     fn translate_args_statement(
         &mut self,
-        translated_definition: &mut TranslatedDefinition,
-        scope: &mut TranslationScope,
-        named_arguments: &[solidity::NamedArgument],
+        _translated_definition: &mut TranslatedDefinition,
+        _scope: &mut TranslationScope,
+        _named_arguments: &[solidity::NamedArgument],
     ) -> Result<sway::Statement, Error> {
         todo!("translate args statement")
     }
@@ -2844,8 +2844,8 @@ impl Project {
     #[inline]
     fn translate_type_expression(
         &mut self,
-        translated_definition: &mut TranslatedDefinition,
-        scope: &mut TranslationScope,
+        _translated_definition: &mut TranslatedDefinition,
+        _scope: &mut TranslationScope,
         expression: &solidity::Expression,
     ) -> Result<sway::Expression, Error> {
         //
@@ -2960,8 +2960,8 @@ impl Project {
     #[inline]
     fn translate_array_slice_expression(
         &mut self,
-        translated_definition: &mut TranslatedDefinition,
-        scope: &mut TranslationScope,
+        _translated_definition: &mut TranslatedDefinition,
+        _scope: &mut TranslationScope,
         expression: &solidity::Expression,
     ) -> Result<sway::Expression, Error> {
         todo!("translate array slice expression: {} - {expression:#?}", expression.to_string())
@@ -3062,8 +3062,8 @@ impl Project {
                         solidity::Type::Bytes(_) => todo!("translate bytes cast member access: {}", expression.to_string()),
                         solidity::Type::Rational => todo!("translate rational cast member access: {}", expression.to_string()),
                         solidity::Type::DynamicBytes => todo!("translate dynamic bytes cast member access: {}", expression.to_string()),
-                        solidity::Type::Mapping { loc, key, key_name, value, value_name } => todo!("translate mapping cast member access: {}", expression.to_string()),
-                        solidity::Type::Function { params, attributes, returns } => todo!("translate function cast member access: {}", expression.to_string()),
+                        solidity::Type::Mapping { .. } => todo!("translate mapping cast member access: {}", expression.to_string()),
+                        solidity::Type::Function { .. } => todo!("translate function cast member access: {}", expression.to_string()),
                     }
                 }
 
@@ -3078,63 +3078,25 @@ impl Project {
                         match type_name {
                             sway::TypeName::Undefined => panic!("Undefined type name"),
 
-                            sway::TypeName::Identifier { name, generic_parameters } => match (name.as_str(), member.name.as_str()) {
-                                ("u8", "min") => return Ok(sway::Expression::from(sway::FunctionCall {
-                                    function: sway::Expression::Identifier("u8::min".into()),
+                            sway::TypeName::Identifier { name, .. } => match (name.as_str(), member.name.as_str()) {
+                                ("u8" | "u16" | "u32" | "u64" | "u256", "min") => return Ok(sway::Expression::from(sway::FunctionCall {
+                                    function: sway::Expression::Identifier(format!("{name}::min")),
                                     generic_parameters: None,
                                     parameters: vec![],
                                 })),
-                                ("u8", "max") => return Ok(sway::Expression::from(sway::FunctionCall {
-                                    function: sway::Expression::Identifier("u8::max".into()),
+
+                                ("u8" | "u16" | "u32" | "u64" | "u256", "max") => return Ok(sway::Expression::from(sway::FunctionCall {
+                                    function: sway::Expression::Identifier(format!("{name}::max")),
                                     generic_parameters: None,
                                     parameters: vec![],
                                 })),
-                                ("u16", "min") => return Ok(sway::Expression::from(sway::FunctionCall {
-                                    function: sway::Expression::Identifier("u16::min".into()),
-                                    generic_parameters: None,
-                                    parameters: vec![],
-                                })),
-                                ("u16", "max") => return Ok(sway::Expression::from(sway::FunctionCall {
-                                    function: sway::Expression::Identifier("u16::max".into()),
-                                    generic_parameters: None,
-                                    parameters: vec![],
-                                })),
-                                ("u32", "min") => return Ok(sway::Expression::from(sway::FunctionCall {
-                                    function: sway::Expression::Identifier("u32::min".into()),
-                                    generic_parameters: None,
-                                    parameters: vec![],
-                                })),
-                                ("u32", "max") => return Ok(sway::Expression::from(sway::FunctionCall {
-                                    function: sway::Expression::Identifier("u32::max".into()),
-                                    generic_parameters: None,
-                                    parameters: vec![],
-                                })),
-                                ("u64", "min") => return Ok(sway::Expression::from(sway::FunctionCall {
-                                    function: sway::Expression::Identifier("u64::min".into()),
-                                    generic_parameters: None,
-                                    parameters: vec![],
-                                })),
-                                ("u64", "max") => return Ok(sway::Expression::from(sway::FunctionCall {
-                                    function: sway::Expression::Identifier("u64::max".into()),
-                                    generic_parameters: None,
-                                    parameters: vec![],
-                                })),
-                                ("u256", "min") => return Ok(sway::Expression::from(sway::FunctionCall {
-                                    function: sway::Expression::Identifier("u256::min".into()),
-                                    generic_parameters: None,
-                                    parameters: vec![],
-                                })),
-                                ("u256", "max") => return Ok(sway::Expression::from(sway::FunctionCall {
-                                    function: sway::Expression::Identifier("u256::max".into()),
-                                    generic_parameters: None,
-                                    parameters: vec![],
-                                })),
+
                                 _ => todo!("translate type member access: {} - {expression:#?}", expression.to_string()),
                             }
 
-                            sway::TypeName::Array { type_name, length } => todo!("translate type member access: {} - {expression:#?}", expression.to_string()),
-                            sway::TypeName::Tuple { type_names } => todo!("translate type member access: {} - {expression:#?}", expression.to_string()),
-                            sway::TypeName::String { length } => todo!("translate type member access: {} - {expression:#?}", expression.to_string()),
+                            sway::TypeName::Array { .. } => todo!("translate type member access: {} - {expression:#?}", expression.to_string()),
+                            sway::TypeName::Tuple { .. } => todo!("translate type member access: {} - {expression:#?}", expression.to_string()),
+                            sway::TypeName::String { .. } => todo!("translate type member access: {} - {expression:#?}", expression.to_string()),
                         }
                     }
 
@@ -3291,7 +3253,7 @@ impl Project {
                     match &variable.type_name {
                         sway::TypeName::Undefined => panic!("Undefined type name"),
 
-                        sway::TypeName::Identifier { name, generic_parameters } => match (name.as_str(), member) {
+                        sway::TypeName::Identifier { name, .. } => match (name.as_str(), member) {
                             ("Vec" | "std::bytes::Bytes", "length") => return Ok(sway::Expression::from(sway::FunctionCall {
                                 function: sway::Expression::from(sway::MemberAccess {
                                     expression: sway::Expression::Identifier(variable.new_name.clone()),
@@ -3303,13 +3265,12 @@ impl Project {
 
                             _ => todo!("translate {} variable member: {} - {expression:#?}", variable.type_name, expression.to_string())
                         }
-                        sway::TypeName::Array { type_name, length } => todo!("translate {} variable member: {} - {expression:#?}", variable.type_name, expression.to_string()),
-                        sway::TypeName::Tuple { type_names } => todo!("translate {} variable member: {} - {expression:#?}", variable.type_name, expression.to_string()),
-                        sway::TypeName::String { length } => todo!("translate {} variable member: {} - {expression:#?}", variable.type_name, expression.to_string()),
+                        
+                        sway::TypeName::Array { .. } => todo!("translate {} variable member: {} - {expression:#?}", variable.type_name, expression.to_string()),
+                        sway::TypeName::Tuple { .. } => todo!("translate {} variable member: {} - {expression:#?}", variable.type_name, expression.to_string()),
+                        sway::TypeName::String { .. } => todo!("translate {} variable member: {} - {expression:#?}", variable.type_name, expression.to_string()),
                     }
                 }
-
-                _ => todo!("translate variable member access expression: {} - {expression:#?}", expression.to_string())
             }
 
             _ => {}
@@ -3687,8 +3648,8 @@ impl Project {
                             member => todo!("handle `bytes.{member} translation")
                         }
 
-                        solidity::Type::Mapping { loc, key, key_name, value, value_name } => todo!("handle mapping member access function `{member:#?}`"),
-                        solidity::Type::Function { params, attributes, returns } => todo!("handle function member access function `{member:#?}`"),
+                        solidity::Type::Mapping { .. } => todo!("handle mapping member access function `{member:#?}`"),
+                        solidity::Type::Function { .. } => todo!("handle function member access function `{member:#?}`"),
                     }
 
                     solidity::Expression::Variable(solidity::Identifier { name, .. }) => match name.as_str() {
@@ -3792,7 +3753,7 @@ impl Project {
                 match type_name {
                     sway::TypeName::Undefined => panic!("Undefined type name"),
                     
-                    sway::TypeName::Identifier { name, generic_parameters } => match name.as_str() {
+                    sway::TypeName::Identifier { name, .. } => match name.as_str() {
                         "Identity" => match member.name.as_str() {
                             "transfer" => {
                                 // to.transfer(amount) => std::asset::transfer(to, asset_id, amount)
@@ -3870,9 +3831,9 @@ impl Project {
                         _ => todo!("translate {name} member function call: {} - {expression:#?}", sway::TabbedDisplayer(&expression))
                     }
 
-                    sway::TypeName::Array { type_name, length } => todo!("translate array member function call: {} - {expression:#?}", sway::TabbedDisplayer(&expression)),
-                    sway::TypeName::Tuple { type_names } => todo!("translate tuple member function call: {} - {expression:#?}", sway::TabbedDisplayer(&expression)),
-                    sway::TypeName::String { length } => todo!("translate string member function call: {} - {expression:#?}", sway::TabbedDisplayer(&expression)),
+                    sway::TypeName::Array { .. } => todo!("translate array member function call: {} - {expression:#?}", sway::TabbedDisplayer(&expression)),
+                    sway::TypeName::Tuple { .. } => todo!("translate tuple member function call: {} - {expression:#?}", sway::TabbedDisplayer(&expression)),
+                    sway::TypeName::String { .. } => todo!("translate string member function call: {} - {expression:#?}", sway::TabbedDisplayer(&expression)),
                 }
             }
 
@@ -3884,7 +3845,7 @@ impl Project {
                     match type_name {
                         sway::TypeName::Undefined => panic!("Undefined type name"),
                         
-                        sway::TypeName::Identifier { name, generic_parameters } => match name.as_str() {
+                        sway::TypeName::Identifier { name, .. } => match name.as_str() {
                             "Identity" => match member.name.as_str() {
                                 "call" => {
                                     // address.call{value: x}("") => std::asset::transfer(to, asset_id, amount)
@@ -3929,9 +3890,9 @@ impl Project {
                             _ => todo!("translate {name} member function call block: {} - {expression:#?}", sway::TabbedDisplayer(&expression))
                         }
 
-                        sway::TypeName::Array { type_name, length } => todo!(),
-                        sway::TypeName::Tuple { type_names } => todo!(),
-                        sway::TypeName::String { length } => todo!(),
+                        sway::TypeName::Array { .. } => todo!(),
+                        sway::TypeName::Tuple { .. } => todo!(),
+                        sway::TypeName::String { .. } => todo!(),
                     } 
                 }
 
@@ -3945,10 +3906,10 @@ impl Project {
     #[inline]
     fn translate_function_call_block_expression(
         &mut self,
-        translated_definition: &mut TranslatedDefinition,
-        scope: &mut TranslationScope,
-        function: &solidity::Expression,
-        block: &solidity::Statement,
+        _translated_definition: &mut TranslatedDefinition,
+        _scope: &mut TranslationScope,
+        _function: &solidity::Expression,
+        _block: &solidity::Statement,
     ) -> Result<sway::Expression, Error> {
         todo!("translate function call block expression")
     }
@@ -3956,10 +3917,10 @@ impl Project {
     #[inline]
     fn translate_named_function_call_expression(
         &mut self,
-        translated_definition: &mut TranslatedDefinition,
-        scope: &mut TranslationScope,
-        function: &solidity::Expression,
-        named_arguments: &[solidity::NamedArgument],
+        _translated_definition: &mut TranslatedDefinition,
+        _scope: &mut TranslationScope,
+        _function: &solidity::Expression,
+        _named_arguments: &[solidity::NamedArgument],
     ) -> Result<sway::Expression, Error> {
         todo!("translate named function call expression")
     }
@@ -4388,8 +4349,8 @@ impl Project {
     #[inline]
     fn translate_new_expression(
         &mut self,
-        translated_definition: &mut TranslatedDefinition,
-        scope: &mut TranslationScope,
+        _translated_definition: &mut TranslatedDefinition,
+        _scope: &mut TranslationScope,
         expression: &solidity::Expression,
     ) -> Result<sway::Expression, Error> {
         todo!("translate new expression: {} - {expression:#?}", expression.to_string())
@@ -4398,8 +4359,8 @@ impl Project {
     #[inline]
     fn translate_delete_expression(
         &mut self,
-        translated_definition: &mut TranslatedDefinition,
-        scope: &mut TranslationScope,
+        _translated_definition: &mut TranslatedDefinition,
+        _scope: &mut TranslationScope,
         expression: &solidity::Expression,
     ) -> Result<sway::Expression, Error> {
         todo!("translate delete expression: {} - {expression:#?}", expression.to_string())
@@ -4414,8 +4375,8 @@ impl Project {
         &mut self,
         translated_definition: &mut TranslatedDefinition,
         scope: &mut TranslationScope,
-        dialect: &Option<solidity::StringLiteral>,
-        flags: &Option<Vec<solidity::StringLiteral>>,
+        _dialect: &Option<solidity::StringLiteral>,
+        _flags: &Option<Vec<solidity::StringLiteral>>,
         yul_block: &solidity::YulBlock,
     ) -> Result<sway::Statement, Error> {
         let mut block = sway::Block::default();
@@ -4514,7 +4475,7 @@ impl Project {
                 solidity::YulStatement::Block(_) => todo!("yul block statement: {yul_statement:#?}"),
                 solidity::YulStatement::FunctionDefinition(_) => todo!("yul function definition statement: {yul_statement:#?}"),
                 
-                solidity::YulStatement::FunctionCall(yul_function_call) => {
+                solidity::YulStatement::FunctionCall(_) => {
                     block.statements.push(sway::Statement::from(sway::Expression::create_todo(Some(yul_statement.to_string()))));
                 }
 
