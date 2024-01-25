@@ -174,7 +174,12 @@ impl TranslationScope {
 
             sway::Expression::FunctionCall(function_call) => match &function_call.function {
                 sway::Expression::Identifier(name) => match name.as_str() {
-                    s if s.starts_with("Identity::") => Ok(sway::TypeName::Identifier {
+                    "todo!" => Ok(sway::TypeName::Identifier {
+                        name: "todo!".into(),
+                        generic_parameters: None,
+                    }),
+
+                    "Identity::Address" | "Identity::ContractId" | "Identity::from" => Ok(sway::TypeName::Identifier {
                         name: "Identity".into(),
                         generic_parameters: None,
                     }),
@@ -307,6 +312,7 @@ pub struct TranslatedDefinition {
     pub events_enum: Option<(sway::Enum, sway::Impl)>,
     pub errors_enum: Option<(sway::Enum, sway::Impl)>,
     pub constants: Vec<sway::Constant>,
+    pub abis: Vec<sway::Abi>,
     pub abi: Option<sway::Abi>,
     pub configurable: Option<sway::Configurable>,
     pub storage: Option<sway::Storage>,
@@ -402,6 +408,17 @@ impl Display for TranslatedDefinition {
             written += 1;
         }
         
+        for (i, x) in self.abis.iter().enumerate() {
+            if i == 0 && written > 0 {
+                writeln!(f)?;
+            } else if i > 0 {
+                writeln!(f)?;
+            }
+
+            writeln!(f, "{}", sway::TabbedDisplayer(x))?;
+            written += 1;
+        }
+        
         if let Some(x) = self.abi.as_ref() {
             if written > 0 {
                 writeln!(f)?;
@@ -461,6 +478,7 @@ impl TranslatedDefinition {
             events_enum: None,
             errors_enum: None,
             constants: vec![],
+            abis: vec![],
             abi: None,
             configurable: None,
             storage: None,

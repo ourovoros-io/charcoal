@@ -174,6 +174,7 @@ impl Project {
         translated_definition: &mut TranslatedDefinition,
         function_definition: &solidity::FunctionDefinition,
     ) -> String {
+        // Generate the function signature
         let mut signature = function_definition.name.as_ref().map(|i| i.name.clone()).unwrap_or_default();
         
         signature.push('(');
@@ -181,20 +182,29 @@ impl Project {
         for (i, (_, parameter)) in function_definition.params.iter().enumerate() {
             signature = format!(
                 "{signature}{}{}",
-                if i > 0 { ", " } else { "" },
+                if i > 0 { "," } else { "" },
                 parameter.as_ref().unwrap().ty,
             );
         }
 
         signature.push(')');
 
+        // Add the translated function name to the function names mapping if we haven't already
         if !translated_definition.function_names.contains_key(&signature) {
             let old_name = function_definition.name.as_ref().map(|i| i.name.clone()).unwrap_or_default();
             let mut new_name = self.translate_naming_convention(old_name.as_str(), Case::Snake);
 
+            // Prepend the definition name to the beginning of the function name if it is a library
+            if let solidity::ContractTy::Library(_) = &translated_definition.kind {
+                let definition_name = self.translate_naming_convention(translated_definition.name.as_str(), Case::Snake);
+                new_name = format!("{}_{}", definition_name, new_name.trim_start_matches("_"));
+            }
+
+            // Increase the function name count
             let count = translated_definition.function_name_counts.entry(new_name.clone()).or_insert(0);
             *count += 1;
 
+            // Append the function name count to the end of the function name if there is more than 1
             if *count > 1 {
                 new_name = format!("{new_name}_{}", *count);
             }
@@ -347,7 +357,20 @@ impl Project {
                     };
                 }
                 
-                todo!("type name variable expression: {type_name:#?}")
+                // Check if type is an ABI
+                if let Some(external_definition) = self.translated_definitions.iter().find(|d| d.name == *name && matches!(d.kind, solidity::ContractTy::Interface(_))) {
+                    // Ensure the ABI is added to the current definition
+                    if !translated_definition.abis.iter().any(|a| a.name == *name) {
+                        translated_definition.abis.push(external_definition.abi.as_ref().unwrap().clone());
+                    }
+
+                    return sway::TypeName::Identifier {
+                        name: external_definition.name.clone(),
+                        generic_parameters: None,
+                    };
+                }
+
+                todo!("translate variable type expression: {} - {type_name:#?}", type_name.to_string())
             }
 
             solidity::Expression::ArraySubscript(_, type_name, length) => match length.as_ref() {
@@ -559,11 +582,10 @@ impl Project {
             self.generate_enum_abi_encode_function(errors_enum, abi_encode_impl)?;
         }
 
-        // Resolve all using-for statements ahead of time for contextual reasons
+        // Resolve all using directives ahead of time for contextual reasons
         for part in solidity_definition.parts.iter() {
-            let solidity::ContractPart::Using(using) = part else { continue };
-
-            todo!("using-for statements: {} - {using:#?}", using.to_string())
+            let solidity::ContractPart::Using(using_directive) = part else { continue };
+            self.translate_using_directive(&mut translated_definition, using_directive)?;
         }
 
         // Collect each storage field ahead of time for contextual reasons
@@ -1000,6 +1022,68 @@ impl Project {
                 final_expr: None,
             }),
         }));
+
+        Ok(())
+    }
+
+    #[inline]
+    fn translate_using_directive(
+        &mut self,
+        translated_definition: &mut TranslatedDefinition,
+        using_directive: &solidity::Using,
+    ) -> Result<(), Error> {
+        let for_type = using_directive.ty.as_ref()
+            .map(|t| self.translate_type_name(translated_definition, t, false))
+            .map_or(Ok(None), |t| Ok(Some(t)))?;
+
+        match &using_directive.list {
+            solidity::UsingList::Library(using_library) => {
+                let library_name = using_library.identifiers.iter().map(|i| i.name.clone()).collect::<Vec<_>>().join(".");
+
+                // Find the translated library definition
+                let Some(library_definition) = self.translated_definitions.iter().find(|d| {
+                    d.name == library_name && matches!(d.kind, solidity::ContractTy::Library(_))
+                }) else {
+                    panic!("Failed to find translated library: \"{library_name}\"");
+                };
+
+                // Collect all functions that support the `for_type`
+                for function in library_definition.functions.iter() {
+                    // If we're using the library for a specific type, ensure the first function parameter matches that type
+                    if for_type != function.parameters.entries.first().map(|p| p.type_name.clone()).flatten() {
+                        continue;
+                    }
+
+                    // Get the scope entry for the library function
+                    let Some(scope_entry) = library_definition.toplevel_scope.find_function(|f| f.new_name == function.name) else {
+                        panic!("Failed to find function in scope: \"{}\"", function.name);
+                    };
+
+                    // Add the function to the current definition's toplevel scope
+                    translated_definition.toplevel_scope.functions.push(scope_entry.clone());
+
+                    // Add the function name to the current definition's function name list
+                    *translated_definition.function_name_counts.entry(function.name.clone()).or_insert(0) += 1;
+
+                    // Add the function definition to the current definition
+                    translated_definition.functions.push(function.clone());
+
+                    // Add the function call count from the library definition to the current definition
+                    translated_definition.function_call_counts.insert(
+                        function.name.clone(),
+                        if let Some(function_call_count) = library_definition.function_call_counts.get(&function.name) {
+                            *function_call_count
+                        } else {
+                            0
+                        }
+                    );
+                }
+            }
+
+            solidity::UsingList::Functions(x) => todo!("using directive function list: {}", using_directive.to_string()),
+
+            solidity::UsingList::Error => panic!("Failed to parse using directive"),
+        }
 
         Ok(())
     }
@@ -3316,7 +3400,19 @@ impl Project {
                             }))
                         }
 
-                        _ => todo!("translate address cast: {expression:#?}"),
+                        value => {
+                            let value = self.translate_expression(translated_definition, scope, value)?;
+                            let value_type_name = scope.get_expression_type(&value)?;
+
+                            match value_type_name {
+                                // No reason to cast if it's already an Identity
+                                sway::TypeName::Identifier { name, generic_parameters: None } if name == "Identity" => {
+                                    Ok(value)
+                                }
+                                
+                                _ => todo!("translate address cast: {expression:#?}"),
+                            }
+                        }
                     }
 
                     solidity::Type::Uint(bits) => {
@@ -3559,6 +3655,13 @@ impl Project {
 
                                 let value_type_name = scope.get_expression_type(parameter).unwrap();
 
+                                // HACK: Don't check todo! value types
+                                if let sway::TypeName::Identifier { name, generic_parameters: None } = &value_type_name {
+                                    if name == "todo!" {
+                                        continue;
+                                    }
+                                }
+
                                 if value_type_name != *parameter_type_name {
                                     return false;
                                 }
@@ -3667,6 +3770,16 @@ impl Project {
                                 //
 
                                 return Ok(sway::Expression::create_todo(Some(format!("abi.encodeWithSignature({arguments:?})"))))
+                            }
+                            
+                            "encodeCall" => {
+                                // abi.encodeCall(x) => ???
+
+                                //
+                                // TODO: how should this be handled?
+                                //
+
+                                return Ok(sway::Expression::create_todo(Some(format!("abi.encodeCall({arguments:?})"))))
                             }
                             
                             member => todo!("handle `abi.{member}` translation"),
@@ -3803,7 +3916,29 @@ impl Project {
                             member => todo!("translate Identity member function call `{member}`: {} - {expression:#?}", sway::TabbedDisplayer(&expression))
                         }
                         
-                        _ => todo!("translate {name} member function call: {} - {expression:#?}", sway::TabbedDisplayer(&expression))
+                        _ => {
+                            let external_function_new_name = self.translate_naming_convention(member.name.as_str(), Case::Snake);
+
+                            // Check to see if the type is located in an external ABI
+                            if let Some(external_definition) = self.translated_definitions.iter().find(|d| d.name == name && d.abi.is_some()) {
+                                let external_abi = external_definition.abi.as_ref().unwrap();
+
+                                if external_abi.functions.iter().any(|f| f.name == external_function_new_name) {
+                                    return Ok(sway::Expression::from(sway::FunctionCall {
+                                        function: sway::Expression::from(sway::MemberAccess {
+                                            expression,
+                                            member: external_function_new_name,
+                                        }),
+                                        generic_parameters: None,
+                                        parameters: arguments.iter()
+                                            .map(|a| self.translate_expression(translated_definition, scope, a))
+                                            .collect::<Result<Vec<_>, _>>()?,
+                                    }))
+                                }
+                            }
+
+                            todo!("translate {name} member function call: {} - {expression:#?}", sway::TabbedDisplayer(&expression))
+                        }
                     }
 
                     sway::TypeName::Array { .. } => todo!("translate array member function call: {} - {expression:#?}", sway::TabbedDisplayer(&expression)),
