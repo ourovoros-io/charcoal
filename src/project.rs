@@ -161,6 +161,14 @@ impl Project {
         Ok(())
     }
 
+    fn find_definition_with_abi(&self, name: &str) -> Option<&TranslatedDefinition> {
+        if let Some(external_definition) = self.translated_definitions.iter().find(|d| d.name == name && d.abi.is_some()) {
+            return Some(external_definition);
+        }
+
+        None
+    }
+
     #[inline]
     fn translate_naming_convention(&mut self, name: &str, case: Case) -> String {
         let prefix = name.chars().take_while(|c| *c == '_').collect::<String>();
@@ -358,7 +366,7 @@ impl Project {
                 }
                 
                 // Check if type is an ABI
-                if let Some(external_definition) = self.translated_definitions.iter().find(|d| d.name == *name && matches!(d.kind, solidity::ContractTy::Interface(_))) {
+                if let Some(external_definition) = self.find_definition_with_abi(name.as_str()) {
                     // Ensure the ABI is added to the current definition
                     if !translated_definition.abis.iter().any(|a| a.name == *name) {
                         translated_definition.abis.push(external_definition.abi.as_ref().unwrap().clone());
@@ -1040,6 +1048,9 @@ impl Project {
             solidity::UsingList::Library(using_library) => {
                 let library_name = using_library.identifiers.iter().map(|i| i.name.clone()).collect::<Vec<_>>().join(".");
 
+                // Add the using directive to the current definition
+                translated_definition.using_directives.push((library_name.clone(), for_type.clone()));
+
                 // Find the translated library definition
                 let Some(library_definition) = self.translated_definitions.iter().find(|d| {
                     d.name == library_name && matches!(d.kind, solidity::ContractTy::Library(_))
@@ -1060,13 +1071,17 @@ impl Project {
                     };
 
                     // Add the function to the current definition's toplevel scope
-                    translated_definition.toplevel_scope.functions.push(scope_entry.clone());
+                    if !translated_definition.toplevel_scope.functions.contains(scope_entry) {
+                        translated_definition.toplevel_scope.functions.push(scope_entry.clone());
+                    }
 
                     // Add the function name to the current definition's function name list
                     *translated_definition.function_name_counts.entry(function.name.clone()).or_insert(0) += 1;
 
                     // Add the function definition to the current definition
-                    translated_definition.functions.push(function.clone());
+                    if !translated_definition.functions.contains(function) {
+                        translated_definition.functions.push(function.clone());
+                    }
 
                     // Add the function call count from the library definition to the current definition
                     translated_definition.function_call_counts.insert(
@@ -1080,7 +1095,7 @@ impl Project {
                 }
             }
 
-            solidity::UsingList::Functions(x) => todo!("using directive function list: {}", using_directive.to_string()),
+            solidity::UsingList::Functions(_) => todo!("using directive function list: {}", using_directive.to_string()),
 
             solidity::UsingList::Error => panic!("Failed to parse using directive"),
         }
@@ -1299,7 +1314,7 @@ impl Project {
 
         Ok(())
     }
-
+ 
     #[inline]
     fn translate_function_declaration(
         &mut self,
@@ -1331,20 +1346,21 @@ impl Project {
         };
 
         // Add the function parameters to the scope
-        scope.variables.extend(
-            function_definition.params.iter().map(|(_, p)| {
-                let old_name = p.as_ref().unwrap().name.as_ref().unwrap().name.clone();
-                let new_name = self.translate_naming_convention(old_name.as_str(), Case::Snake);
-                let type_name = self.translate_type_name(translated_definition, &p.as_ref().unwrap().ty, false);
+        for (_, p) in function_definition.params.iter() {
+            let Some(p) = p else { continue };
+            let Some(parameter_identifier) = p.name.as_ref() else { continue };
+            
+            let old_name = parameter_identifier.name.clone();
+            let new_name = self.translate_naming_convention(old_name.as_str(), Case::Snake);
+            let type_name = self.translate_type_name(translated_definition, &p.ty, false);
 
-                TranslatedVariable {
-                    old_name,
-                    new_name,
-                    type_name,
-                    ..Default::default()
-                }
-            })
-        );
+            scope.variables.push(TranslatedVariable {
+                old_name,
+                new_name,
+                type_name,
+                ..Default::default()
+            });
+        }
 
         let mut modifiers = vec![];
         
@@ -1364,19 +1380,40 @@ impl Project {
             });
         }
 
+        // Translate the functions parameters
+        let mut parameters = sway::ParameterList::default();
+
+        for (_, parameter) in function_definition.params.iter() {
+            let Some(parameter) = parameter.as_ref() else { continue };
+            let Some(parameter_identifier) = parameter.name.as_ref() else { continue };
+
+            let old_name = parameter_identifier.name.clone();
+            let new_name = self.translate_naming_convention(old_name.as_str(), Case::Snake);
+            let mut type_name = self.translate_type_name(translated_definition, &parameter.ty, false);
+
+            // Check if the parameter's type is an ABI
+            if let sway::TypeName::Identifier { name, generic_parameters: None } = &type_name {
+                if self.find_definition_with_abi(name.as_str()).is_some() {
+                    type_name = sway::TypeName::Identifier {
+                        name: "Identity".into(),
+                        generic_parameters: None,
+                    };
+                }
+            }
+
+            parameters.entries.push(sway::Parameter {
+                is_ref: false,
+                is_mut: false,
+                name: new_name,
+                type_name: Some(type_name),
+            });
+        }
+
         // Translate the function
         let translated_function = TranslatedFunction {
             old_name,
             new_name,
-            parameters: sway::ParameterList {
-                entries: function_definition.params.iter().map(|(_, p)| {
-                    sway::Parameter {
-                        name: self.translate_naming_convention(p.as_ref().unwrap().name.as_ref().unwrap().name.as_str(), Case::Snake),
-                        type_name: Some(self.translate_type_name(translated_definition, &p.as_ref().unwrap().ty, false)),
-                        ..Default::default()
-                    }
-                }).collect(),
-            },
+            parameters,
             modifiers,
             return_type: if function_definition.returns.is_empty() {
                 None
@@ -1671,6 +1708,34 @@ impl Project {
             (old_name, new_name)
         };
 
+        // Translate the functions parameters
+        let mut parameters = sway::ParameterList::default();
+
+        for (_, parameter) in function_definition.params.iter() {
+            let parameter = parameter.as_ref().unwrap();
+
+            let old_name = parameter.name.as_ref().unwrap().name.clone();
+            let new_name = self.translate_naming_convention(old_name.as_str(), Case::Snake);
+            let mut type_name = self.translate_type_name(translated_definition, &parameter.ty, false);
+
+            // Check if the parameter's type is an ABI and make it an Identity
+            if let sway::TypeName::Identifier { name, generic_parameters: None } = &type_name {
+                if self.find_definition_with_abi(name.as_str()).is_some() {
+                    type_name = sway::TypeName::Identifier {
+                        name: "Identity".into(),
+                        generic_parameters: None,
+                    };
+                }
+            }
+
+            parameters.entries.push(sway::Parameter {
+                is_ref: false,
+                is_mut: false,
+                name: new_name,
+                type_name: Some(type_name),
+            });
+        }
+
         // Create the function declaration
         let mut sway_function = sway::Function {
             attributes: if is_constant || is_pure {
@@ -1703,25 +1768,41 @@ impl Project {
             name: new_name.clone(),
             generic_parameters: None,
 
-            parameters: sway::ParameterList {
-                entries: function_definition.params.iter().map(|(_, p)| {
-                    sway::Parameter {
-                        name: self.translate_naming_convention(p.as_ref().unwrap().name.as_ref().unwrap().name.as_str(), Case::Snake),
-                        type_name: Some(self.translate_type_name(translated_definition, &p.as_ref().unwrap().ty, false)),
-                        ..Default::default()
-                    }
-                }).collect(),
-            },
+            parameters,
 
             return_type: if function_definition.returns.is_empty() {
                 None
             } else {
                 Some(if function_definition.returns.len() == 1 {
-                    self.translate_type_name(translated_definition, &function_definition.returns[0].1.as_ref().unwrap().ty, false)
+                    let mut type_name = self.translate_type_name(translated_definition, &function_definition.returns[0].1.as_ref().unwrap().ty, false);
+                    
+                    // Check if the parameter's type is an ABI and make it an Identity
+                    if let sway::TypeName::Identifier { name, generic_parameters: None } = &type_name {
+                        if self.find_definition_with_abi(name.as_str()).is_some() {
+                            type_name = sway::TypeName::Identifier {
+                                name: "Identity".into(),
+                                generic_parameters: None,
+                            };
+                        }
+                    }
+        
+                    type_name
                 } else {
                     sway::TypeName::Tuple {
                         type_names: function_definition.returns.iter().map(|(_, p)| {
-                            self.translate_type_name(translated_definition, &p.as_ref().unwrap().ty, false)
+                            let mut type_name = self.translate_type_name(translated_definition, &p.as_ref().unwrap().ty, false);
+                            
+                            // Check if the parameter's type is an ABI and make it an Identity
+                            if let sway::TypeName::Identifier { name, generic_parameters: None } = &type_name {
+                                if self.find_definition_with_abi(name.as_str()).is_some() {
+                                    type_name = sway::TypeName::Identifier {
+                                        name: "Identity".into(),
+                                        generic_parameters: None,
+                                    };
+                                }
+                            }
+
+                            type_name
                         }).collect(),
                     }
                 })
@@ -1758,12 +1839,26 @@ impl Project {
         for (_, p) in function_definition.params.iter() {
             let old_name = p.as_ref().unwrap().name.as_ref().unwrap().name.clone();
             let new_name = self.translate_naming_convention(old_name.as_str(), Case::Snake);
-            let type_name = self.translate_type_name(translated_definition, &p.as_ref().unwrap().ty, false);
+            let mut type_name = self.translate_type_name(translated_definition, &p.as_ref().unwrap().ty, false);
+            let mut abi_type_name = None;
+
+            // Check if the parameter's type is an ABI
+            if let sway::TypeName::Identifier { name, generic_parameters: None } = &type_name {
+                if self.find_definition_with_abi(name.as_str()).is_some() {
+                    abi_type_name = Some(type_name.clone());
+
+                    type_name = sway::TypeName::Identifier {
+                        name: "Identity".into(),
+                        generic_parameters: None,
+                    };
+                }
+            }
 
             let translated_variable = TranslatedVariable {
                 old_name,
                 new_name,
                 type_name,
+                abi_type_name,
                 ..Default::default()
             };
 
@@ -1778,12 +1873,26 @@ impl Project {
             let Some(return_parameter) = return_parameter else { continue };
             let Some(old_name) = return_parameter.name.as_ref().map(|n| n.name.clone()) else { continue };
             let new_name = self.translate_naming_convention(old_name.as_str(), Case::Snake);
-            let type_name = self.translate_type_name(translated_definition, &return_parameter.ty, false);
+            let mut type_name = self.translate_type_name(translated_definition, &return_parameter.ty, false);
+            let mut abi_type_name = None;
+
+            // Check if the parameter's type is an ABI
+            if let sway::TypeName::Identifier { name, generic_parameters: None } = &type_name {
+                if self.find_definition_with_abi(name.as_str()).is_some() {
+                    abi_type_name = Some(type_name.clone());
+
+                    type_name = sway::TypeName::Identifier {
+                        name: "Identity".into(),
+                        generic_parameters: None,
+                    };
+                }
+            }
 
             let translated_variable = TranslatedVariable {
                 old_name,
                 new_name,
                 type_name,
+                abi_type_name,
                 ..Default::default()
             };
 
@@ -3070,7 +3179,7 @@ impl Project {
             self.translate_expression(translated_definition, scope, expression)?,
         ]))
     }
-
+ 
     #[inline]
     fn translate_member_access_expression(
         &mut self,
@@ -3835,10 +3944,10 @@ impl Project {
                     _ => {}
                 }
 
-                let expression = self.translate_expression(translated_definition, scope, expression)?;
+                let mut expression = self.translate_expression(translated_definition, scope, expression)?;
                 let type_name = scope.get_expression_type(&expression)?;
 
-                match type_name {
+                match &type_name {
                     sway::TypeName::Undefined => panic!("Undefined type name"),
                     
                     sway::TypeName::Identifier { name, .. } => match name.as_str() {
@@ -3897,6 +4006,14 @@ impl Project {
                                 }))
                             }
 
+                            "call" => {
+                                //
+                                // TODO: how should we handle this?
+                                //
+
+                                Ok(sway::Expression::create_todo(Some(format!("{expression:?}"))))
+                            }
+
                             "delegatecall" => {
                                 //
                                 // TODO: is delegatecall possible?
@@ -3913,30 +4030,108 @@ impl Project {
                                 Ok(sway::Expression::create_todo(Some(format!("{expression:?}"))))
                             }
 
-                            member => todo!("translate Identity member function call `{member}`: {} - {expression:#?}", sway::TabbedDisplayer(&expression))
+                            _ => {
+                                let mut name = name.clone();
+                                let external_function_new_name = self.translate_naming_convention(member.name.as_str(), Case::Snake);
+    
+                                // Check using directives for Identity-specific function
+                                for (library_name, for_type_name) in translated_definition.using_directives.iter() {
+                                    let Some(external_definition) = self.translated_definitions.iter().find(|d| d.name == *library_name && matches!(d.kind, solidity::ContractTy::Library(_))) else { continue };
+
+                                    if let Some(for_type_name) = for_type_name {
+                                        if *for_type_name != type_name {
+                                            continue;
+                                        }
+                                    }
+                                    
+                                    for f in external_definition.toplevel_scope.functions.iter() {
+                                        if f.old_name != member.name {
+                                            continue;
+                                        }
+
+                                        let Some(parameter) = f.parameters.entries.first() else { continue };
+                                        let Some(parameter_type_name) = parameter.type_name.as_ref() else { continue };
+
+                                        if *parameter_type_name == type_name {
+                                            return Ok(sway::Expression::from(sway::FunctionCall {
+                                                function: sway::Expression::from(sway::MemberAccess {
+                                                    expression,
+                                                    member: f.new_name.clone(),
+                                                }),
+                                                generic_parameters: None,
+                                                parameters: arguments.iter()
+                                                    .map(|a| self.translate_expression(translated_definition, scope, a))
+                                                    .collect::<Result<Vec<_>, _>>()?,
+                                            }));
+                                        }
+                                    }
+                                }
+    
+                                // Check if expression is a variable that had an ABI type
+                                if let sway::Expression::Identifier(id) = &expression {
+                                    if let Ok(variable) = scope.get_variable_from_new_name(id.as_str()) {
+                                        if let Some(abi_type_name) = variable.abi_type_name.as_ref() {
+                                            // Turn the expression into an ABI cast
+                                            expression = sway::Expression::from(sway::FunctionCall {
+                                                function: sway::Expression::Identifier("abi".into()),
+                                                generic_parameters: None,
+                                                parameters: vec![
+                                                    sway::Expression::Identifier(abi_type_name.to_string()),
+
+                                                    // x.as_contract_id().unwrap().into()
+                                                    sway::Expression::from(sway::FunctionCall {
+                                                        function: sway::Expression::from(sway::MemberAccess {
+                                                            expression: sway::Expression::from(sway::FunctionCall {
+                                                                function: sway::Expression::from(sway::MemberAccess {
+                                                                    expression: sway::Expression::from(sway::FunctionCall {
+                                                                        function: sway::Expression::from(sway::MemberAccess {
+                                                                            expression,
+                                                                            member: "as_contract_id".into(),
+                                                                        }),
+                                                                        generic_parameters: None,
+                                                                        parameters: vec![],
+                                                                    }),
+                                                                    member: "unwrap".into(),
+                                                                }),
+                                                                generic_parameters: None,
+                                                                parameters: vec![],
+                                                            }),
+                                                            member: "into".into(),
+                                                        }),
+                                                        generic_parameters: None,
+                                                        parameters: vec![],
+                                                    }),
+                                                ],
+                                            });
+
+                                            name = abi_type_name.to_string();
+                                        }
+                                    }
+                                }
+    
+                                // Check to see if the type is located in an external ABI
+                                if let Some(external_definition) = self.find_definition_with_abi(name.as_str()) {
+                                    let external_abi = external_definition.abi.as_ref().unwrap();
+    
+                                    if external_abi.functions.iter().any(|f| f.name == external_function_new_name) {
+                                        return Ok(sway::Expression::from(sway::FunctionCall {
+                                            function: sway::Expression::from(sway::MemberAccess {
+                                                expression,
+                                                member: external_function_new_name,
+                                            }),
+                                            generic_parameters: None,
+                                            parameters: arguments.iter()
+                                                .map(|a| self.translate_expression(translated_definition, scope, a))
+                                                .collect::<Result<Vec<_>, _>>()?,
+                                        }));
+                                    }
+                                }
+    
+                                todo!("translate Identity member function call `{member}`: {} - {expression:#?}", sway::TabbedDisplayer(&expression))
+                            }
                         }
                         
                         _ => {
-                            let external_function_new_name = self.translate_naming_convention(member.name.as_str(), Case::Snake);
-
-                            // Check to see if the type is located in an external ABI
-                            if let Some(external_definition) = self.translated_definitions.iter().find(|d| d.name == name && d.abi.is_some()) {
-                                let external_abi = external_definition.abi.as_ref().unwrap();
-
-                                if external_abi.functions.iter().any(|f| f.name == external_function_new_name) {
-                                    return Ok(sway::Expression::from(sway::FunctionCall {
-                                        function: sway::Expression::from(sway::MemberAccess {
-                                            expression,
-                                            member: external_function_new_name,
-                                        }),
-                                        generic_parameters: None,
-                                        parameters: arguments.iter()
-                                            .map(|a| self.translate_expression(translated_definition, scope, a))
-                                            .collect::<Result<Vec<_>, _>>()?,
-                                    }))
-                                }
-                            }
-
                             todo!("translate {name} member function call: {} - {expression:#?}", sway::TabbedDisplayer(&expression))
                         }
                     }
@@ -4089,33 +4284,29 @@ impl Project {
         // Hack: x.code.length == 0 => x.as_contract_id().is_none()
         if let solidity::Expression::MemberAccess(_, x, member2) = lhs {
             if let solidity::Expression::MemberAccess(_, x, member1) = x.as_ref() {
-                if let solidity::Expression::Variable(solidity::Identifier { name, .. }) = x.as_ref() {
-                    let variable = match scope.get_variable_from_old_name(name) {
-                        Ok(variable) => variable,
-                        Err(e) => panic!("{e}"),
-                    };
+                if member1.name == "code" && member2.name == "length" {
+                    let expression = self.translate_expression(translated_definition, scope, x)?;
+                    let type_name = scope.get_expression_type(&expression)?;
 
-                    match &variable.type_name {
+                    match type_name {
                         sway::TypeName::Identifier { name, generic_parameters: None } if name == "Identity" => {
-                            if member1.name == "code" && member2.name == "length" {
-                                if let solidity::Expression::NumberLiteral(_, value, _, _) = rhs {
-                                    if value == "0" {
-                                        return Ok(sway::Expression::from(sway::FunctionCall {
-                                            function: sway::Expression::from(sway::MemberAccess {
-                                                expression: sway::Expression::from(sway::FunctionCall {
-                                                    function: sway::Expression::from(sway::MemberAccess {
-                                                        expression: sway::Expression::Identifier(variable.new_name.clone()),
-                                                        member: "as_contract_id".into(),
-                                                    }),
-                                                    generic_parameters: None,
-                                                    parameters: vec![],
+                            if let solidity::Expression::NumberLiteral(_, value, _, _) = rhs {
+                                if value == "0" {
+                                    return Ok(sway::Expression::from(sway::FunctionCall {
+                                        function: sway::Expression::from(sway::MemberAccess {
+                                            expression: sway::Expression::from(sway::FunctionCall {
+                                                function: sway::Expression::from(sway::MemberAccess {
+                                                    expression,
+                                                    member: "as_contract_id".into(),
                                                 }),
-                                                member: "is_none".into(),
+                                                generic_parameters: None,
+                                                parameters: vec![],
                                             }),
-                                            generic_parameters: None,
-                                            parameters: vec![],
-                                        }));
-                                    }
+                                            member: "is_none".into(),
+                                        }),
+                                        generic_parameters: None,
+                                        parameters: vec![],
+                                    }));
                                 }
                             }
                         }
