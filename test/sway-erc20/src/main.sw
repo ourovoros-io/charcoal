@@ -1,6 +1,8 @@
 contract;
 
 use std::hash::Hash;
+use std::storage::storage_string::*;
+use std::string::*;
 use std::constants::ZERO_B256;
 
 enum ERC20Event {
@@ -121,24 +123,24 @@ abi ERC20 {
     fn transfer_from(from: Identity, to: Identity, value: u256) -> bool;
 
     #[storage(read)]
-    fn name() -> str[32];
+    fn name() -> String;
 
     #[storage(read)]
-    fn symbol() -> str[32];
+    fn symbol() -> String;
 
     #[storage(read)]
     fn decimals() -> u8;
 
     #[storage(read, write)]
-    fn constructor(name_: str[32], symbol_: str[32]);
+    fn constructor(name_: String, symbol_: String);
 }
 
 storage {
     _balances: StorageMap<Identity, u256> = StorageMap {},
     _allowances: StorageMap<Identity, StorageMap<Identity, u256>> = StorageMap {},
     _total_supply: u256 = 0,
-    _name: str[32] = __to_str_array("                                "),
-    _symbol: str[32] = __to_str_array("                                "),
+    _name: StorageString = StorageString {},
+    _symbol: StorageString = StorageString {},
     initialized: bool = false,
 }
 
@@ -248,21 +250,21 @@ fn _spend_allowance(owner: Identity, spender: Identity, value: u256) {
 
 impl ERC20 for Contract {
     #[storage(read, write)]
-    fn constructor(name_: str[32], symbol_: str[32]) {
+    fn constructor(name_: String, symbol_: String) {
         require(!storage.initialized.read(), "Contract is already initialized");
-        storage._name.write(name_);
-        storage._symbol.write(symbol_);
+        storage._name.write_slice(name_);
+        storage._symbol.write_slice(symbol_);
         storage.initialized.write(true);
     }
 
     #[storage(read)]
-    fn name() -> str[32] {
-        storage._name.read()
+    fn name() -> String {
+        storage._name.read_slice().unwrap()
     }
 
     #[storage(read)]
-    fn symbol() -> str[32] {
-        storage._symbol.read()
+    fn symbol() -> String {
+        storage._symbol.read_slice().unwrap()
     }
 
     #[storage(read)]

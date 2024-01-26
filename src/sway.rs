@@ -1267,11 +1267,31 @@ impl Expression {
                     Some(value) => panic!("Invalid StorageMap value expression: {value:#?}"),
                 }
 
-                _ => Expression::FunctionCall(Box::new(FunctionCall { // TODO: generate valid value expression
-                    function: Expression::Identifier("todo!".into()),
-                    generic_parameters: None,
-                    parameters: vec![],
-                })),
+                "StorageString" => match value {
+                    None => Expression::Constructor(Box::new(Constructor {
+                        type_name: TypeName::Identifier {
+                            name: "StorageString".into(),
+                            generic_parameters: None,
+                        },
+                        fields: vec![],
+                    })),
+
+                    Some(value) => panic!("Invalid StorageString value expression: {value:#?}"),
+                }
+
+                "StorageVec" => match value {
+                    None => Expression::Constructor(Box::new(Constructor {
+                        type_name: TypeName::Identifier {
+                            name: "StorageVec".into(),
+                            generic_parameters: None,
+                        },
+                        fields: vec![],
+                    })),
+
+                    Some(value) => panic!("Invalid StorageVec value expression: {value:#?}"),
+                }
+
+                type_name => todo!("generate {type_name} value expression"),
             },
 
             TypeName::Array { type_name, length } => match value {
