@@ -400,17 +400,6 @@ impl Display for TranslatedDefinition {
             written += 1;
         }
 
-        for (i, x) in self.configurable.iter().enumerate() {
-            if i == 0 && written > 0 {
-                writeln!(f)?;
-            } else if i > 0 {
-                writeln!(f)?;
-            }
-
-            writeln!(f, "{}", sway::TabbedDisplayer(x))?;
-            written += 1;
-        }
-
         for x in self.constants.iter() {
             writeln!(f, "{}", sway::TabbedDisplayer(x))?;
             written += 1;
@@ -500,6 +489,15 @@ impl Display for TranslatedDefinition {
             written += 1;
         }
         
+        if let Some(x) = self.configurable.as_ref() {
+            if written > 0 {
+                writeln!(f)?;
+            }
+
+            writeln!(f, "{}", sway::TabbedDisplayer(x))?;
+            written += 1;
+        }
+
         for (i, x) in self.functions.iter().enumerate() {
             if i == 0 && written > 0 {
                 writeln!(f)?;

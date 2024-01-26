@@ -803,7 +803,7 @@ impl TabbedDisplay for Configurable {
         for field in self.fields.iter() {
             "".tabbed_fmt(depth + 1, f)?;
             field.tabbed_fmt(depth + 1, f)?;
-            writeln!(f)?;
+            writeln!(f, ",")?;
         }
 
         writeln!(f, "}}")

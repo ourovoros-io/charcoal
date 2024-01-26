@@ -1399,7 +1399,7 @@ impl Project {
 
         // Translate the variable's naming convention
         let old_name = variable_definition.name.as_ref().unwrap().name.clone();
-        let new_name = if is_constant {
+        let new_name = if is_constant || is_immutable {
             self.translate_naming_convention(old_name.as_str(), Case::ScreamingSnake)
         } else {
             self.translate_storage_name(translated_definition, old_name.as_str())
