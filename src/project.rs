@@ -2,12 +2,7 @@ use crate::{
     errors::Error,
     sway,
     translate::{
-        TranslatedDefinition,
-        TranslatedEnum,
-        TranslatedFunction,
-        TranslatedModifier,
-        TranslatedVariable,
-        TranslationScope,
+        TranslatedDefinition, TranslatedEnum, TranslatedFunction, TranslatedModifier, TranslatedUsingDirective, TranslatedVariable, TranslationScope
     },
 };
 use convert_case::{Case, Casing};
@@ -245,6 +240,29 @@ impl Project {
         translated_definition.storage_fields_names.get(name).unwrap().clone()
     }
 
+    fn import_enum(
+        &mut self,
+        translated_definition: &mut TranslatedDefinition,
+        translated_enum: &TranslatedEnum,
+    ) {
+        let sway::TypeName::Identifier { name, generic_parameters: None } = &translated_enum.type_definition.name else {
+            panic!("Expected Identifier type name, found {:#?}", translated_enum.type_definition.name);
+        };
+
+        for item in translated_enum.variants_impl.items.iter() {
+            let sway::ImplItem::Constant(c) = item else { continue };
+            
+            translated_definition.toplevel_scope.variables.push(TranslatedVariable {
+                old_name: String::new(), // TODO: is this ok?
+                new_name: format!("{}::{}", name, c.name),
+                type_name: translated_enum.type_definition.name.clone(),
+                ..Default::default()
+            });
+        }
+        
+        translated_definition.enums.push(translated_enum.clone());
+    }
+
     fn translate_type_name(
         &mut self,
         translated_definition: &mut TranslatedDefinition,
@@ -398,9 +416,8 @@ impl Project {
                     length: {
                         // Create an empty scope to translate the array length expression
                         let mut scope = TranslationScope {
-                            parent: None,
-                            variables: vec![],
-                            functions: vec![],
+                            parent: Some(Box::new(translated_definition.toplevel_scope.clone())),
+                            ..Default::default()
                         };
 
                         match self.translate_expression(translated_definition, &mut scope, length.as_ref()) {
@@ -429,6 +446,44 @@ impl Project {
                         ],
                     }),
                 },
+            }
+
+            solidity::Expression::MemberAccess(_, container, member) => match container.as_ref() {
+                solidity::Expression::Variable(solidity::Identifier { name, .. }) => {
+                    let mut type_name = None;
+                    let mut translated_enum = None;
+
+                    // Check to see if container is an external definition
+                    if let Some(external_definition) = self.translated_definitions.iter().find(|d| d.name == *name) {
+                        // Check to see if member is an enum
+                        if let Some(external_enum) = external_definition.enums.iter().find(|e| {
+                            let sway::TypeName::Identifier { name, generic_parameters: None } = &e.type_definition.name else {
+                                panic!("Expected Identifier type name, found {:#?}", e.type_definition.name);
+                            };
+
+                            *name == member.name
+                        }) {
+                            // Import the enum if we haven't already
+                            if !translated_definition.enums.contains(external_enum) {
+                                translated_enum = Some(external_enum.clone());
+                            }
+
+                            type_name = Some(external_enum.type_definition.name.clone());
+                        }
+                    }
+
+                    if let Some(type_name) = type_name {
+                        if let Some(translated_enum) = translated_enum.as_ref() {
+                            self.import_enum(translated_definition, translated_enum);
+                        }
+
+                        return type_name;
+                    }
+
+                    todo!("member access type name expression: {type_name:#?}")
+                }
+
+                _ => todo!("member access type name expression: {type_name:#?}")
             }
 
             _ => unimplemented!("type name expression: {type_name:#?}"),
@@ -551,7 +606,7 @@ impl Project {
                             }).collect(),
                         }
                     };
-
+        
                     let (events_enum, _) = translated_definition.get_events_enum();
 
                     let variant = sway::EnumVariant {
@@ -1059,9 +1114,6 @@ impl Project {
             solidity::UsingList::Library(using_library) => {
                 let library_name = using_library.identifiers.iter().map(|i| i.name.clone()).collect::<Vec<_>>().join(".");
 
-                // Add the using directive to the current definition
-                translated_definition.using_directives.push((library_name.clone(), for_type.clone()));
-
                 // Find the translated library definition
                 let Some(library_definition) = self.translated_definitions.iter().find(|d| {
                     d.name == library_name && matches!(d.kind, solidity::ContractTy::Library(_))
@@ -1069,10 +1121,16 @@ impl Project {
                     panic!("Failed to find translated library: \"{library_name}\"");
                 };
 
+                let mut translated_using_directive = TranslatedUsingDirective {
+                    library_name,
+                    for_type,
+                    functions: vec![],
+                };
+
                 // Collect all functions that support the `for_type`
                 for function in library_definition.functions.iter() {
                     // If we're using the library for a specific type, ensure the first function parameter matches that type
-                    if for_type != function.parameters.entries.first().map(|p| p.type_name.clone()).flatten() {
+                    if translated_using_directive.for_type != function.parameters.entries.first().map(|p| p.type_name.clone()).flatten() {
                         continue;
                     }
 
@@ -1085,6 +1143,9 @@ impl Project {
                     if !translated_definition.toplevel_scope.functions.contains(scope_entry) {
                         translated_definition.toplevel_scope.functions.push(scope_entry.clone());
                     }
+
+                    // Add the function to the translated using directive so we know where it came from
+                    translated_using_directive.functions.push(scope_entry.clone());
 
                     // Add the function name to the current definition's function name list
                     *translated_definition.function_name_counts.entry(function.name.clone()).or_insert(0) += 1;
@@ -1104,6 +1165,9 @@ impl Project {
                         }
                     );
                 }
+
+                // Add the using directive to the current definition
+                translated_definition.using_directives.push(translated_using_directive);
             }
 
             solidity::UsingList::Functions(_) => todo!("using directive function list: {}", using_directive.to_string()),
@@ -1131,7 +1195,13 @@ impl Project {
                 }
 
                 "b256" => match value {
-                    None => sway::Expression::Identifier("std::constants::ZERO_B256".into()),
+                    None => {
+                        // Ensure `std::constants::ZERO_B256` is imported
+                        translated_definition.ensure_use_declared("std::constants::ZERO_B256");
+
+                        sway::Expression::Identifier("ZERO_B256".into())
+                    }
+
                     Some(value) if matches!(value, sway::Expression::Literal(sway::Literal::DecInt(_) | sway::Literal::HexInt(_))) => value.clone(),
                     Some(value) => panic!("Invalid {name} value expression: {value:#?}"),
                 }
@@ -1151,7 +1221,12 @@ impl Project {
                                 function: sway::Expression::Identifier("Address::from".into()),
                                 generic_parameters: None,
                                 parameters: vec![
-                                    sway::Expression::Identifier("ZERO_B256".into()),
+                                    {
+                                        // Ensure `std::constants::ZERO_B256` is imported
+                                        translated_definition.ensure_use_declared("std::constants::ZERO_B256");
+                
+                                        sway::Expression::Identifier("ZERO_B256".into())
+                                    },
                                 ],
                             })
                         ],
@@ -1563,8 +1638,7 @@ impl Project {
         // Create a scope for modifier invocation translations
         let mut scope = TranslationScope {
             parent: Some(Box::new(translated_definition.toplevel_scope.clone())),
-            variables: vec![],
-            functions: vec![],
+            ..Default::default()
         };
 
         // Add the function parameters to the scope
@@ -1606,12 +1680,9 @@ impl Project {
         let mut parameters = sway::ParameterList::default();
 
         for (_, parameter) in function_definition.params.iter() {
-            let Some(parameter) = parameter.as_ref() else { continue };
-            let Some(parameter_identifier) = parameter.name.as_ref() else { continue };
-
-            let old_name = parameter_identifier.name.clone();
+            let old_name = parameter.as_ref().unwrap().name.as_ref().map(|n| n.name.clone()).unwrap_or("_".into());
             let new_name = self.translate_naming_convention(old_name.as_str(), Case::Snake);
-            let mut type_name = self.translate_type_name(translated_definition, &parameter.ty, false);
+            let mut type_name = self.translate_type_name(translated_definition, &parameter.as_ref().unwrap().ty, false);
 
             // Check if the parameter's type is an ABI
             if let sway::TypeName::Identifier { name, generic_parameters: None } = &type_name {
@@ -1652,9 +1723,6 @@ impl Project {
             },
         };
 
-        // Unbox the inner scope
-        translated_definition.toplevel_scope = *scope.parent.as_ref().unwrap().clone();
-
         Ok(translated_function)
     }
 
@@ -1678,8 +1746,7 @@ impl Project {
 
         let mut scope = TranslationScope {
             parent: Some(Box::new(translated_definition.toplevel_scope.clone())),
-            variables: vec![],
-            functions: vec![],
+            ..Default::default()
         };
 
         for (_, p) in function_definition.params.iter() {
@@ -1881,9 +1948,6 @@ impl Project {
         // Add the translated modifier to the translated definition
         translated_definition.modifiers.push(modifier);
 
-        // Unbox the inner scope
-        translated_definition.toplevel_scope = *scope.parent.as_ref().unwrap().clone();
-
         Ok(())
     }
 
@@ -1934,11 +1998,9 @@ impl Project {
         let mut parameters = sway::ParameterList::default();
 
         for (_, parameter) in function_definition.params.iter() {
-            let parameter = parameter.as_ref().unwrap();
-
-            let old_name = parameter.name.as_ref().unwrap().name.clone();
+            let old_name = parameter.as_ref().unwrap().name.as_ref().map(|n| n.name.clone()).unwrap_or("_".into());
             let new_name = self.translate_naming_convention(old_name.as_str(), Case::Snake);
-            let mut type_name = self.translate_type_name(translated_definition, &parameter.ty, false);
+            let mut type_name = self.translate_type_name(translated_definition, &parameter.as_ref().unwrap().ty, false);
 
             // Check if the parameter's type is an ABI and make it an Identity
             if let sway::TypeName::Identifier { name, generic_parameters: None } = &type_name {
@@ -2051,15 +2113,14 @@ impl Project {
         // Create the scope for the body of the toplevel function
         let mut scope = TranslationScope {
             parent: Some(Box::new(translated_definition.toplevel_scope.clone())),
-            variables: vec![],
-            functions: vec![],
+            ..Default::default()
         };
 
         // Add the function parameters to the scope
         let mut parameters = vec![];
 
         for (_, p) in function_definition.params.iter() {
-            let old_name = p.as_ref().unwrap().name.as_ref().unwrap().name.clone();
+            let old_name = p.as_ref().unwrap().name.as_ref().map(|n| n.name.clone()).unwrap_or("_".into());
             let new_name = self.translate_naming_convention(old_name.as_str(), Case::Snake);
             let mut type_name = self.translate_type_name(translated_definition, &p.as_ref().unwrap().ty, false);
             let mut abi_type_name = None;
@@ -2323,9 +2384,6 @@ impl Project {
             }
         }
 
-        // Unbox the inner scope
-        translated_definition.toplevel_scope = *scope.parent.as_ref().unwrap().clone();
-
         Ok(())
     }
 
@@ -2496,8 +2554,7 @@ impl Project {
     ) -> Result<sway::Statement, Error> {
         let mut inner_scope = TranslationScope {
             parent: Some(Box::new(scope.clone())),
-            variables: vec![],
-            functions: vec![],
+            ..Default::default()
         };
 
         // Translate the block
@@ -2505,8 +2562,7 @@ impl Project {
             self.translate_block(translated_definition, &mut inner_scope, statements)?
         ));
 
-        // Unbox the inner scope
-        *scope = *inner_scope.parent.as_ref().unwrap().clone();
+        *scope = *inner_scope.parent.unwrap();
 
         Ok(translated_block)
     }
@@ -2940,8 +2996,7 @@ impl Project {
 
         self.finalize_block_translation(&inner_scope, &mut block)?;
 
-        // Unbox the inner scope
-        *scope = *inner_scope.parent.as_ref().unwrap().clone();
+        *scope = *inner_scope.parent.unwrap();
 
         Ok(sway::Statement::from(sway::Expression::from(block)))
     }
@@ -3693,6 +3748,56 @@ impl Project {
                 }
             }
 
+            solidity::Expression::MemberAccess(_, container, member1) => match container.as_ref() {
+                solidity::Expression::Variable(solidity::Identifier { name, .. }) => {
+                    let variant_name = self.translate_naming_convention(member.name.as_str(), Case::ScreamingSnake);
+
+                    let mut result = None;
+                    let mut translated_enum = None;
+
+                    // Check to see if container is an external definition
+                    if let Some(external_definition) = self.translated_definitions.iter().find(|d| d.name == *name) {
+                        // Check to see if member is an enum
+                        if let Some(external_enum) = external_definition.enums.iter().find(|e| {
+                            let sway::TypeName::Identifier { name, generic_parameters: None } = &e.type_definition.name else {
+                                panic!("Expected Identifier type name, found {:#?}", e.type_definition.name);
+                            };
+
+                            *name == member1.name
+                        }) {
+                            let sway::TypeName::Identifier { name: enum_name, generic_parameters: None } = &external_enum.type_definition.name else {
+                                panic!("Expected Identifier type name, found {:#?}", external_enum.type_definition.name);
+                            };
+
+                            // Import the enum if we haven't already
+                            if !translated_definition.enums.contains(external_enum) {
+                                translated_enum = Some(external_enum.clone());
+                            }
+
+                            // Ensure the variant exists
+                            if external_enum.variants_impl.items.iter().any(|i| {
+                                let sway::ImplItem::Constant(c) = i else { return false };
+                                c.name == variant_name
+                            }) {
+                                result = Some(sway::Expression::Identifier(format!("{enum_name}::{variant_name}")));
+                            }
+                        }
+                    }
+
+                    if let Some(result) = result {
+                        if let Some(translated_enum) = translated_enum.as_ref() {
+                            self.import_enum(translated_definition, translated_enum);
+                        }
+
+                        return Ok(result);
+                    }
+
+                    todo!("member access type name expression: {} - {expression:#?}", expression.to_string())
+                }
+
+                _ => {}
+            }
+
             _ => {}
         }
 
@@ -3732,7 +3837,7 @@ impl Project {
                                         function: sway::Expression::Identifier("Address::from".into()),
                                         generic_parameters: None,
                                         parameters: vec![
-                                            sway::Expression::Identifier("ZERO_B256".into()), // TODO: ensure `ZERO_B256` is imported
+                                            sway::Expression::Identifier("ZERO_B256".into()),
                                         ],
                                     }),
                                 ],
@@ -4275,10 +4380,12 @@ impl Project {
                                 let external_function_new_name = self.translate_naming_convention(member.name.as_str(), Case::Snake);
     
                                 // Check using directives for Identity-specific function
-                                for (library_name, for_type_name) in translated_definition.using_directives.iter() {
-                                    let Some(external_definition) = self.translated_definitions.iter().find(|d| d.name == *library_name && matches!(d.kind, solidity::ContractTy::Library(_))) else { continue };
+                                for using_directive in translated_definition.using_directives.iter() {
+                                    let Some(external_definition) = self.translated_definitions.iter().find(|d| {
+                                        d.name == using_directive.library_name && matches!(d.kind, solidity::ContractTy::Library(_))
+                                    }) else { continue };
 
-                                    if let Some(for_type_name) = for_type_name {
+                                    if let Some(for_type_name) = &using_directive.for_type {
                                         if *for_type_name != type_name {
                                             continue;
                                         }
@@ -4372,6 +4479,68 @@ impl Project {
                         }
                         
                         _ => {
+                            let mut parameters = arguments.iter()
+                                .map(|a| self.translate_expression(translated_definition, scope, a))
+                                .collect::<Result<Vec<_>, _>>()?;
+
+                            parameters.insert(0, container.clone());
+
+                            // Check if this is a function from a using directive
+                            for using_directive in translated_definition.using_directives.iter() {
+                                // Make sure the type names match
+                                if let Some(for_type) = using_directive.for_type.as_ref() {
+                                    if *for_type != type_name {
+                                        continue;
+                                    }
+                                }
+
+                                if let Some(function) = using_directive.functions.iter().find(|f| {
+                                    // Ensure the function's old name matches the function call we're translating
+                                    if f.old_name != member.name {
+                                        return false;
+                                    }
+                                    
+                                    // Ensure the supplied function call args match the function's parameters
+                                    if parameters.len() != f.parameters.entries.len() {
+                                        return false;
+                                    }
+        
+                                    for (i, parameter) in parameters.iter().enumerate() {
+                                        let Some(parameter_type_name) = f.parameters.entries[i].type_name.as_ref() else { continue };
+        
+                                        // Don't check literal integer value types
+                                        if let sway::Expression::Literal(sway::Literal::DecInt(_) | sway::Literal::HexInt(_)) = parameter {
+                                            if let sway::TypeName::Identifier { name, generic_parameters: None } = parameter_type_name {
+                                                if let "u8" | "u16" | "u32" | "u64" | "u256" = name.as_str() {
+                                                    continue;
+                                                }
+                                            }
+                                        }
+        
+                                        let value_type_name = scope.get_expression_type(parameter).unwrap();
+        
+                                        // HACK: Don't check todo! value types
+                                        if let sway::TypeName::Identifier { name, generic_parameters: None } = &value_type_name {
+                                            if name == "todo!" {
+                                                continue;
+                                            }
+                                        }
+        
+                                        if value_type_name != *parameter_type_name {
+                                            return false;
+                                        }
+                                    }
+
+                                    true
+                                }) {
+                                    return Ok(sway::Expression::from(sway::FunctionCall {
+                                        function: sway::Expression::Identifier(function.new_name.clone()),
+                                        generic_parameters: None,
+                                        parameters,
+                                    }));
+                                }
+                            }
+
                             todo!("translate {name} member function call: {} - {container:#?}", sway::TabbedDisplayer(&container))
                         }
                     }

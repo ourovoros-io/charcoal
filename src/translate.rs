@@ -38,17 +38,17 @@ pub struct TranslatedModifier {
     pub post_body: Option<sway::Block>,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct TranslatedEnum {
+    pub type_definition: sway::TypeDefinition,
+    pub variants_impl: sway::Impl,
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct TranslationScope {
     pub parent: Option<Box<TranslationScope>>,
     pub variables: Vec<TranslatedVariable>,
     pub functions: Vec<TranslatedFunction>,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct TranslatedEnum {
-    pub type_definition: sway::TypeDefinition,
-    pub variants_impl: sway::Impl,
 }
 
 impl TranslationScope {
@@ -185,7 +185,56 @@ impl TranslationScope {
                         generic_parameters: None,
                     }),
 
-                    _ => todo!("get type of function call expression: {expression:#?}"),
+                    new_name => {
+                        // Ensure the function exists in scope
+                        let Some(function) = self.find_function(|f| {
+                            // Ensure the function's new name matches the function call we're translating
+                            if f.new_name != new_name {
+                                return false;
+                            }
+                            
+                            // Ensure the supplied function call args match the function's parameters
+                            if function_call.parameters.len() != f.parameters.entries.len() {
+                                return false;
+                            }
+
+                            for (i, parameter) in function_call.parameters.iter().enumerate() {
+                                let Some(parameter_type_name) = f.parameters.entries[i].type_name.as_ref() else { continue };
+
+                                // Don't check literal integer value types
+                                if let sway::Expression::Literal(sway::Literal::DecInt(_) | sway::Literal::HexInt(_)) = parameter {
+                                    if let sway::TypeName::Identifier { name, generic_parameters: None } = parameter_type_name {
+                                        if let "u8" | "u16" | "u32" | "u64" | "u256" = name.as_str() {
+                                            continue;
+                                        }
+                                    }
+                                }
+
+                                let value_type_name = self.get_expression_type(parameter).unwrap();
+
+                                // HACK: Don't check todo! value types
+                                if let sway::TypeName::Identifier { name, generic_parameters: None } = &value_type_name {
+                                    if name == "todo!" {
+                                        continue;
+                                    }
+                                }
+
+                                if value_type_name != *parameter_type_name {
+                                    return false;
+                                }
+                            }
+
+                            true
+                        }) else {
+                            panic!("Failed to find function `{new_name}` in scope");
+                        };
+
+                        if let Some(return_type) = function.return_type.as_ref() {
+                            Ok(return_type.clone())
+                        } else {
+                            Ok(sway::TypeName::Tuple { type_names: vec![] })
+                        }
+                    }
                 }
 
                 sway::Expression::MemberAccess(member_access) => match member_access.member.as_str() {
@@ -305,6 +354,13 @@ impl TranslationScope {
     }
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct TranslatedUsingDirective {
+    pub library_name: String,
+    pub for_type: Option<sway::TypeName>,
+    pub functions: Vec<TranslatedFunction>,
+}
+
 pub struct TranslatedDefinition {
     pub path: PathBuf,
     pub toplevel_scope: TranslationScope,
@@ -312,7 +368,7 @@ pub struct TranslatedDefinition {
     pub uses: Vec<sway::Use>,
     pub name: String,
     pub inherits: Vec<String>,
-    pub using_directives: Vec<(String, Option<sway::TypeName>)>,
+    pub using_directives: Vec<TranslatedUsingDirective>,
     pub type_definitions: Vec<sway::TypeDefinition>,
     pub structs: Vec<sway::Struct>,
     pub enums: Vec<TranslatedEnum>,
