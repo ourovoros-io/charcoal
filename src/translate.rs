@@ -216,6 +216,11 @@ impl TranslationScope {
                         _ => todo!("get type of function call expression: {expression:#?}"),
                     }
 
+                    "pow" => match self.get_expression_type(&member_access.expression)? {
+                        t if t.is_uint() => Ok(t),
+                        _ => todo!("get type of `pow` function call expression: {expression:#?}"),
+                    }
+
                     _ => todo!("get type of function call expression: {expression:#?}"),
                 }
 

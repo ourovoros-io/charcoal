@@ -456,6 +456,16 @@ impl TypeName {
             _ => None,
         }
     }
+
+    pub fn is_uint(&self) -> bool {
+        match self {
+            TypeName::Identifier { name, generic_parameters: None } => match name.as_str() {
+                "u8" | "u16" | "u32" | "u64" | "u256" => true,
+                _ => false,
+            }
+            _ => false,
+        }
+    }
 }
 
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -1230,174 +1240,6 @@ impl Expression {
                 vec![]
             },
         }))
-    }
-
-    pub fn create_value_expression(type_name: &TypeName, value: Option<&Expression>) -> Expression {
-        match type_name {
-            TypeName::Undefined => panic!("Undefined type name"),
-            
-            TypeName::Identifier { name, .. } => match name.as_str() {
-                "bool" => match value {
-                    None => Expression::Literal(Literal::Bool(false)),
-                    Some(Expression::Literal(Literal::Bool(value))) => Expression::Literal(Literal::Bool(*value)),
-                    Some(value) => panic!("Invalid bool value expression: {value:#?}"),
-                }
-
-                "b256" => match value {
-                    None => Expression::Identifier("std::constants::ZERO_B256".into()),
-                    Some(value) if matches!(value, Expression::Literal(Literal::DecInt(_) | Literal::HexInt(_))) => value.clone(),
-                    Some(value) => panic!("Invalid {name} value expression: {value:#?}"),
-                }
-
-                "u8" | "u16" | "u32" | "u64" | "u256" => match value {
-                    None => Expression::Literal(Literal::DecInt(0)),
-                    Some(value) if matches!(value, Expression::Literal(Literal::DecInt(_) | Literal::HexInt(_))) => value.clone(),
-                    Some(value) => panic!("Invalid {name} value expression: {value:#?}"),
-                }
-
-                "StorageMap" => match value {
-                    None => Expression::Constructor(Box::new(Constructor {
-                        type_name: TypeName::Identifier {
-                            name: "StorageMap".into(),
-                            generic_parameters: None,
-                        },
-                        fields: vec![],
-                    })),
-
-                    Some(value) => panic!("Invalid StorageMap value expression: {value:#?}"),
-                }
-
-                "StorageString" => match value {
-                    None => Expression::Constructor(Box::new(Constructor {
-                        type_name: TypeName::Identifier {
-                            name: "StorageString".into(),
-                            generic_parameters: None,
-                        },
-                        fields: vec![],
-                    })),
-
-                    Some(value) => panic!("Invalid StorageString value expression: {value:#?}"),
-                }
-
-                "StorageVec" => match value {
-                    None => Expression::Constructor(Box::new(Constructor {
-                        type_name: TypeName::Identifier {
-                            name: "StorageVec".into(),
-                            generic_parameters: None,
-                        },
-                        fields: vec![],
-                    })),
-
-                    Some(value) => panic!("Invalid StorageVec value expression: {value:#?}"),
-                }
-
-                type_name => todo!("generate {type_name} value expression"),
-            },
-
-            TypeName::Array { type_name, length } => match value {
-                None => Expression::Array(Array {
-                    elements: (0..*length).map(|_| Self::create_value_expression(type_name, None)).collect(),
-                }),
-
-                Some(Expression::Array(value)) => {
-                    if value.elements.len() != *length {
-                        panic!("Invalid array value expression, expected {} elements, found {}: {value:#?}", *length, value.elements.len());
-                    }
-
-                    Expression::Array(value.clone())
-                }
-
-                Some(Expression::Literal(Literal::String(s))) => {
-                    if s.len() != *length {
-                        panic!("Invalid array value string, expected {} characters, found {}: \"{s}\"", *length, s.len());
-                    }
-
-                    Expression::Array(Array {
-                        elements: s.chars().map(|c| Expression::Literal(Literal::HexInt((c as u8) as u64))).collect(),
-                    })
-                }
-
-                Some(value) => panic!("Invalid {type_name} array value expression: {value:#?}"),
-            }
-
-            TypeName::Tuple { type_names } => match value {
-                None => Expression::Tuple(
-                    type_names.iter().map(|type_name| Self::create_value_expression(type_name, None)).collect()
-                ),
-
-                Some(Expression::Tuple(value)) if value.len() == type_names.len() => Expression::Tuple(value.clone()),
-
-                Some(value) => panic!("Invalid tuple value expression: {value:#?}"),
-            }
-
-            TypeName::String { length } => match value {
-                None => Expression::FunctionCall(Box::new(FunctionCall {
-                    function: Expression::Identifier("__to_str_array".into()),
-                    generic_parameters: None,
-                    parameters: vec![
-                        Expression::Literal(Literal::String((0..*length).map(|_| " ").collect())),
-                    ],
-                })),
-
-                Some(Expression::Literal(Literal::String(value))) => {
-                    if value.len() > *length {
-                        panic!("Invalid string value expression, string is {} characters long, expected {}: {value}", value.len(), *length);
-                    }
-
-                    let mut value = value.clone();
-
-                    while value.len() < *length {
-                        value.push(' ');
-                    }
-
-                    Expression::FunctionCall(Box::new(FunctionCall {
-                        function: Expression::Identifier("__to_str_array".into()),
-                        generic_parameters: None,
-                        parameters: vec![
-                            Expression::Literal(Literal::String(value)),
-                        ],
-                    }))
-                }
-
-                Some(Expression::FunctionCall(f)) => {
-                    let Expression::Identifier(id) = &f.function else {
-                        panic!("Invalid string value expression, expected `__to_str_array` function call, found: {value:#?}");
-                    };
-
-                    if id != "__to_str_array" {
-                        panic!("Invalid string value expression, expected `__to_str_array` function call, found: {value:#?}");
-                    }
-
-                    if f.parameters.len() != 1 {
-                        panic!("Invalid string value expression, invalid parameters supplied to `__to_str_array` function call, found: {value:#?}");
-                    }
-
-                    let Expression::Literal(Literal::String(value)) = &f.parameters[0] else {
-                        panic!("Invalid string value expression, expected string literal to be supplied to `__to_str_array` function call, found: {value:#?}");
-                    };
-
-                    if value.len() > *length {
-                        panic!("Invalid string value expression, string is {} characters long, expected {}: {value}", value.len(), *length);
-                    }
-
-                    let mut value = value.clone();
-
-                    while value.len() < *length {
-                        value.push(' ');
-                    }
-
-                    Expression::FunctionCall(Box::new(FunctionCall {
-                        function: Expression::Identifier("__to_str_array".into()),
-                        generic_parameters: None,
-                        parameters: vec![
-                            Expression::Literal(Literal::String(value)),
-                        ],
-                    }))
-                }
-
-                Some(value) => panic!("Invalid string value expression: {value:#?}"),
-            }
-        }
     }
 }
 

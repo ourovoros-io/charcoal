@@ -1114,6 +1114,197 @@ impl Project {
         Ok(())
     }
 
+    pub fn create_value_expression(
+        &mut self,
+        translated_definition: &mut TranslatedDefinition,
+        type_name: &sway::TypeName,
+        value: Option<&sway::Expression>,
+    ) -> sway::Expression {
+        match type_name {
+            sway::TypeName::Undefined => panic!("Undefined type name"),
+            
+            sway::TypeName::Identifier { name, .. } => match name.as_str() {
+                "bool" => match value {
+                    None => sway::Expression::Literal(sway::Literal::Bool(false)),
+                    Some(sway::Expression::Literal(sway::Literal::Bool(value))) => sway::Expression::Literal(sway::Literal::Bool(*value)),
+                    Some(value) => panic!("Invalid bool value expression: {value:#?}"),
+                }
+
+                "b256" => match value {
+                    None => sway::Expression::Identifier("std::constants::ZERO_B256".into()),
+                    Some(value) if matches!(value, sway::Expression::Literal(sway::Literal::DecInt(_) | sway::Literal::HexInt(_))) => value.clone(),
+                    Some(value) => panic!("Invalid {name} value expression: {value:#?}"),
+                }
+
+                "u8" | "u16" | "u32" | "u64" | "u256" => match value {
+                    None => sway::Expression::Literal(sway::Literal::DecInt(0)),
+                    Some(value) if matches!(value, sway::Expression::Literal(sway::Literal::DecInt(_) | sway::Literal::HexInt(_))) => value.clone(),
+                    Some(value) => panic!("Invalid {name} value expression: {value:#?}"),
+                }
+
+                "Identity" => match value {
+                    None => sway::Expression::from(sway::FunctionCall {
+                        function: sway::Expression::Identifier("Identity::from".into()),
+                        generic_parameters: None,
+                        parameters: vec![
+                            sway::Expression::from(sway::FunctionCall {
+                                function: sway::Expression::Identifier("Address::from".into()),
+                                generic_parameters: None,
+                                parameters: vec![
+                                    sway::Expression::Identifier("ZERO_B256".into()),
+                                ],
+                            })
+                        ],
+                    }),
+
+                    Some(value) => value.clone(),
+                }
+
+                "StorageMap" => match value {
+                    None => sway::Expression::from(sway::Constructor {
+                        type_name: sway::TypeName::Identifier {
+                            name: "StorageMap".into(),
+                            generic_parameters: None,
+                        },
+                        fields: vec![],
+                    }),
+
+                    Some(value) => panic!("Invalid StorageMap value expression: {value:#?}"),
+                }
+
+                "StorageString" => match value {
+                    None => sway::Expression::from(sway::Constructor {
+                        type_name: sway::TypeName::Identifier {
+                            name: "StorageString".into(),
+                            generic_parameters: None,
+                        },
+                        fields: vec![],
+                    }),
+
+                    Some(value) => panic!("Invalid StorageString value expression: {value:#?}"),
+                }
+
+                "StorageVec" => match value {
+                    None => sway::Expression::from(sway::Constructor {
+                        type_name: sway::TypeName::Identifier {
+                            name: "StorageVec".into(),
+                            generic_parameters: None,
+                        },
+                        fields: vec![],
+                    }),
+
+                    Some(value) => panic!("Invalid StorageVec value expression: {value:#?}"),
+                }
+
+                type_name => todo!("generate {type_name} value expression"),
+            },
+
+            sway::TypeName::Array { type_name, length } => match value {
+                None => sway::Expression::Array(sway::Array {
+                    elements: (0..*length).map(|_| self.create_value_expression(translated_definition, type_name, None)).collect(),
+                }),
+
+                Some(sway::Expression::Array(value)) => {
+                    if value.elements.len() != *length {
+                        panic!("Invalid array value expression, expected {} elements, found {}: {value:#?}", *length, value.elements.len());
+                    }
+
+                    sway::Expression::Array(value.clone())
+                }
+
+                Some(sway::Expression::Literal(sway::Literal::String(s))) => {
+                    if s.len() != *length {
+                        panic!("Invalid array value string, expected {} characters, found {}: \"{s}\"", *length, s.len());
+                    }
+
+                    sway::Expression::Array(sway::Array {
+                        elements: s.chars().map(|c| sway::Expression::Literal(sway::Literal::HexInt((c as u8) as u64))).collect(),
+                    })
+                }
+
+                Some(value) => panic!("Invalid {type_name} array value expression: {value:#?}"),
+            }
+
+            sway::TypeName::Tuple { type_names } => match value {
+                None => sway::Expression::Tuple(
+                    type_names.iter().map(|type_name| self.create_value_expression(translated_definition, type_name, None)).collect()
+                ),
+
+                Some(sway::Expression::Tuple(value)) if value.len() == type_names.len() => sway::Expression::Tuple(value.clone()),
+
+                Some(value) => panic!("Invalid tuple value expression: {value:#?}"),
+            }
+
+            sway::TypeName::String { length } => match value {
+                None => sway::Expression::FunctionCall(Box::new(sway::FunctionCall {
+                    function: sway::Expression::Identifier("__to_str_array".into()),
+                    generic_parameters: None,
+                    parameters: vec![
+                        sway::Expression::Literal(sway::Literal::String((0..*length).map(|_| " ").collect())),
+                    ],
+                })),
+
+                Some(sway::Expression::Literal(sway::Literal::String(value))) => {
+                    if value.len() > *length {
+                        panic!("Invalid string value expression, string is {} characters long, expected {}: {value}", value.len(), *length);
+                    }
+
+                    let mut value = value.clone();
+
+                    while value.len() < *length {
+                        value.push(' ');
+                    }
+
+                    sway::Expression::FunctionCall(Box::new(sway::FunctionCall {
+                        function: sway::Expression::Identifier("__to_str_array".into()),
+                        generic_parameters: None,
+                        parameters: vec![
+                            sway::Expression::Literal(sway::Literal::String(value)),
+                        ],
+                    }))
+                }
+
+                Some(sway::Expression::FunctionCall(f)) => {
+                    let sway::Expression::Identifier(id) = &f.function else {
+                        panic!("Invalid string value expression, expected `__to_str_array` function call, found: {value:#?}");
+                    };
+
+                    if id != "__to_str_array" {
+                        panic!("Invalid string value expression, expected `__to_str_array` function call, found: {value:#?}");
+                    }
+
+                    if f.parameters.len() != 1 {
+                        panic!("Invalid string value expression, invalid parameters supplied to `__to_str_array` function call, found: {value:#?}");
+                    }
+
+                    let sway::Expression::Literal(sway::Literal::String(value)) = &f.parameters[0] else {
+                        panic!("Invalid string value expression, expected string literal to be supplied to `__to_str_array` function call, found: {value:#?}");
+                    };
+
+                    if value.len() > *length {
+                        panic!("Invalid string value expression, string is {} characters long, expected {}: {value}", value.len(), *length);
+                    }
+
+                    let mut value = value.clone();
+
+                    while value.len() < *length {
+                        value.push(' ');
+                    }
+
+                    sway::Expression::FunctionCall(Box::new(sway::FunctionCall {
+                        function: sway::Expression::Identifier("__to_str_array".into()),
+                        generic_parameters: None,
+                        parameters: vec![
+                            sway::Expression::Literal(sway::Literal::String(value)),
+                        ],
+                    }))
+                }
+
+                Some(value) => panic!("Invalid string value expression: {value:#?}"),
+            }
+        }
+    }
+
     #[inline]
     fn translate_state_variable(
         &mut self,
@@ -1140,23 +1331,38 @@ impl Project {
         };
 
         // Translate the variable's type name
-        let variable_type_name = self.translate_type_name(translated_definition, &variable_definition.ty, is_storage);
+        let mut variable_type_name = self.translate_type_name(translated_definition, &variable_definition.ty, is_storage);
+        let mut abi_type_name = None;
+
+        // Check if the variable's type is an ABI
+        if let sway::TypeName::Identifier { name, generic_parameters: None } = &variable_type_name {
+            if self.find_definition_with_abi(name.as_str()).is_some() {
+                abi_type_name = Some(variable_type_name.clone());
+
+                variable_type_name = sway::TypeName::Identifier {
+                    name: "Identity".into(),
+                    generic_parameters: None,
+                };
+            }
+        }
 
         // Ensure std::hash::Hash is imported for StorageMap storage fields
         translated_definition.ensure_use_declared("std::hash::Hash");
 
         // Handle constant variable definitions
         if is_constant {
+            let value = if let Some(x) = variable_definition.initializer.as_ref() {
+                let x = self.translate_literal_expression(x)?;
+                Some(self.create_value_expression(translated_definition, &variable_type_name, Some(&x)))
+            } else {
+                None
+            };
+
             translated_definition.constants.push(sway::Constant {
                 is_public,
                 name: new_name.clone(),
                 type_name: variable_type_name.clone(),
-                value: if let Some(x) = variable_definition.initializer.as_ref() {
-                    let x = self.translate_literal_expression(x)?;
-                    Some(sway::Expression::create_value_expression(&variable_type_name, Some(&x)))
-                } else {
-                    None
-                },
+                value,
             });
         }
         // Handle immutable variable definitions
@@ -1165,28 +1371,32 @@ impl Project {
             // TODO: we need to check if the value is supplied to the constructor and remove it from there
             //
 
+            let value = if let Some(x) = variable_definition.initializer.as_ref() {
+                let x = self.translate_literal_expression(x)?;
+                self.create_value_expression(translated_definition, &variable_type_name, Some(&x))
+            } else {
+                self.create_value_expression(translated_definition, &variable_type_name, None)
+            };
+
             translated_definition.get_configurable().fields.push(sway::ConfigurableField {
                 name: new_name.clone(), 
                 type_name: variable_type_name.clone(),
-                value: if let Some(x) = variable_definition.initializer.as_ref() {
-                    let x = self.translate_literal_expression(x)?;
-                    sway::Expression::create_value_expression(&variable_type_name, Some(&x))
-                } else {
-                    sway::Expression::create_value_expression(&variable_type_name, None)
-                },
+                value,
             });
         }
         // Handle regular state variable definitions
         else {
+            let value = if let Some(x) = variable_definition.initializer.as_ref() {
+                let x = self.translate_literal_expression(x)?;
+                self.create_value_expression(translated_definition, &variable_type_name, Some(&x))
+            } else {
+                self.create_value_expression(translated_definition, &variable_type_name, None)
+            };
+
             translated_definition.get_storage().fields.push(sway::StorageField {
                 name: new_name.clone(),
                 type_name: variable_type_name.clone(),
-                value: if let Some(x) = variable_definition.initializer.as_ref() {
-                    let x = self.translate_literal_expression(x)?;
-                    sway::Expression::create_value_expression(&variable_type_name, Some(&x))
-                } else {
-                    sway::Expression::create_value_expression(&variable_type_name, None)
-                },
+                value,
             });
         }
         
@@ -1195,6 +1405,7 @@ impl Project {
             old_name,
             new_name: new_name.clone(),
             type_name: variable_type_name.clone(),
+            abi_type_name,
             is_storage,
             is_configurable,
             ..Default::default()
@@ -1916,19 +2127,22 @@ impl Project {
 
         if is_constructor {
             let name =  self.translate_storage_name(translated_definition, "initialized");
+            
             let type_name = sway::TypeName::Identifier {
                 name: "bool".into(),
                 generic_parameters: None,
             };
 
+            let value = self.create_value_expression(translated_definition, 
+                &type_name,
+                Some(&sway::Expression::from(sway::Literal::Bool(false))),
+            );
+
             // Add the `initialized` field to the storage block
             translated_definition.get_storage().fields.push(sway::StorageField {
                 name: name.clone(),
                 type_name: type_name.clone(),
-                value: sway::Expression::create_value_expression(
-                    &type_name,
-                    Some(&sway::Expression::from(sway::Literal::Bool(false))),
-                ),
+                value,
             });
 
             // Add the `initialized` requirement to the beginning of the function
@@ -1999,7 +2213,7 @@ impl Project {
                     name: return_parameter.new_name.clone(),
                 }),
                 type_name: Some(return_parameter.type_name.clone()),
-                value: sway::Expression::create_value_expression(&return_parameter.type_name, None),
+                value: self.create_value_expression(translated_definition, &return_parameter.type_name, None),
             }));
         }
 
@@ -2567,7 +2781,7 @@ impl Project {
                                             }),
                                             generic_parameters: None,
                                             parameters: vec![
-                                                sway::Expression::create_value_expression(element_type_name, None),
+                                                self.create_value_expression(translated_definition, element_type_name, None),
                                             ],
                                         })),
 
@@ -2605,7 +2819,7 @@ impl Project {
             } else if let Some(x) = initializer.as_ref() {
                 self.translate_pre_or_post_operator_value_expression(translated_definition, scope, x)?
             } else {
-                sway::Expression::create_value_expression(&type_name, None)
+                self.create_value_expression(translated_definition, &type_name, None)
             },
         });
 
@@ -4489,10 +4703,6 @@ impl Project {
                 ],
             }))
         } else {
-            if variable.type_name != rhs_type_name {
-                panic!("Mismatched assignment types: expected `{}`, found `{}`", variable.type_name, rhs_type_name);
-            }
-    
             match &variable.type_name {
                 sway::TypeName::Identifier { name, .. } if name == "Vec" => {
                     let sway::Expression::ArrayAccess(array_access) = expression else {
@@ -4772,7 +4982,7 @@ impl Project {
                         value: if let Some(value) = value.as_ref() {
                             self.translate_yul_expression(translated_definition, scope, value)?
                         } else {
-                            sway::Expression::create_value_expression(
+                            self.create_value_expression(translated_definition, 
                                 &sway::TypeName::Identifier {
                                     name: "u256".into(),
                                     generic_parameters: None,
