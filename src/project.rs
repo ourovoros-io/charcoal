@@ -344,7 +344,12 @@ impl Project {
                 solidity::Type::Rational => todo!("rational types"),
 
                 solidity::Type::DynamicBytes => sway::TypeName::Identifier {
-                    name: "std::bytes::Bytes".into(), // TODO: is this ok?
+                    name: {
+                        // Ensure `std::bytes::Bytes` is imported
+                        translated_definition.ensure_use_declared("std::bytes::Bytes");
+
+                        "Bytes".into() // TODO: is this ok?
+                    },
                     generic_parameters: None,
                 },
 
@@ -880,6 +885,13 @@ impl Project {
             // Extend the toplevel scope
             translated_definition.toplevel_scope.variables.extend(inherited_definition.toplevel_scope.variables.clone());
             translated_definition.toplevel_scope.functions.extend(inherited_definition.toplevel_scope.functions.clone());
+
+            // Extend the use statements
+            for inherited_use in inherited_definition.uses.iter() {
+                if !translated_definition.uses.contains(inherited_use) {
+                    translated_definition.uses.push(inherited_use.clone());
+                }
+            }
 
             // Extend the type definitions
             for inherited_type_definition in inherited_definition.type_definitions.iter() {
@@ -3829,7 +3841,7 @@ impl Project {
                         sway::TypeName::Undefined => panic!("Undefined type name"),
 
                         sway::TypeName::Identifier { name, .. } => match (name.as_str(), member) {
-                            ("Vec" | "std::bytes::Bytes", "length") => return Ok(sway::Expression::from(sway::FunctionCall {
+                            ("Vec" | "Bytes", "length") => return Ok(sway::Expression::from(sway::FunctionCall {
                                 function: sway::Expression::from(sway::MemberAccess {
                                     expression: sway::Expression::Identifier(variable.new_name.clone()),
                                     member: "len".into(),
