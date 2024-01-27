@@ -374,8 +374,8 @@ pub struct TranslatedDefinition {
     pub type_definitions: Vec<sway::TypeDefinition>,
     pub structs: Vec<sway::Struct>,
     pub enums: Vec<TranslatedEnum>,
-    pub events_enum: Option<(sway::Enum, sway::Impl)>,
-    pub errors_enum: Option<(sway::Enum, sway::Impl)>,
+    pub events_enums: Vec<(sway::Enum, sway::Impl)>,
+    pub errors_enums: Vec<(sway::Enum, sway::Impl)>,
     pub constants: Vec<sway::Constant>,
     pub abis: Vec<sway::Abi>,
     pub abi: Option<sway::Abi>,
@@ -440,8 +440,10 @@ impl Display for TranslatedDefinition {
             written += 1;
         }
         
-        if let Some((events_enum, abi_encode_impl)) = self.events_enum.as_ref() {
-            if written > 0 {
+        for (i, (events_enum, abi_encode_impl)) in self.events_enums.iter().enumerate() {
+            if i == 0 && written > 0 {
+                writeln!(f)?;
+            } else if i > 0 {
                 writeln!(f)?;
             }
 
@@ -451,8 +453,10 @@ impl Display for TranslatedDefinition {
             written += 1;
         }
 
-        if let Some((errors_enum, abi_encode_impl)) = self.errors_enum.as_ref() {
-            if written > 0 {
+        for (i, (errors_enum, abi_encode_impl)) in self.errors_enums.iter().enumerate() {
+            if i == 0 && written > 0 {
+                writeln!(f)?;
+            } else if i > 0 {
                 writeln!(f)?;
             }
 
@@ -539,8 +543,8 @@ impl TranslatedDefinition {
             type_definitions: vec![],
             enums: vec![],
             structs: vec![],
-            events_enum: None,
-            errors_enum: None,
+            events_enums: vec![],
+            errors_enums: vec![],
             constants: vec![],
             abis: vec![],
             abi: None,
@@ -555,60 +559,6 @@ impl TranslatedDefinition {
             storage_fields_name_counts: HashMap::new(),
             storage_fields_names: HashMap::new(),
         }
-    }
-
-    /// Gets the events enum for the translated definition. If it doesn't exist, it gets created.
-    pub fn get_events_enum(&mut self) -> &mut (sway::Enum, sway::Impl) {
-        if self.events_enum.is_none() {
-            let name = format!("{}Event", self.name);
-
-            self.events_enum = Some((
-                sway::Enum {
-                    name: name.clone(),
-                    ..Default::default()
-                },
-                sway::Impl {
-                    type_name: sway::TypeName::Identifier {
-                        name: "core::codec::AbiEncode".into(),
-                        generic_parameters: None,
-                    },
-                    for_type_name: Some(sway::TypeName::Identifier {
-                        name,
-                        generic_parameters: None,
-                    }),
-                    ..Default::default()
-                }
-            ));
-        }
-
-        self.events_enum.as_mut().unwrap()
-    }
-
-    /// Gets the errors enum for the translated definition. If it doesn't exist, it gets created.
-    pub fn get_errors_enum(&mut self) -> &mut (sway::Enum, sway::Impl) {
-        if self.errors_enum.is_none() {
-            let name = format!("{}Error", self.name);
-
-            self.errors_enum = Some((
-                sway::Enum {
-                    name: name.clone(),
-                    ..Default::default()
-                },
-                sway::Impl {
-                    type_name: sway::TypeName::Identifier {
-                        name: "core::codec::AbiEncode".into(),
-                        generic_parameters: None,
-                    },
-                    for_type_name: Some(sway::TypeName::Identifier {
-                        name,
-                        generic_parameters: None,
-                    }),
-                    ..Default::default()
-                }
-            ));
-        }
-
-        self.errors_enum.as_mut().unwrap()
     }
 
     /// Gets the abi for the translated definition. If it doesn't exist, it gets created.

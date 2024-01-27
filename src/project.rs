@@ -598,6 +598,9 @@ impl Project {
         }
 
         // Collect each event and error ahead of time for contextual reasons
+        let events_enum_name = format!("{}Event", translated_definition.name);
+        let errors_enum_name = format!("{}Error", translated_definition.name);
+
         for part in solidity_definition.parts.iter() {
             match part {
                 solidity::ContractPart::EventDefinition(event_definition) => {
@@ -610,8 +613,30 @@ impl Project {
                             }).collect(),
                         }
                     };
-        
-                    let (events_enum, _) = translated_definition.get_events_enum();
+
+                    let (events_enum, _) = {
+                        if translated_definition.events_enums.iter().find(|(e, _)| e.name == events_enum_name).is_none() {
+                            translated_definition.events_enums.push((
+                                sway::Enum {
+                                    name: events_enum_name.clone(),
+                                    ..Default::default()
+                                },
+                                sway::Impl {
+                                    type_name: sway::TypeName::Identifier {
+                                        name: "core::codec::AbiEncode".into(),
+                                        generic_parameters: None,
+                                    },
+                                    for_type_name: Some(sway::TypeName::Identifier {
+                                        name: events_enum_name.clone(),
+                                        generic_parameters: None,
+                                    }),
+                                    ..Default::default()
+                                }
+                            ));
+                        }
+
+                        translated_definition.events_enums.iter_mut().find(|(e, _)| e.name == events_enum_name).unwrap()
+                    };
 
                     let variant = sway::EnumVariant {
                         name: event_definition.name.as_ref().unwrap().name.clone(),
@@ -634,7 +659,29 @@ impl Project {
                         }
                     };
 
-                    let (errors_enum, _) = translated_definition.get_errors_enum();
+                    let (errors_enum, _) = {
+                        if translated_definition.errors_enums.iter().find(|(e, _)| e.name == errors_enum_name).is_none() {
+                            translated_definition.errors_enums.push((
+                                sway::Enum {
+                                    name: errors_enum_name.clone(),
+                                    ..Default::default()
+                                },
+                                sway::Impl {
+                                    type_name: sway::TypeName::Identifier {
+                                        name: "core::codec::AbiEncode".into(),
+                                        generic_parameters: None,
+                                    },
+                                    for_type_name: Some(sway::TypeName::Identifier {
+                                        name: errors_enum_name.clone(),
+                                        generic_parameters: None,
+                                    }),
+                                    ..Default::default()
+                                }
+                            ));
+                        }
+
+                        translated_definition.errors_enums.iter_mut().find(|(e, _)| e.name == errors_enum_name).unwrap()
+                    };
 
                     let variant = sway::EnumVariant {
                         name: error_definition.name.as_ref().unwrap().name.clone(),
@@ -651,12 +698,12 @@ impl Project {
         }
 
         // Create the abi encoding function for the events enum (if any)
-        if let Some((events_enum, abi_encode_impl)) = translated_definition.events_enum.as_mut() {
+        if let Some((events_enum, abi_encode_impl)) = translated_definition.events_enums.iter_mut().find(|(e, _)| e.name == events_enum_name) {
             self.generate_enum_abi_encode_function(events_enum, abi_encode_impl)?;
         }
 
         // Create the abi encoding function for the errors enum (if any)
-        if let Some((errors_enum, abi_encode_impl)) = translated_definition.errors_enum.as_mut() {
+        if let Some((errors_enum, abi_encode_impl)) = translated_definition.errors_enums.iter_mut().find(|(e, _)| e.name == errors_enum_name) {
             self.generate_enum_abi_encode_function(errors_enum, abi_encode_impl)?;
         }
 
@@ -849,24 +896,16 @@ impl Project {
             }
 
             // Extend the events enum
-            if let Some((inherited_events_enum, _)) = inherited_definition.events_enum.as_ref() {
-                let (events_enum, _) = translated_definition.get_events_enum();
-
-                for inherited_variant in inherited_events_enum.variants.iter() {
-                    if !events_enum.variants.contains(inherited_variant) {
-                        events_enum.variants.push(inherited_variant.clone());
-                    }
+            for inherited_enum in inherited_definition.events_enums.iter() {
+                if !translated_definition.events_enums.contains(inherited_enum) {
+                    translated_definition.events_enums.push(inherited_enum.clone());
                 }
             }
 
             // Extend the errors enum
-            if let Some((inherited_errors_enum, _)) = inherited_definition.errors_enum.as_ref() {
-                let (errors_enum, _) = translated_definition.get_errors_enum();
-
-                for inherited_variant in inherited_errors_enum.variants.iter() {
-                    if !errors_enum.variants.contains(inherited_variant) {
-                        errors_enum.variants.push(inherited_variant.clone());
-                    }
+            for inherited_enum in inherited_definition.errors_enums.iter() {
+                if !translated_definition.errors_enums.contains(inherited_enum) {
+                    translated_definition.errors_enums.push(inherited_enum.clone());
                 }
             }
 
@@ -3085,9 +3124,12 @@ impl Project {
         parameters: &Vec<solidity::Expression>,
     ) -> Result<sway::Statement, Error> {
         if let Some(error_type) = error_type.as_ref() {
-            //
-            // TODO: we need to keep the error enum in the scope and look it up there instead of assuming it will be ContractError
-            //
+            let error_variant_name = error_type.identifiers.first().unwrap().name.clone();
+
+            // Find the errors enum containing the variant
+            let Some((errors_enum, _)) = translated_definition.errors_enums.iter().find(|(e, _)| e.variants.iter().any(|v| v.name == error_variant_name)) else {
+                panic!("Failed to find error variant \"{error_variant_name}\"");
+            };
             
             return Ok(sway::Statement::from(sway::Expression::from(sway::Block {
                 statements: vec![
@@ -3098,16 +3140,16 @@ impl Project {
                         parameters: vec![
                             if parameters.is_empty() {
                                 sway::Expression::Identifier(format!(
-                                    "{}Error::{}",
-                                    translated_definition.name,
-                                    error_type.identifiers.first().unwrap().name,
+                                    "{}::{}",
+                                    errors_enum.name,
+                                    error_variant_name,
                                 ))
                             } else {
                                 sway::Expression::from(sway::FunctionCall {
                                     function: sway::Expression::Identifier(format!(
-                                        "{}Error::{}",
-                                        translated_definition.name,
-                                        error_type.identifiers.first().unwrap().name,
+                                        "{}::{}",
+                                        errors_enum.name,
+                                        error_variant_name,
                                     )),
                                     generic_parameters: None,
                                     parameters: vec![
@@ -3184,29 +3226,30 @@ impl Project {
         scope: &mut TranslationScope,
         expression: &solidity::Expression,
     ) -> Result<sway::Statement, Error> {
-        //
-        // TODO: we need to keep the event enum in the scope and look it up there instead of assuming it will be ContractEvent
-        //
-        
         match expression {
             solidity::Expression::FunctionCall(_, x, parameters) => match x.as_ref() {
-                solidity::Expression::Variable(solidity::Identifier { name, .. }) => {
+                solidity::Expression::Variable(solidity::Identifier { name: event_variant_name, .. }) => {
+                    // Find the events enum containing the variant
+                    let Some((events_enum, _)) = translated_definition.events_enums.iter().find(|(e, _)| e.variants.iter().any(|v| v.name == *event_variant_name)) else {
+                        panic!("Failed to find event variant \"{event_variant_name}\" in \"{}\": {:#?}", translated_definition.name, translated_definition.events_enums);
+                    };
+                    
                     return Ok(sway::Statement::from(sway::Expression::from(sway::FunctionCall {
                         function: sway::Expression::Identifier("log".into()),
                         generic_parameters: None,
                         parameters: vec![
                             if parameters.is_empty() {
                                 sway::Expression::Identifier(format!(
-                                    "{}Event::{}",
-                                    translated_definition.name,
-                                    name,
+                                    "{}::{}",
+                                    events_enum.name,
+                                    event_variant_name,
                                 ))
                             } else {
                                 sway::Expression::from(sway::FunctionCall {
                                     function: sway::Expression::Identifier(format!(
-                                        "{}Event::{}",
-                                        translated_definition.name,
-                                        name,
+                                        "{}::{}",
+                                        events_enum.name,
+                                        event_variant_name,
                                     )),
                                     generic_parameters: None,
                                     parameters: vec![
