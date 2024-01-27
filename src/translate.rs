@@ -24,6 +24,7 @@ pub struct TranslatedFunction {
     pub old_name: String,
     pub new_name: String,
     pub parameters: sway::ParameterList,
+    pub constructor_calls: Vec<sway::FunctionCall>,
     pub modifiers: Vec<sway::FunctionCall>,
     pub return_type: Option<sway::TypeName>,
 }
@@ -361,6 +362,7 @@ pub struct TranslatedUsingDirective {
     pub functions: Vec<TranslatedFunction>,
 }
 
+#[derive(Clone, Debug)]
 pub struct TranslatedDefinition {
     pub path: PathBuf,
     pub toplevel_scope: TranslationScope,

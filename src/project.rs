@@ -166,6 +166,10 @@ impl Project {
 
     #[inline]
     fn translate_naming_convention(&mut self, name: &str, case: Case) -> String {
+        if name == "_" {
+            return "_".into();
+        }
+
         let prefix = name.chars().take_while(|c| *c == '_').collect::<String>();
         let postfix = name.chars().rev().take_while(|c| *c == '_').collect::<String>();
         format!("{prefix}{}{postfix}", name.to_case(case))
@@ -817,7 +821,7 @@ impl Project {
                     .map_err(|e| Error::Wrapped(Box::new(e)))?;
 
                 if let Some(t) = self.translated_definitions.iter().find(|t| t.path == import_path && t.name == *inherit) {
-                    inherited_definition = Some(t);
+                    inherited_definition = Some(t.clone());
                     break;
                 }
             }
@@ -868,9 +872,13 @@ impl Project {
 
             // Extend the abi
             if let Some(inherited_abi) = inherited_definition.abi.as_ref() {
-                let abi = translated_definition.get_abi();
-
                 for inherited_function in inherited_abi.functions.iter() {
+                    if inherited_function.name == "constructor" {
+                        continue;
+                    }
+
+                    let abi = translated_definition.get_abi();
+
                     if !abi.functions.contains(inherited_function) {
                         abi.functions.push(inherited_function.clone());
                     }
@@ -931,9 +939,24 @@ impl Project {
 
             // Extend the contract impl block
             if let Some(inherited_impl) = inherited_definition.find_contract_impl() {
-                let contract_impl = translated_definition.get_contract_impl();
-
                 for inherited_impl_item in inherited_impl.items.iter() {
+                    if let sway::ImplItem::Function(inherited_function) = inherited_impl_item {
+                        if inherited_function.name == "constructor" {
+                            let mut inherited_function = inherited_function.clone();
+                            
+                            let prefix = self.translate_naming_convention(inherited_definition.name.as_str(), Case::Snake);            
+                            inherited_function.name = format!("{prefix}_constructor");
+    
+                            if !translated_definition.functions.contains(&inherited_function) {
+                                translated_definition.functions.push(inherited_function);
+                            }
+    
+                            continue;
+                        }    
+                    }
+
+                    let contract_impl = translated_definition.get_contract_impl();
+
                     if !contract_impl.items.contains(inherited_impl_item) {
                         contract_impl.items.push(inherited_impl_item.clone());
                     }
@@ -1658,21 +1681,39 @@ impl Project {
             });
         }
 
+        let mut constructor_calls = vec![];
         let mut modifiers = vec![];
         
-        // Translate the function's modifier invocations
+        // Translate the function's constructor/modifier invocations
         for attr in function_definition.attributes.iter() {
             let solidity::FunctionAttribute::BaseOrModifier(_, base) = attr else { continue };
 
             let old_name = base.name.identifiers.iter().map(|i| i.name.clone()).collect::<Vec<_>>().join(".");
             let new_name = self.translate_naming_convention(old_name.as_str(), Case::Snake);
 
+            let parameters = base.args.as_ref()
+                .map(|args| args.iter().map(|a| self.translate_expression(translated_definition, &mut scope, a)).collect::<Result<Vec<_>, _>>())
+                .unwrap_or_else(|| Ok(vec![]))?;
+
+            // Check to see if base is a constructor call
+            if self.find_definition_with_abi(old_name.as_str()).is_some() {
+                let prefix = self.translate_naming_convention(old_name.as_str(), Case::Snake);
+                let name = format!("{prefix}_constructor");
+                
+                constructor_calls.push(sway::FunctionCall {
+                    function: sway::Expression::Identifier(name),
+                    generic_parameters: None,
+                    parameters,
+                });
+
+                continue;
+            }
+
+            // Add the base to the modifiers list
             modifiers.push(sway::FunctionCall {
                 function: sway::Expression::Identifier(new_name),
                 generic_parameters: None,
-                parameters: base.args.as_ref()
-                    .map(|args| args.iter().map(|a| self.translate_expression(translated_definition, &mut scope, a)).collect::<Result<Vec<_>, _>>())
-                    .unwrap_or_else(|| Ok(vec![]))?,
+                parameters,
             });
         }
 
@@ -1707,6 +1748,7 @@ impl Project {
             old_name,
             new_name,
             parameters,
+            constructor_calls,
             modifiers,
             return_type: if function_definition.returns.is_empty() {
                 None
@@ -2099,11 +2141,19 @@ impl Project {
             if let Some(abi) = translated_definition.abi.as_mut() {
                 // Only add the function to the abi if it doesn't already exist
                 if !abi.functions.contains(&sway_function) {
-                    abi.functions.push(sway_function.clone());
+                    if is_constructor {
+                        abi.functions.insert(0, sway_function.clone());
+                    } else {
+                        abi.functions.push(sway_function.clone());
+                    }
                 }
             } else {
                 // Add the function to the abi
-                translated_definition.get_abi().functions.push(sway_function.clone());
+                if is_constructor {
+                    translated_definition.get_abi().functions.insert(0, sway_function.clone());
+                } else {
+                    translated_definition.get_abi().functions.push(sway_function.clone());
+                }
             }
         }
 
@@ -2187,27 +2237,21 @@ impl Project {
         let mut function_body = self.translate_block(translated_definition, &mut scope, statements.as_slice())?;
 
         if is_constructor {
-            let name =  self.translate_storage_name(translated_definition, "initialized");
+            let prefix = self.translate_naming_convention(translated_definition.name.as_str(), Case::Snake);
+            let constructor_called_variable_name =  self.translate_storage_name(translated_definition, format!("{prefix}_constructor_called").as_str());
             
-            let type_name = sway::TypeName::Identifier {
-                name: "bool".into(),
-                generic_parameters: None,
-            };
-
-            let value = self.create_value_expression(translated_definition, 
-                &type_name,
-                Some(&sway::Expression::from(sway::Literal::Bool(false))),
-            );
-
-            // Add the `initialized` field to the storage block
+            // Add the `constructor_called` field to the storage block
             translated_definition.get_storage().fields.push(sway::StorageField {
-                name: name.clone(),
-                type_name: type_name.clone(),
-                value,
+                name: constructor_called_variable_name.clone(),
+                type_name: sway::TypeName::Identifier {
+                    name: "bool".into(),
+                    generic_parameters: None,
+                },
+                value: sway::Expression::from(sway::Literal::Bool(false)),
             });
 
-            // Add the `initialized` requirement to the beginning of the function
-            // require(!storage.initialized.read(), "Contract is already initialized");
+            // Add the `constructor_called` requirement to the beginning of the function
+            // require(!storage.initialized.read(), "The Contract constructor has already been called");
             function_body.statements.insert(0, sway::Statement::from(sway::Expression::from(sway::FunctionCall {
                 function: sway::Expression::from(sway::Expression::Identifier("require".into())),
                 generic_parameters: None,
@@ -2218,7 +2262,7 @@ impl Project {
                             function: sway::Expression::from(sway::MemberAccess {
                                 expression: sway::Expression::from(sway::MemberAccess {
                                     expression: sway::Expression::Identifier("storage".into()),
-                                    member: name.clone(),
+                                    member: constructor_called_variable_name.clone(),
                                 }),
                                 member: "read".into(),
                             }),
@@ -2226,17 +2270,17 @@ impl Project {
                             parameters: vec![],
                         })
                     }),
-                    sway::Expression::from(sway::Literal::String("Contract is already initialized".into())),
+                    sway::Expression::from(sway::Literal::String(format!("The {} constructor has already been called", translated_definition.name))),
                 ],
             })));
 
-            // Set the `initialized` storage field to `true` at the end of the function
+            // Set the `constructor_called` storage field to `true` at the end of the function
             // storage.initialized.write(true);
             function_body.statements.push(sway::Statement::from(sway::Expression::from(sway::FunctionCall {
                 function: sway::Expression::from(sway::MemberAccess {
                     expression: sway::Expression::from(sway::MemberAccess {
                         expression: sway::Expression::Identifier("storage".into()),
-                        member: name.clone(),
+                        member: constructor_called_variable_name.clone(),
                     }),
                     member: "write".into(),
                 }),
@@ -2304,6 +2348,11 @@ impl Project {
             Ok(function) => function,
             Err(e) => panic!("{e}"),
         };
+
+        // Propagate constructor calls into the function's body
+        for constructor_call in function.constructor_calls.iter().rev() {
+            function_body.statements.insert(0, sway::Statement::from(sway::Expression::from(constructor_call.clone())));
+        }
 
         // Propagate modifier pre and post functions into the function's body
         let mut modifier_pre_calls = vec![];
@@ -2376,11 +2425,19 @@ impl Project {
             if let Some(contract_impl) = translated_definition.find_contract_impl_mut() {
                 // Only add the function wrapper to the contract impl if it doesn't already exist
                 if !contract_impl.items.contains(&impl_item) {
-                    contract_impl.items.push(impl_item);
+                    if is_constructor {
+                        contract_impl.items.insert(0, impl_item);
+                    } else {
+                        contract_impl.items.push(impl_item);
+                    }
                 }
             } else {
                 // Add the function wrapper to the contract impl
-                translated_definition.get_contract_impl().items.push(impl_item);
+                if is_constructor {
+                    translated_definition.get_contract_impl().items.insert(0, impl_item);
+                } else {
+                    translated_definition.get_contract_impl().items.push(impl_item);
+                }
             }
         }
 
@@ -4088,6 +4145,49 @@ impl Project {
                     }
 
                     old_name => {
+                        // Check to see if the expression is an ABI type
+                        if self.find_definition_with_abi(old_name).is_some() {
+                            if parameters.len() == 1 {
+                                match scope.get_expression_type(&parameters[0])? {
+                                    sway::TypeName::Identifier { name, generic_parameters: None } if name == "Identity" => {
+                                        return Ok(sway::Expression::from(sway::FunctionCall {
+                                            function: sway::Expression::Identifier("abi".into()),
+                                            generic_parameters: None,
+                                            parameters: vec![
+                                                sway::Expression::Identifier(old_name.into()),
+        
+                                                // x.as_contract_id().unwrap().into()
+                                                sway::Expression::from(sway::FunctionCall {
+                                                    function: sway::Expression::from(sway::MemberAccess {
+                                                        expression: sway::Expression::from(sway::FunctionCall {
+                                                            function: sway::Expression::from(sway::MemberAccess {
+                                                                expression: sway::Expression::from(sway::FunctionCall {
+                                                                    function: sway::Expression::from(sway::MemberAccess {
+                                                                        expression: parameters[0].clone(),
+                                                                        member: "as_contract_id".into(),
+                                                                    }),
+                                                                    generic_parameters: None,
+                                                                    parameters: vec![],
+                                                                }),
+                                                                member: "unwrap".into(),
+                                                            }),
+                                                            generic_parameters: None,
+                                                            parameters: vec![],
+                                                        }),
+                                                        member: "into".into(),
+                                                    }),
+                                                    generic_parameters: None,
+                                                    parameters: vec![],
+                                                }),
+                                            ],
+                                        }));
+                                    }
+
+                                    _ => {}
+                                }
+                            }
+                        }
+
                         // Ensure the function exists in scope
                         let Some(function) = scope.find_function(|f| {
                             // Ensure the function's old name matches the function call we're translating
