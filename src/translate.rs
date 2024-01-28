@@ -186,6 +186,21 @@ impl TranslationScope {
                         generic_parameters: None,
                     }),
 
+                    "msg_sender" => Ok(sway::TypeName::Identifier {
+                        name: "Option".into(),
+                        generic_parameters: Some(sway::GenericParameterList {
+                            entries: vec![
+                                sway::GenericParameter {
+                                    type_name: sway::TypeName::Identifier {
+                                        name: "Identity".into(),
+                                        generic_parameters: None,
+                                    },
+                                    implements: None,
+                                },
+                            ],
+                        }),
+                    }),
+
                     new_name => {
                         // Ensure the function exists in scope
                         let Some(function) = self.find_function(|f| {
