@@ -321,7 +321,7 @@ impl Project {
                         32 => "u32".into(),
                         64 => "u64".into(),
                         256 => "u256".into(),
-                        _ => todo!("unsigned integers of non-standard bit sizes")
+                        bits => todo!("non-standard unsigned integer: uint{bits}"),
                     },
                     generic_parameters: None,
                 },
@@ -1662,7 +1662,6 @@ impl Project {
         // Create the body for the contract impl's function wrapper
         sway_function.body = Some(sway::Block {
             statements: vec![],
-            // TODO: change for StorageMap getter functions
             final_expr: Some(sway::Expression::from(sway::FunctionCall {
                 function: sway::Expression::Identifier(format!("::{}", sway_function.name)),
                 generic_parameters: None,
@@ -4347,7 +4346,7 @@ impl Project {
                     solidity::Expression::Variable(solidity::Identifier { name, .. }) => match name.as_str() {
                         "abi" => match member.name.as_str() {
                             "decode" => {
-                                // abi.decode(x) => ???
+                                // abi.decode(encodedData, (...)) => ???
 
                                 //
                                 // TODO: how should this be handled?
@@ -4357,7 +4356,7 @@ impl Project {
                             }
 
                             "encode" => {
-                                // abi.encode(x) => ???
+                                // abi.encode(...) => ???
 
                                 //
                                 // TODO: how should this be handled?
@@ -4367,7 +4366,7 @@ impl Project {
                             }
 
                             "encodePacked" => {
-                                // abi.encodePacked(x) => ???
+                                // abi.encodePacked(...) => ???
 
                                 //
                                 // TODO: how should this be handled?
@@ -4376,8 +4375,18 @@ impl Project {
                                 return Ok(sway::Expression::create_todo(Some(expression.to_string())))
                             }
 
+                            "encodeWithSelector" => {
+                                // abi.encodeWithSelector(selector, ...) => ???
+
+                                //
+                                // TODO: how should this be handled?
+                                //
+
+                                return Ok(sway::Expression::create_todo(Some(expression.to_string())))
+                            }
+                            
                             "encodeWithSignature" => {
-                                // abi.encodeWithSignature(x) => ???
+                                // abi.encodeWithSignature(signature, ...) => ???
 
                                 //
                                 // TODO: how should this be handled?
@@ -4387,7 +4396,7 @@ impl Project {
                             }
                             
                             "encodeCall" => {
-                                // abi.encodeCall(x) => ???
+                                // abi.encodeCall(functionPointer, (...)) => ???
 
                                 //
                                 // TODO: how should this be handled?
@@ -4460,6 +4469,36 @@ impl Project {
                     
                     sway::TypeName::Identifier { name, .. } => match name.as_str() {
                         "Identity" => match member.name.as_str() {
+                            "balance" => {
+                                // address.balance => ???
+
+                                //
+                                // TODO: how should this be handled?
+                                //
+
+                                Ok(sway::Expression::create_todo(Some(expression.to_string())))
+                            }
+                            
+                            "code" => {
+                                // address.code => ???
+
+                                //
+                                // TODO: how should this be handled?
+                                //
+
+                                Ok(sway::Expression::create_todo(Some(expression.to_string())))
+                            }
+                            
+                            "codehash" => {
+                                // address.codehash => ???
+
+                                //
+                                // TODO: how should this be handled?
+                                //
+
+                                Ok(sway::Expression::create_todo(Some(expression.to_string())))
+                            }
+                            
                             "transfer" => {
                                 // to.transfer(amount) => std::asset::transfer(to, asset_id, amount)
 
