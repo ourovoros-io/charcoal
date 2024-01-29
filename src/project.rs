@@ -1596,20 +1596,20 @@ impl Project {
 
         // Create the function declaration for the abi
         let mut sway_function = sway::Function {
-            attributes: Some(sway::AttributeList {
-                attributes: if is_storage {
-                    vec![
+            attributes: if is_storage {
+                Some(sway::AttributeList {
+                    attributes: vec![
                         sway::Attribute {
                             name: "storage".into(),
                             parameters: Some(vec![
                                 "read".into(),
                             ]),
                         },
-                    ]
-                } else {
-                    vec![]
-                },
-            }),
+                    ],
+                })
+            } else {
+                None
+            },
             is_public: false,
             name: new_name.clone(),
             generic_parameters: None,
