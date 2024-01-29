@@ -4545,6 +4545,42 @@ impl Project {
                                     panic!("Failed to generate parameter names for `{}`", expression.to_string());
                                 }
 
+                                // If we only have 1 parameter to decode, just decode it directly
+                                if parameter_types.len() == 1 {
+                                    // encoded_data.as_raw_slice().ptr().read::<u256>()
+                                    return Ok(
+                                        sway::Expression::from(sway::FunctionCall {
+                                            function: sway::Expression::from(sway::MemberAccess {
+                                                expression: sway::Expression::from(sway::FunctionCall {
+                                                    function: sway::Expression::from(sway::MemberAccess {
+                                                        expression: sway::Expression::from(sway::FunctionCall {
+                                                            function: sway::Expression::from(sway::MemberAccess {
+                                                                expression: encoded_data.clone(),
+                                                                member: "as_raw_slice".into(),
+                                                            }),
+                                                            generic_parameters: None,
+                                                            parameters: vec![],
+                                                        }),
+                                                        member: "ptr".into(),
+                                                    }),
+                                                    generic_parameters: None,
+                                                    parameters: vec![],
+                                                }),
+                                                member: "read".into(),
+                                            }),
+                                            generic_parameters: Some(sway::GenericParameterList {
+                                                entries: vec![
+                                                    sway::GenericParameter {
+                                                        type_name: parameter_types[0].clone(),
+                                                        implements: None,
+                                                    },
+                                                ],
+                                            }),
+                                            parameters: vec![],
+                                        })
+                                    )
+                                }
+
                                 let mut block = sway::Block {
                                     statements: vec![
                                         // let slice = encoded_data.as_raw_slice();
@@ -4567,7 +4603,8 @@ impl Project {
                                         // let mut ptr = slice.ptr();
                                         sway::Statement::from(sway::Let {
                                             pattern: sway::LetPattern::from(sway::LetIdentifier {
-                                                is_mutable: true,
+                                                // This only needs to be mutable if there's multiple parameters to decode
+                                                is_mutable: parameter_names.len() > 1,
                                                 name: "ptr".into(),
                                             }),
                                             type_name: None,
@@ -4588,7 +4625,7 @@ impl Project {
                                     )),
                                 };
 
-                                for (parameter_name, parameter_type) in parameter_names.iter().zip(parameter_types.iter()) {
+                                for (i, (parameter_name, parameter_type)) in parameter_names.iter().zip(parameter_types.iter()).enumerate() {
                                     // let a = ptr.read::<u256>();
                                     block.statements.push(sway::Statement::from(sway::Let {
                                         pattern: sway::LetPattern::from(sway::LetIdentifier {
@@ -4613,28 +4650,31 @@ impl Project {
                                         }),
                                     }));
 
-                                    // ptr = ptr.add::<u256>(1);
-                                    block.statements.push(sway::Statement::from(sway::Expression::from(sway::BinaryExpression {
-                                        operator: "=".into(),
-                                        lhs: sway::Expression::Identifier("ptr".into()),
-                                        rhs: sway::Expression::from(sway::FunctionCall {
-                                            function: sway::Expression::from(sway::MemberAccess {
-                                                expression: sway::Expression::Identifier("ptr".into()),
-                                                member: "add".into(),
-                                            }),
-                                            generic_parameters: Some(sway::GenericParameterList {
-                                                entries: vec![
-                                                    sway::GenericParameter {
-                                                        type_name: parameter_type.clone(),
-                                                        implements: None,
-                                                    },
+                                    // If we have more parameters to decode, increase the ptr
+                                    if i < parameter_names.len() - 1 {
+                                        // ptr = ptr.add::<u256>(1);
+                                        block.statements.push(sway::Statement::from(sway::Expression::from(sway::BinaryExpression {
+                                            operator: "=".into(),
+                                            lhs: sway::Expression::Identifier("ptr".into()),
+                                            rhs: sway::Expression::from(sway::FunctionCall {
+                                                function: sway::Expression::from(sway::MemberAccess {
+                                                    expression: sway::Expression::Identifier("ptr".into()),
+                                                    member: "add".into(),
+                                                }),
+                                                generic_parameters: Some(sway::GenericParameterList {
+                                                    entries: vec![
+                                                        sway::GenericParameter {
+                                                            type_name: parameter_type.clone(),
+                                                            implements: None,
+                                                        },
+                                                    ],
+                                                }),
+                                                parameters: vec![
+                                                    sway::Expression::from(sway::Literal::DecInt(1)),
                                                 ],
                                             }),
-                                            parameters: vec![
-                                                sway::Expression::from(sway::Literal::DecInt(1)),
-                                            ],
-                                        }),
-                                    })));
+                                        })));
+                                    }
                                 }
 
                                 return Ok(sway::Expression::from(block));
