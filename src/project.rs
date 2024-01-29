@@ -4025,7 +4025,23 @@ impl Project {
                                 parameters: vec![],
                             })),
 
-                            _ => todo!("translate {} variable member: {} - {expression:#?}", variable.type_name, expression.to_string())
+                            _ => {
+                                // Check if type is a struct
+                                if let Some(translated_struct) = translated_definition.structs.iter().find(|s| s.name == *name) {
+                                    let field_name = self.translate_naming_convention(member, Case::Snake);
+                                    
+                                    let Some(field) = translated_struct.fields.iter().find(|f| f.name == field_name) else {
+                                        panic!("Failed to find field `{field_name}` in struct `{name}`");
+                                    };
+
+                                    return Ok(sway::Expression::from(sway::MemberAccess {
+                                        expression: sway::Expression::Identifier(variable.new_name.clone()),
+                                        member: field.name.clone(),
+                                    }));
+                                }
+
+                                todo!("translate {} variable member: {} - {expression:#?}", variable.type_name, expression.to_string())
+                            }
                         }
                         
                         sway::TypeName::Array { .. } => todo!("translate {} variable member: {} - {expression:#?}", variable.type_name, expression.to_string()),
