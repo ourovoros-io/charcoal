@@ -1076,6 +1076,18 @@ impl Display for LetPattern {
     }
 }
 
+impl From<LetIdentifier> for LetPattern {
+    fn from(value: LetIdentifier) -> Self {
+        LetPattern::Identifier(value)
+    }
+}
+
+impl From<Vec<LetIdentifier>> for LetPattern {
+    fn from(value: Vec<LetIdentifier>) -> Self {
+        LetPattern::Tuple(value)
+    }
+}
+
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 #[derive(Clone, Debug, PartialEq)]
