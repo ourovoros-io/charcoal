@@ -4518,13 +4518,23 @@ impl Project {
 
                                 let encoded_data = self.translate_expression(translated_definition, scope, &arguments[0])?;
                                 
-                                let solidity::Expression::List(_, parameter_types) = &arguments[1] else {
-                                    panic!("Invalid `abi.decode` call: expected type list, found {} - {:#?}", arguments[1].to_string(), arguments[1]);
-                                };
+                                let parameter_types = match &arguments[1] {
+                                    solidity::Expression::List(_, parameter_types) => {
+                                        parameter_types.iter()
+                                            .map(|(_, p)| self.translate_type_name(translated_definition, &p.as_ref().unwrap().ty, false))
+                                            .collect::<Vec<_>>()
+                                    }
 
-                                let parameter_types = parameter_types.iter()
-                                    .map(|(_, p)| self.translate_type_name(translated_definition, &p.as_ref().unwrap().ty, false))
-                                    .collect::<Vec<_>>();
+                                    solidity::Expression::Parenthesis(_, expression) if matches!(expression.as_ref(), solidity::Expression::Type(_, _)) => {
+                                        vec![
+                                            self.translate_type_name(translated_definition, expression, false),
+                                        ]
+                                    }
+
+                                    _ => {
+                                        panic!("Invalid `abi.decode` call: expected type list, found {} - {:#?}", arguments[1].to_string(), arguments[1]);
+                                    }
+                                };
 
                                 let parameter_names = ('a'..'z').enumerate()
                                     .take_while(|(i, _)| *i < parameter_types.len())
