@@ -53,7 +53,7 @@ pub struct TranslationScope {
 }
 
 impl TranslationScope {
-    /// Attempts to get a reference to a variable using its old name
+    /// Attempts to get a reference to a translated variable using its old name
     pub fn get_variable_from_old_name(&self, old_name: &str) -> Result<&TranslatedVariable, Error> {
         if let Some(variable) = self.variables.iter().rev().find(|v| v.old_name == old_name) {
             return Ok(variable);
@@ -68,7 +68,7 @@ impl TranslationScope {
         Err(Error::VariableNotInScope(old_name.into()))
     }
 
-    /// Attempts to get a mutable reference to a variable using its old name
+    /// Attempts to get a mutable reference to a translated variable using its old name
     pub fn get_variable_from_old_name_mut(&mut self, old_name: &str) -> Result<&mut TranslatedVariable, Error> {
         if let Some(variable) = self.variables.iter_mut().rev().find(|v| v.old_name == old_name) {
             return Ok(variable);
@@ -83,7 +83,7 @@ impl TranslationScope {
         Err(Error::VariableNotInScope(old_name.into()))
     }
 
-    /// Attempts to get a reference to a variable using its new name
+    /// Attempts to get a reference to a translated variable using its new name
     pub fn get_variable_from_new_name(&self, new_name: &str) -> Result<&TranslatedVariable, Error> {
         if let Some(variable) = self.variables.iter().rev().find(|v| v.new_name == new_name) {
             return Ok(variable);
@@ -98,7 +98,7 @@ impl TranslationScope {
         Err(Error::VariableNotInScope(new_name.into()))
     }
 
-    /// Attempts to get a mutable reference to a variable using its new name
+    /// Attempts to get a mutable reference to a translated variable using its new name
     pub fn get_variable_from_new_name_mut(&mut self, new_name: &str) -> Result<&mut TranslatedVariable, Error> {
         if let Some(variable) = self.variables.iter_mut().rev().find(|v| v.new_name == new_name) {
             return Ok(variable);
@@ -113,6 +113,22 @@ impl TranslationScope {
         Err(Error::VariableNotInScope(new_name.into()))
     }
 
+    /// Attempts to find a translated variable using a custom function
+    pub fn find_variable<F: Copy + FnMut(&&TranslatedVariable) -> bool>(&self, f: F) -> Option<&TranslatedVariable> {
+        if let Some(variable) = self.variables.iter().find(f) {
+            return Some(variable);
+        }
+
+        if let Some(parent) = self.parent.as_ref() {
+            if let Some(variable) = parent.find_variable(f) {
+                return Some(variable);
+            }
+        }
+
+        None
+    }
+
+    /// Atempts to find a translated function using a custom function
     pub fn find_function<F: Copy + FnMut(&&TranslatedFunction) -> bool>(&self, f: F) -> Option<&TranslatedFunction> {
         if let Some(function) = self.functions.iter().find(f) {
             return Some(function);
@@ -127,7 +143,7 @@ impl TranslationScope {
         None
     }
 
-    /// Attempts to get a reference to a function using its old name
+    /// Attempts to get a reference to a translated function using its old name
     pub fn get_function_from_old_name(&self, old_name: &str) -> Result<&TranslatedFunction, Error> {
         if let Some(function) = self.functions.iter().rev().find(|v| v.old_name == old_name) {
             return Ok(function);
@@ -160,7 +176,7 @@ impl TranslationScope {
                     name: "u64".into(), // TODO: is this ok?
                     generic_parameters: None,
                 }),
-                sway::Literal::String(s) => Ok(sway::TypeName::String { length: s.len() }),
+                sway::Literal::String(_) => Ok(sway::TypeName::StringSlice),
             }
 
             sway::Expression::Identifier(name) => {
@@ -286,6 +302,15 @@ impl TranslationScope {
                         _ => todo!("get type of `pow` function call expression: {expression:#?}"),
                     }
 
+                    "read" => match self.get_expression_type(&member_access.expression)? {
+                        sway::TypeName::Identifier { name, generic_parameters: Some(generic_parameters) } => match name.as_str() {
+                            "StorageKey" => Ok(generic_parameters.entries.first().unwrap().type_name.clone()),
+                            _ => todo!("get type of function call expression: {expression:#?}"),
+                        }
+
+                        _ => todo!("get type of function call expression: {expression:#?}"),
+                    }
+
                     _ => todo!("get type of function call expression: {expression:#?}"),
                 }
 
@@ -338,7 +363,31 @@ impl TranslationScope {
                 Ok(type_name.clone())
             }
 
-            sway::Expression::MemberAccess(_) => todo!("get type of member access expression: {expression:#?}"),
+            sway::Expression::MemberAccess(member_access) => match &member_access.expression {
+                sway::Expression::Identifier(name) => match name.as_str() {
+                    "storage" => {
+                        let Some(variable) = self.find_variable(|v| v.is_storage && v.new_name == member_access.member) else {
+                            panic!("Failed to find storage variable in scope: `{}`", member_access.member);
+                        };
+
+                        Ok(sway::TypeName::Identifier {
+                            name: "StorageKey".into(),
+                            generic_parameters: Some(sway::GenericParameterList {
+                                entries: vec![
+                                    sway::GenericParameter {
+                                        type_name: variable.type_name.clone(),
+                                        implements: None,
+                                    },
+                                ],
+                            }),
+                        })
+                    }
+
+                    _ => todo!("get type of member access expression: {expression:#?}"),
+                }
+
+                _ => todo!("get type of member access expression: {expression:#?}"),
+            }
             
             sway::Expression::Tuple(tuple) => Ok(sway::TypeName::Tuple {
                 type_names: tuple.iter().map(|x| self.get_expression_type(x)).collect::<Result<Vec<_>, _>>()?,
@@ -417,7 +466,11 @@ impl Display for TranslatedDefinition {
             written += 1;
         }
 
-        for x in self.constants.iter() {
+        for (i, x) in self.constants.iter().enumerate() {
+            if i == 0 && written > 0 {
+                writeln!(f)?;
+            }
+
             writeln!(f, "{}", sway::TabbedDisplayer(x))?;
             written += 1;
         }

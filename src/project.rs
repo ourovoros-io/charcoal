@@ -297,19 +297,16 @@ impl Project {
                     generic_parameters: None,
                 },
 
-                solidity::Type::String => sway::TypeName::Identifier {
-                    name: if is_storage {
-                        // Ensure `std::storage::storage_string::*` is imported
-                        translated_definition.ensure_use_declared("std::storage::storage_string::*");
+                solidity::Type::String => if is_storage {
+                    // Ensure `std::storage::storage_string::*` is imported
+                    translated_definition.ensure_use_declared("std::storage::storage_string::*");
 
-                        "StorageString".into()
-                    } else {
-                        // Ensure `std::string::*` is imported
-                        translated_definition.ensure_use_declared("std::string::*");
-
-                        "String".into()
-                    },
-                    generic_parameters: None,
+                    sway::TypeName::Identifier {
+                        name: "StorageString".into(),
+                        generic_parameters: None,
+                    }
+                } else {
+                    sway::TypeName::StringSlice
                 },
 
                 solidity::Type::Int(_) => todo!("signed integer types"),
@@ -1045,12 +1042,55 @@ impl Project {
             })));
 
             let mut add_encode_statement_to_block = |name: &str, type_name: &sway::TypeName| {
-                let sway::TypeName::Identifier { name: type_name, .. } = type_name else {
-                    todo!("ABI encoding for enum parameter type: {type_name}");
-                };
+                block.statements.push(sway::Statement::from(match type_name {
+                    sway::TypeName::Identifier { name: type_name, .. } => match type_name.as_str() {
+                        "u8" | "u16" | "u32" | "u64" | "u256" | "b256" | "Bytes" => sway::Expression::from(sway::FunctionCall {
+                            function: sway::Expression::from(sway::MemberAccess {
+                                expression: sway::Expression::Identifier(name.into()),
+                                member: "abi_encode".into(),
+                            }),
+                            generic_parameters: None,
+                            parameters: vec![
+                                sway::Expression::Identifier("buffer".into()),
+                            ],
+                        }),
 
-                block.statements.push(sway::Statement::from(match type_name.as_str() {
-                    "u8" | "u16" | "u32" | "u64" | "u256" | "b256" => sway::Expression::from(sway::FunctionCall {
+                        "Identity" => {
+                            let identity_variant_branch = |name: &str| -> sway::MatchBranch {
+                                sway::MatchBranch {
+                                    pattern: sway::Expression::from(sway::FunctionCall {
+                                        function: sway::Expression::Identifier(format!("Identity::{name}")),
+                                        generic_parameters: None,
+                                        parameters: vec![
+                                            sway::Expression::Identifier("x".into()),
+                                        ],
+                                    }),
+                                    value: sway::Expression::from(sway::FunctionCall {
+                                        function: sway::Expression::from(sway::MemberAccess {
+                                            expression: sway::Expression::Identifier("x".into()),
+                                            member: "abi_encode".into(),
+                                        }),
+                                        generic_parameters: None,
+                                        parameters: vec![
+                                            sway::Expression::Identifier("buffer".into())
+                                        ],
+                                    }),
+                                }
+                            };
+
+                            sway::Expression::from(sway::Match {
+                                expression: sway::Expression::Identifier(name.into()),
+                                branches: vec![
+                                    identity_variant_branch("Address"),
+                                    identity_variant_branch("ContractId"),
+                                ],
+                            })
+                        },
+
+                        _ => todo!("encode enum member type: {type_name}"),
+                    }
+                    
+                    sway::TypeName::StringSlice => sway::Expression::from(sway::FunctionCall {
                         function: sway::Expression::from(sway::MemberAccess {
                             expression: sway::Expression::Identifier(name.into()),
                             member: "abi_encode".into(),
@@ -1061,39 +1101,7 @@ impl Project {
                         ],
                     }),
 
-                    "Identity" => {
-                        let identity_variant_branch = |name: &str| -> sway::MatchBranch {
-                            sway::MatchBranch {
-                                pattern: sway::Expression::from(sway::FunctionCall {
-                                    function: sway::Expression::Identifier(format!("Identity::{name}")),
-                                    generic_parameters: None,
-                                    parameters: vec![
-                                        sway::Expression::Identifier("x".into()),
-                                    ],
-                                }),
-                                value: sway::Expression::from(sway::FunctionCall {
-                                    function: sway::Expression::from(sway::MemberAccess {
-                                        expression: sway::Expression::Identifier("x".into()),
-                                        member: "abi_encode".into(),
-                                    }),
-                                    generic_parameters: None,
-                                    parameters: vec![
-                                        sway::Expression::Identifier("buffer".into())
-                                    ],
-                                }),
-                            }
-                        };
-
-                        sway::Expression::from(sway::Match {
-                            expression: sway::Expression::Identifier(name.into()),
-                            branches: vec![
-                                identity_variant_branch("Address"),
-                                identity_variant_branch("ContractId"),
-                            ],
-                        })
-                    },
-
-                    _ => todo!("encode enum member type: {type_name}"),
+                    _ => todo!("ABI encoding for enum parameter type: {type_name}"),
                 }));
             };
 
@@ -1286,6 +1294,12 @@ impl Project {
                     Some(value) => panic!("Invalid {name} value expression: {value:#?}"),
                 }
 
+                "Bytes" => sway::Expression::from(sway::FunctionCall {
+                    function: sway::Expression::Identifier("Bytes::new".into()),
+                    generic_parameters: None,
+                    parameters: vec![],
+                }),
+
                 "Identity" => match value {
                     None => sway::Expression::from(sway::FunctionCall {
                         function: sway::Expression::Identifier("Identity::from".into()),
@@ -1384,14 +1398,20 @@ impl Project {
                 Some(value) => panic!("Invalid tuple value expression: {value:#?}"),
             }
 
-            sway::TypeName::String { length } => match value {
-                None => sway::Expression::FunctionCall(Box::new(sway::FunctionCall {
+            sway::TypeName::StringSlice => match value {
+                None => sway::Expression::from(sway::Literal::String(String::new())),
+                Some(sway::Expression::Literal(sway::Literal::String(value))) => sway::Expression::from(sway::Literal::String(value.clone())),
+                Some(value) => panic!("Invalid string slice value expression: {value:#?}"),
+            }
+
+            sway::TypeName::StringArray { length } => match value {
+                None => sway::Expression::from(sway::FunctionCall {
                     function: sway::Expression::Identifier("__to_str_array".into()),
                     generic_parameters: None,
                     parameters: vec![
                         sway::Expression::Literal(sway::Literal::String((0..*length).map(|_| " ").collect())),
                     ],
-                })),
+                }),
 
                 Some(sway::Expression::Literal(sway::Literal::String(value))) => {
                     if value.len() > *length {
@@ -1449,7 +1469,7 @@ impl Project {
                     }))
                 }
 
-                Some(value) => panic!("Invalid string value expression: {value:#?}"),
+                Some(value) => panic!("Invalid string array value expression: {value:#?}"),
             }
         }
     }
@@ -1651,8 +1671,10 @@ impl Project {
                     generic_parameters: None,
                     parameters: vec![],
                 })
+            } else if is_constant {
+                sway::Expression::Identifier(new_name.clone())
             } else {
-                todo!("Handle getter function for non-storage variables")
+                todo!("Handle getter function for non-storage variables: {} - {variable_definition:#?}", variable_definition.to_string())
             }),
         });
 
@@ -3647,7 +3669,55 @@ impl Project {
                         solidity::Type::Uint(_) => todo!("translate uint cast member access: {}", expression.to_string()),
                         solidity::Type::Bytes(_) => todo!("translate bytes cast member access: {}", expression.to_string()),
                         solidity::Type::Rational => todo!("translate rational cast member access: {}", expression.to_string()),
-                        solidity::Type::DynamicBytes => todo!("translate dynamic bytes cast member access: {}", expression.to_string()),
+                        
+                        solidity::Type::DynamicBytes => {
+                            // Translate the value being casted
+                            let value = self.translate_expression(translated_definition, scope, &args[0])?;
+
+                            // Ensure `std::bytes::Bytes` is imported
+                            translated_definition.ensure_use_declared("std::bytes::Bytes");
+
+                            // Cast the value to Bytes
+                            let value = match scope.get_expression_type(&value)? {
+                                sway::TypeName::StringSlice => {
+                                    // bytes(x) => String::from_ascii_str(x).as_bytes()
+
+                                    // Ensure `std::string::*` is imported
+                                    translated_definition.ensure_use_declared("std::string::*");
+
+                                    sway::Expression::from(sway::FunctionCall {
+                                        function: sway::Expression::from(sway::MemberAccess {
+                                            expression: sway::Expression::from(sway::FunctionCall {
+                                                function: sway::Expression::Identifier("String::from_ascii_str".into()),
+                                                generic_parameters: None,
+                                                parameters: vec![
+                                                    value,
+                                                ],
+                                            }),
+                                            member: "as_bytes".into(),
+                                        }),
+                                        generic_parameters: None,
+                                        parameters: vec![],
+                                    })
+                                }
+
+                                type_name => todo!("cast expression of type `{type_name}` to `std::bytes::Bytes`"),
+                            };
+
+                            match member.name.as_str() {
+                                "length" => return Ok(sway::Expression::from(sway::FunctionCall {
+                                    function: sway::Expression::from(sway::MemberAccess {
+                                        expression: value,
+                                        member: "len".into(),
+                                    }),
+                                    generic_parameters: None,
+                                    parameters: vec![],
+                                })),
+
+                                _ => todo!("translate dynamic bytes cast member access: {}", expression.to_string()),
+                            }
+                        }
+
                         solidity::Type::Mapping { .. } => todo!("translate mapping cast member access: {}", expression.to_string()),
                         solidity::Type::Function { .. } => todo!("translate function cast member access: {}", expression.to_string()),
                     }
@@ -3682,7 +3752,8 @@ impl Project {
 
                             sway::TypeName::Array { .. } => todo!("translate type member access: {} - {expression:#?}", expression.to_string()),
                             sway::TypeName::Tuple { .. } => todo!("translate type member access: {} - {expression:#?}", expression.to_string()),
-                            sway::TypeName::String { .. } => todo!("translate type member access: {} - {expression:#?}", expression.to_string()),
+                            sway::TypeName::StringSlice => todo!("translate type member access: {} - {expression:#?}", expression.to_string()),
+                            sway::TypeName::StringArray { .. } => todo!("translate type member access: {} - {expression:#?}", expression.to_string()),
                         }
                     }
 
@@ -3854,7 +3925,8 @@ impl Project {
                         
                         sway::TypeName::Array { .. } => todo!("translate {} variable member: {} - {expression:#?}", variable.type_name, expression.to_string()),
                         sway::TypeName::Tuple { .. } => todo!("translate {} variable member: {} - {expression:#?}", variable.type_name, expression.to_string()),
-                        sway::TypeName::String { .. } => todo!("translate {} variable member: {} - {expression:#?}", variable.type_name, expression.to_string()),
+                        sway::TypeName::StringSlice => todo!("translate {} variable member: {} - {expression:#?}", variable.type_name, expression.to_string()),
+                        sway::TypeName::StringArray { .. } => todo!("translate {} variable member: {} - {expression:#?}", variable.type_name, expression.to_string()),
                     }
                 }
             }
@@ -4741,7 +4813,8 @@ impl Project {
 
                     sway::TypeName::Array { .. } => todo!("translate array member function call: {} - {container:#?}", sway::TabbedDisplayer(&container)),
                     sway::TypeName::Tuple { .. } => todo!("translate tuple member function call: {} - {container:#?}", sway::TabbedDisplayer(&container)),
-                    sway::TypeName::String { .. } => todo!("translate string member function call: {} - {container:#?}", sway::TabbedDisplayer(&container)),
+                    sway::TypeName::StringSlice => todo!("translate string slice member function call: {} - {container:#?}", sway::TabbedDisplayer(&container)),
+                    sway::TypeName::StringArray { .. } => todo!("translate string array member function call: {} - {container:#?}", sway::TabbedDisplayer(&container)),
                 }
             }
 
@@ -4788,7 +4861,8 @@ impl Project {
 
                         sway::TypeName::Array { .. } => todo!(),
                         sway::TypeName::Tuple { .. } => todo!(),
-                        sway::TypeName::String { .. } => todo!(),
+                        sway::TypeName::StringSlice => todo!(),
+                        sway::TypeName::StringArray { .. } => todo!(),
                     } 
                 }
 

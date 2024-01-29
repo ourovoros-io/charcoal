@@ -336,7 +336,8 @@ pub enum TypeName {
     Tuple {
         type_names: Vec<TypeName>,
     },
-    String {
+    StringSlice,
+    StringArray {
         length: usize,
     },
 }
@@ -348,38 +349,25 @@ impl Display for TypeName {
             TypeName::Identifier { name, generic_parameters } => write!(f, "{name}{}", if let Some(p) = generic_parameters.as_ref() { format!("{p}") } else { String::new() }),
             TypeName::Array { type_name, length } => write!(f, "[{type_name}; {length}]"),
             TypeName::Tuple { type_names } => write!(f, "({})", type_names.iter().map(|t| format!("{t}")).collect::<Vec<_>>().join(", ")),
-            TypeName::String { length } => write!(f, "str[{length}]"),
+            TypeName::StringSlice => write!(f, "str"),
+            TypeName::StringArray { length } => write!(f, "str[{length}]"),
         }
     }
 }
 
 impl TypeName {
-    pub fn has_storage_map(&self) -> bool {
+    /// Checks if the type name is an unsigned integer type
+    pub fn is_uint(&self) -> bool {
         match self {
-            TypeName::Undefined => panic!("Undefined type name"),
-
-            TypeName::Identifier { name, generic_parameters } => {
-                if name == "StorageMap" {
-                    return true;
-                }
-
-                if let Some(generic_parameters) = generic_parameters.as_ref() {
-                    for generic_parameter in generic_parameters.entries.iter() {
-                        if generic_parameter.type_name.has_storage_map() {
-                            return true;
-                        }
-                    }
-                }
-
-                false
+            TypeName::Identifier { name, generic_parameters: None } => match name.as_str() {
+                "u8" | "u16" | "u32" | "u64" | "u256" => true,
+                _ => false,
             }
-
-            TypeName::Array { type_name, .. } => type_name.has_storage_map(),
-            TypeName::Tuple { type_names } => type_names.iter().any(|t| t.has_storage_map()),
-            TypeName::String { .. } => false,
+            _ => false,
         }
     }
 
+    /// Gets the parameters and return type name for the getter function of the type name
     pub fn getter_function_parameters_and_return_type(&self) -> Option<(Vec<(Parameter, bool)>, TypeName)> {
         match self {
             TypeName::Undefined => panic!("Undefined type name"),
@@ -454,16 +442,6 @@ impl TypeName {
             }
 
             _ => None,
-        }
-    }
-
-    pub fn is_uint(&self) -> bool {
-        match self {
-            TypeName::Identifier { name, generic_parameters: None } => match name.as_str() {
-                "u8" | "u16" | "u32" | "u64" | "u256" => true,
-                _ => false,
-            }
-            _ => false,
         }
     }
 }
