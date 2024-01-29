@@ -4583,24 +4583,7 @@ impl Project {
 
                                 let mut block = sway::Block {
                                     statements: vec![
-                                        // let slice = encoded_data.as_raw_slice();
-                                        sway::Statement::from(sway::Let {
-                                            pattern: sway::LetPattern::from(sway::LetIdentifier {
-                                                is_mutable: false,
-                                                name: "slice".into(),
-                                            }),
-                                            type_name: None,
-                                            value: sway::Expression::from(sway::FunctionCall {
-                                                function: sway::Expression::from(sway::MemberAccess {
-                                                    expression: encoded_data.clone(),
-                                                    member: "as_raw_slice".into(),
-                                                }),
-                                                generic_parameters: None,
-                                                parameters: vec![],
-                                            }),
-                                        }),
-
-                                        // let mut ptr = slice.ptr();
+                                        // let mut ptr = encoded_data.as_raw_slice().ptr();
                                         sway::Statement::from(sway::Let {
                                             pattern: sway::LetPattern::from(sway::LetIdentifier {
                                                 // This only needs to be mutable if there's multiple parameters to decode
@@ -4610,7 +4593,14 @@ impl Project {
                                             type_name: None,
                                             value: sway::Expression::from(sway::FunctionCall {
                                                 function: sway::Expression::from(sway::MemberAccess {
-                                                    expression: sway::Expression::Identifier("slice".into()),
+                                                    expression: sway::Expression::from(sway::FunctionCall {
+                                                        function: sway::Expression::from(sway::MemberAccess {
+                                                            expression: encoded_data.clone(),
+                                                            member: "as_raw_slice".into(),
+                                                        }),
+                                                        generic_parameters: None,
+                                                        parameters: vec![],
+                                                    }),
                                                     member: "ptr".into(),
                                                 }),
                                                 generic_parameters: None,
