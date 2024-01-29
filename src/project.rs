@@ -267,6 +267,34 @@ impl Project {
         translated_definition.enums.push(translated_enum.clone());
     }
 
+    fn translate_return_type_name(&mut self, translated_definition: &mut TranslatedDefinition, type_name: sway::TypeName) -> sway::TypeName {
+        match type_name {
+            sway::TypeName::StringSlice => {
+                // Ensure `std::string::*` is imported
+                translated_definition.ensure_use_declared("std::string::*");
+        
+                sway::TypeName::Identifier {
+                    name: "String".into(),
+                    generic_parameters: None,
+                }
+            },
+            
+            _ => {
+                // Check if the parameter's type is an ABI and make it an Identity
+                if let sway::TypeName::Identifier { name, generic_parameters: None } = &type_name {
+                    if self.find_definition_with_abi(name.as_str()).is_some() {
+                        return sway::TypeName::Identifier {
+                            name: "Identity".into(),
+                            generic_parameters: None,
+                        };
+                    }
+                }
+    
+                type_name.clone()
+            }
+        }
+    }
+
     fn translate_type_name(
         &mut self,
         translated_definition: &mut TranslatedDefinition,
@@ -350,21 +378,26 @@ impl Project {
                     generic_parameters: None,
                 },
 
-                solidity::Type::Mapping { key, value, .. } => sway::TypeName::Identifier {
-                    name: "StorageMap".into(),
-                    generic_parameters: Some(sway::GenericParameterList {
-                        entries: vec![
-                            sway::GenericParameter {
-                                type_name: self.translate_type_name(translated_definition, key.as_ref(), is_storage),
-                                implements: None,
-                            },
-                            sway::GenericParameter {
-                                type_name: self.translate_type_name(translated_definition, value.as_ref(), is_storage),
-                                implements: None,
-                            },
-                        ],
-                    }),
-                },
+                solidity::Type::Mapping { key, value, .. } => {
+                    // Ensure `std::hash::Hash` is imported
+                    translated_definition.ensure_use_declared("std::hash::Hash");
+            
+                    sway::TypeName::Identifier {
+                        name: "StorageMap".into(),
+                        generic_parameters: Some(sway::GenericParameterList {
+                            entries: vec![
+                                sway::GenericParameter {
+                                    type_name: self.translate_type_name(translated_definition, key.as_ref(), is_storage),
+                                    implements: None,
+                                },
+                                sway::GenericParameter {
+                                    type_name: self.translate_type_name(translated_definition, value.as_ref(), is_storage),
+                                    implements: None,
+                                },
+                            ],
+                        }),
+                    }
+                }
 
                 solidity::Type::Function { .. } => todo!("function types"),
             }
@@ -1566,9 +1599,6 @@ impl Project {
             }
         }
 
-        // Ensure std::hash::Hash is imported for StorageMap storage fields
-        translated_definition.ensure_use_declared("std::hash::Hash");
-
         // Handle constant variable definitions
         if is_constant {
             let value = if let Some(x) = variable_definition.initializer.as_ref() {
@@ -1663,7 +1693,19 @@ impl Project {
 
         // Generate parameters and return type for the public getter function
         let mut parameters = vec![];
-        let mut return_type = variable_type_name.clone();
+        let mut return_type = match variable_type_name {
+            sway::TypeName::StringSlice => {
+                // Ensure `std::string::*` is imported
+                translated_definition.ensure_use_declared("std::string::*");
+        
+                sway::TypeName::Identifier {
+                    name: "String".into(),
+                    generic_parameters: None,
+                }
+            },
+
+            _ => variable_type_name.clone(),
+        };
 
         if let Some((inner_parameters, inner_return_type)) = variable_type_name.getter_function_parameters_and_return_type() {
             parameters = inner_parameters;
@@ -1902,11 +1944,13 @@ impl Project {
                 None
             } else {
                 Some(if function_definition.returns.len() == 1 {
-                    self.translate_type_name(translated_definition, &function_definition.returns[0].1.as_ref().unwrap().ty, false)
+                    let type_name = self.translate_type_name(translated_definition, &function_definition.returns[0].1.as_ref().unwrap().ty, false);
+                    self.translate_return_type_name(translated_definition, type_name)
                 } else {
                     sway::TypeName::Tuple {
                         type_names: function_definition.returns.iter().map(|(_, p)| {
-                            self.translate_type_name(translated_definition, &p.as_ref().unwrap().ty, false)
+                            let type_name = self.translate_type_name(translated_definition, &p.as_ref().unwrap().ty, false);
+                            self.translate_return_type_name(translated_definition, type_name)
                         }).collect(),
                     }
                 })
@@ -2248,35 +2292,13 @@ impl Project {
                 None
             } else {
                 Some(if function_definition.returns.len() == 1 {
-                    let mut type_name = self.translate_type_name(translated_definition, &function_definition.returns[0].1.as_ref().unwrap().ty, false);
-                    
-                    // Check if the parameter's type is an ABI and make it an Identity
-                    if let sway::TypeName::Identifier { name, generic_parameters: None } = &type_name {
-                        if self.find_definition_with_abi(name.as_str()).is_some() {
-                            type_name = sway::TypeName::Identifier {
-                                name: "Identity".into(),
-                                generic_parameters: None,
-                            };
-                        }
-                    }
-        
-                    type_name
+                    let type_name = self.translate_type_name(translated_definition, &function_definition.returns[0].1.as_ref().unwrap().ty, false);
+                    self.translate_return_type_name(translated_definition, type_name)
                 } else {
                     sway::TypeName::Tuple {
                         type_names: function_definition.returns.iter().map(|(_, p)| {
-                            let mut type_name = self.translate_type_name(translated_definition, &p.as_ref().unwrap().ty, false);
-                            
-                            // Check if the parameter's type is an ABI and make it an Identity
-                            if let sway::TypeName::Identifier { name, generic_parameters: None } = &type_name {
-                                if self.find_definition_with_abi(name.as_str()).is_some() {
-                                    type_name = sway::TypeName::Identifier {
-                                        name: "Identity".into(),
-                                        generic_parameters: None,
-                                    };
-                                }
-                            }
-
-                            type_name
+                            let type_name = self.translate_type_name(translated_definition, &p.as_ref().unwrap().ty, false);
+                            self.translate_return_type_name(translated_definition, type_name)
                         }).collect(),
                     }
                 })
@@ -5348,8 +5370,8 @@ impl Project {
                     member: match (&variable.type_name, &rhs_type_name) {
                         (
                             sway::TypeName::Identifier { name: lhs_name, .. },
-                            sway::TypeName::Identifier { name: rhs_name, .. }
-                        ) if lhs_name == "StorageString" && rhs_name == "String" => {
+                            sway::TypeName::StringSlice
+                        ) if lhs_name == "StorageString" => {
                             "write_slice".into()
                         }
 
@@ -5359,7 +5381,23 @@ impl Project {
                 generic_parameters: None,
                 parameters: vec![
                     match operator {
-                        "=" => rhs,
+                        "=" => match (&variable.type_name, &rhs_type_name) {
+                            (
+                                sway::TypeName::Identifier { name: lhs_name, .. },
+                                sway::TypeName::StringSlice
+                            ) if lhs_name == "StorageString" => {
+                                // Ensure `std::string::*` is imported
+                                translated_definition.ensure_use_declared("std::string::*");
+
+                                sway::Expression::from(sway::FunctionCall {
+                                    function: sway::Expression::Identifier("String::from_ascii_str".into()),
+                                    generic_parameters: None,
+                                    parameters: vec![rhs],
+                                })
+                            }
+    
+                            _ => rhs,
+                        },
 
                         _ => {
                             variable.read_count += 1;
