@@ -1127,6 +1127,7 @@ pub enum Expression {
     Constructor(Box<Constructor>),
     Continue,
     Break,
+    AsmBlock(Box<AsmBlock>),
     // TODO: finish
 }
 
@@ -1166,6 +1167,7 @@ impl TabbedDisplay for Expression {
             Expression::Constructor(x) => x.tabbed_fmt(depth, f),
             Expression::Continue => write!(f, "continue"),
             Expression::Break => write!(f, "break"),
+            Expression::AsmBlock(x) => x.tabbed_fmt(depth, f),
         }
     }
 }
@@ -1202,6 +1204,7 @@ impl_expr_box_from!(While);
 impl_expr_box_from!(UnaryExpression);
 impl_expr_box_from!(BinaryExpression);
 impl_expr_box_from!(Constructor);
+impl_expr_box_from!(AsmBlock);
 
 impl Expression {
     pub fn create_todo(msg: Option<String>) -> Expression {
@@ -1473,6 +1476,104 @@ impl TabbedDisplay for ConstructorField {
     fn tabbed_fmt(&self, depth: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}: ", self.name)?;
         self.value.tabbed_fmt(depth, f)
+    }
+}
+
+// -------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct AsmBlock {
+    pub registers: Vec<AsmRegister>,
+    pub instructions: Vec<AsmInstruction>,
+    pub final_expression: Option<AsmFinalExpression>,
+}
+
+impl TabbedDisplay for AsmBlock {
+    fn tabbed_fmt(&self, depth: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "asm (")?;
+
+        for (i, register) in self.registers.iter().enumerate() {
+            if i > 0 {
+                write!(f, ", ")?;
+            }
+
+            register.tabbed_fmt(depth, f)?;
+        }
+
+        writeln!(f, ") {{")?;
+
+        for instruction in self.instructions.iter() {
+            instruction.tabbed_fmt(depth + 1, f)?;
+            writeln!(f)?;
+        }
+
+        if let Some(final_expression) = self.final_expression.as_ref() {
+            final_expression.tabbed_fmt(depth + 1, f)?;
+            writeln!(f)?;
+        }
+
+        "}".tabbed_fmt(depth, f)
+    }
+}
+
+// -------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct AsmRegister {
+    pub name: String,
+    pub value: Option<Expression>,
+}
+
+impl TabbedDisplay for AsmRegister {
+    fn tabbed_fmt(&self, depth: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.name.tabbed_fmt(depth, f)?;
+
+        if let Some(value) = self.value.as_ref() {
+            write!(f, ": ")?;
+            value.tabbed_fmt(depth, f)?;
+        }
+
+        Ok(())
+    }
+}
+
+// -------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct AsmInstruction {
+    pub op_code: String,
+    pub args: Vec<String>,
+}
+
+impl Display for AsmInstruction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.op_code)?;
+
+        for arg in self.args.iter() {
+            write!(f, " {arg}")?;
+        }
+
+        write!(f, ";")
+    }
+}
+
+// -------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct AsmFinalExpression {
+    pub register: String,
+    pub type_name: Option<TypeName>,
+}
+
+impl Display for AsmFinalExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.register)?;
+        
+        if let Some(type_name) = self.type_name.as_ref() {
+            write!(f, ": {}", type_name)?;
+        }
+
+        Ok(())
     }
 }
 

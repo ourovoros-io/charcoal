@@ -415,6 +415,8 @@ impl TranslationScope {
             sway::Expression::Constructor(constructor) => Ok(constructor.type_name.clone()),
             sway::Expression::Continue => Ok(sway::TypeName::Tuple { type_names: vec![] }),
             sway::Expression::Break => Ok(sway::TypeName::Tuple { type_names: vec![] }),
+            
+            sway::Expression::AsmBlock(_) => todo!("get type of asm block: {expression:#?}"),
         }
     }
 }
