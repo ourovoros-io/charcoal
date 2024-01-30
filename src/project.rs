@@ -4083,10 +4083,17 @@ impl Project {
                 }
 
                 ("msg", "sig") => {
-                    // msg.sig => /*unsupported: msg.sig; using:*/ 0
+                    // msg.sig => /*unsupported: msg.sig; using:*/ [0, 0, 0, 0]
                     return Ok(sway::Expression::Commented(
                         "unsupported: msg.sig; using:".into(),
-                        Box::new(sway::Expression::from(sway::Literal::DecInt(0))),
+                        Box::new(sway::Expression::from(sway::Array {
+                            elements: vec![
+                                sway::Expression::from(sway::Literal::DecInt(0)),
+                                sway::Expression::from(sway::Literal::DecInt(0)),
+                                sway::Expression::from(sway::Literal::DecInt(0)),
+                                sway::Expression::from(sway::Literal::DecInt(0)),
+                            ],
+                        })),
                     ))
                 }
 

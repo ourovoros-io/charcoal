@@ -1500,7 +1500,7 @@ impl TabbedDisplay for AsmBlock {
                 write!(f, ", ")?;
             }
 
-            register.tabbed_fmt(depth, f)?;
+            write!(f, "{register}")?;
         }
 
         writeln!(f, ") {{")?;
@@ -1527,13 +1527,13 @@ pub struct AsmRegister {
     pub value: Option<Expression>,
 }
 
-impl TabbedDisplay for AsmRegister {
-    fn tabbed_fmt(&self, depth: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.name.tabbed_fmt(depth, f)?;
+impl Display for AsmRegister {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name)?;
 
         if let Some(value) = self.value.as_ref() {
             write!(f, ": ")?;
-            value.tabbed_fmt(depth, f)?;
+            value.tabbed_fmt(0, f)?;
         }
 
         Ok(())
