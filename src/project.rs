@@ -4866,24 +4866,75 @@ impl Project {
                                 return Ok(sway::Expression::from(block));
                             }
 
-                            "encode" => {
-                                // abi.encode(...) => ???
+                            "encode" | "encodePacked" => {
+                                // abi.encode(a, b, ...) | abi.encodePacked(a, b, ...) => {
+                                //     let mut bytes = Bytes::new();
+                                //     bytes.append(Bytes::from(core::codec::encode(a)));
+                                //     bytes.append(Bytes::from(core::codec::encode(b)));
+                                //     // ...
+                                //     bytes
+                                // }
 
-                                //
-                                // TODO: how should this be handled?
-                                //
+                                let parameters = arguments.iter()
+                                    .map(|a| self.translate_expression(translated_definition, scope, a))
+                                    .collect::<Result<Vec<_>, _>>()?;
+                                
+                                // Generate a unique variable name
+                                let mut variable_name = "bytes".to_string();
 
-                                return Ok(sway::Expression::create_todo(Some(expression.to_string())))
-                            }
+                                while scope.get_variable_from_new_name(variable_name.as_str()).is_ok() {
+                                    variable_name = format!("_{variable_name}");
+                                }
 
-                            "encodePacked" => {
-                                // abi.encodePacked(...) => ???
+                                // Ensure `std::bytes::Bytes` is imported
+                                translated_definition.ensure_use_declared("std::bytes::Bytes");
 
-                                //
-                                // TODO: how should this be handled?
-                                //
+                                // Create the abi encoding block
+                                let mut block = sway::Block {
+                                    statements: vec![
+                                        sway::Statement::from(sway::Let {
+                                            pattern: sway::LetPattern::from(sway::LetIdentifier {
+                                                is_mutable: true,
+                                                name: variable_name.clone(),
+                                            }),
+                                            type_name: None,
+                                            value: sway::Expression::from(sway::FunctionCall {
+                                                function: sway::Expression::Identifier("Bytes::new".into()),
+                                                generic_parameters: None,
+                                                parameters: vec![],
+                                            }),
+                                        }),
+                                    ],
+                                    final_expr: Some(sway::Expression::Identifier(variable_name.clone())),
+                                };
+                                
+                                // Add the encoding statements to the block
+                                for parameter in parameters.iter() {
+                                    block.statements.push(sway::Statement::from(sway::Expression::from(sway::FunctionCall {
+                                        function: sway::Expression::from(sway::MemberAccess {
+                                            expression: sway::Expression::Identifier(variable_name.clone()),
+                                            member: "append".into(),
+                                        }),
+                                        generic_parameters: None,
+                                        parameters: vec![
+                                            sway::Expression::from(sway::FunctionCall {
+                                                function: sway::Expression::Identifier("Bytes::from".into()),
+                                                generic_parameters: None,
+                                                parameters: vec![
+                                                    sway::Expression::from(sway::FunctionCall {
+                                                        function: sway::Expression::Identifier("core::codec::encode".into()),
+                                                        generic_parameters: None,
+                                                        parameters: vec![
+                                                            parameter.clone(),
+                                                        ],
+                                                    }),
+                                                ],
+                                            }),
+                                        ],
+                                    })));
+                                }
 
-                                return Ok(sway::Expression::create_todo(Some(expression.to_string())))
+                                return Ok(sway::Expression::from(block))
                             }
 
                             "encodeWithSelector" => {
