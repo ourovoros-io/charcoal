@@ -3875,16 +3875,133 @@ impl Project {
                     return Ok(sway::Expression::create_todo(Some("block.basefee".into())))
                 }
 
-                // TODO: find out the appropriate sway version of `block.chainid`
                 ("block", "chainid") => {
-                    // todo!("block.chainid")
-                    return Ok(sway::Expression::create_todo(Some("block.chainid".into())))
+                    // block.chainid => asm(r1) {
+                    //    gm r1 i4;
+                    //    r1: u64
+                    // }
+                    
+                    return Ok(sway::Expression::from(sway::AsmBlock {
+                        registers: vec![
+                            sway::AsmRegister {
+                                name: "r1".into(),
+                                value: None,
+                            },
+                        ],
+                        instructions: vec![
+                            sway::AsmInstruction {
+                                op_code: "gm".into(),
+                                args: vec![
+                                    "r1".into(),
+                                    "i4".into(),
+                                ],
+                            }
+                        ],
+                        final_expression: Some(sway::AsmFinalExpression {
+                            register: "r1".into(),
+                            type_name: Some(sway::TypeName::Identifier {
+                                name: "u64".into(),
+                                generic_parameters: None,
+                            }),
+                        }),
+                    }));
                 }
 
-                // TODO: find out the appropriate sway version of `block.coinbase`
                 ("block", "coinbase") => {
-                    // todo!("block.coinbase")
-                    return Ok(sway::Expression::create_todo(Some("block.coinbase".into())))
+                    // block.coinbase => {
+                    //     let ptr = std::alloc::alloc(__size_of::<b256>());
+                    //     asm(r1: ptr) {
+                    //         cb r1;
+                    //     }
+                    //     Identity::from(ContractId::from(ptr.read::<b256>()))
+                    // }
+
+                    return Ok(sway::Expression::from(sway::Block {
+                        statements: vec![
+                            // let ptr = std::alloc::alloc(__size_of::<b256>());
+                            sway::Statement::from(sway::Let {
+                                pattern: sway::LetPattern::from(sway::LetIdentifier {
+                                    is_mutable: false,
+                                    name: "ptr".into(),
+                                }),
+                                type_name: None,
+                                value: sway::Expression::from(sway::FunctionCall {
+                                    function: sway::Expression::Identifier("std::alloc::alloc".into()),
+                                    generic_parameters: None,
+                                    parameters: vec![
+                                        sway::Expression::from(sway::FunctionCall {
+                                            function: sway::Expression::Identifier("__size_of".into()),
+                                            generic_parameters: Some(sway::GenericParameterList {
+                                                entries: vec![
+                                                    sway::GenericParameter {
+                                                        type_name: sway::TypeName::Identifier {
+                                                            name: "b256".into(),
+                                                            generic_parameters: None,
+                                                        },
+                                                        implements: None,
+                                                    },
+                                                ],
+                                            }),
+                                            parameters: vec![],
+                                        }),
+                                    ],
+                                }),
+                            }),
+                            
+                            // asm(r1: ptr) {
+                            //     cb r1;
+                            // }
+                            sway::Statement::from(sway::Expression::from(sway::AsmBlock {
+                                registers: vec![
+                                    sway::AsmRegister {
+                                        name: "r1".into(),
+                                        value: Some(sway::Expression::Identifier("ptr".into())),
+                                    },
+                                ],
+                                instructions: vec![
+                                    sway::AsmInstruction {
+                                        op_code: "cb".into(),
+                                        args: vec![
+                                            "r1".into(),
+                                        ],
+                                    },
+                                ],
+                                final_expression: None,
+                            })),
+                        ],
+                        
+                        // Identity::from(ContractId::from(ptr.read::<b256>()))
+                        final_expr: Some(sway::Expression::from(sway::FunctionCall {
+                            function: sway::Expression::Identifier("Identity::from".into()),
+                            generic_parameters: None,
+                            parameters: vec![
+                                sway::Expression::from(sway::FunctionCall {
+                                    function: sway::Expression::Identifier("ContractId::from".into()),
+                                    generic_parameters: None,
+                                    parameters: vec![
+                                        sway::Expression::from(sway::FunctionCall {
+                                            function: sway::Expression::from(sway::MemberAccess {
+                                                expression: sway::Expression::Identifier("ptr".into()),
+                                                member: "read".into(),
+                                            }),
+                                            generic_parameters: Some(sway::GenericParameterList {
+                                                entries: vec![
+                                                    sway::GenericParameter {
+                                                        type_name: sway::TypeName::Identifier {
+                                                            name: "b256".into(),
+                                                            generic_parameters: None,
+                                                        },
+                                                        implements: None,
+                                                    },
+                                                ]
+                                            }),
+                                            parameters: vec![],
+                                        }),
+                                    ],
+                                })
+                            ],
+                        })),
+                    }));
                 }
 
                 // TODO: find out the appropriate sway version of `block.difficulty`

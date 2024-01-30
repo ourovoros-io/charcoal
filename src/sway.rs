@@ -1012,10 +1012,8 @@ impl TabbedDisplay for Statement {
             Statement::Expression(x) => {
                 x.tabbed_fmt(depth, f)?;
 
-                match x {
-                    Expression::Block(_) | Expression::If(_) | Expression::Match(_) | Expression::While(_) => {}
-
-                    _ => write!(f, ";")?,
+                if !matches!(x, Expression::Block(_) | Expression::If(_) | Expression::Match(_) | Expression::While(_) | Expression::AsmBlock(_)) {
+                    write!(f, ";")?;
                 }
 
                 Ok(())
