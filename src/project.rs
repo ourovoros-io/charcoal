@@ -3869,10 +3869,20 @@ impl Project {
             }
 
             solidity::Expression::Variable(solidity::Identifier { name, .. }) => match (name.as_str(), member.name.as_str()) {
-                // TODO: find out the appropriate sway version of `block.basefee`
                 ("block", "basefee") => {
-                    // todo!("block.basefee")
-                    return Ok(sway::Expression::create_todo(Some("block.basefee".into())))
+                    // block.basefee => /*unsupported: block.basefee; using:*/ 0
+                    return Ok(sway::Expression::Commented(
+                        "unsupported: block.basefee; using:".into(),
+                        Box::new(sway::Expression::from(sway::Literal::DecInt(0))),
+                    ))
+                }
+
+                ("block", "blobbasefee") => {
+                    // block.blobbasefee => /*unsupported: block.blobbasefee; using:*/ 0
+                    return Ok(sway::Expression::Commented(
+                        "unsupported: block.blobbasefee; using:".into(),
+                        Box::new(sway::Expression::from(sway::Literal::DecInt(0))),
+                    ))
                 }
 
                 ("block", "chainid") => {
@@ -3880,7 +3890,7 @@ impl Project {
                     //    gm r1 i4;
                     //    r1: u64
                     // }
-                    
+
                     return Ok(sway::Expression::from(sway::AsmBlock {
                         registers: vec![
                             sway::AsmRegister {
@@ -4004,10 +4014,12 @@ impl Project {
                     }));
                 }
 
-                // TODO: find out the appropriate sway version of `block.difficulty`
                 ("block", "difficulty") => {
-                    // todo!("block.difficulty")
-                    return Ok(sway::Expression::create_todo(Some("block.difficulty".into())))
+                    // block.difficulty => /*unsupported: block.difficulty; using:*/ 0
+                    return Ok(sway::Expression::Commented(
+                        "unsupported: block.difficulty; using:".into(),
+                        Box::new(sway::Expression::from(sway::Literal::DecInt(0))),
+                    ))
                 }
 
                 // TODO: find out the appropriate sway version of `block.gaslimit`
@@ -4025,10 +4037,12 @@ impl Project {
                     }))
                 }
 
-                // TODO: find out the appropriate sway version of `block.prevrandao`
                 ("block", "prevrandao") => {
-                    // todo!("block.prevrandao")
-                    return Ok(sway::Expression::create_todo(Some("block.prevrandao".into())))
+                    // block.prevrandao => /*unsupported: block.prevrandao; using:*/ 0
+                    return Ok(sway::Expression::Commented(
+                        "unsupported: block.prevrandao; using:".into(),
+                        Box::new(sway::Expression::from(sway::Literal::DecInt(0))),
+                    ))
                 }
 
                 ("block", "timestamp") => {
@@ -4068,10 +4082,12 @@ impl Project {
                     }))
                 }
 
-                // TODO: find out the appropriate sway version of `msg.sig`
                 ("msg", "sig") => {
-                    // todo!("msg.sig")
-                    return Ok(sway::Expression::create_todo(Some("msg.sig".into())))
+                    // msg.sig => /*unsupported: msg.sig; using:*/ 0
+                    return Ok(sway::Expression::Commented(
+                        "unsupported: msg.sig; using:".into(),
+                        Box::new(sway::Expression::from(sway::Literal::DecInt(0))),
+                    ))
                 }
 
                 ("msg", "value") => {
@@ -4100,11 +4116,29 @@ impl Project {
                         ],
                     }))
                 }
-
-                // TODO: find out the appropriate sway version of `tx.origin`
+                
                 ("tx", "origin") => {
-                    // todo!("tx.origin")
-                    return Ok(sway::Expression::create_todo(Some("tx.origin".into())))
+                    // tx.origin => Identity::from(Address::from(/*unsupported: tx.origin; using:*/ ZERO_B256))
+
+                    // Ensure `std::constants::ZERO_B256` is imported
+                    translated_definition.ensure_use_declared("std::constants::ZERO_B256");
+
+                    return Ok(sway::Expression::from(sway::FunctionCall {
+                        function: sway::Expression::Identifier("Identity::from".into()),
+                        generic_parameters: None,
+                        parameters: vec![
+                            sway::Expression::from(sway::FunctionCall {
+                                function: sway::Expression::Identifier("Address::from".into()),
+                                generic_parameters: None,
+                                parameters: vec![
+                                    sway::Expression::Commented(
+                                        "unsupported: tx.origin; using:".into(),
+                                        Box::new(sway::Expression::Identifier("ZERO_B256".into())),
+                                    ),
+                                ],
+                            }),
+                        ],
+                    }))
                 }
 
                 (name, member) => {

@@ -417,6 +417,8 @@ impl TranslationScope {
             sway::Expression::Break => Ok(sway::TypeName::Tuple { type_names: vec![] }),
             
             sway::Expression::AsmBlock(_) => todo!("get type of asm block: {expression:#?}"),
+            
+            sway::Expression::Commented(_, x) => self.get_expression_type(x),
         }
     }
 }

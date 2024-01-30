@@ -1126,6 +1126,7 @@ pub enum Expression {
     Continue,
     Break,
     AsmBlock(Box<AsmBlock>),
+    Commented(String, Box<Expression>),
     // TODO: finish
 }
 
@@ -1166,6 +1167,10 @@ impl TabbedDisplay for Expression {
             Expression::Continue => write!(f, "continue"),
             Expression::Break => write!(f, "break"),
             Expression::AsmBlock(x) => x.tabbed_fmt(depth, f),
+            Expression::Commented(comment, x) => {
+                write!(f, "/*{comment}*/ ")?;
+                x.tabbed_fmt(depth, f)
+            }
         }
     }
 }
