@@ -758,7 +758,6 @@ impl Into<sway::Module> for TranslatedDefinition {
 
         for x in self.functions.iter() {
             if let Some(0) = self.function_call_counts.get(&x.name) {
-                println!("Culling function {}", x.name);
                 continue;
             }
 
