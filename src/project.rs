@@ -5055,10 +5055,6 @@ impl Project {
                                     .map(|a| self.translate_expression(translated_definition, scope, a))
                                     .collect::<Result<Vec<_>, _>>()?;
                                 
-                                let parameter_types = parameters.iter()
-                                    .map(|p| scope.get_expression_type(p))
-                                    .collect::<Result<Vec<_>, _>>()?;
-                                
                                 // Create the abi encoding block
                                 let mut block = sway::Block {
                                     statements: vec![
@@ -5079,7 +5075,7 @@ impl Project {
                                 };
                                 
                                 // Add the encoding statements to the block
-                                for (parameter, parameter_type) in parameters.iter().zip(parameter_types.iter()) {
+                                for parameter in parameters {
                                     block.statements.push(sway::Statement::from(sway::Expression::from(sway::FunctionCall {
                                         function: sway::Expression::from(sway::MemberAccess {
                                             expression: sway::Expression::Identifier(variable_name.clone()),
