@@ -1390,7 +1390,7 @@ impl Project {
 
                 "Identity" => match value {
                     None => sway::Expression::from(sway::FunctionCall {
-                        function: sway::Expression::Identifier("Identity::from".into()),
+                        function: sway::Expression::Identifier("Identity::Address".into()),
                         generic_parameters: None,
                         parameters: vec![
                             sway::Expression::from(sway::FunctionCall {
@@ -4024,9 +4024,16 @@ impl Project {
                 }
 
                 ("block", "timestamp") => {
-                    // std::block::timestamp()
+                    // block.timestamp => std::block::timestamp().as_u256()
                     return Ok(sway::Expression::from(sway::FunctionCall {
-                        function: sway::Expression::Identifier("std::block::timestamp".into()),
+                        function: sway::Expression::from(sway::MemberAccess {
+                            expression: sway::Expression::from(sway::FunctionCall {
+                                function: sway::Expression::Identifier("std::block::timestamp".into()),
+                                generic_parameters: None,
+                                parameters: vec![],
+                            }),
+                            member: "as_u256".into(),
+                        }),
                         generic_parameters: None,
                         parameters: vec![],
                     }))
@@ -4109,7 +4116,7 @@ impl Project {
                     translated_definition.ensure_use_declared("std::constants::ZERO_B256");
 
                     return Ok(sway::Expression::from(sway::FunctionCall {
-                        function: sway::Expression::Identifier("Identity::from".into()),
+                        function: sway::Expression::Identifier("Identity::Address".into()),
                         generic_parameters: None,
                         parameters: vec![
                             sway::Expression::from(sway::FunctionCall {
