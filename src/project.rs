@@ -2148,25 +2148,33 @@ impl Project {
         // Generate toplevel modifier functions
         match (modifier.pre_body.as_ref(), modifier.post_body.as_ref()) {
             (Some(pre_body), Some(post_body)) => {
+                let modifier_pre_function_name = format!("{}_pre", modifier.new_name);
+
                 translated_definition.functions.push(sway::Function {
                     attributes: create_attributes(has_pre_storage_read, has_pre_storage_write),
                     is_public: false,
-                    name: format!("{}_pre", modifier.new_name),
+                    name: modifier_pre_function_name.clone(),
                     generic_parameters: None,
                     parameters: modifier.parameters.clone(),
                     return_type: None,
                     body: Some(pre_body.clone()),
                 });
 
+                *translated_definition.function_call_counts.entry(modifier_pre_function_name.clone()).or_insert(0) += 1;
+
+                let modifier_post_function_name = format!("{}_post", modifier.new_name);
+
                 translated_definition.functions.push(sway::Function {
                     attributes: create_attributes(has_post_storage_read, has_post_storage_write),
                     is_public: false,
-                    name: format!("{}_post", modifier.new_name),
+                    name: modifier_post_function_name.clone(),
                     generic_parameters: None,
                     parameters: modifier.parameters.clone(),
                     return_type: None,
                     body: Some(post_body.clone()),
                 });
+
+                *translated_definition.function_call_counts.entry(modifier_post_function_name.clone()).or_insert(0) += 1;
             }
 
             (Some(pre_body), None) => {
@@ -2179,6 +2187,8 @@ impl Project {
                     return_type: None,
                     body: Some(pre_body.clone()),
                 });
+
+                *translated_definition.function_call_counts.entry(modifier.new_name.clone()).or_insert(0) += 1;
             }
 
             (None, Some(post_body)) => {
@@ -2191,6 +2201,8 @@ impl Project {
                     return_type: None,
                     body: Some(post_body.clone()),
                 });
+
+                *translated_definition.function_call_counts.entry(modifier.new_name.clone()).or_insert(0) += 1;
             }
 
             (None, None) => {
@@ -5193,12 +5205,14 @@ impl Project {
 
                                         // Create the function call
                                         let function_call = sway::Expression::from(sway::FunctionCall {
-                                            function: sway::Expression::Identifier(new_name),
+                                            function: sway::Expression::Identifier(new_name.clone()),
                                             generic_parameters: None,
                                             parameters: arguments.iter()
                                                 .map(|a| self.translate_expression(translated_definition, scope, a))
                                                 .collect::<Result<Vec<_>, _>>()?,
                                         });
+
+                                        *translated_definition.function_call_counts.entry(new_name.clone()).or_insert(0) += 1;
 
                                         return Ok(function_call);
                                     }
@@ -5350,15 +5364,20 @@ impl Project {
                                         let Some(parameter_type_name) = parameter.type_name.as_ref() else { continue };
 
                                         if *parameter_type_name == type_name {
+                                            *translated_definition.function_call_counts.entry(f.new_name.clone()).or_insert(0) += 1;
+
                                             return Ok(sway::Expression::from(sway::FunctionCall {
-                                                function: sway::Expression::from(sway::MemberAccess {
-                                                    expression: container,
-                                                    member: f.new_name.clone(),
-                                                }),
+                                                function: sway::Expression::Identifier(f.new_name.clone()),
                                                 generic_parameters: None,
-                                                parameters: arguments.iter()
-                                                    .map(|a| self.translate_expression(translated_definition, scope, a))
-                                                    .collect::<Result<Vec<_>, _>>()?,
+                                                parameters: {
+                                                    let mut parameters = arguments.iter()
+                                                        .map(|a| self.translate_expression(translated_definition, scope, a))
+                                                        .collect::<Result<Vec<_>, _>>()?;
+
+                                                    parameters.insert(0, container.clone());
+
+                                                    parameters
+                                                },
                                             }));
                                         }
                                     }
@@ -5483,6 +5502,8 @@ impl Project {
 
                                     true
                                 }) {
+                                    *translated_definition.function_call_counts.entry(function.new_name.clone()).or_insert(0) += 1;
+
                                     return Ok(sway::Expression::from(sway::FunctionCall {
                                         function: sway::Expression::Identifier(function.new_name.clone()),
                                         generic_parameters: None,
