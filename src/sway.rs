@@ -794,7 +794,7 @@ impl TabbedDisplay for Configurable {
             writeln!(f, ",")?;
         }
 
-        writeln!(f, "}}")
+        "}".tabbed_fmt(depth, f)
     }
 }
 
@@ -951,7 +951,7 @@ impl TabbedDisplay for Impl {
             was_constant = matches!(item, ImplItem::Constant(_));
         }
 
-        write!(f, "}}")
+        "}".tabbed_fmt(depth, f)
     }
 }
 
