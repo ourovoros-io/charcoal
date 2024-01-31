@@ -2228,6 +2228,7 @@ impl Project {
             (old_name, new_name)
         };
 
+        println!("Translating function {} in {}", old_name, translated_definition.path.to_string_lossy());
         // Translate the functions parameters
         let mut parameters = sway::ParameterList::default();
 
@@ -4337,8 +4338,8 @@ impl Project {
                     }
 
                     solidity::Type::Uint(bits) => {
-                        let value = self.translate_expression(translated_definition, scope, &arguments[0])?;
-                        let type_name = translated_definition.get_underlying_type(&scope.get_expression_type(&value)?);
+                        let value_expression = self.translate_expression(translated_definition, scope, &arguments[0])?;
+                        let value_type_name = translated_definition.get_underlying_type(&scope.get_expression_type(&value_expression)?);
 
                         let create_uint_try_from_unwrap_expression = |from_bits: usize, to_bits: usize, value: sway::Expression| -> Result<sway::Expression, Error> {
                             if from_bits == to_bits {
@@ -4359,17 +4360,183 @@ impl Project {
                             }))
                         };
 
-                        match type_name {
+                        match value_type_name {
                             sway::TypeName::Identifier { name, .. } => match (name.as_str(), bits) {
-                                ("u8", 8 | 16 | 32 | 64 | 256) => create_uint_try_from_unwrap_expression(8, *bits as usize, value),
-                                ("u16", 8 | 16 | 32 | 64 | 256) => create_uint_try_from_unwrap_expression(16, *bits as usize, value),
-                                ("u32", 8 | 16 | 32 | 64 | 256) => create_uint_try_from_unwrap_expression(32, *bits as usize, value),
-                                ("u64", 8 | 16 | 32 | 64 | 256) => create_uint_try_from_unwrap_expression(64, *bits as usize, value),
-                                ("u256", 8 | 16 | 32 | 64 | 256) => create_uint_try_from_unwrap_expression(256, *bits as usize, value),
+                                ("u8", 8 | 16 | 32 | 64 | 256) => create_uint_try_from_unwrap_expression(8, *bits as usize, value_expression),
+                                ("u16", 8 | 16 | 32 | 64 | 256) => create_uint_try_from_unwrap_expression(16, *bits as usize, value_expression),
+                                ("u32", 8 | 16 | 32 | 64 | 256) => create_uint_try_from_unwrap_expression(32, *bits as usize, value_expression),
+                                ("u64", 8 | 16 | 32 | 64 | 256) => create_uint_try_from_unwrap_expression(64, *bits as usize, value_expression),
+                                ("u256", 8 | 16 | 32 | 64 | 256) => create_uint_try_from_unwrap_expression(256, *bits as usize, value_expression),
                                 _ => todo!("translate {name} type cast: {} - {expression:#?}", expression.to_string())
                             }
 
                             _ => todo!("translate type cast: {} - {expression:#?}", expression.to_string()),
+                        }
+                    }
+
+                    solidity::Type::Bytes(byte_count) => {
+                        // bytesN(x) => ???
+
+                        let value_expression = self.translate_expression(translated_definition, scope, &arguments[0])?;
+                        let value_type_name = scope.get_expression_type(&value_expression)?;
+
+                        match &value_type_name {
+                            sway::TypeName::Undefined => panic!("Undefined type name"),
+
+                            sway::TypeName::Identifier { name, generic_parameters } => match name.as_str() {
+                                "b256" if generic_parameters.is_none() => {
+                                    // Ensure `std::bytes::Bytes` is imported
+                                    translated_definition.ensure_use_declared("std::bytes::Bytes");
+            
+                                    // Generate a unique name for our variable
+                                    let variable_name = scope.generate_unique_variable_name("bytes");
+            
+                                    Ok(sway::Expression::from(sway::Block {
+                                        statements: vec![
+                                            sway::Statement::from(sway::Let {
+                                                pattern: sway::LetPattern::from(sway::LetIdentifier {
+                                                    is_mutable: false,
+                                                    name: variable_name.clone(),
+                                                }),
+                                                type_name: None,
+                                                value: sway::Expression::from(sway::FunctionCall {
+                                                    function: sway::Expression::from(sway::MemberAccess {
+                                                        expression: value_expression.clone(),
+                                                        member: "to_be_bytes".into(),
+                                                    }),
+                                                    generic_parameters: None,
+                                                    parameters: vec![],
+                                                }),
+                                            }),
+                                            sway::Statement::from(sway::Let {
+                                                pattern: sway::LetPattern::from(vec![
+                                                    sway::LetIdentifier {
+                                                        is_mutable: false,
+                                                        name: variable_name.clone(),
+                                                    },
+                                                    sway::LetIdentifier {
+                                                        is_mutable: false,
+                                                        name: "_".into(),
+                                                    },
+                                                ]),
+                                                type_name: None,
+                                                value: sway::Expression::from(sway::FunctionCall {
+                                                    function: sway::Expression::from(sway::MemberAccess {
+                                                        expression: sway::Expression::Identifier(variable_name.clone()),
+                                                        member: "split_at".into(),
+                                                    }),
+                                                    generic_parameters: None,
+                                                    parameters: vec![
+                                                        sway::Expression::from(sway::Literal::DecInt(*byte_count as u64)),
+                                                    ],
+                                                }),
+                                            }),
+                                        ],
+                                        final_expr: Some(sway::Expression::Identifier(variable_name)),
+                                    }))
+                                }
+
+                                _ => todo!("translate from {value_type_name} to bytes{byte_count}"),
+                            }
+
+                            sway::TypeName::Array { .. } => todo!("translate from {value_type_name} to bytes{byte_count}"),
+                            sway::TypeName::Tuple { .. } => todo!("translate from {value_type_name} to bytes{byte_count}"),
+                            sway::TypeName::StringSlice => todo!("translate from {value_type_name} to bytes{byte_count}"),
+                            sway::TypeName::StringArray { .. } => todo!("translate from {value_type_name} to bytes{byte_count}"),
+                        }
+                    }
+
+                    solidity::Type::DynamicBytes => {
+                        // bytes(x) => ???
+
+                        let value_expression = self.translate_expression(translated_definition, scope, &arguments[0])?;
+                        let value_type_name = scope.get_expression_type(&value_expression)?;
+
+                        match &value_type_name {
+                            sway::TypeName::Undefined => panic!("Undefined type name"),
+
+                            sway::TypeName::Identifier { name, .. } => match name.as_str() {
+                                _ => todo!("translate from {value_type_name} to bytes"),
+                            }
+
+                            sway::TypeName::Array { .. } => todo!("translate from {value_type_name} to bytes"),
+                            sway::TypeName::Tuple { .. } => todo!("translate from {value_type_name} to bytes"),
+                            
+                            sway::TypeName::StringSlice => {
+                                // Ensure `std::bytes::Bytes` is imported
+                                translated_definition.ensure_use_declared("std::bytes::Bytes");
+        
+                                // Generate a unique name for our variable
+                                let variable_name = scope.generate_unique_variable_name("s");
+
+                                if let sway::Expression::Identifier(variable_name) = &value_expression {
+                                    return Ok(sway::Expression::from(sway::FunctionCall {
+                                        function: sway::Expression::Identifier("raw_slice::from_parts".into()),
+                                        generic_parameters: None,
+                                        parameters: vec![
+                                            sway::Expression::from(sway::FunctionCall {
+                                                function: sway::Expression::from(sway::MemberAccess {
+                                                    expression: sway::Expression::Identifier(variable_name.clone()),
+                                                    member: "ptr".into(),
+                                                }),
+                                                generic_parameters: None,
+                                                parameters: vec![],
+                                            }),
+                                            sway::Expression::from(sway::FunctionCall {
+                                                function: sway::Expression::from(sway::MemberAccess {
+                                                    expression: sway::Expression::Identifier(variable_name.clone()),
+                                                    member: "len".into(),
+                                                }),
+                                                generic_parameters: None,
+                                                parameters: vec![],
+                                            }),
+                                        ],
+                                    }));
+                                }
+        
+                                Ok(sway::Expression::from(sway::Block {
+                                    statements: vec![
+                                        sway::Statement::from(sway::Let {
+                                            pattern: sway::LetPattern::from(sway::LetIdentifier {
+                                                is_mutable: false,
+                                                name: variable_name.clone(),
+                                            }),
+                                            type_name: None,
+                                            value: value_expression.clone(),
+                                        }),
+                                    ],
+                                    final_expr: Some(sway::Expression::from(sway::FunctionCall {
+                                        function: sway::Expression::Identifier("Bytes::from".into()),
+                                        generic_parameters: None,
+                                        parameters: vec![
+                                            sway::Expression::from(sway::FunctionCall {
+                                                function: sway::Expression::Identifier("raw_slice::from_parts".into()),
+                                                generic_parameters: None,
+                                                parameters: vec![
+                                                    sway::Expression::from(sway::FunctionCall {
+                                                        function: sway::Expression::from(sway::MemberAccess {
+                                                            expression: sway::Expression::Identifier(variable_name.clone()),
+                                                            member: "ptr".into(),
+                                                        }),
+                                                        generic_parameters: None,
+                                                        parameters: vec![],
+                                                    }),
+                                                    sway::Expression::from(sway::FunctionCall {
+                                                        function: sway::Expression::from(sway::MemberAccess {
+                                                            expression: sway::Expression::Identifier(variable_name.clone()),
+                                                            member: "len".into(),
+                                                        }),
+                                                        generic_parameters: None,
+                                                        parameters: vec![],
+                                                    }),
+                                                ],
+                                            }),
+                                        ],
+                                    })),
+                                }))
+                            }
+
+                            sway::TypeName::StringArray { .. } => todo!("translate from {value_type_name} to bytes"),
                         }
                     }
 
@@ -4875,20 +5042,20 @@ impl Project {
                                 //     bytes
                                 // }
 
+                                // Ensure `std::bytes::Bytes` is imported
+                                translated_definition.ensure_use_declared("std::bytes::Bytes");
+
+                                // Generate a unique variable name
+                                let variable_name = scope.generate_unique_variable_name("bytes");
+
                                 let parameters = arguments.iter()
                                     .map(|a| self.translate_expression(translated_definition, scope, a))
                                     .collect::<Result<Vec<_>, _>>()?;
                                 
-                                // Generate a unique variable name
-                                let mut variable_name = "bytes".to_string();
-
-                                while scope.get_variable_from_new_name(variable_name.as_str()).is_ok() {
-                                    variable_name = format!("_{variable_name}");
-                                }
-
-                                // Ensure `std::bytes::Bytes` is imported
-                                translated_definition.ensure_use_declared("std::bytes::Bytes");
-
+                                let parameter_types = parameters.iter()
+                                    .map(|p| scope.get_expression_type(p))
+                                    .collect::<Result<Vec<_>, _>>()?;
+                                
                                 // Create the abi encoding block
                                 let mut block = sway::Block {
                                     statements: vec![
@@ -4909,7 +5076,7 @@ impl Project {
                                 };
                                 
                                 // Add the encoding statements to the block
-                                for parameter in parameters.iter() {
+                                for (parameter, parameter_type) in parameters.iter().zip(parameter_types.iter()) {
                                     block.statements.push(sway::Statement::from(sway::Expression::from(sway::FunctionCall {
                                         function: sway::Expression::from(sway::MemberAccess {
                                             expression: sway::Expression::Identifier(variable_name.clone()),
@@ -4917,19 +5084,28 @@ impl Project {
                                         }),
                                         generic_parameters: None,
                                         parameters: vec![
-                                            sway::Expression::from(sway::FunctionCall {
-                                                function: sway::Expression::Identifier("Bytes::from".into()),
-                                                generic_parameters: None,
-                                                parameters: vec![
-                                                    sway::Expression::from(sway::FunctionCall {
-                                                        function: sway::Expression::Identifier("core::codec::encode".into()),
-                                                        generic_parameters: None,
-                                                        parameters: vec![
-                                                            parameter.clone(),
-                                                        ],
-                                                    }),
-                                                ],
-                                            }),
+                                            match parameter_type {
+                                                sway::TypeName::Identifier {
+                                                    name,
+                                                    generic_parameters: None
+                                                } if name == "Bytes" => {
+                                                    parameter.clone()
+                                                }
+
+                                                _ => sway::Expression::from(sway::FunctionCall {
+                                                    function: sway::Expression::Identifier("Bytes::from".into()),
+                                                    generic_parameters: None,
+                                                    parameters: vec![
+                                                        sway::Expression::from(sway::FunctionCall {
+                                                            function: sway::Expression::Identifier("core::codec::encode".into()),
+                                                            generic_parameters: None,
+                                                            parameters: vec![
+                                                                parameter.clone(),
+                                                            ],
+                                                        }),
+                                                    ],
+                                                }),
+                                            },
                                         ],
                                     })));
                                 }
