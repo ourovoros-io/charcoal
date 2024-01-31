@@ -4431,12 +4431,11 @@ impl Project {
                                                 }),
                                                 type_name: None,
                                                 value: sway::Expression::from(sway::FunctionCall {
-                                                    function: sway::Expression::from(sway::MemberAccess {
-                                                        expression: value_expression.clone(),
-                                                        member: "to_be_bytes".into(),
-                                                    }),
+                                                    function: sway::Expression::Identifier("Bytes::from".into()),
                                                     generic_parameters: None,
-                                                    parameters: vec![],
+                                                    parameters: vec![
+                                                        value_expression.clone(),
+                                                    ],
                                                 }),
                                             }),
                                             sway::Statement::from(sway::Let {
@@ -4502,34 +4501,40 @@ impl Project {
 
                                 if let sway::Expression::Identifier(variable_name) = &value_expression {
                                     return Ok(sway::Expression::from(sway::FunctionCall {
-                                        function: sway::Expression::Identifier("raw_slice::from_parts".into()),
-                                        generic_parameters: Some(sway::GenericParameterList {
-                                            entries: vec![
-                                                sway::GenericParameter {
-                                                    type_name: sway::TypeName::Identifier {
-                                                        name: "u8".into(),
-                                                        generic_parameters: None,
-                                                    },
-                                                    implements: None,
-                                                }
-                                            ],
-                                        }),
+                                        function: sway::Expression::Identifier("Bytes::from".into()),
+                                        generic_parameters: None,
                                         parameters: vec![
                                             sway::Expression::from(sway::FunctionCall {
-                                                function: sway::Expression::from(sway::MemberAccess {
-                                                    expression: sway::Expression::Identifier(variable_name.clone()),
-                                                    member: "ptr".into(),
+                                                function: sway::Expression::Identifier("raw_slice::from_parts".into()),
+                                                generic_parameters: Some(sway::GenericParameterList {
+                                                    entries: vec![
+                                                        sway::GenericParameter {
+                                                            type_name: sway::TypeName::Identifier {
+                                                                name: "u8".into(),
+                                                                generic_parameters: None,
+                                                            },
+                                                            implements: None,
+                                                        }
+                                                    ],
                                                 }),
-                                                generic_parameters: None,
-                                                parameters: vec![],
-                                            }),
-                                            sway::Expression::from(sway::FunctionCall {
-                                                function: sway::Expression::from(sway::MemberAccess {
-                                                    expression: sway::Expression::Identifier(variable_name.clone()),
-                                                    member: "len".into(),
-                                                }),
-                                                generic_parameters: None,
-                                                parameters: vec![],
+                                                parameters: vec![
+                                                    sway::Expression::from(sway::FunctionCall {
+                                                        function: sway::Expression::from(sway::MemberAccess {
+                                                            expression: sway::Expression::Identifier(variable_name.clone()),
+                                                            member: "as_ptr".into(),
+                                                        }),
+                                                        generic_parameters: None,
+                                                        parameters: vec![],
+                                                    }),
+                                                    sway::Expression::from(sway::FunctionCall {
+                                                        function: sway::Expression::from(sway::MemberAccess {
+                                                            expression: sway::Expression::Identifier(variable_name.clone()),
+                                                            member: "len".into(),
+                                                        }),
+                                                        generic_parameters: None,
+                                                        parameters: vec![],
+                                                    }),
+                                                ],
                                             }),
                                         ],
                                     }));
@@ -4567,7 +4572,7 @@ impl Project {
                                                     sway::Expression::from(sway::FunctionCall {
                                                         function: sway::Expression::from(sway::MemberAccess {
                                                             expression: sway::Expression::Identifier(variable_name.clone()),
-                                                            member: "ptr".into(),
+                                                            member: "as_ptr".into(),
                                                         }),
                                                         generic_parameters: None,
                                                         parameters: vec![],

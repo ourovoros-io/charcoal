@@ -1,313 +1,354 @@
 contract;
-
-use std::bytes::Bytes;
 use core::codec::AbiEncode;
-use std::string::*;
-use std::hash::Hash;
-use std::storage::storage_string::*;
+use std::bytes::Bytes;
 use std::constants::ZERO_B256;
+use std::hash::Hash;
+use std::string::*;
 
-enum IERC20Event {
-    Transfer: (Identity, Identity, u256),
-    Approval: (Identity, Identity, u256),
+pub const GRACE_PERIOD: u256 = 14;
+pub const MINIMUM_DELAY: u256 = 2;
+pub const MAXIMUM_DELAY: u256 = 30;
+
+enum TimelockEvent {
+    NewAdmin: Identity,
+    NewPendingAdmin: Identity,
+    NewDelay: u256,
+    CancelTransaction: (b256, Identity, u256, str, Bytes, u256),
+    ExecuteTransaction: (b256, Identity, u256, str, Bytes, u256),
+    QueueTransaction: (b256, Identity, u256, str, Bytes, u256),
 }
 
-impl AbiEncode for IERC20Event {
+impl AbiEncode for TimelockEvent {
     fn abi_encode(self, ref mut buffer: core::codec::Buffer) {
         match self {
-            IERC20Event::Transfer((a, b, c)) => {
-                "Transfer".abi_encode(buffer);
+            TimelockEvent::NewAdmin(a) => {
+                "NewAdmin".abi_encode(buffer);
                 match a {
                     Identity::Address(x) => x.abi_encode(buffer),
                     Identity::ContractId(x) => x.abi_encode(buffer),
                 }
+            },
+            TimelockEvent::NewPendingAdmin(a) => {
+                "NewPendingAdmin".abi_encode(buffer);
+                match a {
+                    Identity::Address(x) => x.abi_encode(buffer),
+                    Identity::ContractId(x) => x.abi_encode(buffer),
+                }
+            },
+            TimelockEvent::NewDelay(a) => {
+                "NewDelay".abi_encode(buffer);
+                a.abi_encode(buffer);
+            },
+            TimelockEvent::CancelTransaction((a, b, c, d, e, f)) => {
+                "CancelTransaction".abi_encode(buffer);
+                a.abi_encode(buffer);
                 match b {
                     Identity::Address(x) => x.abi_encode(buffer),
                     Identity::ContractId(x) => x.abi_encode(buffer),
                 }
                 c.abi_encode(buffer);
+                d.abi_encode(buffer);
+                e.abi_encode(buffer);
+                f.abi_encode(buffer);
             },
-            IERC20Event::Approval((a, b, c)) => {
-                "Approval".abi_encode(buffer);
-                match a {
-                    Identity::Address(x) => x.abi_encode(buffer),
-                    Identity::ContractId(x) => x.abi_encode(buffer),
-                }
+            TimelockEvent::ExecuteTransaction((a, b, c, d, e, f)) => {
+                "ExecuteTransaction".abi_encode(buffer);
+                a.abi_encode(buffer);
                 match b {
                     Identity::Address(x) => x.abi_encode(buffer),
                     Identity::ContractId(x) => x.abi_encode(buffer),
                 }
                 c.abi_encode(buffer);
+                d.abi_encode(buffer);
+                e.abi_encode(buffer);
+                f.abi_encode(buffer);
+            },
+            TimelockEvent::QueueTransaction((a, b, c, d, e, f)) => {
+                "QueueTransaction".abi_encode(buffer);
+                a.abi_encode(buffer);
+                match b {
+                    Identity::Address(x) => x.abi_encode(buffer),
+                    Identity::ContractId(x) => x.abi_encode(buffer),
+                }
+                c.abi_encode(buffer);
+                d.abi_encode(buffer);
+                e.abi_encode(buffer);
+                f.abi_encode(buffer);
             },
         }
     }
 }
 
-enum IERC20ErrorsError {
-    ERC20InsufficientBalance: (Identity, u256, u256),
-    ERC20InvalidSender: Identity,
-    ERC20InvalidReceiver: Identity,
-    ERC20InsufficientAllowance: (Identity, u256, u256),
-    ERC20InvalidApprover: Identity,
-    ERC20InvalidSpender: Identity,
-}
-
-impl AbiEncode for IERC20ErrorsError {
-    fn abi_encode(self, ref mut buffer: core::codec::Buffer) {
-        match self {
-            IERC20ErrorsError::ERC20InsufficientBalance((a, b, c)) => {
-                "ERC20InsufficientBalance".abi_encode(buffer);
-                match a {
-                    Identity::Address(x) => x.abi_encode(buffer),
-                    Identity::ContractId(x) => x.abi_encode(buffer),
-                }
-                b.abi_encode(buffer);
-                c.abi_encode(buffer);
-            },
-            IERC20ErrorsError::ERC20InvalidSender(a) => {
-                "ERC20InvalidSender".abi_encode(buffer);
-                match a {
-                    Identity::Address(x) => x.abi_encode(buffer),
-                    Identity::ContractId(x) => x.abi_encode(buffer),
-                }
-            },
-            IERC20ErrorsError::ERC20InvalidReceiver(a) => {
-                "ERC20InvalidReceiver".abi_encode(buffer);
-                match a {
-                    Identity::Address(x) => x.abi_encode(buffer),
-                    Identity::ContractId(x) => x.abi_encode(buffer),
-                }
-            },
-            IERC20ErrorsError::ERC20InsufficientAllowance((a, b, c)) => {
-                "ERC20InsufficientAllowance".abi_encode(buffer);
-                match a {
-                    Identity::Address(x) => x.abi_encode(buffer),
-                    Identity::ContractId(x) => x.abi_encode(buffer),
-                }
-                b.abi_encode(buffer);
-                c.abi_encode(buffer);
-            },
-            IERC20ErrorsError::ERC20InvalidApprover(a) => {
-                "ERC20InvalidApprover".abi_encode(buffer);
-                match a {
-                    Identity::Address(x) => x.abi_encode(buffer),
-                    Identity::ContractId(x) => x.abi_encode(buffer),
-                }
-            },
-            IERC20ErrorsError::ERC20InvalidSpender(a) => {
-                "ERC20InvalidSpender".abi_encode(buffer);
-                match a {
-                    Identity::Address(x) => x.abi_encode(buffer),
-                    Identity::ContractId(x) => x.abi_encode(buffer),
-                }
-            },
-        }
-    }
-}
-
-abi ERC20 {
+abi Timelock {
     #[storage(read, write)]
-    fn constructor(name_: str, symbol_: str);
+    fn constructor(admin_: Identity, delay_: u256);
+
+    fn GRACE_PERIOD() -> u256;
+
+    fn MINIMUM_DELAY() -> u256;
+
+    fn MAXIMUM_DELAY() -> u256;
 
     #[storage(read)]
-    fn total_supply() -> u256;
+    fn admin() -> Identity;
 
     #[storage(read)]
-    fn balance_of(account: Identity) -> u256;
+    fn pending_admin() -> Identity;
+
+    #[storage(read)]
+    fn delay() -> u256;
+
+    #[storage(read)]
+    fn queued_transactions(a: b256) -> bool;
+
+    #[storage(read, write), payable]
+    fn fallback();
 
     #[storage(read, write)]
-    fn transfer(to: Identity, value: u256) -> bool;
-
-    #[storage(read)]
-    fn allowance(owner: Identity, spender: Identity) -> u256;
+    fn set_delay(delay_: u256);
 
     #[storage(read, write)]
-    fn approve(spender: Identity, value: u256) -> bool;
+    fn accept_admin();
 
     #[storage(read, write)]
-    fn transfer_from(from: Identity, to: Identity, value: u256) -> bool;
+    fn set_pending_admin(pending_admin_: Identity);
 
-    #[storage(read)]
-    fn name() -> String;
+    #[storage(read, write)]
+    fn queue_transaction(target: Identity, value: u256, signature: str, data: Bytes, eta: u256) -> b256;
 
-    #[storage(read)]
-    fn symbol() -> String;
+    #[storage(read, write)]
+    fn cancel_transaction(target: Identity, value: u256, signature: str, data: Bytes, eta: u256);
 
-    #[storage(read)]
-    fn decimals() -> u8;
+    #[storage(read, write), payable]
+    fn execute_transaction(target: Identity, value: u256, signature: str, data: Bytes, eta: u256) -> Bytes;
 }
 
 storage {
-    _balances: StorageMap<Identity, u256> = StorageMap {},
-    _allowances: StorageMap<Identity, StorageMap<Identity, u256>> = StorageMap {},
-    _total_supply: u256 = 0,
-    _name: StorageString = StorageString {},
-    _symbol: StorageString = StorageString {},
-    erc_20_constructor_called: bool = false,
+    admin: Identity = Identity::Address(Address::from(ZERO_B256)),
+    pending_admin: Identity = Identity::Address(Address::from(ZERO_B256)),
+    delay: u256 = 0,
+    queued_transactions: StorageMap<b256, bool> = StorageMap {},
+    timelock_constructor_called: bool = false,
 }
 
-#[storage(read)]
-fn _msg_sender() -> Identity {
-    msg_sender().unwrap()
+fn safe_math_add(a: u256, b: u256) -> u256 {
+    let mut c = 0;
+    c = a + b;
+    require(c >= a, "SafeMath: addition overflow");
+    c
 }
 
-#[storage(read)]
-fn _msg_data() -> Bytes {
-    std::inputs::input_message_data(0, 0)
+fn safe_math_add_2(a: u256, b: u256, error_message: str) -> u256 {
+    let mut c = 0;
+    c = a + b;
+    require(c >= a, error_message);
+    c
 }
 
-#[storage(read)]
-fn _context_suffix_length() -> u256 {
-    0
+fn safe_math_sub(a: u256, b: u256) -> u256 {
+    safe_math_sub_2(a, b, "SafeMath: subtraction underflow")
 }
 
-#[storage(read)]
-fn allowance(owner: Identity, spender: Identity) -> u256 {
-    storage._allowances.get(owner).get(spender).read()
+fn safe_math_sub_2(a: u256, b: u256, error_message: str) -> u256 {
+    require(b <= a, error_message);
+    let c = a - b;
+    c
 }
 
-#[storage(read, write)]
-fn _transfer(from: Identity, to: Identity, value: u256) {
-    if from == Identity::Address(Address::from(ZERO_B256)) {
-        log(IERC20ErrorsError::ERC20InvalidSender(Identity::Address(Address::from(ZERO_B256))));
-        revert(0);
+fn safe_math_mul(a: u256, b: u256) -> u256 {
+    if a == 0 {
+        return 0;
     }
-    if to == Identity::Address(Address::from(ZERO_B256)) {
-        log(IERC20ErrorsError::ERC20InvalidReceiver(Identity::Address(Address::from(ZERO_B256))));
-        revert(0);
-    }
-    _update(from, to, value);
+    let mut c = 0;
+    c = a * b;
+    require(c / a == b, "SafeMath: multiplication overflow");
+    c
 }
 
-#[storage(read, write)]
-fn _update(from: Identity, to: Identity, value: u256) {
-    if from == Identity::Address(Address::from(ZERO_B256)) {
-        storage._total_supply.write(storage._total_supply.read() + value);
-    } else {
-        let from_balance = storage._balances.get(from).read();
-        if from_balance < value {
-            log(IERC20ErrorsError::ERC20InsufficientBalance((from, from_balance, value)));
-            revert(0);
+fn safe_math_mul_2(a: u256, b: u256, error_message: str) -> u256 {
+    if a == 0 {
+        return 0;
+    }
+    let mut c = 0;
+    c = a * b;
+    require(c / a == b, error_message);
+    c
+}
+
+fn safe_math_div(a: u256, b: u256) -> u256 {
+    safe_math_div_2(a, b, "SafeMath: division by zero")
+}
+
+fn safe_math_div_2(a: u256, b: u256, error_message: str) -> u256 {
+    require(b > 0, error_message);
+    let c = a / b;
+    c
+}
+
+fn safe_math_mod(a: u256, b: u256) -> u256 {
+    safe_math_mod_2(a, b, "SafeMath: modulo by zero")
+}
+
+fn safe_math_mod_2(a: u256, b: u256, error_message: str) -> u256 {
+    require(b != 0, error_message);
+    a % b
+}
+
+#[storage(read)]
+fn get_block_timestamp() -> u256 {
+    std::block::timestamp().as_u256()
+}
+
+impl Timelock for Contract {
+    #[storage(read, write)]
+    fn constructor(admin_: Identity, delay_: u256) {
+        require(!storage.timelock_constructor_called.read(), "The Timelock constructor has already been called");
+        require(delay_ >= MINIMUM_DELAY, "Timelock::constructor: Delay must exceed minimum delay.");
+        require(delay_ <= MAXIMUM_DELAY, "Timelock::setDelay: Delay must not exceed maximum delay.");
+        storage.admin.write(admin_);
+        storage.delay.write(delay_);
+        storage.timelock_constructor_called.write(true);
+    }
+
+    fn GRACE_PERIOD() -> u256 {
+        GRACE_PERIOD
+    }
+
+    fn MINIMUM_DELAY() -> u256 {
+        MINIMUM_DELAY
+    }
+
+    fn MAXIMUM_DELAY() -> u256 {
+        MAXIMUM_DELAY
+    }
+
+    #[storage(read)]
+    fn admin() -> Identity {
+        storage.admin.read()
+    }
+
+    #[storage(read)]
+    fn pending_admin() -> Identity {
+        storage.pending_admin.read()
+    }
+
+    #[storage(read)]
+    fn delay() -> u256 {
+        storage.delay.read()
+    }
+
+    #[storage(read)]
+    fn queued_transactions(a: b256) -> bool {
+        storage.queued_transactions.get(a).read()
+    }
+
+    #[storage(read, write), payable]
+    fn fallback() {
+    }
+
+    #[storage(read, write)]
+    fn set_delay(delay_: u256) {
+        require(msg_sender().unwrap() == Identity::ContractId(ContractId::this()), "Timelock::setDelay: Call must come from Timelock.");
+        require(delay_ >= MINIMUM_DELAY, "Timelock::setDelay: Delay must exceed minimum delay.");
+        require(delay_ <= MAXIMUM_DELAY, "Timelock::setDelay: Delay must not exceed maximum delay.");
+        storage.delay.write(delay_);
+        log(TimelockEvent::NewDelay(storage.delay.read()));
+    }
+
+    #[storage(read, write)]
+    fn accept_admin() {
+        require(msg_sender().unwrap() == storage.pending_admin.read(), "Timelock::acceptAdmin: Call must come from pendingAdmin.");
+        storage.admin.write(msg_sender().unwrap());
+        storage.pending_admin.write(Identity::Address(Address::from(ZERO_B256)));
+        log(TimelockEvent::NewAdmin(storage.admin.read()));
+    }
+
+    #[storage(read, write)]
+    fn set_pending_admin(pending_admin_: Identity) {
+        require(msg_sender().unwrap() == Identity::ContractId(ContractId::this()), "Timelock::setPendingAdmin: Call must come from Timelock.");
+        storage.pending_admin.write(pending_admin_);
+        log(TimelockEvent::NewPendingAdmin(storage.pending_admin.read()));
+    }
+
+    #[storage(read, write)]
+    fn queue_transaction(target: Identity, value: u256, signature: str, data: Bytes, eta: u256) -> b256 {
+        require(msg_sender().unwrap() == storage.admin.read(), "Timelock::queueTransaction: Call must come from admin.");
+        require(eta >= safe_math_add(get_block_timestamp(), storage.delay.read()), "Timelock::queueTransaction: Estimated execution block must satisfy delay.");
+        let tx_hash = std::hash::keccak256({
+            let mut bytes = Bytes::new();
+            bytes.append(Bytes::from(core::codec::encode(target)));
+            bytes.append(Bytes::from(core::codec::encode(value)));
+            bytes.append(Bytes::from(core::codec::encode(signature)));
+            bytes.append(Bytes::from(core::codec::encode(data)));
+            bytes.append(Bytes::from(core::codec::encode(eta)));
+            bytes
+        });
+        storage.queued_transactions.get(tx_hash).write(true);
+        log(TimelockEvent::QueueTransaction((tx_hash, target, value, signature, data, eta)));
+        tx_hash
+    }
+
+    #[storage(read, write)]
+    fn cancel_transaction(target: Identity, value: u256, signature: str, data: Bytes, eta: u256) {
+        require(msg_sender().unwrap() == storage.admin.read(), "Timelock::cancelTransaction: Call must come from admin.");
+        let tx_hash = std::hash::keccak256({
+            let mut bytes = Bytes::new();
+            bytes.append(Bytes::from(core::codec::encode(target)));
+            bytes.append(Bytes::from(core::codec::encode(value)));
+            bytes.append(Bytes::from(core::codec::encode(signature)));
+            bytes.append(Bytes::from(core::codec::encode(data)));
+            bytes.append(Bytes::from(core::codec::encode(eta)));
+            bytes
+        });
+        storage.queued_transactions.get(tx_hash).write(false);
+        log(TimelockEvent::CancelTransaction((tx_hash, target, value, signature, data, eta)));
+    }
+
+    #[storage(read, write), payable]
+    fn execute_transaction(target: Identity, value: u256, signature: str, data: Bytes, eta: u256) -> Bytes {
+        require(msg_sender().unwrap() == storage.admin.read(), "Timelock::executeTransaction: Call must come from admin.");
+        let tx_hash = std::hash::keccak256({
+            let mut bytes = Bytes::new();
+            bytes.append(Bytes::from(core::codec::encode(target)));
+            bytes.append(Bytes::from(core::codec::encode(value)));
+            bytes.append(Bytes::from(core::codec::encode(signature)));
+            bytes.append(Bytes::from(core::codec::encode(data)));
+            bytes.append(Bytes::from(core::codec::encode(eta)));
+            bytes
+        });
+        require(storage.queued_transactions.get(tx_hash).read(), "Timelock::executeTransaction: Transaction hasn't been queued.");
+        require(get_block_timestamp() >= eta, "Timelock::executeTransaction: Transaction hasn't surpassed time lock.");
+        require(get_block_timestamp() <= safe_math_add(eta, GRACE_PERIOD), "Timelock::executeTransaction: Transaction is stale.");
+        storage.queued_transactions.get(tx_hash).write(false);
+        let mut call_data = Bytes::new();
+        if String::from_ascii_str(signature).as_bytes().len() == 0 {
+            call_data = data;
+        } else {
+            call_data = {
+                let mut bytes = Bytes::new();
+                bytes.append(Bytes::from(core::codec::encode({
+                    let bytes = Bytes::from(std::hash::keccak256(Bytes::from(raw_slice::from_parts::<u8>(signature.as_ptr(), signature.len()))));
+                    let (bytes, _) = bytes.split_at(4);
+                    bytes
+                })));
+                bytes.append(Bytes::from(core::codec::encode(data)));
+                bytes
+            };
         }
-        storage._balances.get(from).write(from_balance - value);
-    }
-    if to == Identity::Address(Address::from(ZERO_B256)) {
-        storage._total_supply.write(storage._total_supply.read() - value);
-    } else {
-        storage._balances.get(to).write(storage._balances.get(to).read() + value);
-    }
-    log(IERC20Event::Transfer((from, to, value)));
-}
-
-#[storage(read, write)]
-fn _mint(account: Identity, value: u256) {
-    if account == Identity::Address(Address::from(ZERO_B256)) {
-        log(IERC20ErrorsError::ERC20InvalidReceiver(Identity::Address(Address::from(ZERO_B256))));
-        revert(0);
-    }
-    _update(Identity::Address(Address::from(ZERO_B256)), account, value);
-}
-
-#[storage(read, write)]
-fn _burn(account: Identity, value: u256) {
-    if account == Identity::Address(Address::from(ZERO_B256)) {
-        log(IERC20ErrorsError::ERC20InvalidSender(Identity::Address(Address::from(ZERO_B256))));
-        revert(0);
-    }
-    _update(account, Identity::Address(Address::from(ZERO_B256)), value);
-}
-
-#[storage(read, write)]
-fn _approve(owner: Identity, spender: Identity, value: u256) {
-    _approve_2(owner, spender, value, true);
-}
-
-#[storage(read, write)]
-fn _approve_2(owner: Identity, spender: Identity, value: u256, emit_event: bool) {
-    if owner == Identity::Address(Address::from(ZERO_B256)) {
-        log(IERC20ErrorsError::ERC20InvalidApprover(Identity::Address(Address::from(ZERO_B256))));
-        revert(0);
-    }
-    if spender == Identity::Address(Address::from(ZERO_B256)) {
-        log(IERC20ErrorsError::ERC20InvalidSpender(Identity::Address(Address::from(ZERO_B256))));
-        revert(0);
-    }
-    storage._allowances.get(owner).get(spender).write(value);
-    if emit_event {
-        log(IERC20Event::Approval((owner, spender, value)));
-    }
-}
-
-#[storage(read, write)]
-fn _spend_allowance(owner: Identity, spender: Identity, value: u256) {
-    let current_allowance = allowance(owner, spender);
-    if current_allowance != u256::max() {
-        if current_allowance < value {
-            log(IERC20ErrorsError::ERC20InsufficientAllowance((spender, current_allowance, value)));
-            revert(0);
-        }
-        _approve_2(owner, spender, current_allowance - value, false);
-    }
-}
-
-impl ERC20 for Contract {
-    #[storage(read, write)]
-    fn constructor(name_: str, symbol_: str) {
-        require(!storage.erc_20_constructor_called.read(), "The ERC20 constructor has already been called");
-        storage._name.write_slice(String::from_ascii_str(name_));
-        storage._symbol.write_slice(String::from_ascii_str(symbol_));
-        storage.erc_20_constructor_called.write(true);
-    }
-
-    #[storage(read)]
-    fn name() -> String {
-        storage._name.read_slice().unwrap()
-    }
-
-    #[storage(read)]
-    fn symbol() -> String {
-        storage._symbol.read_slice().unwrap()
-    }
-
-    #[storage(read)]
-    fn decimals() -> u8 {
-        18
-    }
-
-    #[storage(read)]
-    fn total_supply() -> u256 {
-        storage._total_supply.read()
-    }
-
-    #[storage(read)]
-    fn balance_of(account: Identity) -> u256 {
-        storage._balances.get(account).read()
-    }
-
-    #[storage(read, write)]
-    fn transfer(to: Identity, value: u256) -> bool {
-        let owner = _msg_sender();
-        _transfer(owner, to, value);
-        true
-    }
-
-    #[storage(read)]
-    fn allowance(owner: Identity, spender: Identity) -> u256 {
-        ::allowance(owner, spender)
-    }
-
-    #[storage(read, write)]
-    fn approve(spender: Identity, value: u256) -> bool {
-        let owner = _msg_sender();
-        _approve(owner, spender, value);
-        true
-    }
-
-    #[storage(read, write)]
-    fn transfer_from(from: Identity, to: Identity, value: u256) -> bool {
-        let spender = _msg_sender();
-        _spend_allowance(from, spender, value);
-        _transfer(from, to, value);
-        true
+        let (success, return_data): (bool, Bytes) = {
+            let return_ptr = asm (r1: call_data.buf.ptr, r2: value, r3: std::inputs::input_asset_id(0).unwrap(), r4: std::registers::global_gas()) {
+                call r1 r2 r3 r4;
+                ret: raw_ptr
+            };
+            let return_length = asm () {
+                retl: u64
+            };
+            let result_ptr = std::alloc::alloc_bytes(return_length);
+            return_ptr.copy_to::<u8>(result_ptr, return_length);
+            (true, Bytes::from(raw_slice::from_parts::<u8>(result_ptr, return_length)))
+        };
+        require(success, "Timelock::executeTransaction: Transaction execution reverted.");
+        log(TimelockEvent::ExecuteTransaction((tx_hash, target, value, signature, data, eta)));
+        return_data
     }
 }
