@@ -3816,7 +3816,35 @@ impl Project {
                             match member.name.as_str() {
                                 "length" => return Ok(sway::Expression::from(sway::FunctionCall {
                                     function: sway::Expression::from(sway::MemberAccess {
-                                        expression: value,
+                                        expression: {
+                                            // HACK:
+                                            // String::from_ascii_str(signature).as_bytes().len() => s.len()
+                                            let check_string_length_hack = || -> Option<sway::Expression> {
+                                                let sway::Expression::FunctionCall(function_call) = &value else { return None };
+                                                let sway::Expression::MemberAccess(member_access) = &function_call.function else { return None };
+                                                if member_access.member != "len" || !function_call.parameters.is_empty() { return None }
+
+                                                let sway::Expression::FunctionCall(function_call) = &member_access.expression else { return None };
+                                                let sway::Expression::MemberAccess(member_access) = &function_call.function else { return None };
+                                                if member_access.member != "as_bytes" || !function_call.parameters.is_empty() { return None };
+                                                
+                                                let sway::Expression::FunctionCall(function_call) = &member_access.expression else { return None };
+                                                let sway::Expression::Identifier(identifier) = &function_call.function else { return None };
+                                                if identifier != "String::from_ascii_str" || function_call.parameters.len() != 1 { return None };
+
+                                                if let Ok(sway::TypeName::StringSlice) = scope.get_expression_type(&function_call.parameters[0]) {
+                                                    return Some(function_call.parameters[0].clone());
+                                                }
+
+                                                None
+                                            };
+
+                                            if let Some(value) = check_string_length_hack() {
+                                                value
+                                            } else {
+                                                value
+                                            }
+                                        },
                                         member: "len".into(),
                                     }),
                                     generic_parameters: None,
@@ -4475,7 +4503,17 @@ impl Project {
                                 if let sway::Expression::Identifier(variable_name) = &value_expression {
                                     return Ok(sway::Expression::from(sway::FunctionCall {
                                         function: sway::Expression::Identifier("raw_slice::from_parts".into()),
-                                        generic_parameters: None,
+                                        generic_parameters: Some(sway::GenericParameterList {
+                                            entries: vec![
+                                                sway::GenericParameter {
+                                                    type_name: sway::TypeName::Identifier {
+                                                        name: "u8".into(),
+                                                        generic_parameters: None,
+                                                    },
+                                                    implements: None,
+                                                }
+                                            ],
+                                        }),
                                         parameters: vec![
                                             sway::Expression::from(sway::FunctionCall {
                                                 function: sway::Expression::from(sway::MemberAccess {
@@ -4514,7 +4552,17 @@ impl Project {
                                         parameters: vec![
                                             sway::Expression::from(sway::FunctionCall {
                                                 function: sway::Expression::Identifier("raw_slice::from_parts".into()),
-                                                generic_parameters: None,
+                                                generic_parameters: Some(sway::GenericParameterList {
+                                                    entries: vec![
+                                                        sway::GenericParameter {
+                                                            type_name: sway::TypeName::Identifier {
+                                                                name: "u8".into(),
+                                                                generic_parameters: None,
+                                                            },
+                                                            implements: None,
+                                                        }
+                                                    ],
+                                                }),
                                                 parameters: vec![
                                                     sway::Expression::from(sway::FunctionCall {
                                                         function: sway::Expression::from(sway::MemberAccess {
@@ -5250,35 +5298,42 @@ impl Project {
                             }
 
                             "send" => {
-                                // to.send(amount) => ???
+                                // to.send(amount) => {
+                                //     std::asset::transfer(to, asset_id, amount);
+                                //     true
+                                // }
 
                                 if arguments.len() != 1 {
                                     panic!("Malformed `address.send` call, expected 1 argument, found {}", arguments.len());
                                 }
 
-                                //
-                                // TODO:
-                                // The `address.send` function in solidity returns a bool, but the `std::asset::transfer` in sway has no return type.
-                                // We need to determine what the asset id being transferred is.
-                                //
-
-                                Ok(sway::Expression::create_todo(Some(expression.to_string())))
+                                Ok(sway::Expression::from(sway::Block {
+                                    statements: vec![
+                                        sway::Statement::from(sway::Expression::from(sway::FunctionCall {
+                                            function: sway::Expression::Identifier("std::asset::transfer".into()),
+                                            generic_parameters: None,
+                                            parameters: vec![
+                                                container,
+                                                sway::Expression::from(sway::FunctionCall {
+                                                    function: sway::Expression::Identifier("AssetId::default".into()),
+                                                    generic_parameters: None,
+                                                    parameters: vec![],
+                                                }),
+                                                self.translate_expression(translated_definition, scope, &arguments[0])?,
+                                            ],
+                                        })),
+                                    ],
+                                    final_expr: Some(sway::Expression::from(sway::Literal::Bool(true))),
+                                }))
                             }
 
                             "call" => {
-                                // to.call(memory) => ???
-
                                 if arguments.len() != 1 {
                                     panic!("Malformed `address.call` call, expected 1 argument, found {}", arguments.len());
                                 }
 
-                                //
-                                // TODO:
-                                // The `address.call` function in solidity returns (bool, bytes), but the `std::asset::transfer` in sway has no return type.
-                                // We need to determine what the asset id being transferred is.
-                                //
-
-                                Ok(sway::Expression::create_todo(Some(expression.to_string())))
+                                let payload = self.translate_expression(translated_definition, scope, &arguments[0])?;
+                                self.translate_address_call_expression(translated_definition, scope, payload, None, None, None)
                             }
 
                             "delegatecall" => {
@@ -5485,8 +5540,6 @@ impl Project {
                         sway::TypeName::Identifier { name, .. } => match name.as_str() {
                             "Identity" => match member.name.as_str() {
                                 "call" => {
-                                    // address.call{value: x}("") => ???
-
                                     if arguments.len() != 1 {
                                         panic!("Malformed `address.call` call, expected 1 argument, found {}", arguments.len());
                                     }
@@ -5495,19 +5548,19 @@ impl Project {
                                         panic!("Malformed `address.call` call, expected args block, found: {block:#?}");
                                     };
 
-                                    let Some(value) = block_args.iter().find(|a| a.name.name == "value") else {
-                                        panic!("Malformed `address.call` call, missing `value` argument in block: {block:#?}");
-                                    };
+                                    let mut coins = None;
+                                    let mut gas = None;
 
-                                    let _value = self.translate_expression(translated_definition, scope, &value.expr)?;
+                                    for block_arg in block_args.iter() {
+                                        match block_arg.name.name.as_str() {
+                                            "value" => coins = Some(self.translate_expression(translated_definition, scope, &block_arg.expr)?),
+                                            "gas" => gas = Some(self.translate_expression(translated_definition, scope, &block_arg.expr)?),
+                                            arg => todo!("address.transfer block arg: {arg}"),
+                                        }
+                                    }
 
-                                    //
-                                    // TODO:
-                                    // The `address.call` function in solidity returns (bool, bytes), but the `std::asset::transfer` in sway has no return type.
-                                    // We need to determine what the asset id being transferred is.
-                                    //
-
-                                    Ok(sway::Expression::create_todo(Some(expression.to_string())))
+                                    let payload = self.translate_expression(translated_definition, scope, &arguments[0])?;
+                                    self.translate_address_call_expression(translated_definition, scope, payload, coins, None, gas)
                                 }
 
                                 _ => todo!("translate Identity member function call block `{member}`: {} - {container:#?}", sway::TabbedDisplayer(&container))
@@ -5527,6 +5580,223 @@ impl Project {
 
             _ => todo!("translate function call expression: {} - {expression:#?}", expression.to_string()),
         }
+    }
+
+    #[inline]
+    fn translate_address_call_expression(
+        &mut self,
+        translated_definition: &mut TranslatedDefinition,
+        scope: &mut TranslationScope,
+        payload: sway::Expression,
+        coins: Option<sway::Expression>,
+        asset_id: Option<sway::Expression>,
+        gas: Option<sway::Expression>,
+    ) -> Result<sway::Expression, Error> {
+        // to.call(memory) => {
+        //     let return_ptr = asm(
+        //         r1: payload.buf.ptr,
+        //         r2: coins,
+        //         r3: asset_id,
+        //         r4: gas,
+        //     ) {
+        //         call r1 r2 r3 r4;
+        //         ret: raw_ptr
+        //     };
+        //     let return_length = asm() {
+        //         retl: u64
+        //     };
+        //     let result_ptr = std::alloc::alloc_bytes(return_length);
+        //     return_ptr.copy_to::<u8>(result_ptr, return_length);
+        //     (true, Bytes::from(raw_slice::from_parts::<u8>(result_ptr, return_length)))
+        // }
+
+        // Ensure `std::bytes::Bytes` is imported
+        translated_definition.ensure_use_declared("std::bytes::Bytes");
+
+        // Create unique variable names
+        let return_ptr_name = scope.generate_unique_variable_name("return_ptr");
+        let return_length_name = scope.generate_unique_variable_name("return_length");
+        let result_ptr_name = scope.generate_unique_variable_name("result_ptr");
+
+        Ok(sway::Expression::from(sway::Block {
+            statements: vec![
+                // let return_ptr = asm(
+                //     r1: payload.buf.ptr,
+                //     r2: coins,
+                //     r3: asset_id,
+                //     r4: gas,
+                // ) {
+                //     call r1 r2 r3 r4;
+                //     ret: raw_ptr
+                // };
+                sway::Statement::from(sway::Let {
+                    pattern: sway::LetPattern::from(sway::LetIdentifier {
+                        is_mutable: false,
+                        name: return_ptr_name.clone(),
+                    }),
+                    type_name: None,
+                    value: sway::Expression::from(sway::AsmBlock {
+                        registers: vec![
+                            sway::AsmRegister {
+                                name: "r1".into(),
+                                value: Some(sway::Expression::from(sway::MemberAccess {
+                                    expression: sway::Expression::from(sway::MemberAccess {
+                                        expression: payload.clone(),
+                                        member: "buf".into(),
+                                    }),
+                                    member: "ptr".into(),
+                                })),
+                            },
+                            sway::AsmRegister {
+                                name: "r2".into(),
+                                value: Some(coins.unwrap_or_else(|| sway::Expression::from(sway::FunctionCall {
+                                    function: sway::Expression::Identifier("std::inputs::input_amount".into()),
+                                    generic_parameters: None,
+                                    parameters: vec![
+                                        sway::Expression::from(sway::Literal::DecInt(0)),
+                                    ],
+                                }))),
+                            },
+                            sway::AsmRegister {
+                                name: "r3".into(),
+                                value: Some(asset_id.unwrap_or_else(|| sway::Expression::from(sway::FunctionCall {
+                                    function: sway::Expression::from(sway::MemberAccess {
+                                        expression: sway::Expression::from(sway::FunctionCall {
+                                            function: sway::Expression::Identifier("std::inputs::input_asset_id".into()),
+                                            generic_parameters: None,
+                                            parameters: vec![
+                                                sway::Expression::from(sway::Literal::DecInt(0)),
+                                            ],
+                                        }),
+                                        member: "unwrap".into(),
+                                    }),
+                                    generic_parameters: None,
+                                    parameters: vec![],
+                                }))),
+                            },
+                            sway::AsmRegister {
+                                name: "r4".into(),
+                                value: Some(gas.unwrap_or_else(|| sway::Expression::from(sway::FunctionCall {
+                                    function: sway::Expression::Identifier("std::registers::global_gas".into()),
+                                    generic_parameters: None,
+                                    parameters: vec![],
+                                }))),
+                            },
+                        ],
+
+                        instructions: vec![
+                            sway::AsmInstruction {
+                                op_code: "call".into(),
+                                args: vec![
+                                    "r1".into(),
+                                    "r2".into(),
+                                    "r3".into(),
+                                    "r4".into(),
+                                ],
+                            },
+                        ],
+
+                        final_expression: Some(sway::AsmFinalExpression {
+                            register: "ret".into(),
+                            type_name: Some(sway::TypeName::Identifier {
+                                name: "raw_ptr".into(),
+                                generic_parameters: None,
+                            }),
+                        }),
+                    }),
+                }),
+
+                // let return_length = asm() {
+                //     retl: u64
+                // };
+                sway::Statement::from(sway::Let {
+                    pattern: sway::LetPattern::from(sway::LetIdentifier {
+                        is_mutable: false,
+                        name: return_length_name.clone(),
+                    }),
+                    type_name: None,
+                    value: sway::Expression::from(sway::AsmBlock {
+                        registers: vec![],
+                        instructions: vec![],
+                        final_expression: Some(sway::AsmFinalExpression {
+                            register: "retl".into(),
+                            type_name: Some(sway::TypeName::Identifier {
+                                name: "u64".into(),
+                                generic_parameters: None,
+                            }),
+                        }),
+                    }),
+                }),
+
+                // let result_ptr = std::alloc::alloc_bytes(return_length);
+                sway::Statement::from(sway::Let {
+                    pattern: sway::LetPattern::from(sway::LetIdentifier {
+                        is_mutable: false,
+                        name: result_ptr_name.clone(),
+                    }),
+                    type_name: None,
+                    value: sway::Expression::from(sway::FunctionCall {
+                        function: sway::Expression::Identifier("std::alloc::alloc_bytes".into()),
+                        generic_parameters: None,
+                        parameters: vec![
+                            sway::Expression::Identifier(return_length_name.clone()),
+                        ],
+                    }),
+                }),
+
+                // return_ptr.copy_to::<u8>(result_ptr, return_length);
+                sway::Statement::from(sway::Expression::from(sway::FunctionCall {
+                    function: sway::Expression::from(sway::MemberAccess {
+                        expression: sway::Expression::Identifier(return_ptr_name.clone()),
+                        member: "copy_to".into(),
+                    }),
+                    generic_parameters: Some(sway::GenericParameterList {
+                        entries: vec![
+                            sway::GenericParameter {
+                                type_name: sway::TypeName::Identifier {
+                                    name: "u8".into(),
+                                    generic_parameters: None,
+                                },
+                                implements: None,
+                            }
+                        ],
+                    }),
+                    parameters: vec![
+                        sway::Expression::Identifier(result_ptr_name.clone()),
+                        sway::Expression::Identifier(return_length_name.clone()),
+                    ],
+                })),
+            ],
+
+            // (true, Bytes::from(raw_slice::from_parts::<u8>(result_ptr, return_length)))
+            final_expr: Some(sway::Expression::Tuple(vec![
+                sway::Expression::from(sway::Literal::Bool(true)),
+                sway::Expression::from(sway::FunctionCall {
+                    function: sway::Expression::Identifier("Bytes::from".into()),
+                    generic_parameters: None,
+                    parameters: vec![
+                        sway::Expression::from(sway::FunctionCall {
+                            function: sway::Expression::Identifier("raw_slice::from_parts".into()),
+                            generic_parameters: Some(sway::GenericParameterList {
+                                entries: vec![
+                                    sway::GenericParameter {
+                                        type_name: sway::TypeName::Identifier {
+                                            name: "u8".into(),
+                                            generic_parameters: None,
+                                        },
+                                        implements: None,
+                                    }
+                                ],
+                            }),
+                            parameters: vec![
+                                sway::Expression::Identifier(result_ptr_name.clone()),
+                                sway::Expression::Identifier(return_length_name.clone()),
+                            ],
+                        }),
+                    ],
+                })
+            ])),
+        }))
     }
 
     #[inline]
