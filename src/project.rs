@@ -3782,68 +3782,14 @@ impl Project {
                         solidity::Type::DynamicBytes => {
                             // Translate the value being casted
                             let value = self.translate_expression(translated_definition, scope, &args[0])?;
-
-                            // Ensure `std::bytes::Bytes` is imported
-                            translated_definition.ensure_use_declared("std::bytes::Bytes");
-
-                            // Cast the value to Bytes
-                            let value = match scope.get_expression_type(&value)? {
-                                sway::TypeName::StringSlice => {
-                                    // bytes(x) => String::from_ascii_str(x).as_bytes()
-
-                                    // Ensure `std::string::*` is imported
-                                    translated_definition.ensure_use_declared("std::string::*");
-
-                                    sway::Expression::from(sway::FunctionCall {
-                                        function: sway::Expression::from(sway::MemberAccess {
-                                            expression: sway::Expression::from(sway::FunctionCall {
-                                                function: sway::Expression::Identifier("String::from_ascii_str".into()),
-                                                generic_parameters: None,
-                                                parameters: vec![
-                                                    value,
-                                                ],
-                                            }),
-                                            member: "as_bytes".into(),
-                                        }),
-                                        generic_parameters: None,
-                                        parameters: vec![],
-                                    })
-                                }
-
-                                type_name => todo!("cast expression of type `{type_name}` to `std::bytes::Bytes`"),
-                            };
+                            let value_type_name = scope.get_expression_type(&value)?;
 
                             match member.name.as_str() {
                                 "length" => return Ok(sway::Expression::from(sway::FunctionCall {
                                     function: sway::Expression::from(sway::MemberAccess {
-                                        expression: {
-                                            // HACK:
-                                            // String::from_ascii_str(signature).as_bytes().len() => s.len()
-                                            let check_string_length_hack = || -> Option<sway::Expression> {
-                                                let sway::Expression::FunctionCall(function_call) = &value else { return None };
-                                                let sway::Expression::MemberAccess(member_access) = &function_call.function else { return None };
-                                                if member_access.member != "len" || !function_call.parameters.is_empty() { return None }
-
-                                                let sway::Expression::FunctionCall(function_call) = &member_access.expression else { return None };
-                                                let sway::Expression::MemberAccess(member_access) = &function_call.function else { return None };
-                                                if member_access.member != "as_bytes" || !function_call.parameters.is_empty() { return None };
-                                                
-                                                let sway::Expression::FunctionCall(function_call) = &member_access.expression else { return None };
-                                                let sway::Expression::Identifier(identifier) = &function_call.function else { return None };
-                                                if identifier != "String::from_ascii_str" || function_call.parameters.len() != 1 { return None };
-
-                                                if let Ok(sway::TypeName::StringSlice) = scope.get_expression_type(&function_call.parameters[0]) {
-                                                    return Some(function_call.parameters[0].clone());
-                                                }
-
-                                                None
-                                            };
-
-                                            if let Some(value) = check_string_length_hack() {
-                                                value
-                                            } else {
-                                                value
-                                            }
+                                        expression: match &value_type_name {
+                                            sway::TypeName::StringSlice => value,
+                                            _ => todo!("get length of {value_type_name}"),
                                         },
                                         member: "len".into(),
                                     }),
