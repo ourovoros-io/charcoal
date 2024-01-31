@@ -1,6 +1,7 @@
 contract;
 
 use std::bytes::Bytes;
+use core::codec::AbiEncode;
 use std::string::*;
 use std::hash::Hash;
 use std::storage::storage_string::*;
@@ -11,7 +12,7 @@ enum IERC20Event {
     Approval: (Identity, Identity, u256),
 }
 
-impl core::codec::AbiEncode for IERC20Event {
+impl AbiEncode for IERC20Event {
     fn abi_encode(self, ref mut buffer: core::codec::Buffer) {
         match self {
             IERC20Event::Transfer((a, b, c)) => {
@@ -51,7 +52,7 @@ enum IERC20ErrorsError {
     ERC20InvalidSpender: Identity,
 }
 
-impl core::codec::AbiEncode for IERC20ErrorsError {
+impl AbiEncode for IERC20ErrorsError {
     fn abi_encode(self, ref mut buffer: core::codec::Buffer) {
         match self {
             IERC20ErrorsError::ERC20InsufficientBalance((a, b, c)) => {

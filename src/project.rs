@@ -669,6 +669,8 @@ impl Project {
 
                     let (events_enum, _) = {
                         if translated_definition.events_enums.iter().find(|(e, _)| e.name == events_enum_name).is_none() {
+                            translated_definition.ensure_use_declared("core::codec::AbiEncode");
+
                             translated_definition.events_enums.push((
                                 sway::Enum {
                                     name: events_enum_name.clone(),
@@ -676,7 +678,7 @@ impl Project {
                                 },
                                 sway::Impl {
                                     type_name: sway::TypeName::Identifier {
-                                        name: "core::codec::AbiEncode".into(),
+                                        name: "AbiEncode".into(),
                                         generic_parameters: None,
                                     },
                                     for_type_name: Some(sway::TypeName::Identifier {
@@ -714,6 +716,8 @@ impl Project {
 
                     let (errors_enum, _) = {
                         if translated_definition.errors_enums.iter().find(|(e, _)| e.name == errors_enum_name).is_none() {
+                            translated_definition.ensure_use_declared("core::codec::AbiEncode");
+
                             translated_definition.errors_enums.push((
                                 sway::Enum {
                                     name: errors_enum_name.clone(),
@@ -721,7 +725,7 @@ impl Project {
                                 },
                                 sway::Impl {
                                     type_name: sway::TypeName::Identifier {
-                                        name: "core::codec::AbiEncode".into(),
+                                        name: "AbiEncode".into(),
                                         generic_parameters: None,
                                     },
                                     for_type_name: Some(sway::TypeName::Identifier {
@@ -2228,7 +2232,6 @@ impl Project {
             (old_name, new_name)
         };
 
-        println!("Translating function {} in {}", old_name, translated_definition.path.to_string_lossy());
         // Translate the functions parameters
         let mut parameters = sway::ParameterList::default();
 
