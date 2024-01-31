@@ -31,7 +31,14 @@ fn translate_project() -> Result<(), Error> {
     let mut project = Project::default();
     
     for contract_file in options.contract_files.iter() {
-        project.translate(options.definition_name.clone(), contract_file)?;
+        project.translate(options.definition_name.as_ref(), contract_file)?;
+
+        for translated_definition in project.get_translated_definitions(options.definition_name.as_ref(), contract_file) {
+            println!("// Translated from {}", translated_definition.path.to_string_lossy());
+            
+            let module: sway::Module = translated_definition.into();
+            println!("{}", sway::TabbedDisplayer(&module));
+        }
     }
 
     Ok(())

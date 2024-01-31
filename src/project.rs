@@ -69,7 +69,25 @@ impl Project {
         }
     }
 
-    pub fn translate(&mut self, definition_name: Option<String>, source_unit_path: &Path) -> Result<(), Error> {
+    pub fn get_translated_definitions(&self, definition_name: Option<&String>, source_unit_path: &Path) -> Vec<TranslatedDefinition> {
+        let mut result = vec![];
+        
+        for translated_definition in self.translated_definitions.iter() {
+            if let Some(definition_name) = definition_name {
+                if translated_definition.name != *definition_name {
+                    continue;
+                }
+            }
+
+            if translated_definition.path == source_unit_path {
+                result.push(translated_definition.clone());
+            }
+        }
+
+        result
+    }
+
+    pub fn translate(&mut self, definition_name: Option<&String>, source_unit_path: &Path) -> Result<(), Error> {
         let solidity_source_units = self.solidity_source_units.clone();
 
         // Ensure the source unit has been parsed
@@ -100,7 +118,7 @@ impl Project {
                 }
     
                 solidity::SourceUnitPart::ContractDefinition(contract_definition) => {
-                    if let Some(definition_name) = definition_name.as_ref() {
+                    if let Some(definition_name) = definition_name {
                         if contract_definition.name.as_ref().unwrap().name != *definition_name {
                             continue;
                         }
@@ -837,9 +855,6 @@ impl Project {
             translated_definition.functions.remove(toplevel_function_index);
         }
 
-        println!("// First translation pass of \"{}\" in \"{}\":", translated_definition.name, translated_definition.path.to_string_lossy());
-        println!("{translated_definition}");
-
         self.translated_definitions.push(translated_definition);
         
         Ok(())
@@ -854,7 +869,7 @@ impl Project {
         let source_unit_directory = translated_definition.path.parent().map(PathBuf::from).unwrap();
 
         for import_directive in import_directives.iter() {
-            let mut translate_import_directive = |definition_name: Option<String>, filename: &solidity::StringLiteral| -> Result<(), Error> {
+            let mut translate_import_directive = |definition_name: Option<&String>, filename: &solidity::StringLiteral| -> Result<(), Error> {
                 if filename.string.starts_with('@') {
                     todo!("handle global import paths (i.e: node_modules)")
                 }
@@ -877,7 +892,7 @@ impl Project {
 
                 solidity::Import::Rename(solidity::ImportPath::Filename(filename), identifiers, _) => {
                     for (identifier, _) in identifiers.iter() {
-                        translate_import_directive(Some(identifier.name.clone()), filename)?;
+                        translate_import_directive(Some(&identifier.name), filename)?;
                     }
                 }
 

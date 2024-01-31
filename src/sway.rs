@@ -153,13 +153,23 @@ impl TabbedDisplay for Module {
         writeln!(f, "{};", self.kind)?;
         writeln!(f)?;
 
+        let mut prev_item: Option<&ModuleItem> = None;
+
         for (i, item) in self.items.iter().enumerate() {
-            if i > 0 {
+            if let Some(prev_item) = prev_item {
+                if !(matches!(prev_item, ModuleItem::Use(_)) && matches!(item, ModuleItem::Use(_)) 
+                || matches!(prev_item, ModuleItem::Constant(_)) && matches!(item, ModuleItem::Constant(_))
+                || matches!(prev_item, ModuleItem::TypeDefinition(_)) && matches!(item, ModuleItem::TypeDefinition(_))) {
+                    writeln!(f)?;
+                }
+            } else if i > 0 {
                 writeln!(f)?;
             }
 
             item.tabbed_fmt(depth, f)?;
             writeln!(f)?;
+
+            prev_item = Some(item);
         }
 
         Ok(())

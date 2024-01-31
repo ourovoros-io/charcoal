@@ -696,6 +696,83 @@ impl Display for TranslatedDefinition {
     }
 }
 
+impl Into<sway::Module> for TranslatedDefinition {
+    fn into(self) -> sway::Module {
+        let mut result = sway::Module {
+            kind: match &self.kind {
+                solidity::ContractTy::Abstract(_)
+                | solidity::ContractTy::Contract(_)
+                | solidity::ContractTy::Interface(_) => sway::ModuleKind::Contract,
+
+                solidity::ContractTy::Library(_) => sway::ModuleKind::Library,
+            },
+            items: vec![],
+        };
+
+        for x in self.uses.iter() {
+            result.items.push(sway::ModuleItem::Use(x.clone()));
+        }
+
+        for x in self.constants.iter() {
+            result.items.push(sway::ModuleItem::Constant(x.clone()));
+        }
+
+        for x in self.type_definitions.iter() {
+            result.items.push(sway::ModuleItem::TypeDefinition(x.clone()));
+        }
+
+        for x in self.enums.iter() {
+            result.items.push(sway::ModuleItem::TypeDefinition(x.type_definition.clone()));
+            result.items.push(sway::ModuleItem::Impl(x.variants_impl.clone()));
+        }
+
+        for x in self.structs.iter() {
+            result.items.push(sway::ModuleItem::Struct(x.clone()));
+        }
+        
+        for (events_enum, abi_encode_impl) in self.events_enums.iter() {
+            result.items.push(sway::ModuleItem::Enum(events_enum.clone()));
+            result.items.push(sway::ModuleItem::Impl(abi_encode_impl.clone()));
+        }
+
+        for (errors_enum, abi_encode_impl) in self.errors_enums.iter() {
+            result.items.push(sway::ModuleItem::Enum(errors_enum.clone()));
+            result.items.push(sway::ModuleItem::Impl(abi_encode_impl.clone()));
+        }
+        
+        for x in self.abis.iter() {
+            result.items.push(sway::ModuleItem::Abi(x.clone()));
+        }
+        
+        if let Some(x) = self.abi.as_ref() {
+            result.items.push(sway::ModuleItem::Abi(x.clone()));
+        }
+        
+        if let Some(x) = self.storage.as_ref() {
+            result.items.push(sway::ModuleItem::Storage(x.clone()));
+        }
+        
+        if let Some(x) = self.configurable.as_ref() {
+            result.items.push(sway::ModuleItem::Configurable(x.clone()));
+        }
+
+        for x in self.functions.iter() {
+            if let Some(0) = self.function_call_counts.get(&x.name) {
+                println!("Culling function {}", x.name);
+                continue;
+            }
+
+            result.items.push(sway::ModuleItem::Function(x.clone()));
+        }
+        
+        for x in self.impls.iter() {
+            result.items.push(sway::ModuleItem::Impl(x.clone()));
+        }
+
+        result
+    }
+}
+
 impl TranslatedDefinition {
     pub fn new<P: AsRef<Path>, S: ToString>(path: P, kind: solidity::ContractTy, name: S, inherits: Vec<S>) -> Self {
         Self {
