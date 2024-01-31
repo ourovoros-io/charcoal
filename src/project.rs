@@ -5087,28 +5087,19 @@ impl Project {
                                         }),
                                         generic_parameters: None,
                                         parameters: vec![
-                                            match parameter_type {
-                                                sway::TypeName::Identifier {
-                                                    name,
-                                                    generic_parameters: None
-                                                } if name == "Bytes" => {
-                                                    parameter.clone()
-                                                }
-
-                                                _ => sway::Expression::from(sway::FunctionCall {
-                                                    function: sway::Expression::Identifier("Bytes::from".into()),
-                                                    generic_parameters: None,
-                                                    parameters: vec![
-                                                        sway::Expression::from(sway::FunctionCall {
-                                                            function: sway::Expression::Identifier("core::codec::encode".into()),
-                                                            generic_parameters: None,
-                                                            parameters: vec![
-                                                                parameter.clone(),
-                                                            ],
-                                                        }),
-                                                    ],
-                                                }),
-                                            },
+                                            sway::Expression::from(sway::FunctionCall {
+                                                function: sway::Expression::Identifier("Bytes::from".into()),
+                                                generic_parameters: None,
+                                                parameters: vec![
+                                                    sway::Expression::from(sway::FunctionCall {
+                                                        function: sway::Expression::Identifier("core::codec::encode".into()),
+                                                        generic_parameters: None,
+                                                        parameters: vec![
+                                                            parameter.clone(),
+                                                        ],
+                                                    }),
+                                                ],
+                                            }),
                                         ],
                                     })));
                                 }
