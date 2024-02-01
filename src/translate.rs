@@ -167,354 +167,6 @@ impl TranslationScope {
 
         Err(Error::FunctionNotInScope(old_name.into()))
     }
-
-    pub fn get_expression_type(
-        &self,
-        expression: &sway::Expression,
-    ) -> Result<sway::TypeName, Error> {
-        match expression {
-            sway::Expression::Literal(literal) => match literal {
-                sway::Literal::Bool(_) => Ok(sway::TypeName::Identifier {
-                    name: "bool".into(),
-                    generic_parameters: None,
-                }),
-                sway::Literal::DecInt(_) => Ok(sway::TypeName::Identifier {
-                    name: "u64".into(), // TODO: is this ok?
-                    generic_parameters: None,
-                }),
-                sway::Literal::HexInt(_) => Ok(sway::TypeName::Identifier {
-                    name: "u64".into(), // TODO: is this ok?
-                    generic_parameters: None,
-                }),
-                sway::Literal::String(_) => Ok(sway::TypeName::StringSlice),
-            }
-
-            sway::Expression::Identifier(name) => {
-                let variable = self.get_variable_from_new_name(name)?;
-
-                // Variable should not be a storage field
-                if variable.is_storage {
-                    return Err(Error::VariableNotInScope(name.clone()));
-                }
-
-                Ok(variable.type_name.clone())
-            }
-
-            sway::Expression::FunctionCall(function_call) => match &function_call.function {
-                sway::Expression::Identifier(name) => match name.as_str() {
-                    "todo!" => Ok(sway::TypeName::Identifier {
-                        name: "todo!".into(),
-                        generic_parameters: None,
-                    }),
-
-                    "Bytes::new" | "Bytes::from" => Ok(sway::TypeName::Identifier {
-                        name: "Bytes".into(),
-                        generic_parameters: None,
-                    }),
-
-                    "Identity::Address" | "Identity::ContractId" | "Identity::from" => Ok(sway::TypeName::Identifier {
-                        name: "Identity".into(),
-                        generic_parameters: None,
-                    }),
-
-                    "msg_sender" => Ok(sway::TypeName::Identifier {
-                        name: "Option".into(),
-                        generic_parameters: Some(sway::GenericParameterList {
-                            entries: vec![
-                                sway::GenericParameter {
-                                    type_name: sway::TypeName::Identifier {
-                                        name: "Identity".into(),
-                                        generic_parameters: None,
-                                    },
-                                    implements: None,
-                                },
-                            ],
-                        }),
-                    }),
-
-                    "std::hash::keccak256" => Ok(sway::TypeName::Identifier {
-                        name: "b256".into(),
-                        generic_parameters: None,
-                    }),
-
-                    new_name => {
-                        // Ensure the function exists in scope
-                        let Some(function) = self.find_function(|f| {
-                            // Ensure the function's new name matches the function call we're translating
-                            if f.new_name != new_name {
-                                return false;
-                            }
-                            
-                            // Ensure the supplied function call args match the function's parameters
-                            if function_call.parameters.len() != f.parameters.entries.len() {
-                                return false;
-                            }
-
-                            for (i, parameter) in function_call.parameters.iter().enumerate() {
-                                let Some(parameter_type_name) = f.parameters.entries[i].type_name.as_ref() else { continue };
-
-                                // Don't check literal integer value types
-                                if let sway::Expression::Literal(sway::Literal::DecInt(_) | sway::Literal::HexInt(_)) = parameter {
-                                    if let sway::TypeName::Identifier { name, generic_parameters: None } = parameter_type_name {
-                                        if let "u8" | "u16" | "u32" | "u64" | "u256" = name.as_str() {
-                                            continue;
-                                        }
-                                    }
-                                }
-
-                                let value_type_name = self.get_expression_type(parameter).unwrap();
-
-                                // HACK: Don't check todo! value types
-                                if let sway::TypeName::Identifier { name, generic_parameters: None } = &value_type_name {
-                                    if name == "todo!" {
-                                        continue;
-                                    }
-                                }
-
-                                if value_type_name != *parameter_type_name {
-                                    return false;
-                                }
-                            }
-
-                            true
-                        }) else {
-                            panic!("Failed to find function `{new_name}` in scope");
-                        };
-
-                        if let Some(return_type) = function.return_type.as_ref() {
-                            Ok(return_type.clone())
-                        } else {
-                            Ok(sway::TypeName::Tuple { type_names: vec![] })
-                        }
-                    }
-                }
-
-                sway::Expression::MemberAccess(member_access) => match member_access.member.as_str() {
-                    "unwrap" => match self.get_expression_type(&member_access.expression)? {
-                        sway::TypeName::Identifier { name, generic_parameters } => match (name.as_str(), generic_parameters.as_ref()) {
-                            ("Option", Some(generic_parameters)) => Ok(generic_parameters.entries.first().unwrap().type_name.clone()),
-                            ("Result", Some(generic_parameters)) => Ok(generic_parameters.entries.first().unwrap().type_name.clone()),
-                            _ => todo!("get type of function call expression: {expression:#?}"),
-                        }
-
-                        _ => todo!("get type of function call expression: {expression:#?}"),
-                    }
-                    
-                    "get" => match self.get_expression_type(&member_access.expression)? {
-                        sway::TypeName::Identifier { name, generic_parameters } => match (name.as_str(), generic_parameters.as_ref()) {
-                            ("Vec", Some(generic_parameters)) => Ok(sway::TypeName::Identifier {
-                                name: "Option".into(),
-                                generic_parameters: Some(sway::GenericParameterList {
-                                    entries: vec![
-                                        generic_parameters.entries.first().unwrap().clone(),
-                                    ],
-                                }),
-                            }),
-
-                            _ => todo!("get type of function call expression: {expression:#?}"),
-                        }
-                        
-                        _ => todo!("get type of function call expression: {expression:#?}"),
-                    }
-
-                    "pow" => match self.get_expression_type(&member_access.expression)? {
-                        t if t.is_uint() => Ok(t),
-                        _ => todo!("get type of `pow` function call expression: {expression:#?}"),
-                    }
-
-                    "read" => match self.get_expression_type(&member_access.expression)? {
-                        sway::TypeName::Identifier { name, generic_parameters } => match (name.as_str(), generic_parameters.as_ref()) {
-                            ("StorageKey", Some(generic_parameters)) => Ok(generic_parameters.entries.first().unwrap().type_name.clone()),
-                            _ => todo!("get type of function call expression: {expression:#?}"),
-                        }
-
-                        _ => todo!("get type of function call expression: {expression:#?}"),
-                    }
-
-                    "to_be_bytes" | "to_le_bytes" => match self.get_expression_type(&member_access.expression)? {
-                        sway::TypeName::Identifier { name, generic_parameters } => match (name.as_str(), generic_parameters.as_ref()) {
-                            ("u16" | "u32" | "u64" | "u256" | "b256", None) => Ok(sway::TypeName::Identifier {
-                                name: "Bytes".into(),
-                                generic_parameters: None,
-                            }),
-
-                            _ => todo!("get type of function call expression: {expression:#?}"),
-                        }
-
-                        _ => todo!("get type of function call expression: {expression:#?}"),
-                    }
-
-                    "split_at" => match self.get_expression_type(&member_access.expression)? {
-                        sway::TypeName::Identifier { name, generic_parameters } => match (name.as_str(), generic_parameters.as_ref()) {
-                            ("Bytes", None) => Ok(sway::TypeName::Tuple {
-                                type_names: vec![
-                                    sway::TypeName::Identifier {
-                                        name: "Bytes".into(),
-                                        generic_parameters: None,
-                                    },
-                                    sway::TypeName::Identifier {
-                                        name: "Bytes".into(),
-                                        generic_parameters: None,
-                                    },
-                                ],
-                            }),
-
-                            _ => todo!("get type of function call expression: {expression:#?}"),
-                        }
-
-                        _ => todo!("get type of function call expression: {expression:#?}"),
-                    }
-
-                    _ => todo!("get type of function call expression: {expression:#?}"),
-                }
-
-                _ => todo!("get type of function call expression: {expression:#?}"),
-            }
-
-            sway::Expression::Block(block) => {
-                let Some(expression) = block.final_expr.as_ref() else {
-                    return Ok(sway::TypeName::Tuple { type_names: vec![] });
-                };
-
-                let mut inner_scope = TranslationScope {
-                    parent: Some(Box::new(self.clone())),
-                    ..Default::default()
-                };
-
-                for statement in block.statements.iter() {
-                    let sway::Statement::Let(sway::Let {
-                        pattern,
-                        type_name,
-                        value,
-                    }) = statement else { continue };
-
-                    let type_name = match type_name.as_ref() {
-                        Some(type_name) => type_name.clone(),
-                        None => inner_scope.get_expression_type(value)?,
-                    };
-
-                    let mut add_variable = |id: &sway::LetIdentifier, type_name: &sway::TypeName| {
-                        inner_scope.variables.push(TranslatedVariable {
-                            old_name: String::new(),
-                            new_name: id.name.clone(),
-                            type_name: type_name.clone(),
-                            ..Default::default()
-                        })
-                    };
-
-                    match pattern {
-                        sway::LetPattern::Identifier(id) => add_variable(id, &type_name),
-                        sway::LetPattern::Tuple(ids) => {
-                            let sway::TypeName::Tuple { type_names } = &type_name else {
-                                panic!("Expected tuple type, found {type_name}");
-                            };
-
-                            for (id, type_name) in ids.iter().zip(type_names.iter()) {
-                                add_variable(id, type_name);
-                            }
-                        }
-                    }
-                }
-
-                inner_scope.get_expression_type(expression)
-            }
-
-            sway::Expression::Return(value) => {
-                if let Some(value) = value.as_ref() {
-                    self.get_expression_type(value)
-                } else {
-                    Ok(sway::TypeName::Tuple { type_names: vec![] })
-                }
-            }
-
-            sway::Expression::Array(array) => Ok(sway::TypeName::Array {
-                type_name: Box::new(
-                    if let Some(expression) = array.elements.first() {
-                        self.get_expression_type(expression)?
-                    } else {
-                        sway::TypeName::Tuple { type_names: vec![] }
-                    }
-                ),
-                length: array.elements.len(),
-            }),
-
-            sway::Expression::ArrayAccess(array_access) => {
-                let element_type_name = self.get_expression_type(&array_access.expression)?;
-                
-                let type_name = match &element_type_name {
-                    sway::TypeName::Identifier {
-                        name,
-                        generic_parameters: Some(generic_parameters),
-                    } if name == "Vec" => {
-                        &generic_parameters.entries.first().unwrap().type_name
-                    }
-
-                    sway::TypeName::Array { type_name, .. } => type_name.as_ref(),
-
-                    _ => todo!("array access for type {element_type_name}"),
-                };
-
-                Ok(type_name.clone())
-            }
-
-            sway::Expression::MemberAccess(member_access) => match &member_access.expression {
-                sway::Expression::Identifier(name) => match name.as_str() {
-                    "storage" => {
-                        let Some(variable) = self.find_variable(|v| v.is_storage && v.new_name == member_access.member) else {
-                            panic!("Failed to find storage variable in scope: `{}`", member_access.member);
-                        };
-
-                        Ok(sway::TypeName::Identifier {
-                            name: "StorageKey".into(),
-                            generic_parameters: Some(sway::GenericParameterList {
-                                entries: vec![
-                                    sway::GenericParameter {
-                                        type_name: variable.type_name.clone(),
-                                        implements: None,
-                                    },
-                                ],
-                            }),
-                        })
-                    }
-
-                    _ => todo!("get type of member access expression: {expression:#?}"),
-                }
-
-                _ => todo!("get type of member access expression: {expression:#?}"),
-            }
-            
-            sway::Expression::Tuple(tuple) => Ok(sway::TypeName::Tuple {
-                type_names: tuple.iter().map(|x| self.get_expression_type(x)).collect::<Result<Vec<_>, _>>()?,
-            }),
-            
-            sway::Expression::If(if_expr) => {
-                if let Some(expression) = if_expr.then_body.final_expr.as_ref() {
-                    self.get_expression_type(expression)
-                } else {
-                    Ok(sway::TypeName::Tuple { type_names: vec![] })
-                }
-            }
-
-            sway::Expression::Match(match_expr) => {
-                if let Some(branch) = match_expr.branches.first() {
-                    self.get_expression_type(&branch.value)
-                } else {
-                    Ok(sway::TypeName::Tuple { type_names: vec![] })
-                }
-            }
-            
-            sway::Expression::While(_) => Ok(sway::TypeName::Tuple { type_names: vec![] }),
-            sway::Expression::UnaryExpression(unary_expression) => self.get_expression_type(&unary_expression.expression),
-            sway::Expression::BinaryExpression(binary_expression) => self.get_expression_type(&binary_expression.lhs),
-            sway::Expression::Constructor(constructor) => Ok(constructor.type_name.clone()),
-            sway::Expression::Continue => Ok(sway::TypeName::Tuple { type_names: vec![] }),
-            sway::Expression::Break => Ok(sway::TypeName::Tuple { type_names: vec![] }),
-            
-            sway::Expression::AsmBlock(_) => todo!("get type of asm block: {expression:#?}"),
-            
-            sway::Expression::Commented(_, x) => self.get_expression_type(x),
-        }
-    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -924,6 +576,430 @@ impl TranslatedDefinition {
                 is_public: false,
                 tree,
             });
+        }
+    }
+
+    pub fn get_expression_type(
+        &self,
+        scope: &mut TranslationScope,
+        expression: &sway::Expression,
+    ) -> Result<sway::TypeName, Error> {
+        match expression {
+            sway::Expression::Literal(literal) => match literal {
+                sway::Literal::Bool(_) => Ok(sway::TypeName::Identifier {
+                    name: "bool".into(),
+                    generic_parameters: None,
+                }),
+                sway::Literal::DecInt(_) => Ok(sway::TypeName::Identifier {
+                    name: "u64".into(), // TODO: is this ok?
+                    generic_parameters: None,
+                }),
+                sway::Literal::HexInt(_) => Ok(sway::TypeName::Identifier {
+                    name: "u64".into(), // TODO: is this ok?
+                    generic_parameters: None,
+                }),
+                sway::Literal::String(_) => Ok(sway::TypeName::StringSlice),
+            }
+
+            sway::Expression::Identifier(name) => {
+                let variable = scope.get_variable_from_new_name(name)?;
+
+                // Variable should not be a storage field
+                if variable.is_storage {
+                    return Err(Error::VariableNotInScope(name.clone()));
+                }
+
+                Ok(variable.type_name.clone())
+            }
+
+            sway::Expression::FunctionCall(function_call) => match &function_call.function {
+                sway::Expression::Identifier(name) => match name.as_str() {
+                    "todo!" => Ok(sway::TypeName::Identifier {
+                        name: "todo!".into(),
+                        generic_parameters: None,
+                    }),
+
+                    "abi" => {
+                        if function_call.parameters.len() != 2 {
+                            panic!("Malformed abi cast, expected 2 parameters, found {}", function_call.parameters.len());
+                        }
+
+                        let sway::Expression::Identifier(definition_name) = &function_call.parameters[0] else {
+                            panic!("Malformed abi cast, expected identifier, found {:#?}", function_call.parameters[0]);
+                        };
+
+                        Ok(sway::TypeName::Identifier {
+                            name: definition_name.clone(),
+                            generic_parameters: None,
+                        })
+                    }
+
+                    "Bytes::new" | "Bytes::from" => Ok(sway::TypeName::Identifier {
+                        name: "Bytes".into(),
+                        generic_parameters: None,
+                    }),
+
+                    "Identity::Address" | "Identity::ContractId" | "Identity::from" => Ok(sway::TypeName::Identifier {
+                        name: "Identity".into(),
+                        generic_parameters: None,
+                    }),
+
+                    "msg_sender" => Ok(sway::TypeName::Identifier {
+                        name: "Option".into(),
+                        generic_parameters: Some(sway::GenericParameterList {
+                            entries: vec![
+                                sway::GenericParameter {
+                                    type_name: sway::TypeName::Identifier {
+                                        name: "Identity".into(),
+                                        generic_parameters: None,
+                                    },
+                                    implements: None,
+                                },
+                            ],
+                        }),
+                    }),
+
+                    "std::block::timestamp" => Ok(sway::TypeName::Identifier {
+                        name: "u64".into(),
+                        generic_parameters: None,
+                    }),
+                    
+                    "std::context::this_balance" => Ok(sway::TypeName::Identifier {
+                        name: "u64".into(),
+                        generic_parameters: None,
+                    }),
+
+                    "std::hash::keccak256" => Ok(sway::TypeName::Identifier {
+                        name: "b256".into(),
+                        generic_parameters: None,
+                    }),
+
+                    "u64::try_from" => Ok(sway::TypeName::Identifier {
+                        name: "Option".into(),
+                        generic_parameters: Some(sway::GenericParameterList {
+                            entries: vec![
+                                sway::GenericParameter {
+                                    type_name: sway::TypeName::Identifier {
+                                        name: "u64".into(),
+                                        generic_parameters: None,
+                                    },
+                                    implements: None,
+                                },
+                            ],
+                        }),
+                    }),
+
+                    new_name => {
+                        let parameter_types = function_call.parameters.iter()
+                            .map(|p| self.get_expression_type(scope, p))
+                            .collect::<Result<Vec<_>, _>>()?;
+                        
+                        // Ensure the function exists in scope
+                        let Some(function) = scope.find_function(|f| {
+                            // Ensure the function's new name matches the function call we're translating
+                            if f.new_name != new_name {
+                                return false;
+                            }
+                            
+                            // Ensure the supplied function call args match the function's parameters
+                            if function_call.parameters.len() != f.parameters.entries.len() {
+                                return false;
+                            }
+
+                            for (i, (parameter, value_type_name)) in function_call.parameters.iter().zip(parameter_types.iter()).enumerate() {
+                                let Some(parameter_type_name) = f.parameters.entries[i].type_name.as_ref() else { continue };
+
+                                // Don't check literal integer value types
+                                if let sway::Expression::Literal(sway::Literal::DecInt(_) | sway::Literal::HexInt(_)) = parameter {
+                                    if let sway::TypeName::Identifier { name, generic_parameters: None } = parameter_type_name {
+                                        if let "u8" | "u16" | "u32" | "u64" | "u256" = name.as_str() {
+                                            continue;
+                                        }
+                                    }
+                                }
+
+                                // HACK: Don't check todo! value types
+                                if let sway::TypeName::Identifier { name, generic_parameters: None } = &value_type_name {
+                                    if name == "todo!" {
+                                        continue;
+                                    }
+                                }
+
+                                if value_type_name != parameter_type_name {
+                                    return false;
+                                }
+                            }
+
+                            true
+                        }) else {
+                            panic!("Failed to find function `{new_name}` in scope");
+                        };
+
+                        if let Some(return_type) = function.return_type.as_ref() {
+                            Ok(return_type.clone())
+                        } else {
+                            Ok(sway::TypeName::Tuple { type_names: vec![] })
+                        }
+                    }
+                }
+
+                sway::Expression::MemberAccess(member_access) => match member_access.member.as_str() {
+                    "unwrap" => match self.get_expression_type(scope, &member_access.expression)? {
+                        sway::TypeName::Identifier { name, generic_parameters } => match (name.as_str(), generic_parameters.as_ref()) {
+                            ("Option" | "Result", Some(generic_parameters)) => Ok(generic_parameters.entries.first().unwrap().type_name.clone()),
+                            _ => todo!("get type of function call expression: {expression:#?}"),
+                        }
+
+                        _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
+                    }
+                    
+                    "get" => match self.get_expression_type(scope, &member_access.expression)? {
+                        sway::TypeName::Identifier { name, generic_parameters } => match (name.as_str(), generic_parameters.as_ref()) {
+                            ("Vec", Some(generic_parameters)) => Ok(sway::TypeName::Identifier {
+                                name: "Option".into(),
+                                generic_parameters: Some(sway::GenericParameterList {
+                                    entries: vec![
+                                        generic_parameters.entries.first().unwrap().clone(),
+                                    ],
+                                }),
+                            }),
+
+                            _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
+                        }
+                        
+                        _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
+                    }
+
+                    "pow" => match self.get_expression_type(scope, &member_access.expression)? {
+                        t if t.is_uint() => Ok(t),
+                        _ => todo!("get type of `pow` function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
+                    }
+
+                    "read" => match self.get_expression_type(scope, &member_access.expression)? {
+                        sway::TypeName::Identifier { name, generic_parameters } => match (name.as_str(), generic_parameters.as_ref()) {
+                            ("StorageKey", Some(generic_parameters)) => Ok(generic_parameters.entries.first().unwrap().type_name.clone()),
+                            _ => todo!("get type of function call expression: {expression:#?}"),
+                        }
+
+                        _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
+                    }
+
+                    "as_u256" => match self.get_expression_type(scope, &member_access.expression)? {
+                        sway::TypeName::Identifier { name, generic_parameters } => match (name.as_str(), generic_parameters.as_ref()) {
+                            ("u64", None) => Ok(sway::TypeName::Identifier {
+                                name: "u256".into(),
+                                generic_parameters: None,
+                            }),
+
+                            _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
+                        }
+                        _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
+                    }
+
+                    "to_be_bytes" | "to_le_bytes" => match self.get_expression_type(scope, &member_access.expression)? {
+                        sway::TypeName::Identifier { name, generic_parameters } => match (name.as_str(), generic_parameters.as_ref()) {
+                            ("u16" | "u32" | "u64" | "u256" | "b256", None) => Ok(sway::TypeName::Identifier {
+                                name: "Bytes".into(),
+                                generic_parameters: None,
+                            }),
+
+                            _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
+                        }
+
+                        _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
+                    }
+
+                    "split_at" => match self.get_expression_type(scope, &member_access.expression)? {
+                        sway::TypeName::Identifier { name, generic_parameters } => match (name.as_str(), generic_parameters.as_ref()) {
+                            ("Bytes", None) => Ok(sway::TypeName::Tuple {
+                                type_names: vec![
+                                    sway::TypeName::Identifier {
+                                        name: "Bytes".into(),
+                                        generic_parameters: None,
+                                    },
+                                    sway::TypeName::Identifier {
+                                        name: "Bytes".into(),
+                                        generic_parameters: None,
+                                    },
+                                ],
+                            }),
+
+                            _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
+                        }
+
+                        _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
+                    }
+
+                    function_name => match self.get_expression_type(scope, &member_access.expression)? {
+                        sway::TypeName::Identifier { name, generic_parameters: None } => {
+                            if let Some(abi) = self.abi.as_ref() {
+                                if abi.name == name {
+                                    if let Some(function_definition) = abi.functions.iter().find(|f| f.name == function_name) {
+                                        return Ok(function_definition.return_type.clone().unwrap_or_else(|| sway::TypeName::Tuple { type_names: vec![] }))
+                                    }
+                                }
+                            }
+
+                            for abi in self.abis.iter() {
+                                if abi.name == name {
+                                    if let Some(function_definition) = abi.functions.iter().find(|f| f.name == function_name) {
+                                        return Ok(function_definition.return_type.clone().unwrap_or_else(|| sway::TypeName::Tuple { type_names: vec![] }))
+                                    }
+                                }
+                            }
+
+                            todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression))
+                        }
+
+                        _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
+                    }
+                }
+
+                _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
+            }
+
+            sway::Expression::Block(block) => {
+                let Some(expression) = block.final_expr.as_ref() else {
+                    return Ok(sway::TypeName::Tuple { type_names: vec![] });
+                };
+
+                let mut inner_scope = TranslationScope {
+                    parent: Some(Box::new(scope.clone())),
+                    ..Default::default()
+                };
+
+                for statement in block.statements.iter() {
+                    let sway::Statement::Let(sway::Let {
+                        pattern,
+                        type_name,
+                        value,
+                    }) = statement else { continue };
+
+                    let type_name = match type_name.as_ref() {
+                        Some(type_name) => type_name.clone(),
+                        None => self.get_expression_type(&mut inner_scope, value)?,
+                    };
+
+                    let mut add_variable = |id: &sway::LetIdentifier, type_name: &sway::TypeName| {
+                        inner_scope.variables.push(TranslatedVariable {
+                            old_name: String::new(),
+                            new_name: id.name.clone(),
+                            type_name: type_name.clone(),
+                            ..Default::default()
+                        })
+                    };
+
+                    match pattern {
+                        sway::LetPattern::Identifier(id) => add_variable(id, &type_name),
+                        sway::LetPattern::Tuple(ids) => {
+                            let sway::TypeName::Tuple { type_names } = &type_name else {
+                                panic!("Expected tuple type, found {type_name}");
+                            };
+
+                            for (id, type_name) in ids.iter().zip(type_names.iter()) {
+                                add_variable(id, type_name);
+                            }
+                        }
+                    }
+                }
+
+                self.get_expression_type(&mut inner_scope, expression)
+            }
+
+            sway::Expression::Return(value) => {
+                if let Some(value) = value.as_ref() {
+                    self.get_expression_type(scope, value)
+                } else {
+                    Ok(sway::TypeName::Tuple { type_names: vec![] })
+                }
+            }
+
+            sway::Expression::Array(array) => Ok(sway::TypeName::Array {
+                type_name: Box::new(
+                    if let Some(expression) = array.elements.first() {
+                        self.get_expression_type(scope, expression)?
+                    } else {
+                        sway::TypeName::Tuple { type_names: vec![] }
+                    }
+                ),
+                length: array.elements.len(),
+            }),
+
+            sway::Expression::ArrayAccess(array_access) => {
+                let element_type_name = self.get_expression_type(scope, &array_access.expression)?;
+                
+                let type_name = match &element_type_name {
+                    sway::TypeName::Identifier {
+                        name,
+                        generic_parameters: Some(generic_parameters),
+                    } if name == "Vec" => {
+                        &generic_parameters.entries.first().unwrap().type_name
+                    }
+
+                    sway::TypeName::Array { type_name, .. } => type_name.as_ref(),
+
+                    _ => todo!("array access for type {element_type_name}"),
+                };
+
+                Ok(type_name.clone())
+            }
+
+            sway::Expression::MemberAccess(member_access) => match &member_access.expression {
+                sway::Expression::Identifier(name) => match name.as_str() {
+                    "storage" => {
+                        let Some(variable) = scope.find_variable(|v| v.is_storage && v.new_name == member_access.member) else {
+                            panic!("Failed to find storage variable in scope: `{}`", member_access.member);
+                        };
+
+                        Ok(sway::TypeName::Identifier {
+                            name: "StorageKey".into(),
+                            generic_parameters: Some(sway::GenericParameterList {
+                                entries: vec![
+                                    sway::GenericParameter {
+                                        type_name: variable.type_name.clone(),
+                                        implements: None,
+                                    },
+                                ],
+                            }),
+                        })
+                    }
+
+                    _ => todo!("get type of member access expression: {expression:#?}"),
+                }
+
+                _ => todo!("get type of member access expression: {expression:#?}"),
+            }
+            
+            sway::Expression::Tuple(tuple) => Ok(sway::TypeName::Tuple {
+                type_names: tuple.iter().map(|x| self.get_expression_type(scope, x)).collect::<Result<Vec<_>, _>>()?,
+            }),
+            
+            sway::Expression::If(if_expr) => {
+                if let Some(expression) = if_expr.then_body.final_expr.as_ref() {
+                    self.get_expression_type(scope, expression)
+                } else {
+                    Ok(sway::TypeName::Tuple { type_names: vec![] })
+                }
+            }
+
+            sway::Expression::Match(match_expr) => {
+                if let Some(branch) = match_expr.branches.first() {
+                    self.get_expression_type(scope, &branch.value)
+                } else {
+                    Ok(sway::TypeName::Tuple { type_names: vec![] })
+                }
+            }
+            
+            sway::Expression::While(_) => Ok(sway::TypeName::Tuple { type_names: vec![] }),
+            sway::Expression::UnaryExpression(unary_expression) => self.get_expression_type(scope, &unary_expression.expression),
+            sway::Expression::BinaryExpression(binary_expression) => self.get_expression_type(scope, &binary_expression.lhs),
+            sway::Expression::Constructor(constructor) => Ok(constructor.type_name.clone()),
+            sway::Expression::Continue => Ok(sway::TypeName::Tuple { type_names: vec![] }),
+            sway::Expression::Break => Ok(sway::TypeName::Tuple { type_names: vec![] }),
+            
+            sway::Expression::AsmBlock(_) => todo!("get type of asm block: {expression:#?}"),
+            
+            sway::Expression::Commented(_, x) => self.get_expression_type(scope, x),
         }
     }
 }

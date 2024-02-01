@@ -3780,19 +3780,26 @@ impl Project {
                             }
 
                             match member.name.as_str() {
-                                // address(this).balance => std::context::this_balance(AssetId::default())
+                                // address(this).balance => std::context::this_balance(AssetId::default()).as_u256()
                                 "balance" => return Ok(sway::Expression::from(sway::FunctionCall {
-                                    function: sway::Expression::Identifier("std::context::this_balance".into()),
-                                    generic_parameters: None,
-                                    parameters: vec![
-                                        sway::Expression::from(sway::FunctionCall {
-                                            function: sway::Expression::Identifier("AssetId::default".into()),
+                                    function: sway::Expression::from(sway::MemberAccess {
+                                        expression: sway::Expression::from(sway::FunctionCall {
+                                            function: sway::Expression::Identifier("std::context::this_balance".into()),
                                             generic_parameters: None,
-                                            parameters: vec![],
+                                            parameters: vec![
+                                                sway::Expression::from(sway::FunctionCall {
+                                                    function: sway::Expression::Identifier("AssetId::default".into()),
+                                                    generic_parameters: None,
+                                                    parameters: vec![],
+                                                }),
+                                            ],
                                         }),
-                                    ],
+                                        member: "as_u256".into(),
+                                    }),
+                                    generic_parameters: None,
+                                    parameters: vec![],
                                 })),
-
+                                    
                                 member => todo!("translate address cast member `{member}`: {}", expression.to_string()),
                             }
                         }
@@ -3809,7 +3816,7 @@ impl Project {
                         solidity::Type::DynamicBytes => {
                             // Translate the value being casted
                             let value = self.translate_expression(translated_definition, scope, &args[0])?;
-                            let value_type_name = scope.get_expression_type(&value)?;
+                            let value_type_name = translated_definition.get_expression_type(scope, &value)?;
 
                             match member.name.as_str() {
                                 "length" => return Ok(sway::Expression::from(sway::FunctionCall {
@@ -4335,7 +4342,7 @@ impl Project {
 
                         value => {
                             let value = self.translate_expression(translated_definition, scope, value)?;
-                            let value_type_name = scope.get_expression_type(&value)?;
+                            let value_type_name = translated_definition.get_expression_type(scope, &value)?;
 
                             match value_type_name {
                                 // No reason to cast if it's already an Identity
@@ -4348,9 +4355,23 @@ impl Project {
                         }
                     }
 
+                    solidity::Type::Payable => {
+                        // payable(x) => x
+
+                        let parameters = arguments.iter()
+                            .map(|a| self.translate_expression(translated_definition, scope, a))
+                            .collect::<Result<Vec<_>, _>>()?;
+                        
+                        if parameters.len() != 1 {
+                            panic!("Malformed payable cast: {} - {expression:#?}", expression.to_string());
+                        }
+
+                        Ok(parameters[0].clone())
+                    }
+
                     solidity::Type::Uint(bits) => {
                         let value_expression = self.translate_expression(translated_definition, scope, &arguments[0])?;
-                        let value_type_name = translated_definition.get_underlying_type(&scope.get_expression_type(&value_expression)?);
+                        let value_type_name = translated_definition.get_underlying_type(&translated_definition.get_expression_type(scope, &value_expression)?);
 
                         let create_uint_try_from_unwrap_expression = |from_bits: usize, to_bits: usize, value: sway::Expression| -> Result<sway::Expression, Error> {
                             if from_bits == to_bits {
@@ -4389,7 +4410,7 @@ impl Project {
                         // bytesN(x) => ???
 
                         let value_expression = self.translate_expression(translated_definition, scope, &arguments[0])?;
-                        let value_type_name = scope.get_expression_type(&value_expression)?;
+                        let value_type_name = translated_definition.get_expression_type(scope, &value_expression)?;
 
                         match &value_type_name {
                             sway::TypeName::Undefined => panic!("Undefined type name"),
@@ -4460,7 +4481,7 @@ impl Project {
                         // bytes(x) => ???
 
                         let value_expression = self.translate_expression(translated_definition, scope, &arguments[0])?;
-                        let value_type_name = scope.get_expression_type(&value_expression)?;
+                        let value_type_name = translated_definition.get_expression_type(scope, &value_expression)?;
 
                         match &value_type_name {
                             sway::TypeName::Undefined => panic!("Undefined type name"),
@@ -4583,6 +4604,10 @@ impl Project {
             solidity::Expression::Variable(solidity::Identifier { name, .. }) => {
                 let parameters = arguments.iter()
                     .map(|a| self.translate_expression(translated_definition, scope, a))
+                    .collect::<Result<Vec<_>, _>>()?;
+
+                let parameter_types = parameters.iter()
+                    .map(|p| translated_definition.get_expression_type(scope, p))
                     .collect::<Result<Vec<_>, _>>()?;
 
                 match name.as_str() {
@@ -4754,10 +4779,15 @@ impl Project {
 
                     old_name => {
                         // Check to see if the expression is an ABI type
-                        if self.find_definition_with_abi(old_name).is_some() {
+                        if let Some(external_definition) = self.find_definition_with_abi(old_name) {
                             if parameters.len() == 1 {
-                                match scope.get_expression_type(&parameters[0])? {
+                                match translated_definition.get_expression_type(scope, &parameters[0])? {
                                     sway::TypeName::Identifier { name, generic_parameters: None } if name == "Identity" => {
+                                        // Ensure the ABI is added to the current definition
+                                        if !translated_definition.abis.iter().any(|a| a.name == old_name) {
+                                            translated_definition.abis.push(external_definition.abi.as_ref().unwrap().clone());
+                                        }
+                        
                                         return Ok(sway::Expression::from(sway::FunctionCall {
                                             function: sway::Expression::Identifier("abi".into()),
                                             generic_parameters: None,
@@ -4808,7 +4838,7 @@ impl Project {
                                 return false;
                             }
 
-                            for (i, parameter) in parameters.iter().enumerate() {
+                            for (i, (parameter, value_type_name)) in parameters.iter().zip(parameter_types.iter()).enumerate() {
                                 let Some(parameter_type_name) = f.parameters.entries[i].type_name.as_ref() else { continue };
 
                                 // Don't check literal integer value types
@@ -4820,8 +4850,6 @@ impl Project {
                                     }
                                 }
 
-                                let value_type_name = scope.get_expression_type(parameter).unwrap();
-
                                 // HACK: Don't check todo! value types
                                 if let sway::TypeName::Identifier { name, generic_parameters: None } = &value_type_name {
                                     if name == "todo!" {
@@ -4829,7 +4857,7 @@ impl Project {
                                     }
                                 }
 
-                                if value_type_name != *parameter_type_name {
+                                if value_type_name != parameter_type_name {
                                     return false;
                                 }
                             }
@@ -5225,7 +5253,7 @@ impl Project {
                 }
 
                 let mut container = self.translate_expression(translated_definition, scope, container)?;
-                let type_name = scope.get_expression_type(&container)?;
+                let type_name = translated_definition.get_expression_type(scope, &container)?;
 
                 match &type_name {
                     sway::TypeName::Undefined => panic!("Undefined type name"),
@@ -5387,12 +5415,25 @@ impl Project {
                                 if let sway::Expression::Identifier(id) = &container {
                                     if let Ok(variable) = scope.get_variable_from_new_name(id.as_str()) {
                                         if let Some(abi_type_name) = variable.abi_type_name.as_ref() {
+                                            let abi_type_name = abi_type_name.to_string();
+
+                                            // Ensure the ABI is added to the current definition
+                                            if let Some(external_definition) = self.find_definition_with_abi(abi_type_name.as_str()) {
+                                                if let Some(abi) = external_definition.abi.as_ref() {
+                                                    if abi.name == abi_type_name {
+                                                        if !translated_definition.abis.iter().any(|a| a.name == abi.name) {
+                                                            translated_definition.abis.push(abi.clone());
+                                                        }
+                                                    }
+                                                }
+                                            }
+                            
                                             // Turn the expression into an ABI cast
                                             container = sway::Expression::from(sway::FunctionCall {
                                                 function: sway::Expression::Identifier("abi".into()),
                                                 generic_parameters: None,
                                                 parameters: vec![
-                                                    sway::Expression::Identifier(abi_type_name.to_string()),
+                                                    sway::Expression::Identifier(abi_type_name.clone()),
 
                                                     // x.as_contract_id().unwrap().into()
                                                     sway::Expression::from(sway::FunctionCall {
@@ -5430,6 +5471,11 @@ impl Project {
                                     let external_abi = external_definition.abi.as_ref().unwrap();
     
                                     if external_abi.functions.iter().any(|f| f.name == external_function_new_name) {
+                                        // Ensure the ABI is added to the current definition
+                                        if !translated_definition.abis.iter().any(|a| a.name == external_abi.name) {
+                                            translated_definition.abis.push(external_abi.clone());
+                                        }
+                                        
                                         return Ok(sway::Expression::from(sway::FunctionCall {
                                             function: sway::Expression::from(sway::MemberAccess {
                                                 expression: container,
@@ -5451,8 +5497,6 @@ impl Project {
                             let mut parameters = arguments.iter()
                                 .map(|a| self.translate_expression(translated_definition, scope, a))
                                 .collect::<Result<Vec<_>, _>>()?;
-
-                            parameters.insert(0, container.clone());
 
                             // Check if this is a function from a using directive
                             for using_directive in translated_definition.using_directives.iter() {
@@ -5486,7 +5530,60 @@ impl Project {
                                             }
                                         }
         
-                                        let value_type_name = scope.get_expression_type(parameter).unwrap();
+                                        let value_type_name = translated_definition.get_expression_type(scope, parameter).unwrap();
+        
+                                        // HACK: Don't check todo! value types
+                                        if let sway::TypeName::Identifier { name, generic_parameters: None } = &value_type_name {
+                                            if name == "todo!" {
+                                                continue;
+                                            }
+                                        }
+        
+                                        if value_type_name != *parameter_type_name {
+                                            return false;
+                                        }
+                                    }
+
+                                    true
+                                }) {
+                                    *translated_definition.function_call_counts.entry(function.new_name.clone()).or_insert(0) += 1;
+
+                                    parameters.insert(0, container.clone());
+
+                                    return Ok(sway::Expression::from(sway::FunctionCall {
+                                        function: sway::Expression::Identifier(function.new_name.clone()),
+                                        generic_parameters: None,
+                                        parameters,
+                                    }));
+                                }
+                            }
+
+                            // Check if this is a function from an ABI
+                            if let Some(definition) = self.find_definition_with_abi(name) {
+                                if let Some(function) = definition.toplevel_scope.functions.iter().find(|f| {
+                                    // Ensure the function's old name matches the function call we're translating
+                                    if f.old_name != member.name {
+                                        return false;
+                                    }
+                                    
+                                    // Ensure the supplied function call args match the function's parameters
+                                    if parameters.len() != f.parameters.entries.len() {
+                                        return false;
+                                    }
+        
+                                    for (i, parameter) in parameters.iter().enumerate() {
+                                        let Some(parameter_type_name) = f.parameters.entries[i].type_name.as_ref() else { continue };
+        
+                                        // Don't check literal integer value types
+                                        if let sway::Expression::Literal(sway::Literal::DecInt(_) | sway::Literal::HexInt(_)) = parameter {
+                                            if let sway::TypeName::Identifier { name, generic_parameters: None } = parameter_type_name {
+                                                if let "u8" | "u16" | "u32" | "u64" | "u256" = name.as_str() {
+                                                    continue;
+                                                }
+                                            }
+                                        }
+        
+                                        let value_type_name = translated_definition.get_expression_type(scope, parameter).unwrap();
         
                                         // HACK: Don't check todo! value types
                                         if let sway::TypeName::Identifier { name, generic_parameters: None } = &value_type_name {
@@ -5505,7 +5602,10 @@ impl Project {
                                     *translated_definition.function_call_counts.entry(function.new_name.clone()).or_insert(0) += 1;
 
                                     return Ok(sway::Expression::from(sway::FunctionCall {
-                                        function: sway::Expression::Identifier(function.new_name.clone()),
+                                        function: sway::Expression::from(sway::MemberAccess {
+                                            expression: container.clone(),
+                                            member: function.new_name.clone(),
+                                        }),
                                         generic_parameters: None,
                                         parameters,
                                     }));
@@ -5526,7 +5626,7 @@ impl Project {
             solidity::Expression::FunctionCallBlock(_, function, block) => match function.as_ref() {
                 solidity::Expression::MemberAccess(_, container, member) => {
                     let container = self.translate_expression(translated_definition, scope, container)?;
-                    let type_name = scope.get_expression_type(&container)?;
+                    let type_name = translated_definition.get_expression_type(scope, &container)?;
 
                     match type_name {
                         sway::TypeName::Undefined => panic!("Undefined type name"),
@@ -5871,7 +5971,7 @@ impl Project {
             if let solidity::Expression::MemberAccess(_, x, member1) = x.as_ref() {
                 if member1.name == "code" && member2.name == "length" {
                     let expression = self.translate_expression(translated_definition, scope, x)?;
-                    let type_name = scope.get_expression_type(&expression)?;
+                    let type_name = translated_definition.get_expression_type(scope, &expression)?;
 
                     match type_name {
                         sway::TypeName::Identifier { name, generic_parameters: None } if name == "Identity" => {
@@ -6012,7 +6112,7 @@ impl Project {
             _ => self.translate_expression(translated_definition, scope, rhs)?,
         };
 
-        let rhs_type_name = scope.get_expression_type(&rhs)?;
+        let rhs_type_name = translated_definition.get_expression_type(scope, &rhs)?;
         
         let (variable, expression) = self.translate_variable_access_expression(translated_definition, scope, lhs)?;
 
