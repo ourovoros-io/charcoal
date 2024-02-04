@@ -176,11 +176,11 @@ pub struct TranslatedUsingDirective {
     pub functions: Vec<TranslatedFunction>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct TranslatedDefinition {
     pub path: PathBuf,
     pub toplevel_scope: TranslationScope,
-    pub kind: solidity::ContractTy,
+    pub kind: Option<solidity::ContractTy>,
     pub uses: Vec<sway::Use>,
     pub name: String,
     pub inherits: Vec<String>,
@@ -351,7 +351,7 @@ impl Display for TranslatedDefinition {
 impl Into<sway::Module> for TranslatedDefinition {
     fn into(self) -> sway::Module {
         let mut result = sway::Module {
-            kind: match &self.kind {
+            kind: match self.kind.as_ref().unwrap() {
                 solidity::ContractTy::Abstract(_)
                 | solidity::ContractTy::Contract(_)
                 | solidity::ContractTy::Interface(_) => sway::ModuleKind::Contract,
@@ -429,7 +429,7 @@ impl TranslatedDefinition {
         Self {
             path: path.as_ref().into(),
             toplevel_scope: TranslationScope::default(),
-            kind,
+            kind: Some(kind),
             uses: vec![],
             name: name.to_string(),
             inherits: inherits.iter().map(|i| i.to_string()).collect(),

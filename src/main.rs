@@ -10,14 +10,14 @@ use structopt::{clap::AppSettings, StructOpt};
 
 #[derive(Default, StructOpt)]
 #[structopt(global_settings = &[AppSettings::ColoredHelp, AppSettings::ArgRequiredElseHelp])]
-pub struct Options {
+struct Options {
     /// The name of the specific definition to translate. (Optional; Leave unused for all)
     #[structopt(long)]
-    pub definition_name: Option<String>,
+    definition_name: Option<String>,
 
     /// The Solidity source files to translate
     #[structopt(long)]
-    pub contract_files: Vec<PathBuf>,
+    contract_files: Vec<PathBuf>,
 }
 
 fn main() {

@@ -98,71 +98,87 @@ impl Project {
         // Get the parsed source unit
         let source_unit = solidity_source_units.borrow().get(source_unit_path).unwrap().clone();
 
-        // Collect import directives ahead of time for contextual reasons
+        // Collect toplevel items ahead of time for contextual reasons
         let mut import_directives = vec![];
+        let mut toplevel_using_directives = vec![];
+        let mut toplevel_type_definitions = vec![];
+        let mut toplevel_enums = vec![];
+        let mut toplevel_structs = vec![];
+        let mut toplevel_events = vec![];
+        let mut toplevel_errors = vec![];
 
-        for source_unit_part in source_unit.0.iter() {
-            let solidity::SourceUnitPart::ImportDirective(import_directive) = source_unit_part else { continue };
-            import_directives.push(import_directive.clone());
-        }
-
-        // Handle the first translation pass
         for source_unit_part in source_unit.0.iter() {
             match source_unit_part {
                 solidity::SourceUnitPart::PragmaDirective(_, _, _) => {
-                    // TODO: check if any are actually important
+                    // NOTE: we don't need to do anything with pragma directives
                 }
-    
-                solidity::SourceUnitPart::ImportDirective(_) => {
-                    // NOTE: we don't need to handle this because we did already for the conversion queue
-                }
-    
-                solidity::SourceUnitPart::ContractDefinition(contract_definition) => {
-                    if let Some(definition_name) = definition_name {
-                        if contract_definition.name.as_ref().unwrap().name != *definition_name {
-                            continue;
-                        }
-                    }
 
-                    self.translate_contract_definition(source_unit_path, import_directives.as_slice(), contract_definition)?;
+                solidity::SourceUnitPart::ImportDirective(import_directive) => {
+                    import_directives.push(import_directive.clone());
                 }
-    
-                solidity::SourceUnitPart::EnumDefinition(_) => {
-                    todo!("toplevel enums")
+
+                solidity::SourceUnitPart::ContractDefinition(_) => {
+                    // NOTE: contracts are handled below
                 }
-    
-                solidity::SourceUnitPart::StructDefinition(_) => {
-                    todo!("toplevel structs")
+
+                solidity::SourceUnitPart::EnumDefinition(enum_definition) => {
+                    toplevel_enums.push(enum_definition.as_ref().clone());
                 }
-    
-                solidity::SourceUnitPart::EventDefinition(_) => {
-                    unimplemented!("toplevel custom events")
+
+                solidity::SourceUnitPart::StructDefinition(struct_definition) => {
+                    toplevel_structs.push(struct_definition.as_ref().clone());
                 }
-    
-                solidity::SourceUnitPart::ErrorDefinition(_) => {
-                    unimplemented!("toplevel custom errors")
+
+                solidity::SourceUnitPart::EventDefinition(event_definition) => {
+                    toplevel_events.push(event_definition.as_ref().clone());
                 }
-    
-                solidity::SourceUnitPart::FunctionDefinition(_) => {
-                    unimplemented!("toplevel functions")
+
+                solidity::SourceUnitPart::ErrorDefinition(error_definition) => {
+                    toplevel_errors.push(error_definition.as_ref().clone());
                 }
-    
-                solidity::SourceUnitPart::VariableDefinition(_) => {
-                    unimplemented!("toplevel variable definitions")
+
+                solidity::SourceUnitPart::FunctionDefinition(_) => todo!("toplevel function definition"),
+                solidity::SourceUnitPart::VariableDefinition(_) => todo!("toplevel variable definition"),
+
+                solidity::SourceUnitPart::TypeDefinition(type_definition) => {
+                    toplevel_type_definitions.push(type_definition.as_ref().clone());
                 }
-    
-                solidity::SourceUnitPart::TypeDefinition(_) => {
-                    unimplemented!("toplevel type definitions")
+
+                solidity::SourceUnitPart::Annotation(_) => {
+                    // NOTE: we don't need to do anything with annotations
                 }
-    
-                solidity::SourceUnitPart::Annotation(_) => {}
-    
-                solidity::SourceUnitPart::Using(_) => {
-                    unimplemented!("toplevel using-for statements")
+                
+                solidity::SourceUnitPart::Using(using_directive) => {
+                    toplevel_using_directives.push(using_directive.as_ref().clone());
                 }
-    
-                solidity::SourceUnitPart::StraySemicolon(_) => {}
+
+                solidity::SourceUnitPart::StraySemicolon(_) => {
+                    // NOTE: we don't need to do anything with stray semicolons
+                }
             }
+        }
+
+        // Translate any contract definitions in the file
+        for source_unit_part in source_unit.0.iter() {
+            let solidity::SourceUnitPart::ContractDefinition(contract_definition) = source_unit_part else { continue };
+
+            if let Some(definition_name) = definition_name {
+                if contract_definition.name.as_ref().unwrap().name != *definition_name {
+                    continue;
+                }
+            }
+
+            self.translate_contract_definition(
+                source_unit_path,
+                import_directives.as_slice(),
+                toplevel_using_directives.as_slice(),
+                toplevel_type_definitions.as_slice(),
+                toplevel_enums.as_slice(),
+                toplevel_structs.as_slice(),
+                toplevel_events.as_slice(),
+                toplevel_errors.as_slice(),
+                contract_definition,
+            )?;
         }
 
         //
@@ -220,7 +236,7 @@ impl Project {
             let mut new_name = self.translate_naming_convention(old_name.as_str(), Case::Snake);
 
             // Prepend the definition name to the beginning of the function name if it is a library
-            if let solidity::ContractTy::Library(_) = &translated_definition.kind {
+            if let solidity::ContractTy::Library(_) = translated_definition.kind.as_ref().unwrap() {
                 let definition_name = self.translate_naming_convention(translated_definition.name.as_str(), Case::Snake);
                 new_name = format!("{}_{}", definition_name, new_name.trim_start_matches("_"));
             }
@@ -262,6 +278,7 @@ impl Project {
         translated_definition.storage_fields_names.get(name).unwrap().clone()
     }
 
+    #[inline]
     fn import_enum(
         &mut self,
         translated_definition: &mut TranslatedDefinition,
@@ -285,6 +302,7 @@ impl Project {
         translated_definition.enums.push(translated_enum.clone());
     }
 
+    #[inline]
     fn translate_return_type_name(&mut self, translated_definition: &mut TranslatedDefinition, type_name: sway::TypeName) -> sway::TypeName {
         match type_name {
             sway::TypeName::StringSlice => {
@@ -547,796 +565,6 @@ impl Project {
         }
     }
 
-    #[inline]
-    fn translate_contract_definition(
-        &mut self,
-        source_unit_path: &Path,
-        import_directives: &[solidity::Import],
-        solidity_definition: &solidity::ContractDefinition,
-    ) -> Result<(), Error> {
-        let definition_name = solidity_definition.name.as_ref().unwrap().name.clone();
-        let inherits: Vec<String> = solidity_definition.base.iter().map(|b| b.name.identifiers.iter().map(|i| i.name.clone()).collect::<Vec<_>>().join(".")).collect();
-
-        // Create a new translation container
-        let mut translated_definition = TranslatedDefinition::new(
-            source_unit_path,
-            solidity_definition.ty.clone(),
-            definition_name.clone(),
-            inherits.clone()
-        );
-
-        // Translate import directives
-        self.translate_import_directives(&mut translated_definition, import_directives)?;
-
-        // Propagate inherited definitions
-        self.propagate_inherited_definitions(import_directives, inherits.as_slice(), &mut translated_definition)?;
-
-        // Collect each type definition ahead of time for contextual reasons
-        for part in solidity_definition.parts.iter() {
-            let solidity::ContractPart::TypeDefinition(type_definition) = part else { continue };
-            
-            let underlying_type = self.translate_type_name(&mut translated_definition, &type_definition.ty, false);
-
-            translated_definition.type_definitions.push(sway::TypeDefinition {
-                is_public: true,
-                name: sway::TypeName::Identifier {
-                    name: type_definition.name.name.clone(),
-                    generic_parameters: None,
-                },
-                underlying_type: Some(underlying_type),
-            });
-        }
-
-        // Collect each struct ahead of time for contextual reasons
-        for part in solidity_definition.parts.iter() {
-            let solidity::ContractPart::StructDefinition(struct_definition) = part else { continue };
-
-            let struct_definition = sway::Struct {
-                attributes: None,
-                is_public: true,
-                name: struct_definition.name.as_ref().unwrap().name.clone(),
-                generic_parameters: None,
-                fields: struct_definition.fields.iter().map(|f| {
-                    sway::StructField {
-                        is_public: true,
-                        name: self.translate_naming_convention(f.name.as_ref().unwrap().name.as_str(), Case::Snake), // TODO: keep track of original name
-                        type_name: self.translate_type_name(&mut translated_definition, &f.ty, false),
-                    }
-                }).collect(),
-            };
-
-            translated_definition.structs.push(struct_definition);
-        }
-
-        // Collect each enum ahead of time for contextual reasons
-        for part in solidity_definition.parts.iter() {
-            let solidity::ContractPart::EnumDefinition(enum_definition) = part else { continue };
-
-            // Create the enum's type definition
-            let type_definition = sway::TypeDefinition {
-                is_public: false,
-                name: sway::TypeName::Identifier {
-                    name: enum_definition.name.as_ref().unwrap().name.clone(),
-                    generic_parameters: None,
-                },
-                underlying_type: Some(sway::TypeName::Identifier {
-                    name: "u8".into(),
-                    generic_parameters: None,
-                }),
-            };
-            
-            // Create the enum's variants impl block
-            let mut variants_impl = sway::Impl {
-                generic_parameters: None,
-                type_name: type_definition.name.clone(),
-                for_type_name: None,
-                items: vec![],
-            };
-
-            // Add each variant to the variants impl block
-            for (i, value) in enum_definition.values.iter().enumerate() {
-                variants_impl.items.push(sway::ImplItem::Constant(sway::Constant {
-                    is_public: false,
-                    name: self.translate_naming_convention(value.as_ref().unwrap().name.as_str(), Case::ScreamingSnake),
-                    type_name: type_definition.name.clone(),
-                    value: Some(sway::Expression::from(sway::Literal::DecInt(i as u64))),
-                }));
-            }
-
-            // Add the translated enum to the translated definition
-            translated_definition.enums.push(TranslatedEnum {
-                type_definition,
-                variants_impl,
-            });
-        }
-
-        // Collect each event and error ahead of time for contextual reasons
-        let events_enum_name = format!("{}Event", translated_definition.name);
-        let errors_enum_name = format!("{}Error", translated_definition.name);
-
-        for part in solidity_definition.parts.iter() {
-            match part {
-                solidity::ContractPart::EventDefinition(event_definition) => {
-                    let type_name = if event_definition.fields.len() == 1 {
-                        match self.translate_type_name(&mut translated_definition, &event_definition.fields[0].ty, false) {
-                            sway::TypeName::Identifier { name, .. } if self.find_definition_with_abi(name.as_str()).is_some() => {
-                                sway::TypeName::Identifier {
-                                    name: "Identity".into(),
-                                    generic_parameters: None,
-                                }
-                            }
-
-                            type_name => type_name,
-                        }
-                    } else {
-                        sway::TypeName::Tuple {
-                            type_names: event_definition.fields.iter().map(|f| {
-                                match self.translate_type_name(&mut translated_definition, &f.ty, false) {
-                                    sway::TypeName::Identifier { name, .. } if self.find_definition_with_abi(name.as_str()).is_some() => {
-                                        sway::TypeName::Identifier {
-                                            name: "Identity".into(),
-                                            generic_parameters: None,
-                                        }
-                                    }
-        
-                                    type_name => type_name,
-                                }
-                            }).collect(),
-                        }
-                    };
-
-                    let (events_enum, _) = {
-                        if translated_definition.events_enums.iter().find(|(e, _)| e.name == events_enum_name).is_none() {
-                            translated_definition.ensure_use_declared("core::codec::AbiEncode");
-
-                            translated_definition.events_enums.push((
-                                sway::Enum {
-                                    name: events_enum_name.clone(),
-                                    ..Default::default()
-                                },
-                                sway::Impl {
-                                    type_name: sway::TypeName::Identifier {
-                                        name: "AbiEncode".into(),
-                                        generic_parameters: None,
-                                    },
-                                    for_type_name: Some(sway::TypeName::Identifier {
-                                        name: events_enum_name.clone(),
-                                        generic_parameters: None,
-                                    }),
-                                    ..Default::default()
-                                }
-                            ));
-                        }
-
-                        translated_definition.events_enums.iter_mut().find(|(e, _)| e.name == events_enum_name).unwrap()
-                    };
-
-                    let variant = sway::EnumVariant {
-                        name: event_definition.name.as_ref().unwrap().name.clone(),
-                        type_name,
-                    };
-
-                    if !events_enum.variants.contains(&variant) {
-                        events_enum.variants.push(variant);
-                    }
-                }
-
-                solidity::ContractPart::ErrorDefinition(error_definition) => {
-                    let type_name = if error_definition.fields.len() == 1 {
-                        self.translate_type_name(&mut translated_definition, &error_definition.fields[0].ty, false)
-                    } else {
-                        sway::TypeName::Tuple {
-                            type_names: error_definition.fields.iter().map(|f| {
-                                self.translate_type_name(&mut translated_definition, &f.ty, false)
-                            }).collect(),
-                        }
-                    };
-
-                    let (errors_enum, _) = {
-                        if translated_definition.errors_enums.iter().find(|(e, _)| e.name == errors_enum_name).is_none() {
-                            translated_definition.ensure_use_declared("core::codec::AbiEncode");
-
-                            translated_definition.errors_enums.push((
-                                sway::Enum {
-                                    name: errors_enum_name.clone(),
-                                    ..Default::default()
-                                },
-                                sway::Impl {
-                                    type_name: sway::TypeName::Identifier {
-                                        name: "AbiEncode".into(),
-                                        generic_parameters: None,
-                                    },
-                                    for_type_name: Some(sway::TypeName::Identifier {
-                                        name: errors_enum_name.clone(),
-                                        generic_parameters: None,
-                                    }),
-                                    ..Default::default()
-                                }
-                            ));
-                        }
-
-                        translated_definition.errors_enums.iter_mut().find(|(e, _)| e.name == errors_enum_name).unwrap()
-                    };
-
-                    let variant = sway::EnumVariant {
-                        name: error_definition.name.as_ref().unwrap().name.clone(),
-                        type_name,
-                    };
-
-                    if !errors_enum.variants.contains(&variant) {
-                        errors_enum.variants.push(variant);
-                    }
-                }
-                
-                _ => {}
-            }
-        }
-
-        // Create the abi encoding function for the events enum (if any)
-        if let Some((events_enum, abi_encode_impl)) = translated_definition.events_enums.iter_mut().find(|(e, _)| e.name == events_enum_name) {
-            self.generate_enum_abi_encode_function(events_enum, abi_encode_impl)?;
-        }
-
-        // Create the abi encoding function for the errors enum (if any)
-        if let Some((errors_enum, abi_encode_impl)) = translated_definition.errors_enums.iter_mut().find(|(e, _)| e.name == errors_enum_name) {
-            self.generate_enum_abi_encode_function(errors_enum, abi_encode_impl)?;
-        }
-
-        // Resolve all using directives ahead of time for contextual reasons
-        for part in solidity_definition.parts.iter() {
-            let solidity::ContractPart::Using(using_directive) = part else { continue };
-            self.translate_using_directive(&mut translated_definition, using_directive)?;
-        }
-
-        // Collect each storage field ahead of time for contextual reasons
-        for part in solidity_definition.parts.iter() {
-            let solidity::ContractPart::VariableDefinition(variable_definition) = part else { continue };
-            self.translate_state_variable(&mut translated_definition, variable_definition)?;
-        }
-        
-        // Collect each toplevel function ahead of time for contextual reasons
-        for part in solidity_definition.parts.iter() {
-            let solidity::ContractPart::FunctionDefinition(function_definition) = part else { continue };
-
-            let is_modifier = matches!(function_definition.ty, solidity::FunctionTy::Modifier);
-
-            if is_modifier {
-                continue;
-            }
-    
-            // Add the toplevel function to the list of toplevel functions for the toplevel scope
-            let function = self.translate_function_declaration(&mut translated_definition, function_definition)?;
-            translated_definition.toplevel_scope.functions.push(function);
-        }
-
-        // Translate each modifier
-        for part in solidity_definition.parts.iter() {
-            let solidity::ContractPart::FunctionDefinition(function_definition) = part else { continue };
-            
-            let is_modifier = matches!(function_definition.ty, solidity::FunctionTy::Modifier);
-
-            if !is_modifier || function_definition.body.is_none() {
-                continue;
-            }
-            
-            self.translate_modifier_definition(&mut translated_definition, function_definition)?;
-        }
-
-        // Translate each function
-        for part in solidity_definition.parts.iter() {
-            let solidity::ContractPart::FunctionDefinition(function_definition) = part else { continue };
-
-            let is_modifier = matches!(function_definition.ty, solidity::FunctionTy::Modifier);
-
-            if is_modifier {
-                continue;
-            }
-
-            self.translate_function_definition(&mut translated_definition, function_definition)?;
-        }
-
-        // Look for toplevel functions that are never called, move their implementation to the abi wrapper function if it exists
-        let function_names = translated_definition.functions.iter().map(|f| f.name.clone()).collect::<Vec<_>>();
-
-        for function_name in function_names {
-            let (None | Some(0)) = translated_definition.function_call_counts.get(&function_name) else { continue };
-            let Some((toplevel_function_index, _)) = translated_definition.functions.iter().enumerate().find(|(_, f)| f.name == function_name) else { continue };
-            let body = translated_definition.functions[toplevel_function_index].body.clone();
-
-            let Some(contract_impl) = translated_definition.find_contract_impl_mut() else { continue };
-            let Some(contract_impl_function) = contract_impl.items.iter_mut()
-                .filter_map(|i| match i {
-                    sway::ImplItem::Function(f) => Some(f),
-                    _ => None,
-                })
-                .find(|f| f.name == function_name) else { continue };
-            
-            contract_impl_function.body = body;
-            translated_definition.functions.remove(toplevel_function_index);
-        }
-
-        self.translated_definitions.push(translated_definition);
-        
-        Ok(())
-    }
-
-    #[inline]
-    fn translate_import_directives(
-        &mut self,
-        translated_definition: &mut TranslatedDefinition,
-        import_directives: &[solidity::Import],
-    ) -> Result<(), Error> {
-        let source_unit_directory = translated_definition.path.parent().map(PathBuf::from).unwrap();
-
-        for import_directive in import_directives.iter() {
-            let mut translate_import_directive = |definition_name: Option<&String>, filename: &solidity::StringLiteral| -> Result<(), Error> {
-                if filename.string.starts_with('@') {
-                    todo!("handle global import paths (i.e: node_modules)")
-                }
-    
-                let import_path = source_unit_directory.join(filename.string.clone())
-                    .canonicalize()
-                    .map_err(|e| Error::Wrapped(Box::new(e)))?;
-    
-                if !self.translated_definitions.iter().any(|t| t.path == import_path) {
-                    self.translate(definition_name, &import_path)?;
-                }
-
-                Ok(())
-            };
-
-            match import_directive {
-                solidity::Import::Plain(solidity::ImportPath::Filename(filename), _) => {
-                    translate_import_directive(None, filename)?;
-                }
-
-                solidity::Import::Rename(solidity::ImportPath::Filename(filename), identifiers, _) => {
-                    for (identifier, _) in identifiers.iter() {
-                        translate_import_directive(Some(&identifier.name), filename)?;
-                    }
-                }
-
-                _ => panic!("Unsupported import directive: {import_directive:#?}"),
-            }
-        }
-
-        Ok(())
-    }
-
-    #[inline]
-    fn propagate_inherited_definitions(
-        &mut self,
-        import_directives: &[solidity::Import],
-        inherits: &[String],
-        translated_definition: &mut TranslatedDefinition,
-    ) -> Result<(), Error> {
-        let source_unit_directory = translated_definition.path.parent().map(PathBuf::from).unwrap();
-
-        for inherit in inherits.iter() {
-            let mut inherited_definition = None;
-
-            // Find inherited import directive
-            for import_directive in import_directives.iter() {
-                let filename = match import_directive {
-                    solidity::Import::Plain(solidity::ImportPath::Filename(filename), _) => filename,
-                    
-                    solidity::Import::Rename(solidity::ImportPath::Filename(filename), identifiers, _) => {
-                        if !identifiers.iter().any(|i| i.0.name == *inherit) {
-                            continue;
-                        }
-
-                        filename
-                    }
-
-                    _ => panic!("Unsupported import directive: {import_directive:#?}"),
-                };
-
-                if filename.string.starts_with('@') {
-                    todo!("handle global import paths (i.e: node_modules)")
-                }
-
-                let import_path = source_unit_directory.join(filename.string.clone())
-                    .canonicalize()
-                    .map_err(|e| Error::Wrapped(Box::new(e)))?;
-
-                if let Some(t) = self.translated_definitions.iter().find(|t| t.path == import_path && t.name == *inherit) {
-                    inherited_definition = Some(t.clone());
-                    break;
-                }
-            }
-
-            // Check to see if the definition was defined in the current file
-            if inherited_definition.is_none() {
-                if let Some(t) = self.translated_definitions.iter().find(|t| t.path == translated_definition.path && t.name == *inherit) {
-                    inherited_definition = Some(t.clone());
-                }
-            }
-
-            let Some(inherited_definition) = inherited_definition else {
-                panic!("Failed to find inherited definition \"{inherit}\" for \"{}\"", translated_definition.name);
-            };
-
-            // Extend the toplevel scope
-            translated_definition.toplevel_scope.variables.extend(inherited_definition.toplevel_scope.variables.clone());
-            translated_definition.toplevel_scope.functions.extend(inherited_definition.toplevel_scope.functions.clone());
-
-            // Extend the use statements
-            for inherited_use in inherited_definition.uses.iter() {
-                if !translated_definition.uses.contains(inherited_use) {
-                    translated_definition.uses.push(inherited_use.clone());
-                }
-            }
-
-            // Extend the type definitions
-            for inherited_type_definition in inherited_definition.type_definitions.iter() {
-                if !translated_definition.type_definitions.contains(inherited_type_definition) {
-                    translated_definition.type_definitions.push(inherited_type_definition.clone());
-                }
-            }
-
-            // Extend the structs
-            for inherited_struct in inherited_definition.structs.iter() {
-                if !translated_definition.structs.contains(inherited_struct) {
-                    translated_definition.structs.push(inherited_struct.clone());
-                }
-            }
-
-            // Extend the events enum
-            for inherited_enum in inherited_definition.events_enums.iter() {
-                if !translated_definition.events_enums.contains(inherited_enum) {
-                    translated_definition.events_enums.push(inherited_enum.clone());
-                }
-            }
-
-            // Extend the errors enum
-            for inherited_enum in inherited_definition.errors_enums.iter() {
-                if !translated_definition.errors_enums.contains(inherited_enum) {
-                    translated_definition.errors_enums.push(inherited_enum.clone());
-                }
-            }
-
-            // Extend the abi
-            if let Some(inherited_abi) = inherited_definition.abi.as_ref() {
-                for inherited_function in inherited_abi.functions.iter() {
-                    if inherited_function.name == "constructor" {
-                        continue;
-                    }
-
-                    let abi = translated_definition.get_abi();
-
-                    if !abi.functions.contains(inherited_function) {
-                        abi.functions.push(inherited_function.clone());
-                    }
-                }
-            }
-
-            // Extend the configurable fields
-            if let Some(inherited_configurable) = inherited_definition.configurable.as_ref() {
-                let configurable = translated_definition.get_configurable();
-
-                for inherited_field in inherited_configurable.fields.iter() {
-                    if !configurable.fields.contains(inherited_field) {
-                        configurable.fields.push(inherited_field.clone());
-                    }
-                }
-            }
-
-            // Extend the storage fields
-            if let Some(inherited_storage) = inherited_definition.storage.as_ref() {
-                let storage = translated_definition.get_storage();
-
-                for inherited_field in inherited_storage.fields.iter() {
-                    if !storage.fields.contains(inherited_field) {
-                        storage.fields.push(inherited_field.clone());
-                    }
-                }
-            }
-
-            // Extend the modifiers
-            for inherited_modifier in inherited_definition.modifiers.iter() {
-                if !translated_definition.modifiers.contains(inherited_modifier) {
-                    translated_definition.modifiers.push(inherited_modifier.clone());
-                }
-            }
-
-            // Extend function name mapping
-            for (signature, function_name) in inherited_definition.function_names.iter() {
-                if !translated_definition.function_names.contains_key(signature) {
-                    translated_definition.function_names.insert(signature.clone(), function_name.clone());
-                }
-            }
-
-            // Extend function name count mapping
-            for (function_name, count) in inherited_definition.function_name_counts.iter() {
-                *translated_definition.function_name_counts.entry(function_name.clone()).or_insert(0) += *count;
-            }
-
-            // Extend the functions
-            for inherited_function in inherited_definition.functions.iter() {
-                if !translated_definition.functions.contains(inherited_function) {
-                    translated_definition.functions.push(inherited_function.clone());
-
-                    if let Some(function_call_count) = inherited_definition.function_call_counts.get(&inherited_function.name) {
-                        *translated_definition.function_call_counts.entry(inherited_function.name.clone()).or_insert(0) += *function_call_count;
-                    }
-                }
-            }
-
-            // Extend the contract impl block
-            if let Some(inherited_impl) = inherited_definition.find_contract_impl() {
-                for inherited_impl_item in inherited_impl.items.iter() {
-                    if let sway::ImplItem::Function(inherited_function) = inherited_impl_item {
-                        if inherited_function.name == "constructor" {
-                            let mut inherited_function = inherited_function.clone();
-                            
-                            let prefix = self.translate_naming_convention(inherited_definition.name.as_str(), Case::Snake);            
-                            inherited_function.name = format!("{prefix}_constructor");
-    
-                            if !translated_definition.functions.contains(&inherited_function) {
-                                translated_definition.functions.push(inherited_function);
-                            }
-    
-                            continue;
-                        }    
-                    }
-
-                    let contract_impl = translated_definition.get_contract_impl();
-
-                    if !contract_impl.items.contains(inherited_impl_item) {
-                        contract_impl.items.push(inherited_impl_item.clone());
-                    }
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    #[inline]
-    fn generate_enum_abi_encode_function(
-        &mut self,
-        sway_enum: &sway::Enum,
-        abi_encode_impl: &mut sway::Impl,
-    ) -> Result<(), Error> {
-        let mut match_expr = sway::Match {
-            expression: sway::Expression::Identifier("self".into()),
-            branches: vec![],
-        };
-
-        for variant in sway_enum.variants.iter() {
-            let mut block = sway::Block::default();
-
-            // "VariantName".abi_encode(buffer);
-            block.statements.push(sway::Statement::from(sway::Expression::from(sway::FunctionCall {
-                function: sway::Expression::from(sway::MemberAccess {
-                    expression: sway::Expression::from(sway::Literal::String(variant.name.clone())),
-                    member: "abi_encode".into(),
-                }),
-                generic_parameters: None,
-                parameters: vec![
-                    sway::Expression::Identifier("buffer".into())
-                ],
-            })));
-
-            let mut add_encode_statement_to_block = |name: &str, type_name: &sway::TypeName| {
-                block.statements.push(sway::Statement::from(match type_name {
-                    sway::TypeName::Identifier { name: type_name, .. } => match type_name.as_str() {
-                        "u8" | "u16" | "u32" | "u64" | "u256" | "b256" | "Bytes" => sway::Expression::from(sway::FunctionCall {
-                            function: sway::Expression::from(sway::MemberAccess {
-                                expression: sway::Expression::Identifier(name.into()),
-                                member: "abi_encode".into(),
-                            }),
-                            generic_parameters: None,
-                            parameters: vec![
-                                sway::Expression::Identifier("buffer".into()),
-                            ],
-                        }),
-
-                        "Identity" => {
-                            let identity_variant_branch = |name: &str| -> sway::MatchBranch {
-                                sway::MatchBranch {
-                                    pattern: sway::Expression::from(sway::FunctionCall {
-                                        function: sway::Expression::Identifier(format!("Identity::{name}")),
-                                        generic_parameters: None,
-                                        parameters: vec![
-                                            sway::Expression::Identifier("x".into()),
-                                        ],
-                                    }),
-                                    value: sway::Expression::from(sway::FunctionCall {
-                                        function: sway::Expression::from(sway::MemberAccess {
-                                            expression: sway::Expression::Identifier("x".into()),
-                                            member: "abi_encode".into(),
-                                        }),
-                                        generic_parameters: None,
-                                        parameters: vec![
-                                            sway::Expression::Identifier("buffer".into())
-                                        ],
-                                    }),
-                                }
-                            };
-
-                            sway::Expression::from(sway::Match {
-                                expression: sway::Expression::Identifier(name.into()),
-                                branches: vec![
-                                    identity_variant_branch("Address"),
-                                    identity_variant_branch("ContractId"),
-                                ],
-                            })
-                        },
-
-                        _ => todo!("encode enum member type: {type_name}"),
-                    }
-                    
-                    sway::TypeName::StringSlice => sway::Expression::from(sway::FunctionCall {
-                        function: sway::Expression::from(sway::MemberAccess {
-                            expression: sway::Expression::Identifier(name.into()),
-                            member: "abi_encode".into(),
-                        }),
-                        generic_parameters: None,
-                        parameters: vec![
-                            sway::Expression::Identifier("buffer".into()),
-                        ],
-                    }),
-
-                    _ => todo!("ABI encoding for enum parameter type: {type_name}"),
-                }));
-            };
-
-            let parameter_count = match &variant.type_name {
-                sway::TypeName::Tuple { type_names } => type_names.len(),
-                _ => 1,
-            };
-
-            let parameter_names: Vec<String> = ('a'..'z').enumerate()
-                .take_while(|(i, _)| *i < parameter_count)
-                .map(|(_, c)| c.into())
-                .collect();
-
-            match &variant.type_name {
-                sway::TypeName::Undefined => panic!("Undefined type name"),
-                
-                sway::TypeName::Identifier { .. } => add_encode_statement_to_block(&parameter_names[0], &variant.type_name),
-                
-                sway::TypeName::Tuple { type_names } => {
-                    for (name, type_name) in parameter_names.iter().zip(type_names) {
-                        add_encode_statement_to_block(name.as_str(), type_name);
-                    }
-                }
-
-                type_name => todo!("ABI encoding for enum parameter type: {type_name}"),
-            }
-
-            match_expr.branches.push(sway::MatchBranch {
-                pattern: sway::Expression::Identifier(format!(
-                    "{}::{}{}",
-                    sway_enum.name,
-                    variant.name,
-                    if parameter_count == 0 {
-                        String::new()
-                    } else if parameter_count == 1 {
-                        format!("({})", parameter_names[0])
-                    } else {
-                        format!("(({}))", parameter_names.join(", "))
-                    },
-                )),
-                value: sway::Expression::from(block),
-            });
-        }
-
-        // Add the `abi_encode` function to the `core::codec::AbiEncode` impl
-        abi_encode_impl.items.push(sway::ImplItem::Function(sway::Function {
-            attributes: None,
-            is_public: false,
-            name: "abi_encode".into(),
-            generic_parameters: None,
-            parameters: sway::ParameterList {
-                entries: vec![
-                    sway::Parameter {
-                        name: "self".into(),
-                        type_name: None,
-                        ..Default::default()
-                    },
-                    sway::Parameter {
-                        is_ref: true,
-                        is_mut: true,
-                        name: "buffer".into(),
-                        type_name: Some(sway::TypeName::Identifier {
-                            name: "core::codec::Buffer".into(),
-                            generic_parameters: None,
-                        }),
-                    },
-                ],
-            },
-            return_type: None,
-            body: Some(sway::Block {
-                statements: vec![
-                    sway::Statement::from(sway::Expression::from(match_expr)),
-                ],
-                final_expr: None,
-            }),
-        }));
-
-        Ok(())
-    }
-
-    #[inline]
-    fn translate_using_directive(
-        &mut self,
-        translated_definition: &mut TranslatedDefinition,
-        using_directive: &solidity::Using,
-    ) -> Result<(), Error> {
-        let for_type = using_directive.ty.as_ref()
-            .map(|t| self.translate_type_name(translated_definition, t, false))
-            .map_or(Ok(None), |t| Ok(Some(t)))?;
-
-        match &using_directive.list {
-            solidity::UsingList::Library(using_library) => {
-                let library_name = using_library.identifiers.iter().map(|i| i.name.clone()).collect::<Vec<_>>().join(".");
-
-                // Find the translated library definition
-                let Some(library_definition) = self.translated_definitions.iter().find(|d| {
-                    d.name == library_name && matches!(d.kind, solidity::ContractTy::Library(_))
-                }) else {
-                    panic!("Failed to find translated library: \"{library_name}\"");
-                };
-
-                let mut translated_using_directive = TranslatedUsingDirective {
-                    library_name,
-                    for_type,
-                    functions: vec![],
-                };
-
-                // Collect all functions that support the `for_type`
-                for function in library_definition.functions.iter() {
-                    // If we're using the library for a specific type, ensure the first function parameter matches that type
-                    if translated_using_directive.for_type != function.parameters.entries.first().map(|p| p.type_name.clone()).flatten() {
-                        continue;
-                    }
-
-                    // Get the scope entry for the library function
-                    let Some(scope_entry) = library_definition.toplevel_scope.find_function(|f| f.new_name == function.name) else {
-                        panic!("Failed to find function in scope: \"{}\"", function.name);
-                    };
-
-                    // Add the function to the current definition's toplevel scope
-                    if !translated_definition.toplevel_scope.functions.contains(scope_entry) {
-                        translated_definition.toplevel_scope.functions.push(scope_entry.clone());
-                    }
-
-                    // Add the function to the translated using directive so we know where it came from
-                    translated_using_directive.functions.push(scope_entry.clone());
-
-                    // Add the function name to the current definition's function name list
-                    *translated_definition.function_name_counts.entry(function.name.clone()).or_insert(0) += 1;
-
-                    // Add the function definition to the current definition
-                    if !translated_definition.functions.contains(function) {
-                        translated_definition.functions.push(function.clone());
-                    }
-
-                    // Add the function call count from the library definition to the current definition
-                    translated_definition.function_call_counts.insert(
-                        function.name.clone(),
-                        if let Some(function_call_count) = library_definition.function_call_counts.get(&function.name) {
-                            *function_call_count
-                        } else {
-                            0
-                        }
-                    );
-                }
-
-                // Add the using directive to the current definition
-                translated_definition.using_directives.push(translated_using_directive);
-            }
-
-            solidity::UsingList::Functions(_) => todo!("using directive function list: {}", using_directive.to_string()),
-
-            solidity::UsingList::Error => panic!("Failed to parse using directive"),
-        }
-
-        Ok(())
-    }
-
     pub fn create_value_expression(
         &mut self,
         translated_definition: &mut TranslatedDefinition,
@@ -1575,6 +803,886 @@ impl Project {
                 Some(value) => panic!("Invalid string array value expression: {value:#?}"),
             }
         }
+    }
+
+    #[inline]
+    fn translate_import_directives(
+        &mut self,
+        translated_definition: &mut TranslatedDefinition,
+        import_directives: &[solidity::Import],
+    ) -> Result<(), Error> {
+        let source_unit_directory = translated_definition.path.parent().map(PathBuf::from).unwrap();
+
+        for import_directive in import_directives.iter() {
+            let mut translate_import_directive = |definition_name: Option<&String>, filename: &solidity::StringLiteral| -> Result<(), Error> {
+                if filename.string.starts_with('@') {
+                    todo!("handle global import paths (i.e: node_modules)")
+                }
+    
+                let import_path = source_unit_directory.join(filename.string.clone())
+                    .canonicalize()
+                    .map_err(|e| Error::Wrapped(Box::new(e)))?;
+    
+                if !self.translated_definitions.iter().any(|t| t.path == import_path) {
+                    self.translate(definition_name, &import_path)?;
+                }
+
+                Ok(())
+            };
+
+            match import_directive {
+                solidity::Import::Plain(solidity::ImportPath::Filename(filename), _) => {
+                    translate_import_directive(None, filename)?;
+                }
+
+                solidity::Import::Rename(solidity::ImportPath::Filename(filename), identifiers, _) => {
+                    for (identifier, _) in identifiers.iter() {
+                        translate_import_directive(Some(&identifier.name), filename)?;
+                    }
+                }
+
+                _ => panic!("Unsupported import directive: {import_directive:#?}"),
+            }
+        }
+
+        Ok(())
+    }
+
+    #[inline]
+    fn translate_using_directive(
+        &mut self,
+        translated_definition: &mut TranslatedDefinition,
+        using_directive: &solidity::Using,
+    ) -> Result<(), Error> {
+        let for_type = using_directive.ty.as_ref()
+            .map(|t| self.translate_type_name(translated_definition, t, false))
+            .map_or(Ok(None), |t| Ok(Some(t)))?;
+
+        match &using_directive.list {
+            solidity::UsingList::Library(using_library) => {
+                let library_name = using_library.identifiers.iter().map(|i| i.name.clone()).collect::<Vec<_>>().join(".");
+
+                // Find the translated library definition
+                let Some(library_definition) = self.translated_definitions.iter().find(|d| {
+                    d.name == library_name && matches!(d.kind.as_ref().unwrap(), solidity::ContractTy::Library(_))
+                }) else {
+                    panic!("Failed to find translated library: \"{library_name}\"");
+                };
+
+                let mut translated_using_directive = TranslatedUsingDirective {
+                    library_name,
+                    for_type,
+                    functions: vec![],
+                };
+
+                // Collect all functions that support the `for_type`
+                for function in library_definition.functions.iter() {
+                    // If we're using the library for a specific type, ensure the first function parameter matches that type
+                    if translated_using_directive.for_type != function.parameters.entries.first().map(|p| p.type_name.clone()).flatten() {
+                        continue;
+                    }
+
+                    // Get the scope entry for the library function
+                    let Some(scope_entry) = library_definition.toplevel_scope.find_function(|f| f.new_name == function.name) else {
+                        panic!("Failed to find function in scope: \"{}\"", function.name);
+                    };
+
+                    // Add the function to the current definition's toplevel scope
+                    if !translated_definition.toplevel_scope.functions.contains(scope_entry) {
+                        translated_definition.toplevel_scope.functions.push(scope_entry.clone());
+                    }
+
+                    // Add the function to the translated using directive so we know where it came from
+                    translated_using_directive.functions.push(scope_entry.clone());
+
+                    // Add the function name to the current definition's function name list
+                    *translated_definition.function_name_counts.entry(function.name.clone()).or_insert(0) += 1;
+
+                    // Add the function definition to the current definition
+                    if !translated_definition.functions.contains(function) {
+                        translated_definition.functions.push(function.clone());
+                    }
+
+                    // Add the function call count from the library definition to the current definition
+                    translated_definition.function_call_counts.insert(
+                        function.name.clone(),
+                        if let Some(function_call_count) = library_definition.function_call_counts.get(&function.name) {
+                            *function_call_count
+                        } else {
+                            0
+                        }
+                    );
+                }
+
+                // Add the using directive to the current definition
+                translated_definition.using_directives.push(translated_using_directive);
+            }
+
+            solidity::UsingList::Functions(_) => todo!("using directive function list: {}", using_directive.to_string()),
+
+            solidity::UsingList::Error => panic!("Failed to parse using directive"),
+        }
+
+        Ok(())
+    }
+
+    #[inline]
+    fn translate_type_definition(
+        &mut self,
+        translated_definition: &mut TranslatedDefinition,
+        type_definition: &solidity::TypeDefinition,
+    ) -> Result<(), Error> {
+        let underlying_type = self.translate_type_name(translated_definition, &type_definition.ty, false);
+
+        translated_definition.type_definitions.push(sway::TypeDefinition {
+            is_public: true,
+            name: sway::TypeName::Identifier {
+                name: type_definition.name.name.clone(),
+                generic_parameters: None,
+            },
+            underlying_type: Some(underlying_type),
+        });
+
+        Ok(())
+    }
+
+    #[inline]
+    fn translate_enum_definition(
+        &mut self,
+        translated_definition: &mut TranslatedDefinition,
+        enum_definition: &solidity::EnumDefinition,
+    ) -> Result<(), Error> {
+        // Create the enum's type definition
+        let type_definition = sway::TypeDefinition {
+            is_public: false,
+            name: sway::TypeName::Identifier {
+                name: enum_definition.name.as_ref().unwrap().name.clone(),
+                generic_parameters: None,
+            },
+            underlying_type: Some(sway::TypeName::Identifier {
+                name: "u8".into(),
+                generic_parameters: None,
+            }),
+        };
+        
+        // Create the enum's variants impl block
+        let mut variants_impl = sway::Impl {
+            generic_parameters: None,
+            type_name: type_definition.name.clone(),
+            for_type_name: None,
+            items: vec![],
+        };
+
+        // Add each variant to the variants impl block
+        for (i, value) in enum_definition.values.iter().enumerate() {
+            variants_impl.items.push(sway::ImplItem::Constant(sway::Constant {
+                is_public: false,
+                name: self.translate_naming_convention(value.as_ref().unwrap().name.as_str(), Case::ScreamingSnake),
+                type_name: type_definition.name.clone(),
+                value: Some(sway::Expression::from(sway::Literal::DecInt(i as u64))),
+            }));
+        }
+
+        // Add the translated enum to the translated definition
+        translated_definition.enums.push(TranslatedEnum {
+            type_definition,
+            variants_impl,
+        });
+
+        Ok(())
+    }
+
+    #[inline]
+    fn translate_struct_definition(
+        &mut self,
+        translated_definition: &mut TranslatedDefinition,
+        struct_definition: &solidity::StructDefinition,
+    ) -> Result<(), Error> {
+        let struct_definition = sway::Struct {
+            attributes: None,
+            is_public: true,
+            name: struct_definition.name.as_ref().unwrap().name.clone(),
+            generic_parameters: None,
+            fields: struct_definition.fields.iter().map(|f| {
+                sway::StructField {
+                    is_public: true,
+                    name: self.translate_naming_convention(f.name.as_ref().unwrap().name.as_str(), Case::Snake), // TODO: keep track of original name
+                    type_name: self.translate_type_name(translated_definition, &f.ty, false),
+                }
+            }).collect(),
+        };
+
+        translated_definition.structs.push(struct_definition);
+
+        Ok(())
+    }
+
+    #[inline]
+    fn translate_event_definition(
+        &mut self,
+        translated_definition: &mut TranslatedDefinition,
+        event_definition: &solidity::EventDefinition,
+    ) -> Result<(), Error> {
+        let events_enum_name = format!("{}Event", translated_definition.name);
+
+        let type_name = if event_definition.fields.len() == 1 {
+            match self.translate_type_name(translated_definition, &event_definition.fields[0].ty, false) {
+                sway::TypeName::Identifier { name, .. } if self.find_definition_with_abi(name.as_str()).is_some() => {
+                    sway::TypeName::Identifier {
+                        name: "Identity".into(),
+                        generic_parameters: None,
+                    }
+                }
+
+                type_name => type_name,
+            }
+        } else {
+            sway::TypeName::Tuple {
+                type_names: event_definition.fields.iter().map(|f| {
+                    match self.translate_type_name(translated_definition, &f.ty, false) {
+                        sway::TypeName::Identifier { name, .. } if self.find_definition_with_abi(name.as_str()).is_some() => {
+                            sway::TypeName::Identifier {
+                                name: "Identity".into(),
+                                generic_parameters: None,
+                            }
+                        }
+
+                        type_name => type_name,
+                    }
+                }).collect(),
+            }
+        };
+
+        let (events_enum, _) = {
+            if translated_definition.events_enums.iter().find(|(e, _)| e.name == events_enum_name).is_none() {
+                translated_definition.ensure_use_declared("core::codec::AbiEncode");
+
+                translated_definition.events_enums.push((
+                    sway::Enum {
+                        name: events_enum_name.clone(),
+                        ..Default::default()
+                    },
+                    sway::Impl {
+                        type_name: sway::TypeName::Identifier {
+                            name: "AbiEncode".into(),
+                            generic_parameters: None,
+                        },
+                        for_type_name: Some(sway::TypeName::Identifier {
+                            name: events_enum_name.clone(),
+                            generic_parameters: None,
+                        }),
+                        ..Default::default()
+                    }
+                ));
+            }
+
+            translated_definition.events_enums.iter_mut().find(|(e, _)| e.name == events_enum_name).unwrap()
+        };
+
+        let variant = sway::EnumVariant {
+            name: event_definition.name.as_ref().unwrap().name.clone(),
+            type_name,
+        };
+
+        if !events_enum.variants.contains(&variant) {
+            events_enum.variants.push(variant);
+        }
+
+        Ok(())
+    }
+
+    #[inline]
+    fn translate_error_definition(
+        &mut self,
+        translated_definition: &mut TranslatedDefinition,
+        error_definition: &solidity::ErrorDefinition,
+    ) -> Result<(), Error> {
+        let errors_enum_name = format!("{}Error", translated_definition.name);
+
+        let type_name = if error_definition.fields.len() == 1 {
+            self.translate_type_name(translated_definition, &error_definition.fields[0].ty, false)
+        } else {
+            sway::TypeName::Tuple {
+                type_names: error_definition.fields.iter().map(|f| {
+                    self.translate_type_name(translated_definition, &f.ty, false)
+                }).collect(),
+            }
+        };
+
+        let (errors_enum, _) = {
+            if translated_definition.errors_enums.iter().find(|(e, _)| e.name == errors_enum_name).is_none() {
+                translated_definition.ensure_use_declared("core::codec::AbiEncode");
+
+                translated_definition.errors_enums.push((
+                    sway::Enum {
+                        name: errors_enum_name.clone(),
+                        ..Default::default()
+                    },
+                    sway::Impl {
+                        type_name: sway::TypeName::Identifier {
+                            name: "AbiEncode".into(),
+                            generic_parameters: None,
+                        },
+                        for_type_name: Some(sway::TypeName::Identifier {
+                            name: errors_enum_name.clone(),
+                            generic_parameters: None,
+                        }),
+                        ..Default::default()
+                    }
+                ));
+            }
+
+            translated_definition.errors_enums.iter_mut().find(|(e, _)| e.name == errors_enum_name).unwrap()
+        };
+
+        let variant = sway::EnumVariant {
+            name: error_definition.name.as_ref().unwrap().name.clone(),
+            type_name,
+        };
+
+        if !errors_enum.variants.contains(&variant) {
+            errors_enum.variants.push(variant);
+        }
+
+        Ok(())
+    }
+
+    #[inline]
+    fn generate_enum_abi_encode_function(
+        &mut self,
+        sway_enum: &sway::Enum,
+        abi_encode_impl: &mut sway::Impl,
+    ) -> Result<(), Error> {
+        let mut match_expr = sway::Match {
+            expression: sway::Expression::Identifier("self".into()),
+            branches: vec![],
+        };
+
+        for variant in sway_enum.variants.iter() {
+            let mut block = sway::Block::default();
+
+            // "VariantName".abi_encode(buffer);
+            block.statements.push(sway::Statement::from(sway::Expression::from(sway::FunctionCall {
+                function: sway::Expression::from(sway::MemberAccess {
+                    expression: sway::Expression::from(sway::Literal::String(variant.name.clone())),
+                    member: "abi_encode".into(),
+                }),
+                generic_parameters: None,
+                parameters: vec![
+                    sway::Expression::Identifier("buffer".into())
+                ],
+            })));
+
+            let mut add_encode_statement_to_block = |name: &str, type_name: &sway::TypeName| {
+                block.statements.push(sway::Statement::from(match type_name {
+                    sway::TypeName::Identifier { name: type_name, .. } => match type_name.as_str() {
+                        "u8" | "u16" | "u32" | "u64" | "u256" | "b256" | "Bytes" => sway::Expression::from(sway::FunctionCall {
+                            function: sway::Expression::from(sway::MemberAccess {
+                                expression: sway::Expression::Identifier(name.into()),
+                                member: "abi_encode".into(),
+                            }),
+                            generic_parameters: None,
+                            parameters: vec![
+                                sway::Expression::Identifier("buffer".into()),
+                            ],
+                        }),
+
+                        "Identity" => {
+                            let identity_variant_branch = |name: &str| -> sway::MatchBranch {
+                                sway::MatchBranch {
+                                    pattern: sway::Expression::from(sway::FunctionCall {
+                                        function: sway::Expression::Identifier(format!("Identity::{name}")),
+                                        generic_parameters: None,
+                                        parameters: vec![
+                                            sway::Expression::Identifier("x".into()),
+                                        ],
+                                    }),
+                                    value: sway::Expression::from(sway::FunctionCall {
+                                        function: sway::Expression::from(sway::MemberAccess {
+                                            expression: sway::Expression::Identifier("x".into()),
+                                            member: "abi_encode".into(),
+                                        }),
+                                        generic_parameters: None,
+                                        parameters: vec![
+                                            sway::Expression::Identifier("buffer".into())
+                                        ],
+                                    }),
+                                }
+                            };
+
+                            sway::Expression::from(sway::Match {
+                                expression: sway::Expression::Identifier(name.into()),
+                                branches: vec![
+                                    identity_variant_branch("Address"),
+                                    identity_variant_branch("ContractId"),
+                                ],
+                            })
+                        },
+
+                        _ => todo!("encode enum member type: {type_name}"),
+                    }
+                    
+                    sway::TypeName::StringSlice => sway::Expression::from(sway::FunctionCall {
+                        function: sway::Expression::from(sway::MemberAccess {
+                            expression: sway::Expression::Identifier(name.into()),
+                            member: "abi_encode".into(),
+                        }),
+                        generic_parameters: None,
+                        parameters: vec![
+                            sway::Expression::Identifier("buffer".into()),
+                        ],
+                    }),
+
+                    _ => todo!("ABI encoding for enum parameter type: {type_name}"),
+                }));
+            };
+
+            let parameter_count = match &variant.type_name {
+                sway::TypeName::Tuple { type_names } => type_names.len(),
+                _ => 1,
+            };
+
+            let parameter_names: Vec<String> = ('a'..'z').enumerate()
+                .take_while(|(i, _)| *i < parameter_count)
+                .map(|(_, c)| c.into())
+                .collect();
+
+            match &variant.type_name {
+                sway::TypeName::Undefined => panic!("Undefined type name"),
+                
+                sway::TypeName::Identifier { .. } => add_encode_statement_to_block(&parameter_names[0], &variant.type_name),
+                
+                sway::TypeName::Tuple { type_names } => {
+                    for (name, type_name) in parameter_names.iter().zip(type_names) {
+                        add_encode_statement_to_block(name.as_str(), type_name);
+                    }
+                }
+
+                type_name => todo!("ABI encoding for enum parameter type: {type_name}"),
+            }
+
+            match_expr.branches.push(sway::MatchBranch {
+                pattern: sway::Expression::Identifier(format!(
+                    "{}::{}{}",
+                    sway_enum.name,
+                    variant.name,
+                    if parameter_count == 0 {
+                        String::new()
+                    } else if parameter_count == 1 {
+                        format!("({})", parameter_names[0])
+                    } else {
+                        format!("(({}))", parameter_names.join(", "))
+                    },
+                )),
+                value: sway::Expression::from(block),
+            });
+        }
+
+        // Add the `abi_encode` function to the `core::codec::AbiEncode` impl
+        abi_encode_impl.items.push(sway::ImplItem::Function(sway::Function {
+            attributes: None,
+            is_public: false,
+            name: "abi_encode".into(),
+            generic_parameters: None,
+            parameters: sway::ParameterList {
+                entries: vec![
+                    sway::Parameter {
+                        name: "self".into(),
+                        type_name: None,
+                        ..Default::default()
+                    },
+                    sway::Parameter {
+                        is_ref: true,
+                        is_mut: true,
+                        name: "buffer".into(),
+                        type_name: Some(sway::TypeName::Identifier {
+                            name: "core::codec::Buffer".into(),
+                            generic_parameters: None,
+                        }),
+                    },
+                ],
+            },
+            return_type: None,
+            body: Some(sway::Block {
+                statements: vec![
+                    sway::Statement::from(sway::Expression::from(match_expr)),
+                ],
+                final_expr: None,
+            }),
+        }));
+
+        Ok(())
+    }
+
+    #[inline]
+    fn translate_contract_definition(
+        &mut self,
+        source_unit_path: &Path,
+        import_directives: &[solidity::Import],
+        toplevel_using_directives: &[solidity::Using],
+        toplevel_type_definitions: &[solidity::TypeDefinition],
+        toplevel_enums: &[solidity::EnumDefinition],
+        toplevel_structs: &[solidity::StructDefinition],
+        toplevel_events: &[solidity::EventDefinition],
+        toplevel_errors: &[solidity::ErrorDefinition],
+        contract_definition: &solidity::ContractDefinition,
+    ) -> Result<(), Error> {
+        let definition_name = contract_definition.name.as_ref().unwrap().name.clone();
+        let inherits: Vec<String> = contract_definition.base.iter().map(|b| b.name.identifiers.iter().map(|i| i.name.clone()).collect::<Vec<_>>().join(".")).collect();
+
+        // Create a new translation container
+        let mut translated_definition = TranslatedDefinition::new(
+            source_unit_path,
+            contract_definition.ty.clone(),
+            definition_name.clone(),
+            inherits.clone()
+        );
+
+        // Translate import directives
+        self.translate_import_directives(&mut translated_definition, import_directives)?;
+
+        // Translate toplevel using directives
+        for using_directive in toplevel_using_directives {
+            self.translate_using_directive(&mut translated_definition, using_directive)?;
+        }
+
+        // Translate toplevel type definitions
+        for type_definition in toplevel_type_definitions {
+            self.translate_type_definition(&mut translated_definition, type_definition)?;
+        }
+
+        // Translate toplevel enum definitions
+        for enum_definition in toplevel_enums {
+            self.translate_enum_definition(&mut translated_definition, enum_definition)?;
+        }
+
+        // Translate toplevel struct definitions
+        for struct_definition in toplevel_structs {
+            self.translate_struct_definition(&mut translated_definition, struct_definition)?;
+        }
+
+        // Translate toplevel event definitions
+        for event_definition in toplevel_events {
+            self.translate_event_definition(&mut translated_definition, event_definition)?;
+        }
+
+        // Translate toplevel error definitions
+        for error_definition in toplevel_errors {
+            self.translate_error_definition(&mut translated_definition, error_definition)?;
+        }
+
+        // Propagate inherited definitions
+        self.propagate_inherited_definitions(import_directives, inherits.as_slice(), &mut translated_definition)?;
+
+        // Translate contract using directives
+        for part in contract_definition.parts.iter() {
+            let solidity::ContractPart::Using(using_directive) = part else { continue };
+            self.translate_using_directive(&mut translated_definition, using_directive)?;
+        }
+
+        // Translate contract type definitions
+        for part in contract_definition.parts.iter() {
+            let solidity::ContractPart::TypeDefinition(type_definition) = part else { continue };
+            self.translate_type_definition(&mut translated_definition, type_definition)?;
+        }
+
+        // Translate contract enum definitions
+        for part in contract_definition.parts.iter() {
+            let solidity::ContractPart::EnumDefinition(enum_definition) = part else { continue };
+            self.translate_enum_definition(&mut translated_definition, enum_definition)?;
+        }
+
+        // Translate contract struct definitions
+        for part in contract_definition.parts.iter() {
+            let solidity::ContractPart::StructDefinition(struct_definition) = part else { continue };
+            self.translate_struct_definition(&mut translated_definition, struct_definition)?;
+        }
+
+        // Translate contract event definitions
+        for part in contract_definition.parts.iter() {
+            let solidity::ContractPart::EventDefinition(event_definition) = part else { continue };
+            self.translate_event_definition(&mut translated_definition, event_definition)?;
+        }
+
+        // Translate contract error definitions
+        for part in contract_definition.parts.iter() {
+            let solidity::ContractPart::ErrorDefinition(error_definition) = part else { continue };
+            self.translate_error_definition(&mut translated_definition, error_definition)?;
+        }
+
+        // Create the abi encoding function for the events enum (if any)
+        let events_enum_name = format!("{}Event", translated_definition.name);
+
+        if let Some((events_enum, abi_encode_impl)) = translated_definition.events_enums.iter_mut().find(|(e, _)| e.name == events_enum_name) {
+            self.generate_enum_abi_encode_function(events_enum, abi_encode_impl)?;
+        }
+
+        // Create the abi encoding function for the errors enum (if any)
+        let errors_enum_name = format!("{}Error", translated_definition.name);
+
+        if let Some((errors_enum, abi_encode_impl)) = translated_definition.errors_enums.iter_mut().find(|(e, _)| e.name == errors_enum_name) {
+            self.generate_enum_abi_encode_function(errors_enum, abi_encode_impl)?;
+        }
+
+        // Translate contract state variables
+        for part in contract_definition.parts.iter() {
+            let solidity::ContractPart::VariableDefinition(variable_definition) = part else { continue };
+            self.translate_state_variable(&mut translated_definition, variable_definition)?;
+        }
+        
+        // Collect each toplevel function ahead of time for contextual reasons
+        for part in contract_definition.parts.iter() {
+            let solidity::ContractPart::FunctionDefinition(function_definition) = part else { continue };
+
+            let is_modifier = matches!(function_definition.ty, solidity::FunctionTy::Modifier);
+
+            if is_modifier {
+                continue;
+            }
+    
+            // Add the toplevel function to the list of toplevel functions for the toplevel scope
+            let function = self.translate_function_declaration(&mut translated_definition, function_definition)?;
+            translated_definition.toplevel_scope.functions.push(function);
+        }
+
+        // Translate each modifier
+        for part in contract_definition.parts.iter() {
+            let solidity::ContractPart::FunctionDefinition(function_definition) = part else { continue };
+            
+            let is_modifier = matches!(function_definition.ty, solidity::FunctionTy::Modifier);
+
+            if !is_modifier || function_definition.body.is_none() {
+                continue;
+            }
+            
+            self.translate_modifier_definition(&mut translated_definition, function_definition)?;
+        }
+
+        // Translate each function
+        for part in contract_definition.parts.iter() {
+            let solidity::ContractPart::FunctionDefinition(function_definition) = part else { continue };
+
+            let is_modifier = matches!(function_definition.ty, solidity::FunctionTy::Modifier);
+
+            if is_modifier {
+                continue;
+            }
+
+            self.translate_function_definition(&mut translated_definition, function_definition)?;
+        }
+
+        // Look for toplevel functions that are never called, move their implementation to the abi wrapper function if it exists
+        let function_names = translated_definition.functions.iter().map(|f| f.name.clone()).collect::<Vec<_>>();
+
+        for function_name in function_names {
+            let (None | Some(0)) = translated_definition.function_call_counts.get(&function_name) else { continue };
+            let Some((toplevel_function_index, _)) = translated_definition.functions.iter().enumerate().find(|(_, f)| f.name == function_name) else { continue };
+            let body = translated_definition.functions[toplevel_function_index].body.clone();
+
+            let Some(contract_impl) = translated_definition.find_contract_impl_mut() else { continue };
+            let Some(contract_impl_function) = contract_impl.items.iter_mut()
+                .filter_map(|i| match i {
+                    sway::ImplItem::Function(f) => Some(f),
+                    _ => None,
+                })
+                .find(|f| f.name == function_name) else { continue };
+            
+            contract_impl_function.body = body;
+            translated_definition.functions.remove(toplevel_function_index);
+        }
+
+        self.translated_definitions.push(translated_definition);
+        
+        Ok(())
+    }
+
+    #[inline]
+    fn propagate_inherited_definitions(
+        &mut self,
+        import_directives: &[solidity::Import],
+        inherits: &[String],
+        translated_definition: &mut TranslatedDefinition,
+    ) -> Result<(), Error> {
+        let source_unit_directory = translated_definition.path.parent().map(PathBuf::from).unwrap();
+
+        for inherit in inherits.iter() {
+            let mut inherited_definition = None;
+
+            // Find inherited import directive
+            for import_directive in import_directives.iter() {
+                let filename = match import_directive {
+                    solidity::Import::Plain(solidity::ImportPath::Filename(filename), _) => filename,
+                    
+                    solidity::Import::Rename(solidity::ImportPath::Filename(filename), identifiers, _) => {
+                        if !identifiers.iter().any(|i| i.0.name == *inherit) {
+                            continue;
+                        }
+
+                        filename
+                    }
+
+                    _ => panic!("Unsupported import directive: {import_directive:#?}"),
+                };
+
+                if filename.string.starts_with('@') {
+                    todo!("handle global import paths (i.e: node_modules)")
+                }
+
+                let import_path = source_unit_directory.join(filename.string.clone())
+                    .canonicalize()
+                    .map_err(|e| Error::Wrapped(Box::new(e)))?;
+
+                if let Some(t) = self.translated_definitions.iter().find(|t| t.path == import_path && t.name == *inherit) {
+                    inherited_definition = Some(t.clone());
+                    break;
+                }
+            }
+
+            // Check to see if the definition was defined in the current file
+            if inherited_definition.is_none() {
+                if let Some(t) = self.translated_definitions.iter().find(|t| t.path == translated_definition.path && t.name == *inherit) {
+                    inherited_definition = Some(t.clone());
+                }
+            }
+
+            let Some(inherited_definition) = inherited_definition else {
+                panic!("Failed to find inherited definition \"{inherit}\" for \"{}\"", translated_definition.name);
+            };
+
+            // Extend the toplevel scope
+            translated_definition.toplevel_scope.variables.extend(inherited_definition.toplevel_scope.variables.clone());
+            translated_definition.toplevel_scope.functions.extend(inherited_definition.toplevel_scope.functions.clone());
+
+            // Extend the use statements
+            for inherited_use in inherited_definition.uses.iter() {
+                if !translated_definition.uses.contains(inherited_use) {
+                    translated_definition.uses.push(inherited_use.clone());
+                }
+            }
+
+            // Extend the type definitions
+            for inherited_type_definition in inherited_definition.type_definitions.iter() {
+                if !translated_definition.type_definitions.contains(inherited_type_definition) {
+                    translated_definition.type_definitions.push(inherited_type_definition.clone());
+                }
+            }
+
+            // Extend the structs
+            for inherited_struct in inherited_definition.structs.iter() {
+                if !translated_definition.structs.contains(inherited_struct) {
+                    translated_definition.structs.push(inherited_struct.clone());
+                }
+            }
+
+            // Extend the events enum
+            for inherited_enum in inherited_definition.events_enums.iter() {
+                if !translated_definition.events_enums.contains(inherited_enum) {
+                    translated_definition.events_enums.push(inherited_enum.clone());
+                }
+            }
+
+            // Extend the errors enum
+            for inherited_enum in inherited_definition.errors_enums.iter() {
+                if !translated_definition.errors_enums.contains(inherited_enum) {
+                    translated_definition.errors_enums.push(inherited_enum.clone());
+                }
+            }
+
+            // Extend the abi
+            if let Some(inherited_abi) = inherited_definition.abi.as_ref() {
+                for inherited_function in inherited_abi.functions.iter() {
+                    if inherited_function.name == "constructor" {
+                        continue;
+                    }
+
+                    let abi = translated_definition.get_abi();
+
+                    if !abi.functions.contains(inherited_function) {
+                        abi.functions.push(inherited_function.clone());
+                    }
+                }
+            }
+
+            // Extend the configurable fields
+            if let Some(inherited_configurable) = inherited_definition.configurable.as_ref() {
+                let configurable = translated_definition.get_configurable();
+
+                for inherited_field in inherited_configurable.fields.iter() {
+                    if !configurable.fields.contains(inherited_field) {
+                        configurable.fields.push(inherited_field.clone());
+                    }
+                }
+            }
+
+            // Extend the storage fields
+            if let Some(inherited_storage) = inherited_definition.storage.as_ref() {
+                let storage = translated_definition.get_storage();
+
+                for inherited_field in inherited_storage.fields.iter() {
+                    if !storage.fields.contains(inherited_field) {
+                        storage.fields.push(inherited_field.clone());
+                    }
+                }
+            }
+
+            // Extend the modifiers
+            for inherited_modifier in inherited_definition.modifiers.iter() {
+                if !translated_definition.modifiers.contains(inherited_modifier) {
+                    translated_definition.modifiers.push(inherited_modifier.clone());
+                }
+            }
+
+            // Extend function name mapping
+            for (signature, function_name) in inherited_definition.function_names.iter() {
+                if !translated_definition.function_names.contains_key(signature) {
+                    translated_definition.function_names.insert(signature.clone(), function_name.clone());
+                }
+            }
+
+            // Extend function name count mapping
+            for (function_name, count) in inherited_definition.function_name_counts.iter() {
+                *translated_definition.function_name_counts.entry(function_name.clone()).or_insert(0) += *count;
+            }
+
+            // Extend the functions
+            for inherited_function in inherited_definition.functions.iter() {
+                if !translated_definition.functions.contains(inherited_function) {
+                    translated_definition.functions.push(inherited_function.clone());
+
+                    if let Some(function_call_count) = inherited_definition.function_call_counts.get(&inherited_function.name) {
+                        *translated_definition.function_call_counts.entry(inherited_function.name.clone()).or_insert(0) += *function_call_count;
+                    }
+                }
+            }
+
+            // Extend the contract impl block
+            if let Some(inherited_impl) = inherited_definition.find_contract_impl() {
+                for inherited_impl_item in inherited_impl.items.iter() {
+                    if let sway::ImplItem::Function(inherited_function) = inherited_impl_item {
+                        if inherited_function.name == "constructor" {
+                            let mut inherited_function = inherited_function.clone();
+                            
+                            let prefix = self.translate_naming_convention(inherited_definition.name.as_str(), Case::Snake);            
+                            inherited_function.name = format!("{prefix}_constructor");
+    
+                            if !translated_definition.functions.contains(&inherited_function) {
+                                translated_definition.functions.push(inherited_function);
+                            }
+    
+                            continue;
+                        }    
+                    }
+
+                    let contract_impl = translated_definition.get_contract_impl();
+
+                    if !contract_impl.items.contains(inherited_impl_item) {
+                        contract_impl.items.push(inherited_impl_item.clone());
+                    }
+                }
+            }
+        }
+
+        Ok(())
     }
 
     #[inline]
@@ -5374,7 +5482,7 @@ impl Project {
                                 // Check using directives for Identity-specific function
                                 for using_directive in translated_definition.using_directives.iter() {
                                     let Some(external_definition) = self.translated_definitions.iter().find(|d| {
-                                        d.name == using_directive.library_name && matches!(d.kind, solidity::ContractTy::Library(_))
+                                        d.name == using_directive.library_name && matches!(d.kind.as_ref().unwrap(), solidity::ContractTy::Library(_))
                                     }) else { continue };
 
                                     if let Some(for_type_name) = &using_directive.for_type {
