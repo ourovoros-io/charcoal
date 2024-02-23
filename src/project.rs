@@ -28,6 +28,7 @@ impl Project {
                 Error::Wrapped(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, format!("File not found: {}", path.as_ref().to_string_lossy()))))
             );
         }
+
         let path = PathBuf::from(
             path.as_ref()
                 .to_string_lossy()
@@ -234,7 +235,6 @@ impl Project {
         // Flatten final contract
         // Create forc project on disk
         //
-        
 
         Ok(())
     }
@@ -433,24 +433,24 @@ impl Project {
                         64 => "u64".into(),
                         256 => "u256".into(),
                         bits => match bits {
-                            0..=8 =>  {
-                                eprintln!("Warning : unsupported unsigned integer type {bits}, using u8");
+                            0..=8 => {
+                                eprintln!("WARNING: unsupported unsigned integer type {bits}, using u8");
                                 "u8".into()
                             }
-                            9..=16 =>  {
-                                eprintln!("Warning : unsupported unsigned integer type {bits}, using u16");
+                            9..=16 => {
+                                eprintln!("WARNING: unsupported unsigned integer type {bits}, using u16");
                                 "u16".into()
                             }
-                            17..=32 =>  {
-                                eprintln!("Warning : unsupported unsigned integer type {bits}, using u32");
+                            17..=32 => {
+                                eprintln!("WARNING: unsupported unsigned integer type {bits}, using u32");
                                 "u32".into()
                             }
-                            33..=64 =>  {
-                                eprintln!("Warning : unsupported unsigned integer type {bits}, using u64");
+                            33..=64 => {
+                                eprintln!("WARNING: unsupported unsigned integer type {bits}, using u64");
                                 "u64".into()
                             }
-                            65..=256 =>  {
-                                eprintln!("Warning : unsupported unsigned integer type {bits}, using u256");
+                            65..=256 => {
+                                eprintln!("WARNING: unsupported unsigned integer type {bits}, using u256");
                                 "u256".into()
                             }
                             _ => panic!("Invalid uint type: {bits}"),
@@ -953,12 +953,15 @@ impl Project {
                 if filename.string.starts_with('@') {
                     todo!("handle global import paths (i.e: node_modules)")
                 }
+                
                 let import_path = source_unit_directory.join(filename.string.clone());
+
                 if !import_path.exists() {
                     return Err(
                         Error::Wrapped(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, format!("File not found: {}", import_path.to_string_lossy()))))
                     );
                 }
+
                 let import_path = import_path
                     .canonicalize()
                     .map_err(|e| Error::Wrapped(Box::new(e)))?;
@@ -1813,7 +1816,7 @@ impl Project {
                         if inherited_function.name == "constructor" {
                             let mut inherited_function = inherited_function.clone();
                             
-                            let prefix = self.translate_naming_convention(inherited_definition.name.as_str(), Case::Snake);            
+                            let prefix = self.translate_naming_convention(inherited_definition.name.as_str(), Case::Snake);
                             inherited_function.name = format!("{prefix}_constructor");
     
                             if !translated_definition.functions.contains(&inherited_function) {
@@ -2504,9 +2507,7 @@ impl Project {
         if is_constructor {
             is_public = true;
         }
-
         
-
         let (old_name, new_name_2) = if is_constructor {
             (String::new(), "constructor".to_string())
         } else if is_fallback {
@@ -2605,8 +2606,9 @@ impl Project {
         };
 
         if is_public {
+            sway_function.name = new_name_2.clone();
+
             if let Some(abi) = translated_definition.abi.as_mut() {
-                sway_function.name = new_name_2.clone(); 
                 // Only add the function to the abi if it doesn't already exist
                 if !abi.functions.contains(&sway_function) && !is_override {
                     if is_constructor {
@@ -2615,17 +2617,16 @@ impl Project {
                         abi.functions.push(sway_function.clone());
                     }
                 }
-                sway_function.name = new_name.clone();
             } else {
-                sway_function.name = new_name_2.clone(); 
                 // Add the function to the abi
                 if is_constructor {
                     translated_definition.get_abi().functions.insert(0, sway_function.clone());
                 } else {
                     translated_definition.get_abi().functions.push(sway_function.clone());
                 }
-                sway_function.name = new_name.clone(); 
             }
+
+            sway_function.name = new_name.clone();
         }
 
         // Convert the statements in the function's body (if any)
@@ -2894,10 +2895,11 @@ impl Project {
                     parameters: sway_function.parameters.entries.iter().map(|p| sway::Expression::Identifier(p.name.clone())).collect(),
                 })),
             });
+            
             sway_function.name = new_name_2;
+            
             // Create the function wrapper item for the contract impl block
             let impl_item = sway::ImplItem::Function(sway_function.clone());
-            
             
             if let Some(contract_impl) = translated_definition.find_contract_impl_mut() {
                 if let Some(sway::ImplItem::Function(f)) = contract_impl.items.iter_mut().find(|item| {
@@ -4712,23 +4714,23 @@ impl Project {
                                 ("u256", 8 | 16 | 32 | 64 | 256) => create_uint_try_from_unwrap_expression(256, *bits as usize, value_expression),
                                 _ => match bits {
                                     0..=8 => { 
-                                        eprintln!("Warning : unsupported integer type {bits}, using u8");
+                                        eprintln!("WARNING: unsupported integer type {bits}, using u8");
                                         create_uint_try_from_unwrap_expression(8, *bits as usize, value_expression)
                                     }
                                     9..=16 => { 
-                                        eprintln!("Warning : unsupported integer type {bits}, using u16");
+                                        eprintln!("WARNING: unsupported integer type {bits}, using u16");
                                         create_uint_try_from_unwrap_expression(16, *bits as usize, value_expression)
                                     }
                                     17..=32 => { 
-                                        eprintln!("Warning : unsupported integer type {bits}, using u32");
+                                        eprintln!("WARNING: unsupported integer type {bits}, using u32");
                                         create_uint_try_from_unwrap_expression(32, *bits as usize, value_expression)
                                     }
                                     33..=64 => { 
-                                        eprintln!("Warning : unsupported integer type {bits}, using u64");
+                                        eprintln!("WARNING: unsupported integer type {bits}, using u64");
                                         create_uint_try_from_unwrap_expression(64, *bits as usize, value_expression)
                                     }
                                     65..=256 => { 
-                                        eprintln!("Warning : unsupported integer type {bits}, using u256");
+                                        eprintln!("WARNING: unsupported integer type {bits}, using u256");
                                         create_uint_try_from_unwrap_expression(256, *bits as usize, value_expression)
                                     }
                                     _ => panic!("Invalid uint type: {expression:#?}"),
@@ -6755,11 +6757,12 @@ impl Project {
         let solidity::Expression::FunctionCall(_, expr, args) = expression else { todo!("translate new expression: {expression:#?}") };
         let args = args.iter().map(|e| self.translate_expression(translated_definition, scope, e)).collect::<Result<Vec<_>, _>>()?;
         match expr.as_ref() {
-            solidity::Expression::Variable(solidity::Identifier {name, ..}) =>  {
+            solidity::Expression::Variable(solidity::Identifier {name, ..}) => {
                 if self.find_definition_with_abi(name).is_some() {
                     panic!("Attempting to create a new contract '{name}' that is not supported")
                 }
-            },
+            }
+
             solidity::Expression::Type(_, type_name) => match &type_name {
                 solidity::Type::String => {
                     // {
