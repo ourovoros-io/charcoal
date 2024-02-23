@@ -29,14 +29,8 @@ impl Project {
             );
         }
 
-        let path = PathBuf::from(
-            path.as_ref()
-                .to_string_lossy()
-                .replace("\\\\", "\\")
-                .replace("//", "/")
-        )
-        .canonicalize()
-        .map_err(|e| Error::Wrapped(Box::new(e)))?;
+        let path = crate::get_canonical_path(path, false, false)
+            .map_err(|e| Error::Wrapped(Box::new(e)))?;
         
         let source = std::fs::read_to_string(path.clone())
             .map_err(|e| Error::Wrapped(Box::new(e)))?;
@@ -73,7 +67,7 @@ impl Project {
         }
     }
 
-    pub fn get_translated_definitions(&self, definition_name: Option<&String>, source_unit_path: &Path) -> Vec<TranslatedDefinition> {
+    pub fn get_translated_definitions<P: AsRef<Path>>(&self, definition_name: Option<&String>, source_unit_path: P) -> Vec<TranslatedDefinition> {
         let mut result = vec![];
         
         for translated_definition in self.translated_definitions.iter() {
@@ -83,7 +77,7 @@ impl Project {
                 }
             }
 
-            if translated_definition.path == source_unit_path {
+            if translated_definition.path == source_unit_path.as_ref() {
                 result.push(translated_definition.clone());
             }
         }
@@ -169,9 +163,8 @@ impl Project {
                 if !filename.string.starts_with('.') {
                     todo!("handle global import paths (i.e: node_modules)")
                 }
-
-                let import_path = source_unit_directory.join(filename.string.clone())
-                    .canonicalize()
+                
+                let import_path = crate::get_canonical_path(source_unit_directory.join(filename.string.clone()), false, false)
                     .map_err(|e| Error::Wrapped(Box::new(e)))?;
 
                 let import_directives = self.import_directives.entry(source_unit_path.into()).or_default();
@@ -230,12 +223,6 @@ impl Project {
             )?;
         }
 
-        //
-        // TODO:
-        // Flatten final contract
-        // Create forc project on disk
-        //
-
         Ok(())
     }
 
@@ -248,7 +235,7 @@ impl Project {
     }
 
     #[inline]
-    fn translate_naming_convention(&mut self, name: &str, case: Case) -> String {
+    pub fn translate_naming_convention(&mut self, name: &str, case: Case) -> String {
         if name == "_" {
             return "_".into();
         }
@@ -386,10 +373,6 @@ impl Project {
         type_name: &solidity::Expression,
         is_storage: bool,
     ) -> sway::TypeName {
-        //
-        // TODO: check mapping for previously canonicalized user type names?
-        //
-
         match type_name {
             solidity::Expression::Type(_, type_expression) => match type_expression {
                 solidity::Type::Address => sway::TypeName::Identifier {
@@ -901,14 +884,9 @@ impl Project {
             return Err(Error::Wrapped(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, source_unit_path.to_string_lossy()))));
         }
     
-        let source_unit_path = PathBuf::from(
-            source_unit_path.to_string_lossy()
-                .replace("\\\\", "\\")
-                .replace("//", "/")
-        )
-        .canonicalize()
-        .map_err(|e| Error::Wrapped(Box::new(e)))?;
-        
+        let source_unit_path = crate::get_canonical_path(source_unit_path, false, false)
+            .map_err(|e| Error::Wrapped(Box::new(e)))?;
+
         if let Some(t) = self.translated_definitions.iter().find(|t| t.name == *definition_name && t.path == source_unit_path).cloned() {
             return Ok(Some(t));
         }
@@ -962,8 +940,7 @@ impl Project {
                     );
                 }
 
-                let import_path = import_path
-                    .canonicalize()
+                let import_path = crate::get_canonical_path(import_path, false, false)
                     .map_err(|e| Error::Wrapped(Box::new(e)))?;
 
                 if !self.translated_definitions.iter().any(|t| definition_name.map(|n| *n == t.name).unwrap_or(true) && t.path == import_path) {
@@ -1676,14 +1653,16 @@ impl Project {
                 if filename.string.starts_with('@') {
                     todo!("handle global import paths (i.e: node_modules)")
                 }
+
                 let import_path = source_unit_directory.join(filename.string.clone());
+
                 if !import_path.exists() {
                     return Err(
                         Error::Wrapped(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, format!("File not found: {}", import_path.to_string_lossy()))))
                     );
                 }
-                let import_path = import_path
-                    .canonicalize()
+
+                let import_path = crate::get_canonical_path(import_path, false, false)
                     .map_err(|e| Error::Wrapped(Box::new(e)))?;
 
                 if let Some(t) = self.resolve_import(inherit, &import_path)? {

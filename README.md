@@ -22,5 +22,6 @@ See the [Rust Install](https://www.rust-lang.org/tools/install) page for install
 
 | Options | |
 |-|-|
-| `--contract-files <contract-files>...` | The Solidity source files to translate |
-| `--definition-name <definition-name>` | The name of the specific definition to translate. (Optional; Leave unused for all) |
+| `-d`, `--definition-name <definition-name>` | The name of the specific definition to translate. (Optional; Leave unused for all) |
+| `-o`, `--output-directory <output-directory>` | The path to save the translated Forc project to. (Optional; Must be a directory) |
+| `-t`, `--target <target>` | The Solidity target file or folder to translate. |
