@@ -28,8 +28,12 @@ pub fn get_canonical_path<P: AsRef<Path>>(path: P, is_dir: bool, create_if_neces
 
     let path = PathBuf::from(path_string);
 
-    if is_dir && create_if_necessary && !path.exists() {
-        std::fs::create_dir_all(path.clone())?;
+    if create_if_necessary && !path.exists() {
+        if is_dir {
+            std::fs::create_dir_all(path.clone())?;
+        } else {
+            std::fs::File::create(path.clone())?;
+        }
     }
     
     path.canonicalize()
