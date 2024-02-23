@@ -1,3 +1,17 @@
+mod assembly;
+mod contracts;
+mod enums;
+mod expressions;
+mod functions;
+mod import_directives;
+mod statements;
+mod storage;
+mod structs;
+mod type_definitions;
+mod type_names;
+
+pub use self::{assembly::*, contracts::*, enums::*, expressions::*, functions::*, import_directives::*, statements::*, storage::*, structs::*, type_definitions::*, type_names::*};
+
 use crate::{errors::Error, sway};
 use solang_parser::pt as solidity;
 use std::{
@@ -487,6 +501,26 @@ impl TranslatedDefinition {
         }
     }
 
+    #[inline]
+    pub fn import_enum(&mut self, translated_enum: &TranslatedEnum) {
+        let sway::TypeName::Identifier { name, generic_parameters: None } = &translated_enum.type_definition.name else {
+            panic!("Expected Identifier type name, found {:#?}", translated_enum.type_definition.name);
+        };
+    
+        for item in translated_enum.variants_impl.items.iter() {
+            let sway::ImplItem::Constant(c) = item else { continue };
+            
+            self.toplevel_scope.variables.push(TranslatedVariable {
+                old_name: String::new(), // TODO: is this ok?
+                new_name: format!("{}::{}", name, c.name),
+                type_name: translated_enum.type_definition.name.clone(),
+                ..Default::default()
+            });
+        }
+        
+        self.enums.push(translated_enum.clone());
+    }
+    
     /// Gets the abi for the translated definition. If it doesn't exist, it gets created.
     pub fn get_abi(&mut self) -> &mut sway::Abi {
         if self.abi.is_none() {

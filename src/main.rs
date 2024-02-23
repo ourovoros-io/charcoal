@@ -3,12 +3,24 @@ pub mod project;
 pub mod sway;
 pub mod translate;
 
-use convert_case::Case;
+use convert_case::{Case, Casing};
 use errors::Error;
 use project::Project;
 use std::path::{Path, PathBuf};
 use structopt::{clap::AppSettings, StructOpt};
 
+#[inline]
+pub fn translate_naming_convention(name: &str, case: Case) -> String {
+    if name == "_" {
+        return "_".into();
+    }
+
+    let prefix = name.chars().take_while(|c| *c == '_').collect::<String>();
+    let postfix = name.chars().rev().take_while(|c| *c == '_').collect::<String>();
+    format!("{prefix}{}{postfix}", name.to_case(case))
+}
+
+#[inline]
 pub fn get_canonical_path<P: AsRef<Path>>(path: P, is_dir: bool, create_if_necessary: bool) -> std::io::Result<PathBuf> {
     let mut path_string = path.as_ref().to_string_lossy().to_string();
 
@@ -83,7 +95,7 @@ fn translate_project() -> Result<(), Error> {
             Some(output_directory) => generate_forc_project(&mut project, output_directory, options.definition_name.as_ref(), source_unit_path)?,
 
             None => {
-                for translated_definition in project.get_translated_definitions(options.definition_name.as_ref(), source_unit_path) {
+                for translated_definition in project.collect_translated_definitions(options.definition_name.as_ref(), source_unit_path) {
                     println!("// Translated from {}", translated_definition.path.to_string_lossy());
                     
                     let module: sway::Module = translated_definition.into();
@@ -105,8 +117,8 @@ fn generate_forc_project<P1: AsRef<Path>, P2: AsRef<Path>>(
     let output_directory = get_canonical_path(output_directory, true, true)
         .map_err(|e| Error::Wrapped(Box::new(e)))?;
 
-    for translated_definition in project.get_translated_definitions(definition_name, source_unit_path) {
-        let definition_snake_name = project.translate_naming_convention(translated_definition.name.as_str(), Case::Snake);
+    for translated_definition in project.collect_translated_definitions(definition_name, source_unit_path) {
+        let definition_snake_name = translate_naming_convention(translated_definition.name.as_str(), Case::Snake);
         
         let module: sway::Module = translated_definition.into();
 

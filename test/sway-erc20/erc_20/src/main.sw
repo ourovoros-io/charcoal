@@ -147,17 +147,17 @@ storage {
 }
 
 #[storage(read)]
-fn context_msg_sender() -> Identity {
+fn context__msg_sender() -> Identity {
     msg_sender().unwrap()
 }
 
 #[storage(read)]
-fn context_msg_data() -> Bytes {
+fn context__msg_data() -> Bytes {
     std::inputs::input_message_data(0, 0)
 }
 
 #[storage(read)]
-fn context_context_suffix_length() -> u256 {
+fn context__context_suffix_length() -> u256 {
     0
 }
 
@@ -196,8 +196,8 @@ fn erc_20_balance_of(account: Identity) -> u256 {
 
 #[storage(read, write)]
 fn erc_20_transfer(to: Identity, value: u256) -> bool {
-    let owner = context_msg_sender();
-    erc_20_transfer(owner, to, value);
+    let owner = context__msg_sender();
+    erc_20__transfer(owner, to, value);
     true
 }
 
@@ -208,21 +208,21 @@ fn erc_20_allowance(owner: Identity, spender: Identity) -> u256 {
 
 #[storage(read, write)]
 fn erc_20_approve(spender: Identity, value: u256) -> bool {
-    let owner = context_msg_sender();
-    erc_20_approve(owner, spender, value);
+    let owner = context__msg_sender();
+    erc_20__approve(owner, spender, value);
     true
 }
 
 #[storage(read, write)]
 fn erc_20_transfer_from(from: Identity, to: Identity, value: u256) -> bool {
-    let spender = context_msg_sender();
-    erc_20_spend_allowance(from, spender, value);
-    erc_20_transfer(from, to, value);
+    let spender = context__msg_sender();
+    erc_20__spend_allowance(from, spender, value);
+    erc_20__transfer(from, to, value);
     true
 }
 
 #[storage(read, write)]
-fn erc_20_transfer(from: Identity, to: Identity, value: u256) {
+fn erc_20__transfer(from: Identity, to: Identity, value: u256) {
     if from == Identity::Address(Address::from(ZERO_B256)) {
         log(IERC20ErrorsError::ERC20InvalidSender(Identity::Address(Address::from(ZERO_B256))));
         revert(0);
@@ -231,11 +231,11 @@ fn erc_20_transfer(from: Identity, to: Identity, value: u256) {
         log(IERC20ErrorsError::ERC20InvalidReceiver(Identity::Address(Address::from(ZERO_B256))));
         revert(0);
     }
-    erc_20_update(from, to, value);
+    erc_20__update(from, to, value);
 }
 
 #[storage(read, write)]
-fn erc_20_update(from: Identity, to: Identity, value: u256) {
+fn erc_20__update(from: Identity, to: Identity, value: u256) {
     if from == Identity::Address(Address::from(ZERO_B256)) {
         storage._total_supply.write(storage._total_supply.read() + value);
     } else {
@@ -255,30 +255,30 @@ fn erc_20_update(from: Identity, to: Identity, value: u256) {
 }
 
 #[storage(read, write)]
-fn erc_20_mint(account: Identity, value: u256) {
+fn erc_20__mint(account: Identity, value: u256) {
     if account == Identity::Address(Address::from(ZERO_B256)) {
         log(IERC20ErrorsError::ERC20InvalidReceiver(Identity::Address(Address::from(ZERO_B256))));
         revert(0);
     }
-    erc_20_update(Identity::Address(Address::from(ZERO_B256)), account, value);
+    erc_20__update(Identity::Address(Address::from(ZERO_B256)), account, value);
 }
 
 #[storage(read, write)]
-fn erc_20_burn(account: Identity, value: u256) {
+fn erc_20__burn(account: Identity, value: u256) {
     if account == Identity::Address(Address::from(ZERO_B256)) {
         log(IERC20ErrorsError::ERC20InvalidSender(Identity::Address(Address::from(ZERO_B256))));
         revert(0);
     }
-    erc_20_update(account, Identity::Address(Address::from(ZERO_B256)), value);
+    erc_20__update(account, Identity::Address(Address::from(ZERO_B256)), value);
 }
 
 #[storage(read, write)]
-fn erc_20_approve(owner: Identity, spender: Identity, value: u256) {
-    erc_20_approve_2(owner, spender, value, true);
+fn erc_20__approve(owner: Identity, spender: Identity, value: u256) {
+    erc_20__approve_2(owner, spender, value, true);
 }
 
 #[storage(read, write)]
-fn erc_20_approve_2(owner: Identity, spender: Identity, value: u256, emit_event: bool) {
+fn erc_20__approve_2(owner: Identity, spender: Identity, value: u256, emit_event: bool) {
     if owner == Identity::Address(Address::from(ZERO_B256)) {
         log(IERC20ErrorsError::ERC20InvalidApprover(Identity::Address(Address::from(ZERO_B256))));
         revert(0);
@@ -294,14 +294,14 @@ fn erc_20_approve_2(owner: Identity, spender: Identity, value: u256, emit_event:
 }
 
 #[storage(read, write)]
-fn erc_20_spend_allowance(owner: Identity, spender: Identity, value: u256) {
+fn erc_20__spend_allowance(owner: Identity, spender: Identity, value: u256) {
     let current_allowance = allowance(owner, spender);
     if current_allowance != u256::max() {
         if current_allowance < value {
             log(IERC20ErrorsError::ERC20InsufficientAllowance((spender, current_allowance, value)));
             revert(0);
         }
-        erc_20_approve_2(owner, spender, current_allowance - value, false);
+        erc_20__approve_2(owner, spender, current_allowance - value, false);
     }
 }
 
