@@ -2110,7 +2110,7 @@ impl Project {
         };
 
         if let Some(solidity::ContractTy::Abstract(_)) = &translated_definition.kind {
-            new_name = format!("{}_{}", self.translate_naming_convention(&translated_definition.name, Case::Snake), new_name);
+            new_name = format!("{}_{}", self.translate_naming_convention(&translated_definition.name, Case::Snake), new_name.trim_start_matches('_'));
         }
 
         // Create a scope for modifier invocation translations
@@ -2487,22 +2487,20 @@ impl Project {
             is_public = true;
         }
         
-        let (old_name, new_name_2) = if is_constructor {
-            (String::new(), "constructor".to_string())
+        let new_name_2 = if is_constructor {
+            "constructor".to_string()
         } else if is_fallback {
-            (String::new(), "fallback".to_string())
+            "fallback".to_string()
         } else if is_receive {
-            (String::new(), "receive".to_string())
+            "receive".to_string()
         } else {
-            let old_name = function_definition.name.as_ref().unwrap().name.clone();
-            let new_name = self.translate_function_name(translated_definition, function_definition);
-            (old_name, new_name)
+            self.translate_function_name(translated_definition, function_definition)
         };
         
         let mut new_name = new_name_2.clone();
 
         if let Some(solidity::ContractTy::Abstract(_)) = &translated_definition.kind {
-           new_name = format!("{}_{}", self.translate_naming_convention(&translated_definition.name, Case::Snake), new_name);
+           new_name = format!("{}_{}", self.translate_naming_convention(&translated_definition.name, Case::Snake), new_name.trim_start_matches('_'));
         }
 
         // Translate the functions parameters
@@ -2800,9 +2798,9 @@ impl Project {
         }
 
         // Get the function from the scope
-        let function = match scope.get_function_from_old_name(old_name.as_str()) {
-            Ok(function) => function,
-            Err(e) => panic!("{e}"),
+        let function = match scope.find_function(|f| f.new_name == new_name) {
+            Some(function) => function,
+            None => panic!("ERROR: Failed to find function `{new_name}` in scope"),
         };
 
         // Propagate constructor calls into the function's body
@@ -5141,43 +5139,7 @@ impl Project {
                         }
 
                         // Ensure the function exists in scope
-                        let Some(function) = scope.find_function(|f| {
-                            // Ensure the function's old name matches the function call we're translating
-                            if f.old_name != old_name {
-                                return false;
-                            }
-                            
-                            // Ensure the supplied function call args match the function's parameters
-                            if parameters.len() != f.parameters.entries.len() {
-                                return false;
-                            }
-
-                            for (i, (parameter, value_type_name)) in parameters.iter().zip(parameter_types.iter()).enumerate() {
-                                let Some(parameter_type_name) = f.parameters.entries[i].type_name.as_ref() else { continue };
-
-                                // Don't check literal integer value types
-                                if let sway::Expression::Literal(sway::Literal::DecInt(_) | sway::Literal::HexInt(_)) = parameter {
-                                    if let sway::TypeName::Identifier { name, generic_parameters: None } = parameter_type_name {
-                                        if let "u8" | "u16" | "u32" | "u64" | "u256" = name.as_str() {
-                                            continue;
-                                        }
-                                    }
-                                }
-
-                                // HACK: Don't check todo! value types
-                                if let sway::TypeName::Identifier { name, generic_parameters: None } = &value_type_name {
-                                    if name == "todo!" {
-                                        continue;
-                                    }
-                                }
-
-                                if value_type_name != parameter_type_name {
-                                    return false;
-                                }
-                            }
-
-                            true
-                        }) else {
+                        let Some(function) = scope.find_function_matching_types(old_name, parameters.as_slice(), parameter_types.as_slice()) else {
                             panic!("Failed to find function `{old_name}` in scope");
                         };
 
@@ -5510,69 +5472,105 @@ impl Project {
                             
                             member => todo!("handle `abi.{member}` translation"),
                         }
+
                         "super" => {
+                            let parameters = arguments.iter()
+                                .map(|a| self.translate_expression(translated_definition, scope, a))
+                                .collect::<Result<Vec<_>, _>>()?;
+
+                            let parameter_types = parameters.iter()
+                                .map(|p| translated_definition.get_expression_type(scope, p))    
+                                .collect::<Result<Vec<_>, _>>()?;
+
                             for inherit in &translated_definition.inherits {
-                                let Some(inherited_definition) =self.find_definition_with_abi(&inherit) else {continue};
-                                let Some(inherited_function) = inherited_definition.toplevel_scope.find_function(|f|  f.old_name == member.name) else {continue};
+                                let Some(inherited_definition) =self.find_definition_with_abi(&inherit) else { continue };
+
+                                let Some(inherited_function) = inherited_definition.toplevel_scope.find_function_matching_types(
+                                    member.name.as_str(),
+                                    parameters.as_slice(),
+                                    parameter_types.as_slice(),
+                                ) else { continue };
+
                                 return Ok(sway::Expression::from(sway::FunctionCall {
                                     function: sway::Expression::Identifier(inherited_function.new_name.clone()),
+                                    generic_parameters: None,
+                                    parameters,
+                                }));
+                                
+                            }
+
+                            todo!("handle super member access function `{member:#?}`")
+                        }
+
+                        name => {
+                            let old_name = format!("{}_{}", container, member.name.trim_start_matches('_'));
+                            let new_name = self.translate_naming_convention(old_name.as_str(), Case::Snake);
+
+                            let parameters = arguments.iter()
+                                .map(|a| self.translate_expression(translated_definition, scope, a))
+                                .collect::<Result<Vec<_>, _>>()?;
+
+                            let parameter_types = parameters.iter()
+                                .map(|p| translated_definition.get_expression_type(scope, p))
+                                .collect::<Result<Vec<_>, _>>()?;
+    
+                            if let Some(result) = || -> Result<Option<sway::Expression>, Error> {
+                                // Check if function is contained in an external definition
+                                let Some(external_definition) = self.translated_definitions.iter().find(|x| x.name == name) else { return Ok(None) };
+
+                                // Check if the member is a function defined in the toplevel scope
+                                let Some(external_function_declaration) = external_definition.toplevel_scope.find_function_matching_types(
+                                    old_name.as_str(),
+                                    parameters.as_slice(),
+                                    parameter_types.as_slice(),
+                                ) else { return Ok(None) };
+
+                                // Don't import the function if we already have
+                                if translated_definition.toplevel_scope.find_function_matching_types(
+                                    old_name.as_str(),
+                                    parameters.as_slice(),
+                                    parameter_types.as_slice(),
+                                ).is_some() {
+                                    return Ok(None);
+                                }
+
+                                // Get the external function definition
+                                let Some(external_function_definition) = external_definition.functions.iter().find(|f| {
+                                    f.name == external_function_declaration.new_name
+                                    && f.parameters.entries.len() == external_function_declaration.parameters.entries.len()
+                                }) else {
+                                    panic!("Failed to find external function definition");
+                                };
+
+                                // Create the local function definition
+                                let mut local_function_definition = external_function_definition.clone();
+                                local_function_definition.name = new_name.clone();
+                                
+                                // Add the local function definition to the beginning of the list
+                                translated_definition.functions.insert(0, local_function_definition);
+
+                                // Create the local function declaration for the toplevel scope
+                                let mut local_function_declaration = external_function_declaration.clone();
+                                local_function_declaration.old_name = old_name.clone();
+                                local_function_declaration.new_name = new_name.clone();
+
+                                // Add the local function to the beginning of the toplevel scope
+                                translated_definition.toplevel_scope.functions.insert(0, local_function_declaration.clone());
+
+                                // Create the function call
+                                let function_call = sway::Expression::from(sway::FunctionCall {
+                                    function: sway::Expression::Identifier(new_name.clone()),
                                     generic_parameters: None,
                                     parameters: arguments.iter()
                                         .map(|a| self.translate_expression(translated_definition, scope, a))
                                         .collect::<Result<Vec<_>, _>>()?,
-                                }));
-                                
-                            }
-                            todo!("handle super member access function `{member:#?}`")
-                        }
-                        name => {
-                            let old_name = format!("{}_{}", container, member);
-                            let new_name = self.translate_naming_convention(old_name.as_str(), Case::Snake);
-    
-                            // Check if function is contained in an external definition
-                            if let Some(external_definition) = self.translated_definitions.iter().find(|x| x.name == name) {
-                                // Check if the member is a function defined in the toplevel scope
-                                // TODO: we should really check if the functions argument types are correct
-                                if let Some(external_function_declaration) = external_definition.toplevel_scope.find_function(|f| f.old_name == member.name && f.parameters.entries.len() == arguments.len()) {
-                                    // Import the function if we haven't already
-                                    if translated_definition.toplevel_scope.get_function_from_old_name(old_name.as_str()).is_err() {
-                                        // Get the external function definition
-                                        let Some(external_function_definition) = external_definition.functions.iter().find(|f| {
-                                            f.name == external_function_declaration.new_name
-                                            && f.parameters.entries.len() == external_function_declaration.parameters.entries.len()
-                                        }) else {
-                                            panic!("Failed to find external function definition");
-                                        };
+                                });
 
-                                        // Create the local function definition
-                                        let mut local_function_definition = external_function_definition.clone();
-                                        local_function_definition.name = new_name.clone();
-                                        
-                                        // Add the local function definition to the beginning of the list
-                                        translated_definition.functions.insert(0, local_function_definition);
+                                *translated_definition.function_call_counts.entry(new_name.clone()).or_insert(0) += 1;
 
-                                        // Create the local function declaration for the toplevel scope
-                                        let mut local_function_declaration = external_function_declaration.clone();
-                                        local_function_declaration.old_name = old_name.clone();
-                                        local_function_declaration.new_name = new_name.clone();
-
-                                        // Add the local function to the beginning of the toplevel scope
-                                        translated_definition.toplevel_scope.functions.insert(0, local_function_declaration.clone());
-
-                                        // Create the function call
-                                        let function_call = sway::Expression::from(sway::FunctionCall {
-                                            function: sway::Expression::Identifier(new_name.clone()),
-                                            generic_parameters: None,
-                                            parameters: arguments.iter()
-                                                .map(|a| self.translate_expression(translated_definition, scope, a))
-                                                .collect::<Result<Vec<_>, _>>()?,
-                                        });
-
-                                        *translated_definition.function_call_counts.entry(new_name.clone()).or_insert(0) += 1;
-
-                                        return Ok(function_call);
-                                    }
-                                }
+                                Ok(Some(function_call))
+                            }()? {
+                                return Ok(result);
                             }
                         }
                     }

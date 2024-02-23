@@ -139,6 +139,52 @@ impl TranslationScope {
         None
     }
 
+    #[inline]
+    pub fn find_function_matching_types(
+        &self,
+        old_name: &str,
+        parameters: &[sway::Expression],
+        parameter_types: &[sway::TypeName],
+    ) -> Option<&TranslatedFunction> {
+        self.find_function(|f| {
+            // Ensure the function's old name matches the function call we're translating
+            if f.old_name != old_name {
+                return false;
+            }
+
+            // Ensure the supplied function call args match the function's parameters
+            if parameters.len() != f.parameters.entries.len() {
+                return false;
+            }
+
+            for (i, (parameter, value_type_name)) in parameters.iter().zip(parameter_types.iter()).enumerate() {
+                let Some(parameter_type_name) = f.parameters.entries[i].type_name.as_ref() else { continue };
+
+                // Don't check literal integer value types
+                if let sway::Expression::Literal(sway::Literal::DecInt(_) | sway::Literal::HexInt(_)) = parameter {
+                    if let sway::TypeName::Identifier { name, generic_parameters: None } = parameter_type_name {
+                        if let "u8" | "u16" | "u32" | "u64" | "u256" = name.as_str() {
+                            continue;
+                        }
+                    }
+                }
+
+                // HACK: Don't check todo! value types
+                if let sway::TypeName::Identifier { name, generic_parameters: None } = &value_type_name {
+                    if name == "todo!" {
+                        continue;
+                    }
+                }
+
+                if value_type_name != parameter_type_name {
+                    return false;
+                }
+            }
+
+            true
+        })
+    }
+
     /// Atempts to find a translated function using a custom function
     pub fn find_function<F: Copy + FnMut(&&TranslatedFunction) -> bool>(&self, f: F) -> Option<&TranslatedFunction> {
         if let Some(function) = self.functions.iter().find(f) {
@@ -152,21 +198,6 @@ impl TranslationScope {
         }
 
         None
-    }
-
-    /// Attempts to get a reference to a translated function using its old name
-    pub fn get_function_from_old_name(&self, old_name: &str) -> Result<&TranslatedFunction, Error> {
-        if let Some(function) = self.functions.iter().rev().find(|v| v.old_name == old_name) {
-            return Ok(function);
-        }
-
-        if let Some(parent) = self.parent.as_ref() {
-            if let Ok(function) = parent.get_function_from_old_name(old_name) {
-                return Ok(function);
-            }
-        }
-
-        Err(Error::FunctionNotInScope(old_name.into()))
     }
 }
 
