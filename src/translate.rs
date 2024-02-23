@@ -14,6 +14,7 @@ pub struct TranslatedVariable {
     pub abi_type_name: Option<sway::TypeName>,
     pub is_storage: bool,
     pub is_configurable: bool,
+    pub is_constant: bool,
     pub statement_index: Option<usize>,
     pub read_count: usize,
     pub mutation_count: usize,
@@ -924,6 +925,10 @@ impl TranslatedDefinition {
                                     },
                                 ],
                             }),
+                            "as_raw_slice" => Ok(sway::TypeName::Identifier {
+                                name: "RawSlice".into(),
+                                generic_parameters: None,
+                            }),
 
                             _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
                         }
@@ -1249,7 +1254,6 @@ impl TranslatedDefinition {
                                     }
                                 }
                             }
-
                             todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression))
                         }
 

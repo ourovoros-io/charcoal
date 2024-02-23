@@ -8,10 +8,7 @@ use crate::{
 use convert_case::{Case, Casing};
 use solang_parser::pt as solidity;
 use std::{
-    cell::RefCell,
-    collections::HashMap,
-    path::{Path, PathBuf},
-    rc::Rc,
+    cell::RefCell, collections::HashMap, path::{Path, PathBuf}, rc::Rc
 };
 
 #[derive(Default)]
@@ -19,12 +16,18 @@ pub struct Project {
     line_ranges: HashMap<PathBuf, Vec<(usize, usize)>>,
     solidity_source_units: Rc<RefCell<HashMap<PathBuf, solidity::SourceUnit>>>,
     translated_definitions: Vec<TranslatedDefinition>,
+    import_directives: HashMap<PathBuf, HashMap<PathBuf, Option<Vec<String>>>>,
 }
 
 impl Project {
     /// Attempts to parse the file from the supplied `path`.
     #[inline]
     fn parse_solidity_source_unit<P: AsRef<Path>>(&mut self, path: P) -> Result<(), Error> {
+        if !path.as_ref().exists() {
+            return Err(
+                Error::Wrapped(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, format!("File not found: {}", path.as_ref().to_string_lossy()))))
+            );
+        }
         let path = PathBuf::from(
             path.as_ref()
                 .to_string_lossy()
@@ -88,6 +91,7 @@ impl Project {
     }
 
     pub fn translate(&mut self, definition_name: Option<&String>, source_unit_path: &Path) -> Result<(), Error> {
+        let source_unit_directory = source_unit_path.parent().map(PathBuf::from).unwrap();
         let solidity_source_units = self.solidity_source_units.clone();
 
         // Ensure the source unit has been parsed
@@ -158,6 +162,50 @@ impl Project {
             }
         }
 
+        // Extend the import directive tree
+        for import_directive in import_directives.iter() {
+            let mut translate_import_directive = |definition_name: Option<&String>, filename: &solidity::StringLiteral| -> Result<(), Error> {
+                if !filename.string.starts_with('.') {
+                    todo!("handle global import paths (i.e: node_modules)")
+                }
+
+                let import_path = source_unit_directory.join(filename.string.clone())
+                    .canonicalize()
+                    .map_err(|e| Error::Wrapped(Box::new(e)))?;
+
+                let import_directives = self.import_directives.entry(source_unit_path.into()).or_default();
+                let definition_names = import_directives.entry(import_path).or_default();
+
+                if let Some(definition_name) = definition_name {
+                    if definition_names.is_none() {
+                        *definition_names = Some(vec![]);
+                    }
+
+                    let definition_names = definition_names.as_mut().unwrap();
+
+                    if !definition_names.contains(definition_name) {
+                        definition_names.push(definition_name.clone());
+                    }
+                }
+
+                Ok(())
+            };
+
+            match import_directive {
+                solidity::Import::Plain(solidity::ImportPath::Filename(filename), _) => {
+                    translate_import_directive(None, filename)?;
+                }
+
+                solidity::Import::Rename(solidity::ImportPath::Filename(filename), identifiers, _) => {
+                    for (identifier, _) in identifiers.iter() {
+                        translate_import_directive(Some(&identifier.name), filename)?;
+                    }
+                }
+
+                _ => panic!("Unsupported import directive: {import_directive:#?}"),
+            }
+        }
+
         // Translate any contract definitions in the file
         for source_unit_part in source_unit.0.iter() {
             let solidity::SourceUnitPart::ContractDefinition(contract_definition) = source_unit_part else { continue };
@@ -186,6 +234,7 @@ impl Project {
         // Flatten final contract
         // Create forc project on disk
         //
+        
 
         Ok(())
     }
@@ -236,9 +285,9 @@ impl Project {
             let mut new_name = self.translate_naming_convention(old_name.as_str(), Case::Snake);
 
             // Prepend the definition name to the beginning of the function name if it is a library
-            if let solidity::ContractTy::Library(_) = translated_definition.kind.as_ref().unwrap() {
+            if let solidity::ContractTy::Library(_)  = translated_definition.kind.as_ref().unwrap() {
                 let definition_name = self.translate_naming_convention(translated_definition.name.as_str(), Case::Snake);
-                new_name = format!("{}_{}", definition_name, new_name.trim_start_matches("_"));
+                new_name = format!("{}_{}", definition_name, new_name.trim_start_matches('_'));
             }
 
             // Increase the function name count
@@ -373,7 +422,8 @@ impl Project {
                     sway::TypeName::StringSlice
                 },
 
-                solidity::Type::Int(_) => todo!("signed integer types"),
+                // TODO : Highly illegal
+                solidity::Type::Int(_) =>  todo!("int types"),
 
                 solidity::Type::Uint(bits) => sway::TypeName::Identifier {
                     name: match *bits {
@@ -382,7 +432,29 @@ impl Project {
                         32 => "u32".into(),
                         64 => "u64".into(),
                         256 => "u256".into(),
-                        bits => todo!("non-standard unsigned integer: uint{bits}"),
+                        bits => match bits {
+                            0..=8 =>  {
+                                eprintln!("Warning : unsupported unsigned integer type {bits}, using u8");
+                                "u8".into()
+                            }
+                            9..=16 =>  {
+                                eprintln!("Warning : unsupported unsigned integer type {bits}, using u16");
+                                "u16".into()
+                            }
+                            17..=32 =>  {
+                                eprintln!("Warning : unsupported unsigned integer type {bits}, using u32");
+                                "u32".into()
+                            }
+                            33..=64 =>  {
+                                eprintln!("Warning : unsupported unsigned integer type {bits}, using u64");
+                                "u64".into()
+                            }
+                            65..=256 =>  {
+                                eprintln!("Warning : unsupported unsigned integer type {bits}, using u256");
+                                "u256".into()
+                            }
+                            _ => panic!("Invalid uint type: {bits}"),
+                        },
                     },
                     generic_parameters: None,
                 },
@@ -690,7 +762,22 @@ impl Project {
                     Some(value) => panic!("Invalid StorageVec value expression: {value:#?}"),
                 }
 
-                type_name => todo!("generate {type_name} value expression"),
+                type_name => {
+                    let Some(struct_definition) = translated_definition.structs.iter().find(|s| s.name == *type_name).cloned() else {
+                        panic!("Failed to find struct definition: {type_name}");
+                    };
+
+                    sway::Expression::from(sway::Constructor {
+                        type_name: sway::TypeName::Identifier { 
+                            name: type_name.to_string(), 
+                            generic_parameters: None,
+                        },
+                        fields: struct_definition.fields.iter().map(|f| sway::ConstructorField {
+                            name: f.name.clone(), 
+                            value: self.create_value_expression(translated_definition, scope, &f.type_name, value)
+                        }).collect(),
+                    })
+                }
             },
 
             sway::TypeName::Array { type_name, length } => match value {
@@ -805,6 +892,54 @@ impl Project {
         }
     }
 
+    fn resolve_import(
+        &mut self,
+        definition_name: &String,
+        source_unit_path: &Path,
+    ) -> Result<Option<TranslatedDefinition>, Error> {
+        if !source_unit_path.exists() {
+            return Err(Error::Wrapped(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, source_unit_path.to_string_lossy()))));
+        }
+    
+        let source_unit_path = PathBuf::from(
+            source_unit_path.to_string_lossy()
+                .replace("\\\\", "\\")
+                .replace("//", "/")
+        )
+        .canonicalize()
+        .map_err(|e| Error::Wrapped(Box::new(e)))?;
+        
+        if let Some(t) = self.translated_definitions.iter().find(|t| t.name == *definition_name && t.path == source_unit_path).cloned() {
+            return Ok(Some(t));
+        }
+        
+        if let Some(import_directives) = self.import_directives.get(&source_unit_path).cloned() {
+            for (path, definition_names) in import_directives.iter() {
+                match definition_names.as_ref() {
+                    Some(definition_names) => {
+                        if definition_names.iter().any(|n| n == definition_name) {
+                            return self.resolve_import(definition_name, path);
+                        }
+                    }
+    
+                    None => {
+                        if let Ok(Some(t)) = self.resolve_import(definition_name, path) {
+                            return Ok(Some(t));
+                        }
+                    }
+                }
+            }
+        }
+    
+        self.translate(Some(definition_name), &source_unit_path)?;
+    
+        if let Some(t) = self.translated_definitions.iter().find(|t| t.name == *definition_name && t.path == source_unit_path).cloned() {
+            return Ok(Some(t));
+        }
+        
+        Ok(None)
+    }
+
     #[inline]
     fn translate_import_directives(
         &mut self,
@@ -818,13 +953,22 @@ impl Project {
                 if filename.string.starts_with('@') {
                     todo!("handle global import paths (i.e: node_modules)")
                 }
-    
-                let import_path = source_unit_directory.join(filename.string.clone())
+                let import_path = source_unit_directory.join(filename.string.clone());
+                if !import_path.exists() {
+                    return Err(
+                        Error::Wrapped(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, format!("File not found: {}", import_path.to_string_lossy()))))
+                    );
+                }
+                let import_path = import_path
                     .canonicalize()
                     .map_err(|e| Error::Wrapped(Box::new(e)))?;
-    
-                if !self.translated_definitions.iter().any(|t| t.path == import_path) {
-                    self.translate(definition_name, &import_path)?;
+
+                if !self.translated_definitions.iter().any(|t| definition_name.map(|n| *n == t.name).unwrap_or(true) && t.path == import_path) {
+                    if let Some(definition_name) = definition_name {
+                        self.resolve_import(definition_name, &import_path)?;
+                    } else {
+                        self.translate(definition_name, &import_path)?;
+                    }
                 }
 
                 Ok(())
@@ -878,7 +1022,7 @@ impl Project {
                 // Collect all functions that support the `for_type`
                 for function in library_definition.functions.iter() {
                     // If we're using the library for a specific type, ensure the first function parameter matches that type
-                    if translated_using_directive.for_type != function.parameters.entries.first().map(|p| p.type_name.clone()).flatten() {
+                    if translated_using_directive.for_type != function.parameters.entries.first().and_then(|p| p.type_name.clone()) {
                         continue;
                     }
 
@@ -1054,7 +1198,7 @@ impl Project {
         };
 
         let (events_enum, _) = {
-            if translated_definition.events_enums.iter().find(|(e, _)| e.name == events_enum_name).is_none() {
+            if !translated_definition.events_enums.iter().any(|(e, _)| e.name == events_enum_name) {
                 translated_definition.ensure_use_declared("core::codec::AbiEncode");
 
                 translated_definition.events_enums.push((
@@ -1110,7 +1254,7 @@ impl Project {
         };
 
         let (errors_enum, _) = {
-            if translated_definition.errors_enums.iter().find(|(e, _)| e.name == errors_enum_name).is_none() {
+            if !translated_definition.errors_enums.iter().any(|(e, _)| e.name == errors_enum_name) {
                 translated_definition.ensure_use_declared("core::codec::AbiEncode");
 
                 translated_definition.errors_enums.push((
@@ -1242,7 +1386,7 @@ impl Project {
                 _ => 1,
             };
 
-            let parameter_names: Vec<String> = ('a'..'z').enumerate()
+            let parameter_names: Vec<String> = ('a'..='z').enumerate()
                 .take_while(|(i, _)| *i < parameter_count)
                 .map(|(_, c)| c.into())
                 .collect();
@@ -1472,24 +1616,26 @@ impl Project {
         }
 
         // Look for toplevel functions that are never called, move their implementation to the abi wrapper function if it exists
-        let function_names = translated_definition.functions.iter().map(|f| f.name.clone()).collect::<Vec<_>>();
+        if !matches!(translated_definition.kind.as_ref(), Some(solidity::ContractTy::Abstract(_))) {
+            let function_names = translated_definition.functions.iter().map(|f| f.name.clone()).collect::<Vec<_>>();
+            for function_name in function_names {
+                let (None | Some(0)) = translated_definition.function_call_counts.get(&function_name) else { continue };
+                let Some((toplevel_function_index, _)) = translated_definition.functions.iter().enumerate().find(|(_, f)| f.name == function_name) else { continue };
+                let body = translated_definition.functions[toplevel_function_index].body.clone();
 
-        for function_name in function_names {
-            let (None | Some(0)) = translated_definition.function_call_counts.get(&function_name) else { continue };
-            let Some((toplevel_function_index, _)) = translated_definition.functions.iter().enumerate().find(|(_, f)| f.name == function_name) else { continue };
-            let body = translated_definition.functions[toplevel_function_index].body.clone();
-
-            let Some(contract_impl) = translated_definition.find_contract_impl_mut() else { continue };
-            let Some(contract_impl_function) = contract_impl.items.iter_mut()
-                .filter_map(|i| match i {
-                    sway::ImplItem::Function(f) => Some(f),
-                    _ => None,
-                })
-                .find(|f| f.name == function_name) else { continue };
-            
-            contract_impl_function.body = body;
-            translated_definition.functions.remove(toplevel_function_index);
+                let Some(contract_impl) = translated_definition.find_contract_impl_mut() else { continue };
+                let Some(contract_impl_function) = contract_impl.items.iter_mut()
+                    .filter_map(|i| match i {
+                        sway::ImplItem::Function(f) => Some(f),
+                        _ => None,
+                    })
+                    .find(|f| f.name == function_name) else { continue };
+                
+                contract_impl_function.body = body;
+                translated_definition.functions.remove(toplevel_function_index);
+            }
         }
+        
 
         self.translated_definitions.push(translated_definition);
         
@@ -1527,21 +1673,26 @@ impl Project {
                 if filename.string.starts_with('@') {
                     todo!("handle global import paths (i.e: node_modules)")
                 }
-
-                let import_path = source_unit_directory.join(filename.string.clone())
+                let import_path = source_unit_directory.join(filename.string.clone());
+                if !import_path.exists() {
+                    return Err(
+                        Error::Wrapped(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, format!("File not found: {}", import_path.to_string_lossy()))))
+                    );
+                }
+                let import_path = import_path
                     .canonicalize()
                     .map_err(|e| Error::Wrapped(Box::new(e)))?;
 
-                if let Some(t) = self.translated_definitions.iter().find(|t| t.path == import_path && t.name == *inherit) {
-                    inherited_definition = Some(t.clone());
+                if let Some(t) = self.resolve_import(inherit, &import_path)? {
+                    inherited_definition = Some(t);
                     break;
                 }
             }
 
             // Check to see if the definition was defined in the current file
             if inherited_definition.is_none() {
-                if let Some(t) = self.translated_definitions.iter().find(|t| t.path == translated_definition.path && t.name == *inherit) {
-                    inherited_definition = Some(t.clone());
+                if let Some(t) = self.resolve_import(inherit, &translated_definition.path)? {
+                    inherited_definition = Some(t);
                 }
             }
 
@@ -1810,6 +1961,7 @@ impl Project {
             abi_type_name,
             is_storage,
             is_configurable,
+            is_constant,
             ..Default::default()
         });
 
@@ -1963,7 +2115,7 @@ impl Project {
         let is_fallback = matches!(function_definition.ty, solidity::FunctionTy::Fallback);
         let is_receive = matches!(function_definition.ty, solidity::FunctionTy::Receive);
 
-        let (old_name, new_name) = if is_constructor {
+        let (old_name, mut new_name) = if is_constructor {
             (String::new(), "constructor".to_string())
         } else if is_fallback {
             (String::new(), "fallback".to_string())
@@ -1974,6 +2126,10 @@ impl Project {
             let new_name = self.translate_function_name(translated_definition, function_definition);
             (old_name, new_name)
         };
+
+        if let Some(solidity::ContractTy::Abstract(_)) = &translated_definition.kind {
+            new_name = format!("{}_{}", self.translate_naming_convention(&translated_definition.name, Case::Snake), new_name);
+        }
 
         // Create a scope for modifier invocation translations
         let mut scope = TranslationScope {
@@ -2342,20 +2498,16 @@ impl Project {
         let is_view = function_definition.attributes.iter().any(|x| matches!(x, solidity::FunctionAttribute::Mutability(solidity::Mutability::View(_))));
         let is_payable = function_definition.attributes.iter().any(|x| matches!(x, solidity::FunctionAttribute::Mutability(solidity::Mutability::Payable(_))));
         let _is_virtual = function_definition.attributes.iter().any(|x| matches!(x, solidity::FunctionAttribute::Virtual(_)));
-        let _is_override = function_definition.attributes.iter().any(|x| matches!(x, solidity::FunctionAttribute::Override(_, _)));
+        let is_override = function_definition.attributes.iter().any(|x| matches!(x, solidity::FunctionAttribute::Override(_, _)));
 
         // If the function is a constructor, we consider it public and add an initializer requirement
         if is_constructor {
             is_public = true;
         }
 
-        //
-        // TODO:
-        // Handle virtual functions
-        // Handle function overrides
-        //
+        
 
-        let (old_name, new_name) = if is_constructor {
+        let (old_name, new_name_2) = if is_constructor {
             (String::new(), "constructor".to_string())
         } else if is_fallback {
             (String::new(), "fallback".to_string())
@@ -2366,6 +2518,12 @@ impl Project {
             let new_name = self.translate_function_name(translated_definition, function_definition);
             (old_name, new_name)
         };
+        
+        let mut new_name = new_name_2.clone();
+
+        if let Some(solidity::ContractTy::Abstract(_)) = &translated_definition.kind {
+           new_name = format!("{}_{}", self.translate_naming_convention(&translated_definition.name, Case::Snake), new_name);
+        }
 
         // Translate the functions parameters
         let mut parameters = sway::ParameterList::default();
@@ -2448,21 +2606,25 @@ impl Project {
 
         if is_public {
             if let Some(abi) = translated_definition.abi.as_mut() {
+                sway_function.name = new_name_2.clone(); 
                 // Only add the function to the abi if it doesn't already exist
-                if !abi.functions.contains(&sway_function) {
+                if !abi.functions.contains(&sway_function) && !is_override {
                     if is_constructor {
                         abi.functions.insert(0, sway_function.clone());
                     } else {
                         abi.functions.push(sway_function.clone());
                     }
                 }
+                sway_function.name = new_name.clone();
             } else {
+                sway_function.name = new_name_2.clone(); 
                 // Add the function to the abi
                 if is_constructor {
                     translated_definition.get_abi().functions.insert(0, sway_function.clone());
                 } else {
                     translated_definition.get_abi().functions.push(sway_function.clone());
                 }
+                sway_function.name = new_name.clone(); 
             }
         }
 
@@ -2562,7 +2724,7 @@ impl Project {
             // Add the `constructor_called` requirement to the beginning of the function
             // require(!storage.initialized.read(), "The Contract constructor has already been called");
             function_body.statements.insert(0, sway::Statement::from(sway::Expression::from(sway::FunctionCall {
-                function: sway::Expression::from(sway::Expression::Identifier("require".into())),
+                function: sway::Expression::Identifier("require".into()),
                 generic_parameters: None,
                 parameters: vec![
                     sway::Expression::from(sway::UnaryExpression {
@@ -2732,13 +2894,26 @@ impl Project {
                     parameters: sway_function.parameters.entries.iter().map(|p| sway::Expression::Identifier(p.name.clone())).collect(),
                 })),
             });
-
+            sway_function.name = new_name_2;
             // Create the function wrapper item for the contract impl block
-            let impl_item = sway::ImplItem::Function(sway_function);
-
+            let impl_item = sway::ImplItem::Function(sway_function.clone());
+            
+            
             if let Some(contract_impl) = translated_definition.find_contract_impl_mut() {
+                if let Some(sway::ImplItem::Function(f)) = contract_impl.items.iter_mut().find(|item| {
+                    let sway::ImplItem::Function(f) = item else { return false };
+                    if f.name != sway_function.name {
+                        return false;
+                    }
+                    if !sway_function.parameters.entries.iter().zip(f.parameters.entries.iter()).all(|(a, b)| a == b) {
+                        return false;
+                    }
+                    sway_function.return_type == f.return_type
+                }) {
+                    f.body = sway_function.body;
+                }
                 // Only add the function wrapper to the contract impl if it doesn't already exist
-                if !contract_impl.items.contains(&impl_item) {
+                else if !contract_impl.items.contains(&impl_item) {
                     if is_constructor {
                         contract_impl.items.insert(0, impl_item);
                     } else {
@@ -3130,7 +3305,7 @@ impl Project {
 
         if let Some(solidity::Expression::New(_, new_expression)) = initializer.as_ref() {
             let solidity::Expression::FunctionCall(_, ty, args) = new_expression.as_ref() else {
-                panic!("Unexpected new expression: {} - {new_expression:#?}", new_expression.to_string());
+                panic!("Unexpected new expression: {} - {new_expression:#?}", new_expression);
             };
 
             let new_type_name = self.translate_type_name(translated_definition, ty, false);
@@ -3651,7 +3826,7 @@ impl Project {
             }
 
             solidity::Expression::RationalNumberLiteral(_, _, _, _, _) => {
-                Ok(sway::Expression::create_todo(Some(format!("rational number: {}", expression.to_string()))))
+                Ok(sway::Expression::create_todo(Some(format!("rational number: {}", expression))))
             }
 
             solidity::Expression::HexNumberLiteral(_, value, _) | solidity::Expression::AddressLiteral(_, value) => {
@@ -3669,7 +3844,7 @@ impl Project {
                 )))
             }
 
-            _ => panic!("Expected literal expression, found {} - {expression:#?}", expression.to_string()),
+            _ => panic!("Expected literal expression, found {} - {expression:#?}", expression),
         }
     }
 
@@ -3870,7 +4045,7 @@ impl Project {
             solidity::Expression::FunctionCall(_, x, args) => match x.as_ref() {
                 solidity::Expression::Type(_, ty) => {
                     if args.len() != 1 {
-                        panic!("Invalid type cast expression, expected 1 parameter, found {}: {}", args.len(), expression.to_string());
+                        panic!("Invalid type cast expression, expected 1 parameter, found {}: {}", args.len(), expression);
                     }
 
                     match ty {
@@ -3951,7 +4126,7 @@ impl Project {
                 solidity::Expression::Variable(solidity::Identifier { name, .. }) => match name.as_str() {
                     "type" => {
                         if args.len() != 1 {
-                            panic!("Invalid type name expression, expected 1 parameter, found {}: {}", args.len(), expression.to_string());
+                            panic!("Invalid type name expression, expected 1 parameter, found {}: {}", args.len(), expression);
                         }
 
                         let type_name = self.translate_type_name(translated_definition, &args[0], false);
@@ -4292,6 +4467,17 @@ impl Project {
                         }
                     }
 
+                    if let Some(t) = self.resolve_import(&name.to_string(), &translated_definition.path)? {
+                        let variable = match t.toplevel_scope.get_variable_from_old_name(member) {
+                            Ok(variable) => variable.clone(),
+                            Err(e) => panic!("{e}"),
+                        };
+                    
+                        if variable.is_constant {
+                            return Ok(sway::Expression::Identifier(variable.new_name.clone()));
+                        }
+                    }
+
                     let variable = match scope.get_variable_from_old_name(name) {
                         Ok(variable) => variable,
                         Err(e) => panic!("{e}"),
@@ -4387,7 +4573,25 @@ impl Project {
                 _ => {}
             }
 
-            _ => {}
+            _ => {
+                let container = self.translate_expression(translated_definition, scope, container)?;
+                let container_type_name = translated_definition.get_expression_type(scope, &container)?;
+                let container_type_name_string = container_type_name.to_string();
+                
+                // Check if container is a struct
+                if let Some(struct_definition) = translated_definition.structs.iter().find(|s| s.name == container_type_name_string) {
+                    let field_name = self.translate_naming_convention(member.name.as_str(), Case::Snake);
+            
+                    if struct_definition.fields.iter().any(|f| f.name == field_name) {
+                        return Ok(sway::Expression::from(sway::MemberAccess {
+                            expression: container,
+                            member: field_name,
+                        }))
+                    }
+                }
+            
+                todo!("translate member access expression: {} - {expression:#?}", expression.to_string())
+            }
         }
 
         todo!("translate member access expression: {} - {expression:#?}", expression.to_string())
@@ -4457,7 +4661,6 @@ impl Project {
                                 sway::TypeName::Identifier { name, generic_parameters: None } if name == "Identity" => {
                                     Ok(value)
                                 }
-                                
                                 _ => todo!("translate address cast: {expression:#?}"),
                             }
                         }
@@ -4471,7 +4674,7 @@ impl Project {
                             .collect::<Result<Vec<_>, _>>()?;
                         
                         if parameters.len() != 1 {
-                            panic!("Malformed payable cast: {} - {expression:#?}", expression.to_string());
+                            panic!("Malformed payable cast: {} - {expression:#?}", expression);
                         }
 
                         Ok(parameters[0].clone())
@@ -4507,10 +4710,32 @@ impl Project {
                                 ("u32", 8 | 16 | 32 | 64 | 256) => create_uint_try_from_unwrap_expression(32, *bits as usize, value_expression),
                                 ("u64", 8 | 16 | 32 | 64 | 256) => create_uint_try_from_unwrap_expression(64, *bits as usize, value_expression),
                                 ("u256", 8 | 16 | 32 | 64 | 256) => create_uint_try_from_unwrap_expression(256, *bits as usize, value_expression),
-                                _ => todo!("translate {name} type cast: {} - {expression:#?}", expression.to_string())
+                                _ => match bits {
+                                    0..=8 => { 
+                                        eprintln!("Warning : unsupported integer type {bits}, using u8");
+                                        create_uint_try_from_unwrap_expression(8, *bits as usize, value_expression)
+                                    }
+                                    9..=16 => { 
+                                        eprintln!("Warning : unsupported integer type {bits}, using u16");
+                                        create_uint_try_from_unwrap_expression(16, *bits as usize, value_expression)
+                                    }
+                                    17..=32 => { 
+                                        eprintln!("Warning : unsupported integer type {bits}, using u32");
+                                        create_uint_try_from_unwrap_expression(32, *bits as usize, value_expression)
+                                    }
+                                    33..=64 => { 
+                                        eprintln!("Warning : unsupported integer type {bits}, using u64");
+                                        create_uint_try_from_unwrap_expression(64, *bits as usize, value_expression)
+                                    }
+                                    65..=256 => { 
+                                        eprintln!("Warning : unsupported integer type {bits}, using u256");
+                                        create_uint_try_from_unwrap_expression(256, *bits as usize, value_expression)
+                                    }
+                                    _ => panic!("Invalid uint type: {expression:#?}"),
+                                }
                             }
 
-                            _ => todo!("translate type cast: {} - {expression:#?}", expression.to_string()),
+                            _ => todo!("translate type cast: {} - {expression:#?}", expression),
                         }
                     }
 
@@ -4705,7 +4930,7 @@ impl Project {
                         }
                     }
 
-                    _ => todo!("translate type cast: {} - {expression:#?}", expression.to_string()),
+                    _ => todo!("translate type cast: {} - {expression:#?}", expression),
                 }
             }
 
@@ -5048,7 +5273,7 @@ impl Project {
                                 // };
 
                                 if arguments.len() != 2 {
-                                    panic!("Invalid `abi.decode` call: expected 2 arguments, found {}: {} - {expression:#?}", arguments.len(), expression.to_string());
+                                    panic!("Invalid `abi.decode` call: expected 2 arguments, found {}: {} - {expression:#?}", arguments.len(), expression);
                                 }
 
                                 let encoded_data = self.translate_expression(translated_definition, scope, &arguments[0])?;
@@ -5067,17 +5292,17 @@ impl Project {
                                     }
 
                                     _ => {
-                                        panic!("Invalid `abi.decode` call: expected type list, found {} - {:#?}", arguments[1].to_string(), arguments[1]);
+                                        panic!("Invalid `abi.decode` call: expected type list, found {} - {:#?}", arguments[1], arguments[1]);
                                     }
                                 };
 
-                                let parameter_names = ('a'..'z').enumerate()
+                                let parameter_names = ('a'..='z').enumerate()
                                     .take_while(|(i, _)| *i < parameter_types.len())
                                     .map(|(_, c)| c.to_string())
                                     .collect::<Vec<_>>();
 
                                 if parameter_types.len() != parameter_names.len() {
-                                    panic!("Failed to generate parameter names for `{}`", expression.to_string());
+                                    panic!("Failed to generate parameter names for `{}`", expression);
                                 }
 
                                 // If we only have 1 parameter to decode, just decode it directly
@@ -5304,9 +5529,23 @@ impl Project {
                             
                             member => todo!("handle `abi.{member}` translation"),
                         }
-
+                        "super" => {
+                            for inherit in &translated_definition.inherits {
+                                let Some(inherited_definition) =self.find_definition_with_abi(&inherit) else {continue};
+                                let Some(inherited_function) = inherited_definition.toplevel_scope.find_function(|f|  f.old_name == member.name) else {continue};
+                                return Ok(sway::Expression::from(sway::FunctionCall {
+                                    function: sway::Expression::Identifier(inherited_function.new_name.clone()),
+                                    generic_parameters: None,
+                                    parameters: arguments.iter()
+                                        .map(|a| self.translate_expression(translated_definition, scope, a))
+                                        .collect::<Result<Vec<_>, _>>()?,
+                                }));
+                                
+                            }
+                            todo!("handle super member access function `{member:#?}`")
+                        }
                         name => {
-                            let old_name = format!("{}_{}", container.to_string(), member.to_string());
+                            let old_name = format!("{}_{}", container, member);
                             let new_name = self.translate_naming_convention(old_name.as_str(), Case::Snake);
     
                             // Check if function is contained in an external definition
@@ -6124,7 +6363,8 @@ impl Project {
         expression: &solidity::Expression,
     ) -> Result<(&'a mut TranslatedVariable, sway::Expression), Error> {
         match expression {
-            solidity::Expression::Variable(solidity::Identifier { name, .. }) => {
+            solidity::Expression::Variable(solidity::Identifier { name, .. }) => {  
+
                 let variable = match scope.get_variable_from_old_name_mut(name.as_str()) {
                     Ok(variable) => variable,
                     Err(e) => panic!("{e}"),
@@ -6170,6 +6410,44 @@ impl Project {
                     }
                 ))
             }
+            solidity::Expression::MemberAccess(_, container, member) => {
+                let translated_container = self.translate_expression(translated_definition, scope, container)?;
+            
+                let container_type_name = translated_definition.get_expression_type(scope, &translated_container)?;
+                let container_type_name_string = container_type_name.to_string();
+                
+                let (variable, container) = self.translate_variable_access_expression(translated_definition, scope, &container)?;
+            
+                // Check if container is a struct
+                if let Some(struct_definition) = translated_definition.structs.iter().find(|s| s.name == container_type_name_string) {
+                    let field_name = self.translate_naming_convention(member.name.as_str(), Case::Snake);
+            
+                    if struct_definition.fields.iter().any(|f| f.name == field_name) {
+                        return Ok((
+                            variable,
+                            sway::Expression::from(sway::MemberAccess {
+                                expression: container,
+                                member: field_name,
+                            })
+                        ))
+                    }
+                }
+            
+                todo!("translate variable access expression: {} - {expression:#?}", expression.to_string())
+            }
+
+            solidity::Expression::FunctionCall(_, function, arguments) => {
+                let arguments = arguments.iter()
+                    .map(|a| self.translate_expression(translated_definition, scope, a))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let (variable, expression) = self.translate_variable_access_expression(translated_definition, scope, function)?;
+                Ok((variable, sway::Expression::from(sway::FunctionCall {
+                    function: expression,
+                    generic_parameters: None,
+                    parameters: arguments,
+                })))
+                
+            }
 
             _ => todo!("translate variable access expression: {expression:#?}")
         }
@@ -6206,6 +6484,134 @@ impl Project {
         }))
     }
 
+    fn create_assignment_expression(&mut self,
+        translated_definition: &mut TranslatedDefinition,
+        operator: &str,
+        expression: &sway::Expression,
+        variable: &mut TranslatedVariable,
+        rhs: &sway::Expression,
+        rhs_type_name: &sway::TypeName,
+    ) -> Result<sway::Expression, Error> {
+    
+            variable.mutation_count += 1;
+    
+            if variable.is_storage {
+                Ok(sway::Expression::from(sway::FunctionCall {
+                    function: sway::Expression::from(sway::MemberAccess {
+                        expression: expression.clone(),
+                        member: match (&variable.type_name, &rhs_type_name) {
+                            (
+                                sway::TypeName::Identifier { name: lhs_name, .. },
+                                sway::TypeName::StringSlice
+                            ) if lhs_name == "StorageString" => {
+                                "write_slice".into()
+                            }
+    
+                            _ => "write".into(),
+                        },
+                    }),
+                    generic_parameters: None,
+                    parameters: vec![
+                        match operator {
+                            "=" => match (&variable.type_name, &rhs_type_name) {
+                                (
+                                    sway::TypeName::Identifier { name: lhs_name, .. },
+                                    sway::TypeName::StringSlice
+                                ) if lhs_name == "StorageString" => {
+                                    // Ensure `std::string::*` is imported
+                                    translated_definition.ensure_use_declared("std::string::*");
+    
+                                    sway::Expression::from(sway::FunctionCall {
+                                        function: sway::Expression::Identifier("String::from_ascii_str".into()),
+                                        generic_parameters: None,
+                                        parameters: vec![rhs.clone()],
+                                    })
+                                }
+        
+                                _ => rhs.clone(),
+                            },
+    
+                            _ => {
+                                variable.read_count += 1;
+    
+                                sway::Expression::from(sway::BinaryExpression {
+                                    operator: operator.trim_end_matches('=').into(),
+    
+                                    lhs: sway::Expression::from(sway::FunctionCall {
+                                        function: sway::Expression::from(sway::MemberAccess {
+                                            expression: expression.clone(),
+                                            member: "read".into(),
+                                        }),
+                                        generic_parameters: None,
+                                        parameters: vec![],
+                                    }),
+    
+                                    rhs: rhs.clone(),
+                                })
+                            }
+                        },
+                    ],
+                }))
+            } else {
+                match &variable.type_name {
+                    sway::TypeName::Identifier { name, .. } if name == "Vec" => {
+                        let sway::Expression::ArrayAccess(array_access) = expression else {
+                            panic!("Expected array access expression, found {expression:#?}");
+                        };
+    
+                        Ok(sway::Expression::from(sway::FunctionCall {
+                            function: sway::Expression::from(sway::MemberAccess {
+                                expression: array_access.expression.clone(),
+                                member: "set".into(),
+                            }),
+                            generic_parameters: None,
+                            parameters: vec![
+                                array_access.index.clone(),
+                                match operator {
+                                    "=" => rhs.clone(),
+                                    
+                                    _ => {
+                                        variable.read_count += 1;
+                                        
+                                        sway::Expression::from(sway::BinaryExpression {
+                                            operator: operator.trim_end_matches('=').into(),
+            
+                                            lhs: sway::Expression::from(sway::FunctionCall {
+                                                function: sway::Expression::from(sway::MemberAccess {
+                                                    expression: sway::Expression::from(sway::FunctionCall {
+                                                        function: sway::Expression::from(sway::MemberAccess {
+                                                            expression: array_access.expression.clone(),
+                                                            member: "get".into(),
+                                                        }),
+                                                        generic_parameters: None,
+                                                        parameters: vec![
+                                                            array_access.index.clone(),
+                                                        ],
+                                                    }),
+                                                    member: "unwrap".into(),
+                                                }),
+                                                generic_parameters: None,
+                                                parameters: vec![],
+                                            }),
+            
+                                            rhs: rhs.clone(),
+                                        })
+                                    }
+                                }
+                            ],
+                        }))
+                    }
+    
+                    _ => Ok(sway::Expression::from(sway::BinaryExpression {
+                        operator: operator.into(),
+                        lhs: expression.clone(),
+                        rhs: rhs.clone(),
+                    })),
+                }
+            }
+        }
+
+
     #[inline]
     fn translate_assignment_expression(
         &mut self,
@@ -6224,122 +6630,7 @@ impl Project {
         
         let (variable, expression) = self.translate_variable_access_expression(translated_definition, scope, lhs)?;
 
-        variable.mutation_count += 1;
-
-        if variable.is_storage {
-            Ok(sway::Expression::from(sway::FunctionCall {
-                function: sway::Expression::from(sway::MemberAccess {
-                    expression: expression.clone(),
-                    member: match (&variable.type_name, &rhs_type_name) {
-                        (
-                            sway::TypeName::Identifier { name: lhs_name, .. },
-                            sway::TypeName::StringSlice
-                        ) if lhs_name == "StorageString" => {
-                            "write_slice".into()
-                        }
-
-                        _ => "write".into(),
-                    },
-                }),
-                generic_parameters: None,
-                parameters: vec![
-                    match operator {
-                        "=" => match (&variable.type_name, &rhs_type_name) {
-                            (
-                                sway::TypeName::Identifier { name: lhs_name, .. },
-                                sway::TypeName::StringSlice
-                            ) if lhs_name == "StorageString" => {
-                                // Ensure `std::string::*` is imported
-                                translated_definition.ensure_use_declared("std::string::*");
-
-                                sway::Expression::from(sway::FunctionCall {
-                                    function: sway::Expression::Identifier("String::from_ascii_str".into()),
-                                    generic_parameters: None,
-                                    parameters: vec![rhs],
-                                })
-                            }
-    
-                            _ => rhs,
-                        },
-
-                        _ => {
-                            variable.read_count += 1;
-
-                            sway::Expression::from(sway::BinaryExpression {
-                                operator: operator.trim_end_matches('=').into(),
-
-                                lhs: sway::Expression::from(sway::FunctionCall {
-                                    function: sway::Expression::from(sway::MemberAccess {
-                                        expression: expression.clone(),
-                                        member: "read".into(),
-                                    }),
-                                    generic_parameters: None,
-                                    parameters: vec![],
-                                }),
-
-                                rhs,
-                            })
-                        }
-                    },
-                ],
-            }))
-        } else {
-            match &variable.type_name {
-                sway::TypeName::Identifier { name, .. } if name == "Vec" => {
-                    let sway::Expression::ArrayAccess(array_access) = expression else {
-                        panic!("Expected array access expression, found {expression:#?}");
-                    };
-
-                    Ok(sway::Expression::from(sway::FunctionCall {
-                        function: sway::Expression::from(sway::MemberAccess {
-                            expression: array_access.expression.clone(),
-                            member: "set".into(),
-                        }),
-                        generic_parameters: None,
-                        parameters: vec![
-                            array_access.index.clone(),
-                            match operator {
-                                "=" => rhs,
-                                
-                                _ => {
-                                    variable.read_count += 1;
-                                    
-                                    sway::Expression::from(sway::BinaryExpression {
-                                        operator: operator.trim_end_matches('=').into(),
-        
-                                        lhs: sway::Expression::from(sway::FunctionCall {
-                                            function: sway::Expression::from(sway::MemberAccess {
-                                                expression: sway::Expression::from(sway::FunctionCall {
-                                                    function: sway::Expression::from(sway::MemberAccess {
-                                                        expression: array_access.expression.clone(),
-                                                        member: "get".into(),
-                                                    }),
-                                                    generic_parameters: None,
-                                                    parameters: vec![
-                                                        array_access.index.clone(),
-                                                    ],
-                                                }),
-                                                member: "unwrap".into(),
-                                            }),
-                                            generic_parameters: None,
-                                            parameters: vec![],
-                                        }),
-        
-                                        rhs,
-                                    })
-                                }
-                            }
-                        ],
-                    }))
-                }
-
-                _ => Ok(sway::Expression::from(sway::BinaryExpression {
-                    operator: operator.into(),
-                    lhs: expression,
-                    rhs,
-                })),
-            }
-        }
+        self.create_assignment_expression(translated_definition, operator, &expression, variable, &rhs, &rhs_type_name)
     }
 
     #[inline]
@@ -6457,21 +6748,145 @@ impl Project {
     #[inline]
     fn translate_new_expression(
         &mut self,
-        _translated_definition: &mut TranslatedDefinition,
-        _scope: &mut TranslationScope,
+        translated_definition: &mut TranslatedDefinition,
+        scope: &mut TranslationScope,
         expression: &solidity::Expression,
     ) -> Result<sway::Expression, Error> {
-        todo!("translate new expression: {} - {expression:#?}", expression.to_string())
+        let solidity::Expression::FunctionCall(_, expr, args) = expression else { todo!("translate new expression: {expression:#?}") };
+        let args = args.iter().map(|e| self.translate_expression(translated_definition, scope, e)).collect::<Result<Vec<_>, _>>()?;
+        match expr.as_ref() {
+            solidity::Expression::Variable(solidity::Identifier {name, ..}) =>  {
+                if self.find_definition_with_abi(name).is_some() {
+                    panic!("Attempting to create a new contract '{name}' that is not supported")
+                }
+            },
+            solidity::Expression::Type(_, type_name) => match &type_name {
+                solidity::Type::String => {
+                    // {
+                    //     let mut v = Bytes::with_capacity(length);
+                    //     let mut i = 0;
+                    //     while i < length {
+                    //         v.push(0);
+                    //         i += 1;
+                    //     }
+                    //    String::from(v)
+                    // }
+
+                    if args.len() != 1 {
+                        panic!("Invalid new array expression: expected 1 argument, found {}", args.len());
+                    }
+
+                    let length = &args[0];
+
+                    return Ok(sway::Expression::from(sway::Block {
+                        statements: vec![
+                            // let mut v = Vec::with_capacity(length);
+                            sway::Statement::from(sway::Let {
+                                pattern: sway::LetPattern::Identifier(sway::LetIdentifier {
+                                    is_mutable: true,
+                                    name: "v".into(),
+                                }),
+                                type_name: None,
+                                value: sway::Expression::from(sway::FunctionCall {
+                                    function: sway::Expression::Identifier("Bytes::with_capacity".into()),
+                                    generic_parameters: None,
+                                    parameters: vec![
+                                        length.clone(),
+                                    ],
+                                }),
+                            }),
+
+                            // let mut i = 0;
+                            sway::Statement::from(sway::Let {
+                                pattern: sway::LetPattern::Identifier(sway::LetIdentifier {
+                                    is_mutable: true,
+                                    name: "i".into(),
+                                }),
+                                type_name: None,
+                                value: sway::Expression::from(sway::Literal::DecInt(0)),
+                            }),
+
+                            // while i < length {
+                            //     v.push(0);
+                            //     i += 1;
+                            // }
+                            sway::Statement::from(sway::Expression::from(sway::While {
+                                // i < length
+                                condition: sway::Expression::from(sway::BinaryExpression {
+                                    operator: "<".into(),
+                                    lhs: sway::Expression::Identifier("i".into()),
+                                    rhs: length.clone(),
+                                }),
+
+                                body: sway::Block {
+                                    statements: vec![
+                                        // v.push(0);
+                                        sway::Statement::from(sway::Expression::from(sway::FunctionCall {
+                                            function: sway::Expression::from(sway::MemberAccess {
+                                                expression: sway::Expression::Identifier("v".into()),
+                                                member: "push".into(),
+                                            }),
+                                            generic_parameters: None,
+                                            parameters: vec![
+                                                sway::Expression::from(sway::Literal::DecInt(0)),
+                                            ],
+                                        })),
+
+                                        // i += 1;
+                                        sway::Statement::from(sway::Expression::from(sway::BinaryExpression {
+                                            operator: "+=".into(),
+                                            lhs: sway::Expression::Identifier("i".into()),
+                                            rhs: sway::Expression::from(sway::Literal::DecInt(1)),
+                                        })),
+                                    ],
+                                    final_expr: None,
+                                }
+                            }))
+                        ],
+
+                        // String::from(v)
+                        final_expr: Some(sway::Expression::from(sway::FunctionCall {
+                            function: sway::Expression::Identifier("String::from".into()),
+                            generic_parameters: None,
+                            parameters: vec![
+                                sway::Expression::Identifier("v".into()),
+                            ],
+                        })),
+                    }));
+                }, 
+                _ => todo!("translate new expression: {expression:#?} {}", type_name.to_string())
+            }
+            _ => todo!("translate new expression: {expression:#?}")
+        }
+
+        let name = match expr.as_ref() {
+            solidity::Expression::ArraySubscript(_, ex, _) => {
+                let solidity::Expression::Variable(solidity::Identifier { name, .. }) = ex.as_ref() else { todo!("translate new expression: {expression:#?}") };
+                name
+            },
+            solidity::Expression::Variable(solidity::Identifier { name, .. }) => name,
+            _ => todo!("translate new expression: {expression:#?}")
+        };
+        
+        Ok(sway::Expression::from(sway::FunctionCall {
+            function: sway::Expression::Identifier(name.clone()),
+            generic_parameters: None,
+            parameters: vec![],
+        }))        
     }
     
     #[inline]
     fn translate_delete_expression(
         &mut self,
-        _translated_definition: &mut TranslatedDefinition,
-        _scope: &mut TranslationScope,
+        translated_definition: &mut TranslatedDefinition,
+        scope: &mut TranslationScope,
         expression: &solidity::Expression,
     ) -> Result<sway::Expression, Error> {
-        todo!("translate delete expression: {} - {expression:#?}", expression.to_string())
+        let mut mut_scope = scope.clone();
+        let (variable, expr) = self.translate_variable_access_expression(translated_definition, scope, expression)?;
+        
+        let value = self.create_value_expression(translated_definition, &mut mut_scope, &variable.type_name, None);
+        self.create_assignment_expression(translated_definition, "=", &expr, variable, &value, &variable.type_name.clone())
     }
 
     // --------------------------------------------------------------------------------

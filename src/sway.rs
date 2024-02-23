@@ -402,7 +402,7 @@ impl TypeName {
                         return_type = inner_return_type;
                     }
     
-                    let parameter_names: Vec<String> = ('a'..'z').enumerate()
+                    let parameter_names: Vec<String> = ('a'..='z').enumerate()
                         .take_while(|(i, _)| *i < parameters.len())
                         .map(|(_, c)| c.into())
                         .collect();
@@ -436,7 +436,7 @@ impl TypeName {
                         return_type = inner_return_type;
                     }
     
-                    let parameter_names: Vec<String> = ('a'..'z').enumerate()
+                    let parameter_names: Vec<String> = ('a'..='z').enumerate()
                         .take_while(|(i, _)| *i < parameters.len())
                         .map(|(_, c)| c.into())
                         .collect();
@@ -1226,7 +1226,7 @@ impl Expression {
             generic_parameters: None,
             parameters: if let Some(msg) = msg {
                 vec![
-                    Expression::Literal(Literal::String(msg.replace("\\", "\\\\").replace("\"", "\\\""))),
+                    Expression::Literal(Literal::String(msg.replace('\\', "\\\\").replace('\"', "\\\""))),
                 ]
             } else {
                 vec![]
@@ -1472,8 +1472,11 @@ impl TabbedDisplay for Constructor {
             field.tabbed_fmt(depth + 1, f)?;
             writeln!(f)?;
         }
-
-        write!(f, "}}")
+        if self.fields.is_empty() {
+            write!(f, "}}")
+        } else {
+            "}".tabbed_fmt(depth, f)
+        }
     }
 }
 
@@ -1488,7 +1491,8 @@ pub struct ConstructorField {
 impl TabbedDisplay for ConstructorField {
     fn tabbed_fmt(&self, depth: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}: ", self.name)?;
-        self.value.tabbed_fmt(depth, f)
+        self.value.tabbed_fmt(depth, f)?;
+        write!(f, ",")
     }
 }
 
