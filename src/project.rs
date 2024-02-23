@@ -434,23 +434,23 @@ impl Project {
                         256 => "u256".into(),
                         bits => match bits {
                             0..=8 => {
-                                eprintln!("WARNING: unsupported unsigned integer type {bits}, using u8");
+                                eprintln!("WARNING: unsupported unsigned integer type `uint{bits}`, using `u8`...");
                                 "u8".into()
                             }
                             9..=16 => {
-                                eprintln!("WARNING: unsupported unsigned integer type {bits}, using u16");
+                                eprintln!("WARNING: unsupported unsigned integer type `uint{bits}`, using `u16`...");
                                 "u16".into()
                             }
                             17..=32 => {
-                                eprintln!("WARNING: unsupported unsigned integer type {bits}, using u32");
+                                eprintln!("WARNING: unsupported unsigned integer type `uint{bits}`, using `u32`...");
                                 "u32".into()
                             }
                             33..=64 => {
-                                eprintln!("WARNING: unsupported unsigned integer type {bits}, using u64");
+                                eprintln!("WARNING: unsupported unsigned integer type `uint{bits}`, using `u64`...");
                                 "u64".into()
                             }
                             65..=256 => {
-                                eprintln!("WARNING: unsupported unsigned integer type {bits}, using u256");
+                                eprintln!("WARNING: unsupported unsigned integer type `uint{bits}`, using `u256`...");
                                 "u256".into()
                             }
                             _ => panic!("Invalid uint type: {bits}"),
@@ -4714,23 +4714,23 @@ impl Project {
                                 ("u256", 8 | 16 | 32 | 64 | 256) => create_uint_try_from_unwrap_expression(256, *bits as usize, value_expression),
                                 _ => match bits {
                                     0..=8 => { 
-                                        eprintln!("WARNING: unsupported integer type {bits}, using u8");
+                                        eprintln!("WARNING: unsupported unsigned integer type `uint{bits}`, using `u8`...");
                                         create_uint_try_from_unwrap_expression(8, *bits as usize, value_expression)
                                     }
                                     9..=16 => { 
-                                        eprintln!("WARNING: unsupported integer type {bits}, using u16");
+                                        eprintln!("WARNING: unsupported unsigned integer type `uint{bits}`, using `u16`...");
                                         create_uint_try_from_unwrap_expression(16, *bits as usize, value_expression)
                                     }
                                     17..=32 => { 
-                                        eprintln!("WARNING: unsupported integer type {bits}, using u32");
+                                        eprintln!("WARNING: unsupported unsigned integer type `uint{bits}`, using `u32`...");
                                         create_uint_try_from_unwrap_expression(32, *bits as usize, value_expression)
                                     }
                                     33..=64 => { 
-                                        eprintln!("WARNING: unsupported integer type {bits}, using u64");
+                                        eprintln!("WARNING: unsupported unsigned integer type `uint{bits}`, using `u64`...");
                                         create_uint_try_from_unwrap_expression(64, *bits as usize, value_expression)
                                     }
                                     65..=256 => { 
-                                        eprintln!("WARNING: unsupported integer type {bits}, using u256");
+                                        eprintln!("WARNING: unsupported unsigned integer type `uint{bits}`, using `u256`...");
                                         create_uint_try_from_unwrap_expression(256, *bits as usize, value_expression)
                                     }
                                     _ => panic!("Invalid uint type: {expression:#?}"),
