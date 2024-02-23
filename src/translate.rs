@@ -1,4 +1,4 @@
-use crate::{sway, errors::Error};
+use crate::{errors::Error, sway};
 use solang_parser::pt as solidity;
 use std::{
     collections::HashMap,

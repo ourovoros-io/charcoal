@@ -2,13 +2,17 @@ use crate::{
     errors::Error,
     sway,
     translate::{
-        TranslatedDefinition, TranslatedEnum, TranslatedFunction, TranslatedModifier, TranslatedUsingDirective, TranslatedVariable, TranslationScope
+        TranslatedDefinition, TranslatedEnum, TranslatedFunction, TranslatedModifier,
+        TranslatedUsingDirective, TranslatedVariable, TranslationScope,
     },
 };
 use convert_case::{Case, Casing};
 use solang_parser::pt as solidity;
 use std::{
-    cell::RefCell, collections::HashMap, path::{Path, PathBuf}, rc::Rc
+    cell::RefCell,
+    collections::HashMap,
+    path::{Path, PathBuf},
+    rc::Rc,
 };
 
 #[derive(Default)]
