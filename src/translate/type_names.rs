@@ -73,7 +73,6 @@ pub fn translate_type_name(
                 sway::TypeName::StringSlice
             },
 
-            // TODO : Highly illegal
             solidity::Type::Int(_) =>  todo!("int types"),
 
             solidity::Type::Uint(bits) => sway::TypeName::Identifier {

@@ -574,7 +574,7 @@ pub fn translate_member_access_expression(
                 }
 
                 match ty {
-                    solidity::Type::Address => {
+                    solidity::Type::Address | solidity::Type::AddressPayable | solidity::Type::Payable => {
                         //
                         // TODO: handle address casting that isn't `this`
                         //
@@ -607,13 +607,21 @@ pub fn translate_member_access_expression(
                                 generic_parameters: None,
                                 parameters: vec![],
                             })),
-                                
+
+                            // TODO: address(x).code => ???
+                            "code" => {
+                                todo!("{expression}")
+                            }
+                            
+                            // TODO: address(x).codehash => ???
+                            "codehash" => {
+                                todo!("{expression}")
+                            }
+                            
                             member => todo!("translate address cast member `{member}`: {}", expression.to_string()),
                         }
                     }
-
-                    solidity::Type::AddressPayable => todo!("translate address payable cast member access: {}", expression.to_string()),
-                    solidity::Type::Payable => todo!("translate payable cast member access: {}", expression.to_string()),
+                    
                     solidity::Type::Bool => todo!("translate bool cast member access: {}", expression.to_string()),
                     solidity::Type::String => todo!("translate string cast member access: {}", expression.to_string()),
                     solidity::Type::Int(_) => todo!("translate int cast member access: {}", expression.to_string()),
@@ -660,6 +668,22 @@ pub fn translate_member_access_expression(
                         sway::TypeName::Undefined => panic!("Undefined type name"),
 
                         sway::TypeName::Identifier { name, .. } => match (name.as_str(), member.name.as_str()) {
+                            ("Identity", "name") => {
+                                todo!("translate type member access: {} - {expression:#?}", expression.to_string())
+                            }
+
+                            ("Identity", "creationCode") => {
+                                todo!("translate type member access: {} - {expression:#?}", expression.to_string())
+                            }
+
+                            ("Identity", "runtimeCode") => {
+                                todo!("translate type member access: {} - {expression:#?}", expression.to_string())
+                            }
+
+                            ("Identity", "interfaceId") => {
+                                todo!("translate type member access: {} - {expression:#?}", expression.to_string())
+                            }
+
                             ("u8" | "u16" | "u32" | "u64" | "u256", "min") => return Ok(sway::Expression::from(sway::FunctionCall {
                                 function: sway::Expression::Identifier(format!("{name}::min")),
                                 generic_parameters: None,
@@ -1575,7 +1599,12 @@ pub fn translate_function_call_expression(
                 }
 
                 "ripemd160" => {
-                    Ok(sway::Expression::create_unimplemented(Some("ripemd160 is not supported in sway".into())))
+                    // ripemd160() => /*unsupported: block.basefee; using:*/ 0
+                    
+                    Ok(sway::Expression::Commented(
+                        "unsupported: ripemd160(); using:".into(),
+                        Box::new(sway::Expression::from(sway::Literal::DecInt(0))),
+                    ))
                 }
 
                 "ecrecover" => {
@@ -2042,7 +2071,6 @@ pub fn translate_function_call_expression(
                                 generic_parameters: None,
                                 parameters,
                             }));
-                            
                         }
 
                         todo!("handle super member access function `{member:#?}`")
@@ -2132,36 +2160,6 @@ pub fn translate_function_call_expression(
                 
                 sway::TypeName::Identifier { name, .. } => match name.as_str() {
                     "Identity" => match member.name.as_str() {
-                        "balance" => {
-                            // address.balance => ???
-
-                            //
-                            // TODO: how should this be handled?
-                            //
-
-                            Ok(sway::Expression::create_todo(Some(expression.to_string())))
-                        }
-                        
-                        "code" => {
-                            // address.code => ???
-
-                            //
-                            // TODO: how should this be handled?
-                            //
-
-                            Ok(sway::Expression::create_todo(Some(expression.to_string())))
-                        }
-                        
-                        "codehash" => {
-                            // address.codehash => ???
-
-                            //
-                            // TODO: how should this be handled?
-                            //
-
-                            Ok(sway::Expression::create_todo(Some(expression.to_string())))
-                        }
-                        
                         "transfer" => {
                             // to.transfer(amount) => std::asset::transfer(to, asset_id, amount)
 
@@ -3277,8 +3275,14 @@ pub fn translate_new_expression(
     scope: &mut TranslationScope,
     expression: &solidity::Expression,
 ) -> Result<sway::Expression, Error> {
-    let solidity::Expression::FunctionCall(_, expr, args) = expression else { todo!("translate new expression: {expression:#?}") };
-    let args = args.iter().map(|e| translate_expression(project, translated_definition, scope, e)).collect::<Result<Vec<_>, _>>()?;
+    let solidity::Expression::FunctionCall(_, expr, args) = expression else {
+        todo!("translate new expression: {expression:#?}")
+    };
+
+    let args = args.iter()
+        .map(|e| translate_expression(project, translated_definition, scope, e))
+        .collect::<Result<Vec<_>, _>>()?;
+
     match expr.as_ref() {
         solidity::Expression::Variable(solidity::Identifier {name, ..}) => {
             if project.find_definition_with_abi(name).is_some() {
@@ -3295,7 +3299,7 @@ pub fn translate_new_expression(
                 //         v.push(0);
                 //         i += 1;
                 //     }
-                //    String::from(v)
+                //     String::from(v)
                 // }
 
                 if args.len() != 1 {
@@ -3379,7 +3383,7 @@ pub fn translate_new_expression(
                         ],
                     })),
                 }));
-            }, 
+            },
             _ => todo!("translate new expression: {expression:#?} {}", type_name.to_string())
         }
         _ => todo!("translate new expression: {expression:#?}")
@@ -3398,7 +3402,7 @@ pub fn translate_new_expression(
         function: sway::Expression::Identifier(name.clone()),
         generic_parameters: None,
         parameters: vec![],
-    }))        
+    }))
 }
 
 #[inline]

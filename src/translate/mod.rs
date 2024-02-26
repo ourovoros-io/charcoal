@@ -20,6 +20,19 @@ use std::{
     path::{Path, PathBuf},
 };
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct TranslatedUsingDirective {
+    pub library_name: String,
+    pub for_type: Option<sway::TypeName>,
+    pub functions: Vec<TranslatedFunction>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct TranslatedEnum {
+    pub type_definition: sway::TypeDefinition,
+    pub variants_impl: sway::Impl,
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct TranslatedVariable {
     pub old_name: String,
@@ -54,12 +67,6 @@ pub struct TranslatedModifier {
     pub post_body: Option<sway::Block>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct TranslatedEnum {
-    pub type_definition: sway::TypeDefinition,
-    pub variants_impl: sway::Impl,
-}
-
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct TranslationScope {
     pub parent: Option<Box<TranslationScope>>,
@@ -68,6 +75,7 @@ pub struct TranslationScope {
 }
 
 impl TranslationScope {
+    #[inline]
     pub fn generate_unique_variable_name(&self, name: &str) -> String {
         let mut result = name.to_string();
 
@@ -213,13 +221,6 @@ impl TranslationScope {
 
         None
     }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct TranslatedUsingDirective {
-    pub library_name: String,
-    pub for_type: Option<sway::TypeName>,
-    pub functions: Vec<TranslatedFunction>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -522,6 +523,7 @@ impl TranslatedDefinition {
     }
     
     /// Gets the abi for the translated definition. If it doesn't exist, it gets created.
+    #[inline]
     pub fn get_abi(&mut self) -> &mut sway::Abi {
         if self.abi.is_none() {
             self.abi = Some(sway::Abi {
@@ -535,6 +537,7 @@ impl TranslatedDefinition {
     }
 
     /// Gets the configurable block for the translated definition. If it doesn't exist, it gets created.
+    #[inline]
     pub fn get_configurable(&mut self) -> &mut sway::Configurable {
         if self.configurable.is_none() {
             self.configurable = Some(sway::Configurable {
@@ -546,6 +549,7 @@ impl TranslatedDefinition {
     }
 
     /// Gets the storage block for the translated definition. If it doesn't exist, it gets created.
+    #[inline]
     pub fn get_storage(&mut self) -> &mut sway::Storage {
         if self.storage.is_none() {
             self.storage = Some(sway::Storage {
@@ -556,6 +560,7 @@ impl TranslatedDefinition {
         self.storage.as_mut().unwrap()
     }
 
+    #[inline]
     pub fn find_contract_impl(&self) -> Option<&sway::Impl> {
         self.impls.iter().find(|i| {
             let sway::TypeName::Identifier { name: type_name, .. } = &i.type_name else { return false };
@@ -564,6 +569,7 @@ impl TranslatedDefinition {
         })
     }
 
+    #[inline]
     pub fn find_contract_impl_mut(&mut self) -> Option<&mut sway::Impl> {
         self.impls.iter_mut().find(|i| {
             let sway::TypeName::Identifier { name: type_name, .. } = &i.type_name else { return false };
@@ -573,6 +579,7 @@ impl TranslatedDefinition {
     }
 
     /// Gets the translated definition's implementation for `Contract`. If it doesn't exist, it gets created.
+    #[inline]
     pub fn get_contract_impl(&mut self) -> &mut sway::Impl {
         if self.find_contract_impl().is_none() {
             self.impls.push(sway::Impl {
@@ -615,6 +622,7 @@ impl TranslatedDefinition {
         type_name.clone()
     }
 
+    #[inline]
     pub fn ensure_use_declared(&mut self, name: &str) {
         let mut tree: Option<sway::UseTree> = None;
         
