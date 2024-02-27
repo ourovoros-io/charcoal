@@ -216,7 +216,20 @@ pub fn translate_contract_definition(
 
         // Add the toplevel function to the list of toplevel functions for the toplevel scope
         let function = translate_function_declaration(project, &mut translated_definition, function_definition)?;
-        translated_definition.toplevel_scope.functions.push(function);
+        
+        let mut function_exists = false;
+
+        for f in translated_definition.toplevel_scope.functions.iter_mut() {
+            if f.old_name == function.old_name && f.parameters == function.parameters && f.return_type == function.return_type {
+                f.new_name = function.new_name.clone();
+                function_exists = true;
+                break;
+            }
+        }
+
+        if !function_exists {
+            translated_definition.toplevel_scope.functions.push(function);
+        }
     }
 
     // Translate each modifier
