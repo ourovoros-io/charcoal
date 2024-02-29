@@ -15,9 +15,11 @@ pub use self::{assembly::*, contracts::*, enums::*, expressions::*, functions::*
 use crate::{errors::Error, sway};
 use solang_parser::pt as solidity;
 use std::{
+    cell::RefCell,
     collections::HashMap,
     fmt::Display,
     path::{Path, PathBuf},
+    rc::Rc
 };
 
 #[derive(Clone, Debug, PartialEq)]
@@ -69,9 +71,9 @@ pub struct TranslatedModifier {
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct TranslationScope {
-    pub parent: Option<Box<TranslationScope>>,
-    pub variables: Vec<TranslatedVariable>,
-    pub functions: Vec<TranslatedFunction>,
+    pub parent: Option<Rc<RefCell<TranslationScope>>>,
+    pub variables: Vec<Rc<RefCell<TranslatedVariable>>>,
+    pub functions: Vec<Rc<RefCell<TranslatedFunction>>>,
 }
 
 impl TranslationScope {
@@ -87,28 +89,13 @@ impl TranslationScope {
     }
 
     /// Attempts to get a reference to a translated variable using its old name
-    pub fn get_variable_from_old_name(&self, old_name: &str) -> Result<&TranslatedVariable, Error> {
-        if let Some(variable) = self.variables.iter().rev().find(|v| v.old_name == old_name) {
-            return Ok(variable);
+    pub fn get_variable_from_old_name(&self, old_name: &str) -> Result<Rc<RefCell<TranslatedVariable>>, Error> {
+        if let Some(variable) = self.variables.iter().rev().find(|v| v.borrow().old_name == old_name) {
+            return Ok(variable.clone());
         }
 
         if let Some(parent) = self.parent.as_ref() {
-            if let Ok(variable) = parent.get_variable_from_old_name(old_name) {
-                return Ok(variable);
-            }
-        }
-
-        Err(Error::VariableNotInScope(old_name.into()))
-    }
-
-    /// Attempts to get a mutable reference to a translated variable using its old name
-    pub fn get_variable_from_old_name_mut(&mut self, old_name: &str) -> Result<&mut TranslatedVariable, Error> {
-        if let Some(variable) = self.variables.iter_mut().rev().find(|v| v.old_name == old_name) {
-            return Ok(variable);
-        }
-
-        if let Some(parent) = self.parent.as_mut() {
-            if let Ok(variable) = parent.get_variable_from_old_name_mut(old_name) {
+            if let Ok(variable) = parent.borrow().get_variable_from_old_name(old_name) {
                 return Ok(variable);
             }
         }
@@ -117,28 +104,13 @@ impl TranslationScope {
     }
 
     /// Attempts to get a reference to a translated variable using its new name
-    pub fn get_variable_from_new_name(&self, new_name: &str) -> Result<&TranslatedVariable, Error> {
-        if let Some(variable) = self.variables.iter().rev().find(|v| v.new_name == new_name) {
-            return Ok(variable);
+    pub fn get_variable_from_new_name(&self, new_name: &str) -> Result<Rc<RefCell<TranslatedVariable>>, Error> {
+        if let Some(variable) = self.variables.iter().rev().find(|v| v.borrow().new_name == new_name) {
+            return Ok(variable.clone());
         }
 
         if let Some(parent) = self.parent.as_ref() {
-            if let Ok(variable) = parent.get_variable_from_new_name(new_name) {
-                return Ok(variable);
-            }
-        }
-
-        Err(Error::VariableNotInScope(new_name.into()))
-    }
-
-    /// Attempts to get a mutable reference to a translated variable using its new name
-    pub fn get_variable_from_new_name_mut(&mut self, new_name: &str) -> Result<&mut TranslatedVariable, Error> {
-        if let Some(variable) = self.variables.iter_mut().rev().find(|v| v.new_name == new_name) {
-            return Ok(variable);
-        }
-
-        if let Some(parent) = self.parent.as_mut() {
-            if let Ok(variable) = parent.get_variable_from_new_name_mut(new_name) {
+            if let Ok(variable) = parent.borrow().get_variable_from_new_name(new_name) {
                 return Ok(variable);
             }
         }
@@ -147,13 +119,13 @@ impl TranslationScope {
     }
 
     /// Attempts to find a translated variable using a custom function
-    pub fn find_variable<F: Copy + FnMut(&&TranslatedVariable) -> bool>(&self, f: F) -> Option<&TranslatedVariable> {
+    pub fn find_variable<F: Copy + FnMut(&&Rc<RefCell<TranslatedVariable>>) -> bool>(&self, f: F) -> Option<Rc<RefCell<TranslatedVariable>>> {
         if let Some(variable) = self.variables.iter().find(f) {
-            return Some(variable);
+            return Some(variable.clone());
         }
 
         if let Some(parent) = self.parent.as_ref() {
-            if let Some(variable) = parent.find_variable(f) {
+            if let Some(variable) = parent.borrow().find_variable(f) {
                 return Some(variable);
             }
         }
@@ -167,8 +139,10 @@ impl TranslationScope {
         old_name: &str,
         parameters: &[sway::Expression],
         parameter_types: &[sway::TypeName],
-    ) -> Option<&TranslatedFunction> {
+    ) -> Option<Rc<RefCell<TranslatedFunction>>> {
         self.find_function(|f| {
+            let f = f.borrow();
+
             // Ensure the function's old name matches the function call we're translating
             if f.old_name != old_name {
                 return false;
@@ -182,7 +156,12 @@ impl TranslationScope {
             for (i, (parameter, value_type_name)) in parameters.iter().zip(parameter_types.iter()).enumerate() {
                 let Some(parameter_type_name) = f.parameters.entries[i].type_name.as_ref() else { continue };
 
-                // Don't check literal integer value types
+                // HACK: Don't check uint value types
+                if value_type_name.is_uint() && parameter_type_name.is_uint() {
+                    continue;
+                }
+
+                // HACK: Don't check literal integer value types
                 if let sway::Expression::Literal(sway::Literal::DecInt(_) | sway::Literal::HexInt(_)) = parameter {
                     if let sway::TypeName::Identifier { name, generic_parameters: None } = parameter_type_name {
                         if let "u8" | "u16" | "u32" | "u64" | "u256" = name.as_str() {
@@ -208,13 +187,13 @@ impl TranslationScope {
     }
 
     /// Atempts to find a translated function using a custom function
-    pub fn find_function<F: Copy + FnMut(&&TranslatedFunction) -> bool>(&self, f: F) -> Option<&TranslatedFunction> {
+    pub fn find_function<F: Copy + FnMut(&&Rc<RefCell<TranslatedFunction>>) -> bool>(&self, f: F) -> Option<Rc<RefCell<TranslatedFunction>>> {
         if let Some(function) = self.functions.iter().find(f) {
-            return Some(function);
+            return Some(function.clone());
         }
 
         if let Some(parent) = self.parent.as_ref() {
-            if let Some(function) = parent.find_function(f) {
+            if let Some(function) = parent.borrow().find_function(f) {
                 return Some(function);
             }
         }
@@ -226,8 +205,10 @@ impl TranslationScope {
 #[derive(Clone, Debug, Default)]
 pub struct TranslatedDefinition {
     pub path: PathBuf,
-    pub toplevel_scope: TranslationScope,
+    pub toplevel_scope: Rc<RefCell<TranslationScope>>,
     pub kind: Option<solidity::ContractTy>,
+    pub dependencies: Vec<String>,
+
     pub uses: Vec<sway::Use>,
     pub name: String,
     pub inherits: Vec<String>,
@@ -475,8 +456,10 @@ impl TranslatedDefinition {
     pub fn new<P: AsRef<Path>, S: ToString>(path: P, kind: solidity::ContractTy, name: S, inherits: Vec<S>) -> Self {
         Self {
             path: path.as_ref().into(),
-            toplevel_scope: TranslationScope::default(),
+            toplevel_scope: Rc::new(RefCell::new(TranslationScope::default())),
             kind: Some(kind),
+            dependencies: vec![],
+
             uses: vec![],
             name: name.to_string(),
             inherits: inherits.iter().map(|i| i.to_string()).collect(),
@@ -494,11 +477,54 @@ impl TranslatedDefinition {
             modifiers: vec![],
             functions: vec![],
             impls: vec![],
+
             function_name_counts: HashMap::new(),
             function_names: HashMap::new(),
             function_call_counts: HashMap::new(),
+
             storage_fields_name_counts: HashMap::new(),
             storage_fields_names: HashMap::new(),
+        }
+    }
+
+    #[inline]
+    pub fn ensure_dependency_declared(&mut self, dependency: &str) {
+        let dependency = dependency.to_string();
+
+        if !self.dependencies.contains(&dependency) {
+            self.dependencies.push(dependency);
+            self.dependencies.sort();
+        }
+    }
+
+    #[inline]
+    pub fn ensure_use_declared(&mut self, name: &str) {
+        let mut tree: Option<sway::UseTree> = None;
+        
+        for part in name.split("::").collect::<Vec<_>>().into_iter().rev() {
+            match part {
+                "*" => tree = Some(sway::UseTree::Glob),
+                
+                _ => tree = Some(if let Some(use_tree) = tree.clone() {
+                    sway::UseTree::Path {
+                        prefix: part.into(),
+                        suffix: Box::new(use_tree),
+                    }
+                } else {
+                    sway::UseTree::Name {
+                        name: part.into(),
+                    }
+                }),
+            }
+        }
+
+        let tree = tree.unwrap();
+
+        if !self.uses.iter().any(|u| u.tree == tree) {
+            self.uses.push(sway::Use {
+                is_public: false,
+                tree,
+            });
         }
     }
 
@@ -511,12 +537,12 @@ impl TranslatedDefinition {
         for item in translated_enum.variants_impl.items.iter() {
             let sway::ImplItem::Constant(c) = item else { continue };
             
-            self.toplevel_scope.variables.push(TranslatedVariable {
+            self.toplevel_scope.borrow_mut().variables.push(Rc::new(RefCell::new(TranslatedVariable {
                 old_name: String::new(), // TODO: is this ok?
                 new_name: format!("{}::{}", name, c.name),
                 type_name: translated_enum.type_definition.name.clone(),
                 ..Default::default()
-            });
+            })));
         }
         
         self.enums.push(translated_enum.clone());
@@ -622,40 +648,9 @@ impl TranslatedDefinition {
         type_name.clone()
     }
 
-    #[inline]
-    pub fn ensure_use_declared(&mut self, name: &str) {
-        let mut tree: Option<sway::UseTree> = None;
-        
-        for part in name.split("::").collect::<Vec<_>>().into_iter().rev() {
-            match part {
-                "*" => tree = Some(sway::UseTree::Glob),
-                
-                _ => tree = Some(if let Some(use_tree) = tree.clone() {
-                    sway::UseTree::Path {
-                        prefix: part.into(),
-                        suffix: Box::new(use_tree),
-                    }
-                } else {
-                    sway::UseTree::Name {
-                        name: part.into(),
-                    }
-                }),
-            }
-        }
-
-        let tree = tree.unwrap();
-
-        if !self.uses.iter().any(|u| u.tree == tree) {
-            self.uses.push(sway::Use {
-                is_public: false,
-                tree,
-            });
-        }
-    }
-
     pub fn get_expression_type(
         &self,
-        scope: &mut TranslationScope,
+        scope: Rc<RefCell<TranslationScope>>,
         expression: &sway::Expression,
     ) -> Result<sway::TypeName, Error> {
         match expression {
@@ -676,7 +671,8 @@ impl TranslatedDefinition {
             }
 
             sway::Expression::Identifier(name) => {
-                let variable = scope.get_variable_from_new_name(name)?;
+                let variable = scope.borrow().get_variable_from_new_name(name)?;
+                let variable = variable.borrow();
 
                 // Variable should not be a storage field
                 if variable.is_storage {
@@ -707,6 +703,11 @@ impl TranslatedDefinition {
                             generic_parameters: None,
                         })
                     }
+
+                    "b256::from" => Ok(sway::TypeName::Identifier {
+                        name: "b256".into(),
+                        generic_parameters: None,
+                    }),
 
                     "Bytes::new" | "Bytes::from" => Ok(sway::TypeName::Identifier {
                         name: "Bytes".into(),
@@ -765,11 +766,13 @@ impl TranslatedDefinition {
 
                     new_name => {
                         let parameter_types = function_call.parameters.iter()
-                            .map(|p| self.get_expression_type(scope, p))
+                            .map(|p| self.get_expression_type(scope.clone(), p))
                             .collect::<Result<Vec<_>, _>>()?;
                         
                         // Ensure the function exists in scope
-                        let Some(function) = scope.find_function(|f| {
+                        let Some(function) = scope.borrow().find_function(|f| {
+                            let f = f.borrow();
+
                             // Ensure the function's new name matches the function call we're translating
                             if f.new_name != new_name {
                                 return false;
@@ -777,6 +780,7 @@ impl TranslatedDefinition {
                             
                             // Ensure the supplied function call args match the function's parameters
                             if function_call.parameters.len() != f.parameters.entries.len() {
+                                println!("{} != {}", function_call.parameters.len(), f.parameters.entries.len());
                                 return false;
                             }
 
@@ -800,6 +804,7 @@ impl TranslatedDefinition {
                                 }
 
                                 if value_type_name != parameter_type_name {
+                                    println!("{value_type_name} != {parameter_type_name}");
                                     return false;
                                 }
                             }
@@ -809,6 +814,8 @@ impl TranslatedDefinition {
                             panic!("Failed to find function `{new_name}` in scope");
                         };
 
+                        let function = function.borrow();
+
                         if let Some(return_type) = function.return_type.as_ref() {
                             Ok(return_type.clone())
                         } else {
@@ -817,7 +824,7 @@ impl TranslatedDefinition {
                     }
                 }
 
-                sway::Expression::MemberAccess(member_access) => match self.get_expression_type(scope, &member_access.expression)? {
+                sway::Expression::MemberAccess(member_access) => match self.get_expression_type(scope.clone(), &member_access.expression)? {
                     sway::TypeName::Undefined => panic!("Undefined type name"),
 
                     sway::TypeName::Identifier { name, generic_parameters } => match (name.as_str(), generic_parameters.as_ref()) {
@@ -1000,6 +1007,50 @@ impl TranslatedDefinition {
                             }),
                             "as_raw_slice" => Ok(sway::TypeName::Identifier {
                                 name: "RawSlice".into(),
+                                generic_parameters: None,
+                            }),
+
+                            _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
+                        }
+
+                        ("Identity", None) => match member_access.member.as_str() {
+                            "as_address" => Ok(sway::TypeName::Identifier {
+                                name: "Option".into(),
+                                generic_parameters: Some(sway::GenericParameterList {
+                                    entries: vec![
+                                        sway::GenericParameter {
+                                            type_name: sway::TypeName::Identifier {
+                                                name: "Address".into(),
+                                                generic_parameters: None,
+                                            },
+                                            implements: None,
+                                        },
+                                    ],
+                                }),
+                            }),
+
+                            "as_contract_id" => Ok(sway::TypeName::Identifier {
+                                name: "Option".into(),
+                                generic_parameters: Some(sway::GenericParameterList {
+                                    entries: vec![
+                                        sway::GenericParameter {
+                                            type_name: sway::TypeName::Identifier {
+                                                name: "ContractId".into(),
+                                                generic_parameters: None,
+                                            },
+                                            implements: None,
+                                        },
+                                    ],
+                                }),
+                            }),
+
+                            "is_address" => Ok(sway::TypeName::Identifier {
+                                name: "bool".into(),
+                                generic_parameters: None,
+                            }),
+
+                            "is_contract_id" => Ok(sway::TypeName::Identifier {
+                                name: "bool".into(),
                                 generic_parameters: None,
                             }),
 
@@ -1327,6 +1378,7 @@ impl TranslatedDefinition {
                                     }
                                 }
                             }
+
                             todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression))
                         }
 
@@ -1353,10 +1405,10 @@ impl TranslatedDefinition {
                     return Ok(sway::TypeName::Tuple { type_names: vec![] });
                 };
 
-                let mut inner_scope = TranslationScope {
-                    parent: Some(Box::new(scope.clone())),
+                let inner_scope = Rc::new(RefCell::new(TranslationScope {
+                    parent: Some(scope.clone()),
                     ..Default::default()
-                };
+                }));
 
                 for statement in block.statements.iter() {
                     let sway::Statement::Let(sway::Let {
@@ -1367,16 +1419,16 @@ impl TranslatedDefinition {
 
                     let type_name = match type_name.as_ref() {
                         Some(type_name) => type_name.clone(),
-                        None => self.get_expression_type(&mut inner_scope, value)?,
+                        None => self.get_expression_type(inner_scope.clone(), value)?,
                     };
 
-                    let mut add_variable = |id: &sway::LetIdentifier, type_name: &sway::TypeName| {
-                        inner_scope.variables.push(TranslatedVariable {
+                    let add_variable = |id: &sway::LetIdentifier, type_name: &sway::TypeName| {
+                        inner_scope.borrow_mut().variables.push(Rc::new(RefCell::new(TranslatedVariable {
                             old_name: String::new(),
                             new_name: id.name.clone(),
                             type_name: type_name.clone(),
                             ..Default::default()
-                        })
+                        })));
                     };
 
                     match pattern {
@@ -1393,12 +1445,12 @@ impl TranslatedDefinition {
                     }
                 }
 
-                self.get_expression_type(&mut inner_scope, expression)
+                self.get_expression_type(inner_scope, expression)
             }
 
             sway::Expression::Return(value) => {
                 if let Some(value) = value.as_ref() {
-                    self.get_expression_type(scope, value)
+                    self.get_expression_type(scope.clone(), value)
                 } else {
                     Ok(sway::TypeName::Tuple { type_names: vec![] })
                 }
@@ -1407,7 +1459,7 @@ impl TranslatedDefinition {
             sway::Expression::Array(array) => Ok(sway::TypeName::Array {
                 type_name: Box::new(
                     if let Some(expression) = array.elements.first() {
-                        self.get_expression_type(scope, expression)?
+                        self.get_expression_type(scope.clone(), expression)?
                     } else {
                         sway::TypeName::Tuple { type_names: vec![] }
                     }
@@ -1416,7 +1468,7 @@ impl TranslatedDefinition {
             }),
 
             sway::Expression::ArrayAccess(array_access) => {
-                let element_type_name = self.get_expression_type(scope, &array_access.expression)?;
+                let element_type_name = self.get_expression_type(scope.clone(), &array_access.expression)?;
                 
                 let type_name = match &element_type_name {
                     sway::TypeName::Identifier {
@@ -1437,9 +1489,11 @@ impl TranslatedDefinition {
             sway::Expression::MemberAccess(member_access) => match &member_access.expression {
                 sway::Expression::Identifier(name) => match name.as_str() {
                     "storage" => {
-                        let Some(variable) = scope.find_variable(|v| v.is_storage && v.new_name == member_access.member) else {
+                        let Some(variable) = scope.borrow().find_variable(|v| v.borrow().is_storage && v.borrow().new_name == member_access.member) else {
                             panic!("Failed to find storage variable in scope: `{}`", member_access.member);
                         };
+
+                        let variable = variable.borrow();
 
                         Ok(sway::TypeName::Identifier {
                             name: "StorageKey".into(),
@@ -1454,19 +1508,83 @@ impl TranslatedDefinition {
                         })
                     }
 
-                    _ => todo!("get type of member access expression: {expression:#?}"),
+                    _ => {
+                        let container_type = self.get_expression_type(scope.clone(), &member_access.expression)?;
+
+                        match &container_type {
+                            sway::TypeName::Identifier { name, generic_parameters } => match (name.as_str(), generic_parameters.as_ref()) {
+                                ("I8", None) => match member_access.member.as_str() {
+                                    "underlying" => Ok(sway::TypeName::Identifier {
+                                        name: "u8".into(),
+                                        generic_parameters: None,
+                                    }),
+
+                                    _ => todo!("get type of {container_type} member access expression: {expression:#?}"),
+                                }
+
+                                ("I16", None) => match member_access.member.as_str() {
+                                    "underlying" => Ok(sway::TypeName::Identifier {
+                                        name: "u16".into(),
+                                        generic_parameters: None,
+                                    }),
+
+                                    _ => todo!("get type of {container_type} member access expression: {expression:#?}"),
+                                }
+
+                                ("I32", None) => match member_access.member.as_str() {
+                                    "underlying" => Ok(sway::TypeName::Identifier {
+                                        name: "u32".into(),
+                                        generic_parameters: None,
+                                    }),
+
+                                    _ => todo!("get type of {container_type} member access expression: {expression:#?}"),
+                                }
+
+                                ("I64", None) => match member_access.member.as_str() {
+                                    "underlying" => Ok(sway::TypeName::Identifier {
+                                        name: "u64".into(),
+                                        generic_parameters: None,
+                                    }),
+
+                                    _ => todo!("get type of {container_type} member access expression: {expression:#?}"),
+                                }
+
+                                ("I128", None) => match member_access.member.as_str() {
+                                    "underlying" => Ok(sway::TypeName::Identifier {
+                                        name: "u128".into(),
+                                        generic_parameters: None,
+                                    }),
+
+                                    _ => todo!("get type of {container_type} member access expression: {expression:#?}"),
+                                }
+
+                                ("I256", None) => match member_access.member.as_str() {
+                                    "underlying" => Ok(sway::TypeName::Identifier {
+                                        name: "u256".into(),
+                                        generic_parameters: None,
+                                    }),
+
+                                    _ => todo!("get type of {container_type} member access expression: {expression:#?}"),
+                                }
+
+                                _ => todo!("get type of {container_type} member access expression: {expression:#?}"),
+                            }
+                            
+                            _ => todo!("get type of {container_type} member access expression: {expression:#?}"),
+                        }
+                    }
                 }
 
                 _ => todo!("get type of member access expression: {expression:#?}"),
             }
             
             sway::Expression::Tuple(tuple) => Ok(sway::TypeName::Tuple {
-                type_names: tuple.iter().map(|x| self.get_expression_type(scope, x)).collect::<Result<Vec<_>, _>>()?,
+                type_names: tuple.iter().map(|x| self.get_expression_type(scope.clone(), x)).collect::<Result<Vec<_>, _>>()?,
             }),
             
             sway::Expression::If(if_expr) => {
                 if let Some(expression) = if_expr.then_body.final_expr.as_ref() {
-                    self.get_expression_type(scope, expression)
+                    self.get_expression_type(scope.clone(), expression)
                 } else {
                     Ok(sway::TypeName::Tuple { type_names: vec![] })
                 }
@@ -1474,22 +1592,22 @@ impl TranslatedDefinition {
 
             sway::Expression::Match(match_expr) => {
                 if let Some(branch) = match_expr.branches.first() {
-                    self.get_expression_type(scope, &branch.value)
+                    self.get_expression_type(scope.clone(), &branch.value)
                 } else {
                     Ok(sway::TypeName::Tuple { type_names: vec![] })
                 }
             }
             
             sway::Expression::While(_) => Ok(sway::TypeName::Tuple { type_names: vec![] }),
-            sway::Expression::UnaryExpression(unary_expression) => self.get_expression_type(scope, &unary_expression.expression),
-            sway::Expression::BinaryExpression(binary_expression) => self.get_expression_type(scope, &binary_expression.lhs),
+            sway::Expression::UnaryExpression(unary_expression) => self.get_expression_type(scope.clone(), &unary_expression.expression),
+            sway::Expression::BinaryExpression(binary_expression) => self.get_expression_type(scope.clone(), &binary_expression.lhs),
             sway::Expression::Constructor(constructor) => Ok(constructor.type_name.clone()),
             sway::Expression::Continue => Ok(sway::TypeName::Tuple { type_names: vec![] }),
             sway::Expression::Break => Ok(sway::TypeName::Tuple { type_names: vec![] }),
             
             sway::Expression::AsmBlock(_) => todo!("get type of asm block: {expression:#?}"),
             
-            sway::Expression::Commented(_, x) => self.get_expression_type(scope, x),
+            sway::Expression::Commented(_, x) => self.get_expression_type(scope.clone(), x),
         }
     }
 }

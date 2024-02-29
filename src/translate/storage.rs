@@ -5,6 +5,7 @@ use super::{
 use crate::{project::Project, sway, Error};
 use convert_case::Case;
 use solang_parser::pt as solidity;
+use std::{cell::RefCell, rc::Rc};
 
 #[inline]
 pub fn translate_storage_name(
@@ -72,13 +73,13 @@ pub fn translate_state_variable(
     // Handle constant variable definitions
     if is_constant {
         let value = if let Some(x) = variable_definition.initializer.as_ref() {
-            let mut scope = TranslationScope {
-                parent: Some(Box::new(translated_definition.toplevel_scope.clone())),
+            let scope = Rc::new(RefCell::new(TranslationScope {
+                parent: Some(translated_definition.toplevel_scope.clone()),
                 ..Default::default()
-            };
+            }));
 
-            let x = translate_expression(project, translated_definition, &mut scope, x)?;
-            Some(create_value_expression(translated_definition, &mut scope, &variable_type_name, Some(&x)))
+            let x = translate_expression(project, translated_definition, scope.clone(), x)?;
+            Some(create_value_expression(translated_definition, scope.clone(), &variable_type_name, Some(&x)))
         } else {
             None
         };
@@ -97,20 +98,20 @@ pub fn translate_state_variable(
         //
 
         let value = if let Some(x) = variable_definition.initializer.as_ref() {
-            let mut scope = TranslationScope {
-                parent: Some(Box::new(translated_definition.toplevel_scope.clone())),
+            let scope = Rc::new(RefCell::new(TranslationScope {
+                parent: Some(translated_definition.toplevel_scope.clone()),
                 ..Default::default()
-            };
+            }));
 
-            let x = translate_expression(project, translated_definition, &mut scope, x)?;
-            create_value_expression(translated_definition, &mut scope, &variable_type_name, Some(&x))
+            let x = translate_expression(project, translated_definition, scope.clone(), x)?;
+            create_value_expression(translated_definition, scope.clone(), &variable_type_name, Some(&x))
         } else {
-            let mut scope = TranslationScope {
-                parent: Some(Box::new(translated_definition.toplevel_scope.clone())),
+            let scope = Rc::new(RefCell::new(TranslationScope {
+                parent: Some(translated_definition.toplevel_scope.clone()),
                 ..Default::default()
-            };
+            }));
 
-            create_value_expression(translated_definition, &mut scope, &variable_type_name, None)
+            create_value_expression(translated_definition, scope.clone(), &variable_type_name, None)
         };
 
         translated_definition.get_configurable().fields.push(sway::ConfigurableField {
@@ -122,20 +123,20 @@ pub fn translate_state_variable(
     // Handle regular state variable definitions
     else {
         let value = if let Some(x) = variable_definition.initializer.as_ref() {
-            let mut scope = TranslationScope {
-                parent: Some(Box::new(translated_definition.toplevel_scope.clone())),
+            let scope = Rc::new(RefCell::new(TranslationScope {
+                parent: Some(translated_definition.toplevel_scope.clone()),
                 ..Default::default()
-            };
+            }));
 
-            let x = translate_expression(project, translated_definition, &mut scope, x)?;
-            create_value_expression(translated_definition, &mut scope, &variable_type_name, Some(&x))
+            let x = translate_expression(project, translated_definition, scope.clone(), x)?;
+            create_value_expression(translated_definition, scope.clone(), &variable_type_name, Some(&x))
         } else {
-            let mut scope = TranslationScope {
-                parent: Some(Box::new(translated_definition.toplevel_scope.clone())),
+            let scope = Rc::new(RefCell::new(TranslationScope {
+                parent: Some(translated_definition.toplevel_scope.clone()),
                 ..Default::default()
-            };
+            }));
 
-            create_value_expression(translated_definition, &mut scope, &variable_type_name, None)
+            create_value_expression(translated_definition, scope.clone(), &variable_type_name, None)
         };
 
         translated_definition.get_storage().fields.push(sway::StorageField {
@@ -146,7 +147,7 @@ pub fn translate_state_variable(
     }
     
     // Add the storage variable for function scopes
-    translated_definition.toplevel_scope.variables.push(TranslatedVariable {
+    translated_definition.toplevel_scope.borrow_mut().variables.push(Rc::new(RefCell::new(TranslatedVariable {
         old_name,
         new_name: new_name.clone(),
         type_name: variable_type_name.clone(),
@@ -155,7 +156,7 @@ pub fn translate_state_variable(
         is_configurable,
         is_constant,
         ..Default::default()
-    });
+    })));
 
     // Generate a getter function if the storage field is public
     if !is_public {

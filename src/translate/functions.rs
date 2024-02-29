@@ -7,6 +7,7 @@ use super::{
 use crate::{project::Project, sway, Error};
 use convert_case::Case;
 use solang_parser::pt as solidity;
+use std::{cell::RefCell, rc::Rc};
 
 #[inline]
 pub fn translate_function_name(
@@ -78,15 +79,15 @@ pub fn translate_function_declaration(
         (old_name, new_name)
     };
 
-    if let Some(solidity::ContractTy::Abstract(_)) = &translated_definition.kind {
+    if let Some(solidity::ContractTy::Abstract(_) | solidity::ContractTy::Library(_)) = &translated_definition.kind {
         new_name = format!("{}_{}", crate::translate_naming_convention(&translated_definition.name, Case::Snake), new_name);
     }
 
     // Create a scope for modifier invocation translations
-    let mut scope = TranslationScope {
-        parent: Some(Box::new(translated_definition.toplevel_scope.clone())),
+    let scope = Rc::new(RefCell::new(TranslationScope {
+        parent: Some(translated_definition.toplevel_scope.clone()),
         ..Default::default()
-    };
+    }));
 
     // Add the function parameters to the scope
     for (_, p) in function_definition.params.iter() {
@@ -97,12 +98,12 @@ pub fn translate_function_declaration(
         let new_name = crate::translate_naming_convention(old_name.as_str(), Case::Snake);
         let type_name = translate_type_name(project, translated_definition, &p.ty, false);
 
-        scope.variables.push(TranslatedVariable {
+        scope.borrow_mut().variables.push(Rc::new(RefCell::new(TranslatedVariable {
             old_name,
             new_name,
             type_name,
             ..Default::default()
-        });
+        })));
     }
 
     let mut constructor_calls = vec![];
@@ -116,7 +117,7 @@ pub fn translate_function_declaration(
         let new_name = crate::translate_naming_convention(old_name.as_str(), Case::Snake);
 
         let parameters = base.args.as_ref()
-            .map(|args| args.iter().map(|a| translate_expression(project, translated_definition, &mut scope, a)).collect::<Result<Vec<_>, _>>())
+            .map(|args| args.iter().map(|a| translate_expression(project, translated_definition, scope.clone(), a)).collect::<Result<Vec<_>, _>>())
             .unwrap_or_else(|| Ok(vec![]))?;
 
         // Check to see if base is a constructor call
@@ -212,10 +213,10 @@ pub fn translate_modifier_definition(
         post_body: None,
     };
 
-    let mut scope = TranslationScope {
-        parent: Some(Box::new(translated_definition.toplevel_scope.clone())),
+    let scope = Rc::new(RefCell::new(TranslationScope {
+        parent: Some(translated_definition.toplevel_scope.clone()),
         ..Default::default()
-    };
+    }));
 
     for (_, p) in function_definition.params.iter() {
         let old_name = p.as_ref().unwrap().name.as_ref().unwrap().name.clone();
@@ -228,12 +229,12 @@ pub fn translate_modifier_definition(
             ..Default::default()
         });
 
-        scope.variables.push(TranslatedVariable {
+        scope.borrow_mut().variables.push(Rc::new(RefCell::new(TranslatedVariable {
             old_name,
             new_name,
             type_name,
             ..Default::default()
-        });
+        })));
     }
 
     let solidity::Statement::Block { statements, .. } = function_definition.body.as_ref().unwrap() else {
@@ -241,7 +242,7 @@ pub fn translate_modifier_definition(
     };
 
     let mut current_body: &mut Option<sway::Block> = &mut modifier.pre_body;
-    let mut current_scope = scope.clone();
+    let mut current_scope = Rc::new(RefCell::new(scope.borrow().clone()));
 
     let mut has_pre_storage_read = false;
     let mut has_pre_storage_write = false;
@@ -259,23 +260,23 @@ pub fn translate_modifier_definition(
                 modifier.has_underscore = true;
                 
                 if let Some(block) = current_body.as_mut() {
-                    for variable in current_scope.variables.iter() {
-                        if variable.is_storage {
-                            if variable.read_count != 0 {
+                    for variable in current_scope.borrow_mut().variables.iter() {
+                        if variable.borrow().is_storage {
+                            if variable.borrow().read_count != 0 {
                                 *has_storage_read = true;
                             }
 
-                            if variable.mutation_count != 0 {
+                            if variable.borrow().mutation_count != 0 {
                                 *has_storage_write = true;
                             }
                         }
                     }
 
-                    finalize_block_translation(project, &current_scope, block)?;
+                    finalize_block_translation(project, current_scope.clone(), block)?;
                 }
 
                 current_body = &mut modifier.post_body;
-                current_scope = scope.clone();
+                current_scope = Rc::new(RefCell::new(scope.borrow().clone()));
 
                 has_storage_read = &mut has_post_storage_read;
                 has_storage_write = &mut has_post_storage_write;
@@ -292,7 +293,7 @@ pub fn translate_modifier_definition(
         let block = current_body.as_mut().unwrap();
 
         // Translate the statement
-        let sway_statement = translate_statement(project, translated_definition, &mut current_scope, statement)?;
+        let sway_statement = translate_statement(project, translated_definition, current_scope.clone(), statement)?;
 
         // Store the index of the sway statement
         let statement_index = block.statements.len();
@@ -302,9 +303,10 @@ pub fn translate_modifier_definition(
 
         // If the sway statement is a variable declaration, keep track of its statement index
         if let Some(sway::Statement::Let(sway_variable)) = block.statements.last() {
-            let mut store_variable_statement_index = |id: &sway::LetIdentifier| {
-                let scope_entry = scope.variables.iter_mut().rev().find(|v| v.new_name == id.name).unwrap();
-                scope_entry.statement_index = Some(statement_index);
+            let store_variable_statement_index = |id: &sway::LetIdentifier| {
+                let scope = scope.borrow_mut();
+                let scope_entry = scope.variables.iter().rev().find(|v| v.borrow().new_name == id.name).unwrap();
+                scope_entry.borrow_mut().statement_index = Some(statement_index);
             };
 
             match &sway_variable.pattern {
@@ -314,20 +316,20 @@ pub fn translate_modifier_definition(
         }
     }
 
-    for variable in current_scope.variables.iter() {
-        if variable.is_storage {
-            if variable.read_count != 0 {
+    for variable in current_scope.borrow().variables.iter() {
+        if variable.borrow().is_storage {
+            if variable.borrow().read_count != 0 {
                 *has_storage_read = true;
             }
 
-            if variable.mutation_count != 0 {
+            if variable.borrow().mutation_count != 0 {
                 *has_storage_write = true;
             }
         }
     }
 
     if let Some(block) = current_body.as_mut() {
-        finalize_block_translation(project, &current_scope, block)?;
+        finalize_block_translation(project, current_scope, block)?;
     }
 
     let create_attributes = |has_storage_read: bool, has_storage_write: bool| -> Option<sway::AttributeList> {
@@ -468,9 +470,16 @@ pub fn translate_function_definition(
     
     let mut new_name = new_name_2.clone();
 
-    if let Some(solidity::ContractTy::Abstract(_)) = &translated_definition.kind {
+    if let Some(solidity::ContractTy::Abstract(_) | solidity::ContractTy::Library(_)) = &translated_definition.kind {
        new_name = format!("{}_{}", crate::translate_naming_convention(&translated_definition.name, Case::Snake), new_name);
     }
+
+    println!(
+        "Translating {}.{} in {}",
+        translated_definition.name,
+        function_definition.name.as_ref().unwrap().name,
+        translated_definition.path.to_string_lossy(),
+    );
 
     // Translate the functions parameters
     let mut parameters = sway::ParameterList::default();
@@ -579,10 +588,10 @@ pub fn translate_function_definition(
     let Some(solidity::Statement::Block { statements, .. }) = function_definition.body.as_ref() else { return Ok(()) };
 
     // Create the scope for the body of the toplevel function
-    let mut scope = TranslationScope {
-        parent: Some(Box::new(translated_definition.toplevel_scope.clone())),
+    let scope = Rc::new(RefCell::new(TranslationScope {
+        parent: Some(translated_definition.toplevel_scope.clone()),
         ..Default::default()
-    };
+    }));
 
     // Add the function parameters to the scope
     let mut parameters = vec![];
@@ -614,7 +623,7 @@ pub fn translate_function_definition(
         };
 
         parameters.push(translated_variable.clone());
-        scope.variables.push(translated_variable);
+        scope.borrow_mut().variables.push(Rc::new(RefCell::new(translated_variable)));
     }
 
     // Add the function's named return parameters to the scope
@@ -648,11 +657,11 @@ pub fn translate_function_definition(
         };
 
         return_parameters.push(translated_variable.clone());
-        scope.variables.push(translated_variable);
+        scope.borrow_mut().variables.push(Rc::new(RefCell::new(translated_variable)));
     }
 
     // Translate the body for the toplevel function
-    let mut function_body = translate_block(project, translated_definition, &mut scope, statements.as_slice())?;
+    let mut function_body = translate_block(project, translated_definition, scope.clone(), statements.as_slice())?;
 
     if is_constructor {
         let prefix = crate::translate_naming_convention(translated_definition.name.as_str(), Case::Snake);
@@ -711,12 +720,12 @@ pub fn translate_function_definition(
 
     // Check for parameters that were mutated and make them local variables
     for parameter in parameters.iter().rev() {
-        let variable = match scope.get_variable_from_new_name(&parameter.new_name) {
+        let variable = match scope.borrow().get_variable_from_new_name(&parameter.new_name) {
             Ok(variable) => variable,
             Err(e) => panic!("{e}"),
         };
 
-        if variable.mutation_count > 0 {
+        if variable.borrow().mutation_count > 0 {
             function_body.statements.insert(0, sway::Statement::Let(sway::Let {
                 pattern: sway::LetPattern::Identifier(sway::LetIdentifier {
                     is_mutable: true,
@@ -730,10 +739,10 @@ pub fn translate_function_definition(
 
     // Propagate the return variable declarations
     for return_parameter in return_parameters.iter().rev() {
-        let mut scope = TranslationScope {
-            parent: Some(Box::new(translated_definition.toplevel_scope.clone())),
+        let scope = Rc::new(RefCell::new(TranslationScope {
+            parent: Some(translated_definition.toplevel_scope.clone()),
             ..Default::default()
-        };
+        }));
 
         function_body.statements.insert(0, sway::Statement::Let(sway::Let {
             pattern: sway::LetPattern::Identifier(sway::LetIdentifier {
@@ -741,7 +750,7 @@ pub fn translate_function_definition(
                 name: return_parameter.new_name.clone(),
             }),
             type_name: Some(return_parameter.type_name.clone()),
-            value: create_value_expression(translated_definition, &mut scope, &return_parameter.type_name, None),
+            value: create_value_expression(translated_definition, scope.clone(), &return_parameter.type_name, None),
         }));
     }
 
@@ -767,10 +776,12 @@ pub fn translate_function_definition(
     }
 
     // Get the function from the scope
-    let function = match scope.find_function(|f| f.new_name == new_name) {
+    let function = match scope.borrow().find_function(|f| f.borrow().new_name == new_name) {
         Some(function) => function,
         None => panic!("ERROR: Failed to find function `{new_name}` in scope"),
     };
+
+    let function = function.borrow();
 
     // Propagate constructor calls into the function's body
     for constructor_call in function.constructor_calls.iter().rev() {

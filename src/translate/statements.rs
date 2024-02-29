@@ -6,11 +6,12 @@ use super::{
 use crate::{errors::Error, project::Project, sway};
 use convert_case::Case;
 use solang_parser::pt as solidity;
+use std::{cell::RefCell, rc::Rc};
 
 pub fn translate_block(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    scope: &mut TranslationScope,
+    scope: Rc<RefCell<TranslationScope>>,
     statements: &[solidity::Statement]
 ) -> Result<sway::Block, Error> {
     let mut block = sway::Block::default();
@@ -18,7 +19,7 @@ pub fn translate_block(
     // Translate each of the statements in the block
     for statement in statements {
         // Translate the statement
-        let sway_statement = translate_statement(project, translated_definition, scope, statement)?;
+        let sway_statement = translate_statement(project, translated_definition, scope.clone(), statement)?;
 
         // Store the index of the sway statement
         let statement_index = block.statements.len();
@@ -28,12 +29,15 @@ pub fn translate_block(
 
         // If the sway statement is a variable declaration, keep track of its statement index
         if let Some(sway::Statement::Let(sway_variable)) = block.statements.last() {
-            let mut store_variable_statement_index = |id: &sway::LetIdentifier| {
+            let store_variable_statement_index = |id: &sway::LetIdentifier| {
                 if id.name == "_" {
                     return;
                 }
 
-                let scope_entry = scope.variables.iter_mut().rev().find(|v| v.new_name == id.name).unwrap();
+                let scope = scope.borrow();
+
+                let scope_entry = scope.variables.iter().rev().find(|v| v.borrow().new_name == id.name).unwrap();
+                let mut scope_entry = scope_entry.borrow_mut();
 
                 scope_entry.statement_index = Some(statement_index);
             };
@@ -45,30 +49,30 @@ pub fn translate_block(
         }
     }
 
-    finalize_block_translation(project, scope, &mut block)?;
+    finalize_block_translation(project, scope.clone(), &mut block)?;
 
     Ok(block)
 }
 
 pub fn finalize_block_translation(
     _project: &mut Project,
-    scope: &TranslationScope,
+    scope: Rc<RefCell<TranslationScope>>,
     block: &mut sway::Block,
 ) -> Result<(), Error> {
     // Check the block for variable declarations that need to be marked mutable
-    for variable in scope.variables.iter() {
+    for variable in scope.borrow().variables.iter() {
         // Only check variables that are declared as statements
-        let Some(statement_index) = variable.statement_index else { continue };
+        let Some(statement_index) = variable.borrow().statement_index else { continue };
 
         // If the variable has any mutations, mark it as mutable
-        if variable.mutation_count > 0 {
+        if variable.borrow().mutation_count > 0 {
             let let_statement = match &mut block.statements[statement_index] {
                 sway::Statement::Let(let_statement) => let_statement,
                 statement => panic!("Expected let statement, found: {statement:?}"),
             };
 
             let mark_let_identifier_mutable = |id: &mut sway::LetIdentifier| {
-                if id.name == variable.new_name {
+                if id.name == variable.borrow().new_name {
                     id.is_mutable = true;
                 }
             };
@@ -93,8 +97,8 @@ pub fn finalize_block_translation(
                 let sway::Statement::Let(sway::Let { pattern, .. }) = statement else { continue };
 
                 let mut check_let_identifier = |identifier: &sway::LetIdentifier| {
-                    if let Some(scope) = scope.parent.as_ref() {
-                        if scope.get_variable_from_new_name(&identifier.name).is_ok() {
+                    if let Some(scope) = scope.borrow().parent.as_ref() {
+                        if scope.borrow().get_variable_from_new_name(&identifier.name).is_ok() {
                             var_count += 1;
                         }
                     }
@@ -139,25 +143,25 @@ pub fn finalize_block_translation(
 pub fn translate_statement(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    scope: &mut TranslationScope,
+    scope: Rc<RefCell<TranslationScope>>,
     statement: &solidity::Statement
 ) -> Result<sway::Statement, Error> {
     match statement {
-        solidity::Statement::Block { statements, .. } => translate_block_statement(project, translated_definition, scope, statements),
-        solidity::Statement::Assembly { dialect, flags, block, .. } => translate_assembly_statement(project, translated_definition, scope, dialect, flags, block),
-        solidity::Statement::Args(_, named_arguments) => translate_args_statement(project, translated_definition, scope, named_arguments),
-        solidity::Statement::If(_, condition, then_body, else_if) => translate_if_statement(project, translated_definition, scope, condition, then_body, else_if),
-        solidity::Statement::While(_, condition, body) => translate_while_statement(project, translated_definition, scope, condition, body),
-        solidity::Statement::Expression(_, expression) => translate_expression_statement(project, translated_definition, scope, expression),
-        solidity::Statement::VariableDefinition(_, variable_declaration, initializer) => translate_variable_definition_statement(project, translated_definition, scope, variable_declaration, initializer),
-        solidity::Statement::For(_, initialization, condition, update, body) => translate_for_statement(project, translated_definition, scope, initialization, condition, update, body),
+        solidity::Statement::Block { statements, .. } => translate_block_statement(project, translated_definition, scope.clone(), statements),
+        solidity::Statement::Assembly { dialect, flags, block, .. } => translate_assembly_statement(project, translated_definition, scope.clone(), dialect, flags, block),
+        solidity::Statement::Args(_, named_arguments) => translate_args_statement(project, translated_definition, scope.clone(), named_arguments),
+        solidity::Statement::If(_, condition, then_body, else_if) => translate_if_statement(project, translated_definition, scope.clone(), condition, then_body, else_if),
+        solidity::Statement::While(_, condition, body) => translate_while_statement(project, translated_definition, scope.clone(), condition, body),
+        solidity::Statement::Expression(_, expression) => translate_expression_statement(project, translated_definition, scope.clone(), expression),
+        solidity::Statement::VariableDefinition(_, variable_declaration, initializer) => translate_variable_definition_statement(project, translated_definition, scope.clone(), variable_declaration, initializer),
+        solidity::Statement::For(_, initialization, condition, update, body) => translate_for_statement(project, translated_definition, scope.clone(), initialization, condition, update, body),
         solidity::Statement::DoWhile(_, _, _) => todo!("translate do while statement: {statement:#?}"),
         solidity::Statement::Continue(_) => Ok(sway::Statement::from(sway::Expression::Continue)),
         solidity::Statement::Break(_) => Ok(sway::Statement::from(sway::Expression::Break)),
-        solidity::Statement::Return(_, expression) => translate_return_statement(project, translated_definition, scope, expression),
-        solidity::Statement::Revert(_, error_type, parameters) => translate_revert_statement(project, translated_definition, scope, error_type, parameters),
+        solidity::Statement::Return(_, expression) => translate_return_statement(project, translated_definition, scope.clone(), expression),
+        solidity::Statement::Revert(_, error_type, parameters) => translate_revert_statement(project, translated_definition, scope.clone(), error_type, parameters),
         solidity::Statement::RevertNamedArgs(_, _, _) => todo!("translate revert named args statement: {statement:#?}"),
-        solidity::Statement::Emit(_, expression) => translate_emit_statement(project, translated_definition, scope, expression),
+        solidity::Statement::Emit(_, expression) => translate_emit_statement(project, translated_definition, scope.clone(), expression),
         solidity::Statement::Try(_, _, _, _) => todo!("translate try statement: {statement:#?}"),
         solidity::Statement::Error(_) => panic!("Encountered a statement that was not parsed correctly"),
     }
@@ -167,20 +171,18 @@ pub fn translate_statement(
 pub fn translate_block_statement(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    scope: &mut TranslationScope,
+    scope: Rc<RefCell<TranslationScope>>,
     statements: &[solidity::Statement],
 ) -> Result<sway::Statement, Error> {
-    let mut inner_scope = TranslationScope {
-        parent: Some(Box::new(scope.clone())),
+    let scope = Rc::new(RefCell::new(TranslationScope {
+        parent: Some(scope.clone()),
         ..Default::default()
-    };
+    }));
 
     // Translate the block
     let translated_block = sway::Statement::from(sway::Expression::from(
-        translate_block(project, translated_definition, &mut inner_scope, statements)?
+        translate_block(project, translated_definition, scope.clone(), statements)?
     ));
-
-    *scope = *inner_scope.parent.unwrap();
 
     Ok(translated_block)
 }
@@ -189,7 +191,7 @@ pub fn translate_block_statement(
 pub fn translate_args_statement(
     _project: &mut Project,
     _translated_definition: &mut TranslatedDefinition,
-    _scope: &mut TranslationScope,
+    _scope: Rc<RefCell<TranslationScope>>,
     _named_arguments: &[solidity::NamedArgument],
 ) -> Result<sway::Statement, Error> {
     todo!("translate args statement")
@@ -199,14 +201,14 @@ pub fn translate_args_statement(
 pub fn translate_if_statement(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    scope: &mut TranslationScope,
+    scope: Rc<RefCell<TranslationScope>>,
     condition: &solidity::Expression,
     then_body: &solidity::Statement,
     else_if: &Option<Box<solidity::Statement>>,
 ) -> Result<sway::Statement, Error> {
-    let condition = translate_expression(project, translated_definition, scope, condition)?;
+    let condition = translate_expression(project, translated_definition, scope.clone(), condition)?;
     
-    let then_body = match translate_statement(project, translated_definition, scope, then_body)? {
+    let then_body = match translate_statement(project, translated_definition, scope.clone(), then_body)? {
         sway::Statement::Expression(sway::Expression::Block(block)) => *block,
         
         statement => sway::Block {
@@ -216,7 +218,7 @@ pub fn translate_if_statement(
     };
 
     let else_if = if let Some(else_if) = else_if.as_ref() {
-        match translate_statement(project, translated_definition, scope, else_if.as_ref())? {
+        match translate_statement(project, translated_definition, scope.clone(), else_if.as_ref())? {
             sway::Statement::Expression(sway::Expression::If(else_if)) => Some(else_if.clone()),
             sway::Statement::Expression(sway::Expression::Block(block)) => Some(Box::new(sway::If {
                 condition: None,
@@ -247,13 +249,13 @@ pub fn translate_if_statement(
 pub fn translate_while_statement(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    scope: &mut TranslationScope,
+    scope: Rc<RefCell<TranslationScope>>,
     condition: &solidity::Expression,
     body: &solidity::Statement,
 ) -> Result<sway::Statement, Error> {
     Ok(sway::Statement::from(sway::Expression::from(sway::While {
-        condition: translate_expression(project, translated_definition, scope, condition)?,
-        body: match translate_statement(project, translated_definition, scope, body)? {
+        condition: translate_expression(project, translated_definition, scope.clone(), condition)?,
+        body: match translate_statement(project, translated_definition, scope.clone(), body)? {
             sway::Statement::Expression(sway::Expression::Block(block)) => *block,
             statement => sway::Block {
                 statements: vec![statement],
@@ -267,7 +269,7 @@ pub fn translate_while_statement(
 pub fn translate_expression_statement(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    scope: &mut TranslationScope,
+    scope: Rc<RefCell<TranslationScope>>,
     expression: &solidity::Expression,
 ) -> Result<sway::Statement, Error> {
     match expression {
@@ -281,15 +283,15 @@ pub fn translate_expression_statement(
                     let Some(p) = p.as_ref() else { continue };
                     let Some(name) = p.name.as_ref() else { continue };
 
-                    variables.push(TranslatedVariable {
+                    variables.push(Rc::new(RefCell::new(TranslatedVariable {
                         old_name: name.name.clone(),
                         new_name: crate::translate_naming_convention(name.name.as_str(), Case::Snake),
                         type_name: translate_type_name(project, translated_definition, &p.ty, false),
                         ..Default::default()
-                    });
+                    })));
                 }
 
-                scope.variables.extend(variables);
+                scope.borrow_mut().variables.extend(variables);
 
                 // Create the variable declaration statement
                 return Ok(sway::Statement::from(sway::Let {
@@ -325,7 +327,7 @@ pub fn translate_expression_statement(
                             .collect(),
                     }),
                     
-                    value: translate_expression(project, translated_definition, scope, rhs.as_ref())?,
+                    value: translate_expression(project, translated_definition, scope.clone(), rhs.as_ref())?,
                 }));
             }
         }
@@ -358,7 +360,7 @@ pub fn translate_expression_statement(
     }
     
     Ok(sway::Statement::from(
-        translate_expression(project, translated_definition, scope, expression)?
+        translate_expression(project, translated_definition, scope.clone(), expression)?
     ))
 }
 
@@ -366,7 +368,7 @@ pub fn translate_expression_statement(
 pub fn translate_variable_definition_statement(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    scope: &mut TranslationScope,
+    scope: Rc<RefCell<TranslationScope>>,
     variable_declaration: &solidity::VariableDeclaration,
     initializer: &Option<solidity::Expression>,
 ) -> Result<sway::Statement, Error> {
@@ -403,7 +405,7 @@ pub fn translate_variable_definition_statement(
                 }
 
                 let element_type_name = &generic_parameters.entries.first().unwrap().type_name;
-                let length = translate_expression(project, translated_definition, scope, &args[0])?;
+                let length = translate_expression(project, translated_definition, scope.clone(), &args[0])?;
 
                 value = Some(sway::Expression::from(sway::Block {
                     statements: vec![
@@ -455,7 +457,7 @@ pub fn translate_variable_definition_statement(
                                         }),
                                         generic_parameters: None,
                                         parameters: vec![
-                                            create_value_expression(translated_definition, scope, element_type_name, None),
+                                            create_value_expression(translated_definition, scope.clone(), element_type_name, None),
                                         ],
                                     })),
 
@@ -491,18 +493,18 @@ pub fn translate_variable_definition_statement(
         value: if let Some(value) = value {
             value
         } else if let Some(x) = initializer.as_ref() {
-            translate_pre_or_post_operator_value_expression(project, translated_definition, scope, x)?
+            translate_pre_or_post_operator_value_expression(project, translated_definition, scope.clone(), x)?
         } else {
-            create_value_expression(translated_definition, scope, &type_name, None)
+            create_value_expression(translated_definition, scope.clone(), &type_name, None)
         },
     });
 
-    scope.variables.push(TranslatedVariable {
+    scope.borrow_mut().variables.push(Rc::new(RefCell::new(TranslatedVariable {
         old_name,
         new_name,
         type_name,
         ..Default::default()
-    });
+    })));
 
     Ok(statement)
 }
@@ -511,7 +513,7 @@ pub fn translate_variable_definition_statement(
 pub fn translate_for_statement(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    scope: &mut TranslationScope,
+    scope: Rc<RefCell<TranslationScope>>,
     initialization: &Option<Box<solidity::Statement>>,
     condition: &Option<Box<solidity::Expression>>,
     update: &Option<Box<solidity::Expression>>,
@@ -525,25 +527,25 @@ pub fn translate_for_statement(
     //     }                    
     // }
 
-    let mut inner_scope = TranslationScope {
-        parent: Some(Box::new(scope.clone())),
+    let inner_scope = Rc::new(RefCell::new(TranslationScope {
+        parent: Some(scope.clone()),
         ..Default::default()
-    };
+    }));
 
     let mut statements = vec![];
 
     if let Some(initialization) = initialization.as_ref() {
         let statement_index = statements.len();
-        let mut statement = translate_statement(project, translated_definition, &mut inner_scope, initialization.as_ref())?;
+        let mut statement = translate_statement(project, translated_definition, inner_scope.clone(), initialization.as_ref())?;
 
         // Store the statement index of variable declaration statements in their scope entries
         if let sway::Statement::Let(sway::Let { pattern, .. }) = &mut statement {
-            let mut store_let_identifier_statement_index = |id: &mut sway::LetIdentifier| {
-                let Ok(variable) = inner_scope.get_variable_from_new_name_mut(id.name.as_str()) else {
+            let store_let_identifier_statement_index = |id: &mut sway::LetIdentifier| {
+                let Ok(variable) = inner_scope.borrow().get_variable_from_new_name(id.name.as_str()) else {
                     panic!("Failed to find variable in scope: \"{id}\"");
                 };
 
-                variable.statement_index = Some(statement_index);
+                variable.borrow_mut().statement_index = Some(statement_index);
             };
 
             match pattern {
@@ -556,14 +558,14 @@ pub fn translate_for_statement(
     }
 
     let condition = if let Some(condition) = condition.as_ref() {
-        translate_expression(project, translated_definition, &mut inner_scope, condition.as_ref())?
+        translate_expression(project, translated_definition, inner_scope.clone(), condition.as_ref())?
     } else {
         sway::Expression::from(sway::Literal::Bool(true))
     };
 
     let mut body = match body.as_ref() {
         None => sway::Block::default(),
-        Some(body) => match translate_statement(project, translated_definition, &mut inner_scope, body.as_ref())? {
+        Some(body) => match translate_statement(project, translated_definition, inner_scope.clone(), body.as_ref())? {
             sway::Statement::Expression(sway::Expression::Block(block)) => *block,
             statement => sway::Block {
                 statements: vec![statement],
@@ -579,7 +581,7 @@ pub fn translate_for_statement(
                 solidity::Expression::PreDecrement(loc, x)
                 | solidity::Expression::PostDecrement(loc, x) => translate_assignment_expression(project, 
                     translated_definition,
-                    &mut inner_scope,
+                    inner_scope.clone(),
                     "-=",
                     x,
                     &solidity::Expression::NumberLiteral(*loc, "1".into(), "".into(), None),
@@ -589,13 +591,13 @@ pub fn translate_for_statement(
                 solidity::Expression::PreIncrement(loc, x)
                 | solidity::Expression::PostIncrement(loc, x) => translate_assignment_expression(project, 
                     translated_definition,
-                    &mut inner_scope,
+                    inner_scope.clone(),
                     "+=",
                     x,
                     &solidity::Expression::NumberLiteral(*loc, "1".into(), "".into(), None),
                 )?,
     
-                _ => translate_expression(project, translated_definition, &mut inner_scope, update.as_ref())?
+                _ => translate_expression(project, translated_definition, inner_scope.clone(), update.as_ref())?
             }
         ));
     }
@@ -612,9 +614,7 @@ pub fn translate_for_statement(
         final_expr: None,
     };
 
-    finalize_block_translation(project, &inner_scope, &mut block)?;
-
-    *scope = *inner_scope.parent.unwrap();
+    finalize_block_translation(project, inner_scope.clone(), &mut block)?;
 
     Ok(sway::Statement::from(sway::Expression::from(block)))
 }
@@ -623,13 +623,13 @@ pub fn translate_for_statement(
 pub fn translate_return_statement(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    scope: &mut TranslationScope,
+    scope: Rc<RefCell<TranslationScope>>,
     expression: &Option<solidity::Expression>,
 ) -> Result<sway::Statement, Error> {
     Ok(sway::Statement::from(sway::Expression::Return(
         if let Some(x) = expression.as_ref() {
             Some(Box::new(
-                translate_expression(project, translated_definition, scope, x)?
+                translate_expression(project, translated_definition, scope.clone(), x)?
             ))
         } else {
             None
@@ -641,7 +641,7 @@ pub fn translate_return_statement(
 pub fn translate_revert_statement(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    scope: &mut TranslationScope,
+    scope: Rc<RefCell<TranslationScope>>,
     error_type: &Option<solidity::IdentifierPath>,
     parameters: &Vec<solidity::Expression>,
 ) -> Result<sway::Statement, Error> {
@@ -676,11 +676,11 @@ pub fn translate_revert_statement(
                                 generic_parameters: None,
                                 parameters: vec![
                                     if parameters.len() == 1 {
-                                        translate_expression(project, translated_definition, scope, &parameters[0])?
+                                        translate_expression(project, translated_definition, scope.clone(), &parameters[0])?
                                     } else {
                                         sway::Expression::Tuple(
                                             parameters.iter()
-                                                .map(|p| translate_expression(project, translated_definition, scope, p))
+                                                .map(|p| translate_expression(project, translated_definition, scope.clone(), p))
                                                 .collect::<Result<Vec<_>, _>>()?
                                         )
                                     },
@@ -745,7 +745,7 @@ pub fn translate_revert_statement(
 pub fn translate_emit_statement(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    scope: &mut TranslationScope,
+    scope: Rc<RefCell<TranslationScope>>,
     expression: &solidity::Expression,
 ) -> Result<sway::Statement, Error> {
     match expression {
@@ -776,11 +776,11 @@ pub fn translate_emit_statement(
                                 generic_parameters: None,
                                 parameters: vec![
                                     if parameters.len() == 1 {
-                                        translate_expression(project, translated_definition, scope, &parameters[0])?
+                                        translate_expression(project, translated_definition, scope.clone(), &parameters[0])?
                                     } else {
                                         sway::Expression::Tuple(
                                             parameters.iter()
-                                                .map(|p| translate_expression(project, translated_definition, scope, p))
+                                                .map(|p| translate_expression(project, translated_definition, scope.clone(), p))
                                                 .collect::<Result<Vec<_>, _>>()?
                                         )
                                     },

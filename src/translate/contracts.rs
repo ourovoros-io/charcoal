@@ -8,7 +8,11 @@ use super::{
 use crate::{project::Project, sway, Error};
 use convert_case::Case;
 use solang_parser::pt as solidity;
-use std::path::{Path, PathBuf};
+use std::{
+    cell::RefCell,
+    path::{Path, PathBuf},
+    rc::Rc,
+};
 
 #[inline]
 pub fn translate_using_directive(
@@ -45,17 +49,21 @@ pub fn translate_using_directive(
                 }
 
                 // Get the scope entry for the library function
-                let Some(scope_entry) = library_definition.toplevel_scope.find_function(|f| f.new_name == function.name) else {
+                let Some(scope_entry) = library_definition.toplevel_scope.borrow().find_function(|f| f.borrow().new_name == function.name) else {
                     panic!("Failed to find function in scope: \"{}\"", function.name);
                 };
 
                 // Add the function to the current definition's toplevel scope
-                if !translated_definition.toplevel_scope.functions.contains(scope_entry) {
-                    translated_definition.toplevel_scope.functions.push(scope_entry.clone());
+                if !translated_definition.toplevel_scope.borrow().functions.iter().any(|f| {
+                    f.borrow().old_name == scope_entry.borrow().old_name
+                    && f.borrow().parameters == scope_entry.borrow().parameters
+                    && f.borrow().return_type == scope_entry.borrow().return_type
+                }) {
+                    translated_definition.toplevel_scope.borrow_mut().functions.push(Rc::new(RefCell::new(scope_entry.borrow().clone())));
                 }
 
                 // Add the function to the translated using directive so we know where it came from
-                translated_using_directive.functions.push(scope_entry.clone());
+                translated_using_directive.functions.push(scope_entry.borrow().clone());
 
                 // Add the function name to the current definition's function name list
                 *translated_definition.function_name_counts.entry(function.name.clone()).or_insert(0) += 1;
@@ -219,7 +227,9 @@ pub fn translate_contract_definition(
         
         let mut function_exists = false;
 
-        for f in translated_definition.toplevel_scope.functions.iter_mut() {
+        for f in translated_definition.toplevel_scope.borrow().functions.iter() {
+            let mut f = f.borrow_mut();
+
             if f.old_name == function.old_name && f.parameters == function.parameters && f.return_type == function.return_type {
                 f.new_name = function.new_name.clone();
                 function_exists = true;
@@ -228,7 +238,7 @@ pub fn translate_contract_definition(
         }
 
         if !function_exists {
-            translated_definition.toplevel_scope.functions.push(function);
+            translated_definition.toplevel_scope.borrow_mut().functions.push(Rc::new(RefCell::new(function)));
         }
     }
 
@@ -346,8 +356,8 @@ pub fn propagate_inherited_definitions(
         };
 
         // Extend the toplevel scope
-        translated_definition.toplevel_scope.variables.extend(inherited_definition.toplevel_scope.variables.clone());
-        translated_definition.toplevel_scope.functions.extend(inherited_definition.toplevel_scope.functions.clone());
+        translated_definition.toplevel_scope.borrow_mut().variables.extend(inherited_definition.toplevel_scope.borrow().variables.clone());
+        translated_definition.toplevel_scope.borrow_mut().functions.extend(inherited_definition.toplevel_scope.borrow().functions.clone());
 
         // Extend the use statements
         for inherited_use in inherited_definition.uses.iter() {

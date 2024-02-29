@@ -1,6 +1,7 @@
 use super::{translate_expression, TranslatedDefinition, TranslationScope};
 use crate::{project::Project, sway};
 use solang_parser::pt as solidity;
+use std::{cell::RefCell, rc::Rc};
 
 #[inline]
 pub fn translate_return_type_name(
@@ -73,38 +74,94 @@ pub fn translate_type_name(
                 sway::TypeName::StringSlice
             },
 
-            solidity::Type::Int(_) =>  todo!("int types"),
+            solidity::Type::Int(bits) => {
+                translated_definition.ensure_dependency_declared(
+                    "signed_integers = { git = \"https://github.com/fuellabs/sway-libs\", branch = \"master\" }"
+                );
 
-            solidity::Type::Uint(bits) => sway::TypeName::Identifier {
-                name: match *bits {
-                    8 => "u8".into(),
-                    16 => "u16".into(),
-                    32 => "u32".into(),
-                    64 => "u64".into(),
-                    256 => "u256".into(),
-                    bits => match bits {
+                sway::TypeName::Identifier {
+                    name: match *bits {
                         0..=8 => {
-                            eprintln!("WARNING: unsupported unsigned integer type `uint{bits}`, using `u8`...");
-                            "u8".into()
+                            if *bits != 8 {
+                                eprintln!("WARNING: unsupported signed integer type `int{bits}`, using `I8`...");
+                            }
+                            translated_definition.ensure_use_declared("signed_integers::i8::*");
+                            "I8".into()
                         }
                         9..=16 => {
-                            eprintln!("WARNING: unsupported unsigned integer type `uint{bits}`, using `u16`...");
-                            "u16".into()
+                            if *bits != 16 {
+                                eprintln!("WARNING: unsupported signed integer type `int{bits}`, using `I16`...");
+                            }
+                            translated_definition.ensure_use_declared("signed_integers::i16::*");
+                            "I16".into()
                         }
                         17..=32 => {
-                            eprintln!("WARNING: unsupported unsigned integer type `uint{bits}`, using `u32`...");
-                            "u32".into()
+                            if *bits != 32 {
+                                eprintln!("WARNING: unsupported signed integer type `int{bits}`, using `I32`...");
+                            }
+                            translated_definition.ensure_use_declared("signed_integers::i32::*");
+                            "I32".into()
                         }
                         33..=64 => {
-                            eprintln!("WARNING: unsupported unsigned integer type `uint{bits}`, using `u64`...");
-                            "u64".into()
+                            if *bits != 64 {
+                                eprintln!("WARNING: unsupported signed integer type `int{bits}`, using `I64`...");
+                            }
+                            translated_definition.ensure_use_declared("signed_integers::i64::*");
+                            "I64".into()
                         }
-                        65..=256 => {
-                            eprintln!("WARNING: unsupported unsigned integer type `uint{bits}`, using `u256`...");
-                            "u256".into()
+                        65..=128 => {
+                            if *bits != 128 {
+                                eprintln!("WARNING: unsupported signed integer type `int{bits}`, using `I128`...");
+                            }
+                            translated_definition.ensure_use_declared("signed_integers::i128::*");
+                            "I128".into()
+                        }
+                        129..=256 => {
+                            if *bits != 256 {
+                                eprintln!("WARNING: unsupported signed integer type `int{bits}`, using `I256`...");
+                            }
+                            translated_definition.ensure_use_declared("signed_integers::i256::*");
+                            "I256".into()
                         }
                         _ => panic!("Invalid uint type: {bits}"),
                     },
+                    generic_parameters: None,
+                }
+            }
+
+            solidity::Type::Uint(bits) => sway::TypeName::Identifier {
+                name: match *bits {
+                    0..=8 => {
+                        if *bits != 8 {
+                            eprintln!("WARNING: unsupported unsigned integer type `uint{bits}`, using `u8`...");
+                        }
+                        "u8".into()
+                    }
+                    9..=16 => {
+                        if *bits != 16 {
+                            eprintln!("WARNING: unsupported unsigned integer type `uint{bits}`, using `u16`...");
+                        }
+                        "u16".into()
+                    }
+                    17..=32 => {
+                        if *bits != 32 {
+                            eprintln!("WARNING: unsupported unsigned integer type `uint{bits}`, using `u32`...");
+                        }
+                        "u32".into()
+                    }
+                    33..=64 => {
+                        if *bits != 64 {
+                            eprintln!("WARNING: unsupported unsigned integer type `uint{bits}`, using `u64`...");
+                        }
+                        "u64".into()
+                    }
+                    65..=256 => {
+                        if *bits != 256 {
+                            eprintln!("WARNING: unsupported unsigned integer type `uint{bits}`, using `u256`...");
+                        }
+                        "u256".into()
+                    }
+                    _ => panic!("Invalid uint type: {bits}"),
                 },
                 generic_parameters: None,
             },
@@ -212,12 +269,12 @@ pub fn translate_type_name(
                 type_name: Box::new(translate_type_name(project, translated_definition, type_name, is_storage)),
                 length: {
                     // Create an empty scope to translate the array length expression
-                    let mut scope = TranslationScope {
-                        parent: Some(Box::new(translated_definition.toplevel_scope.clone())),
+                    let scope = Rc::new(RefCell::new(TranslationScope {
+                        parent: Some(translated_definition.toplevel_scope.clone()),
                         ..Default::default()
-                    };
+                    }));
 
-                    match translate_expression(project, translated_definition, &mut scope, length.as_ref()) {
+                    match translate_expression(project, translated_definition, scope.clone(), length.as_ref()) {
                         Ok(sway::Expression::Literal(sway::Literal::DecInt(length) | sway::Literal::HexInt(length))) => length as usize,
                         Ok(_) => panic!("Invalid array length expression: {length:#?}"),
                         Err(e) => panic!("Failed to translate array length expression: {e}"),

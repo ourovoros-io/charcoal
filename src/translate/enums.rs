@@ -290,6 +290,8 @@ pub fn generate_enum_abi_encode_function(
                 }
             }
 
+            sway::TypeName::StringSlice => add_encode_statement_to_block(&parameter_names[0], &variant.type_name),
+
             type_name => todo!("ABI encoding for enum parameter type: {type_name}"),
         }
 
