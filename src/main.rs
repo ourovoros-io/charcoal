@@ -28,7 +28,7 @@ pub fn get_canonical_path<P: AsRef<Path>>(path: P, is_dir: bool, create_if_neces
         path_string = path_string.replace("\\\\", "\\");
     }
 
-    path_string = path_string.replace("\\", "/");
+    path_string = path_string.replace('\\', "/");
 
     while path_string.contains("//") {
         path_string = path_string.replace("//", "/");
@@ -85,6 +85,15 @@ fn translate_project() -> Result<(), Error> {
 
     let mut project = Project::default();
 
+    if options.target.is_dir() {
+        project.detect_project_type(options.target.as_path())?;
+    } else if let Some(root_path) = project.find_project_root_folder(options.target.as_path()) {
+        project.detect_project_type(root_path)?;
+    } else {
+        project.project_type = crate::project::ProjectType::Unknown;
+    }
+    
+    
     let source_unit_paths = collect_source_unit_paths(&options.target)
         .map_err(|e| Error::Wrapped(Box::new(e)))?;
     
@@ -199,3 +208,5 @@ fn collect_source_unit_paths(dir: &Path) -> std::io::Result<Vec<PathBuf>> {
 
     Ok(source_unit_paths)
 }
+
+

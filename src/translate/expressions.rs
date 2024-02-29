@@ -1160,6 +1160,48 @@ pub fn translate_member_access_expression(
                     }))
                 }
             }
+            match expression {
+                solidity::Expression::MemberAccess(_, expr, identifier) => {
+                    let expr = translate_expression(project, translated_definition, scope.clone(), expr)?;
+                    let type_name = translated_definition.get_expression_type(scope.clone(), &expr)?;
+                    match type_name {
+                        sway::TypeName::Identifier { name, generic_parameters } => match (name.as_str(), generic_parameters.as_ref()) {
+                            ("Identity", None) => match identifier.name.as_str() {
+                                "balance" => return Ok(sway::Expression::from(sway::FunctionCall {
+                                    function: sway::Expression::Identifier("std::context::balance_of".into()),
+                                    generic_parameters: None,
+                                    parameters: vec![
+                                        sway::Expression::from(sway::FunctionCall {
+                                            function: sway::Expression::from(sway::MemberAccess {
+                                                expression: sway::Expression::from(sway::FunctionCall {
+                                                    function: sway::Expression::from(sway::MemberAccess {
+                                                        expression: expr,
+                                                        member: "as_contract_id".into(),
+                                                    }),
+                                                    generic_parameters: None,
+                                                    parameters: vec![],
+                                                }),
+                                                member: "unwrap".into(),
+                                            }),
+                                            generic_parameters: None,
+                                            parameters: vec![],
+                                        }),
+                                        sway::Expression::from(sway::FunctionCall {
+                                            function: sway::Expression::Identifier("AssetId::default".into()),
+                                            generic_parameters: None,
+                                            parameters: vec![],
+                                        }),
+                                    ],
+                                })), 
+                                _ => {},
+                            }
+                            _ => {}
+                        },
+                        _ => {}
+                    }
+                } 
+                _ => {}
+            }
         
             todo!("translate member access expression: {} - {expression:#?}", expression.to_string())
         }
@@ -2296,6 +2338,24 @@ pub fn translate_function_call_expression(
                         }
 
                         todo!("handle super member access function `{member:#?}`")
+                    }
+
+                    "this" => {
+                        let parameters = arguments.iter()
+                            .map(|a| translate_expression(project, translated_definition, scope.clone(), a))
+                            .collect::<Result<Vec<_>, _>>()?;
+
+                        let parameter_types = parameters.iter()
+                            .map(|p| translated_definition.get_expression_type(scope.clone(), p))
+                            .collect::<Result<Vec<_>, _>>()?;
+                        
+                        if let Some(function) = scope.borrow().find_function_matching_types(&member.name, &parameters, &parameter_types) {
+                            return Ok(sway::Expression::from(sway::FunctionCall {
+                                function: sway::Expression::Identifier(function.borrow().new_name.clone()),
+                                generic_parameters: None,
+                                parameters,
+                            }));
+                        }
                     }
 
                     name => {

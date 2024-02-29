@@ -9,3 +9,5 @@ edition = "2021"
 convert_case = "0.6.0"
 solang-parser = "0.3.3"
 structopt = { version = "0.3", default-features = false }
+toml = "0.8.10"
+serde_yaml = "0.9.32"

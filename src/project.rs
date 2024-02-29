@@ -4,10 +4,7 @@ use crate::{
 };
 use solang_parser::pt as solidity;
 use std::{
-    cell::RefCell,
-    collections::HashMap,
-    path::{Path, PathBuf},
-    rc::Rc,
+    cell::RefCell, collections::HashMap, path::{Path, PathBuf}, rc::Rc
 };
 
 #[derive(Default)]
@@ -16,7 +13,10 @@ pub struct Project {
     pub solidity_source_units: Rc<RefCell<HashMap<PathBuf, solidity::SourceUnit>>>,
     pub translated_definitions: Vec<TranslatedDefinition>,
     pub import_directives: HashMap<PathBuf, HashMap<PathBuf, Option<Vec<String>>>>,
+    pub project_type: ProjectType,
 }
+
+
 
 impl Project {
     /// Attempts to parse the file from the supplied `path`.
@@ -167,12 +167,15 @@ impl Project {
         // Extend the import directive tree
         for import_directive in import_directives.iter() {
             let mut translate_import_directive = |definition_name: Option<&String>, filename: &solidity::StringLiteral| -> Result<(), Error> {
-                if !filename.string.starts_with('.') {
-                    todo!("handle global import paths (i.e: node_modules)")
+                let mut import_path = PathBuf::from(filename.string.clone());
+                if !import_path.to_string_lossy().starts_with('.') {
+                    import_path = self.get_project_type_path(source_unit_directory.as_path(), filename.string.clone())?;
+                } else {
+                    import_path = source_unit_directory.join(import_path);
                 }
+                import_path = crate::get_canonical_path(import_path, false, false)
+                    .map_err(|e| Error::Wrapped(Box::new(e))).unwrap();
                 
-                let import_path = crate::get_canonical_path(source_unit_directory.join(filename.string.clone()), false, false)
-                    .map_err(|e| Error::Wrapped(Box::new(e)))?;
 
                 let import_directives = self.import_directives.entry(source_unit_path.into()).or_default();
                 let definition_names = import_directives.entry(import_path).or_default();
@@ -230,7 +233,197 @@ impl Project {
                 contract_definition,
             )?;
         }
-
         Ok(())
     }
+
+    /// Recursively check to find the root folder of the project and return a [PathBuf]
+    pub fn find_project_root_folder<P: AsRef<Path>>(&self, path: P) -> Option<PathBuf> {
+        let path = path.as_ref();
+        if path.join(ProjectType::FOUNDRY_CONFIG_FILE).exists() || path.join(ProjectType::HARDHAT_CONFIG_FILE).exists() 
+        || path.join(ProjectType::BROWNIE_CONFIG_FILE).exists() || path.join(ProjectType::TRUFFLE_CONFIG_FILE).exists() {
+            return Some(path.to_path_buf());
+        }
+
+        if let Some(parent) = path.parent() {
+            return self.find_project_root_folder(parent);
+        }
+
+        None
+    }
+
+    /// Get the project type from the [PathBuf] and return a [ProjectType]
+    pub fn detect_project_type<P: AsRef<Path>>(&mut self, path: P) -> Result<(), Error> {
+        let path = path.as_ref();
+
+        if path.join(ProjectType::FOUNDRY_CONFIG_FILE).exists() {
+            self.project_type = ProjectType::Foundry { remappings: HashMap::new() };
+            let remappings = self.get_remappings(path).map_err(|e| Error::Wrapped(
+                format!("Failed to get remappings for Foundry project: {:#?}", e).into()
+            ))?;
+            self.project_type = ProjectType::Foundry { remappings };
+        }
+
+        if path.join(ProjectType::HARDHAT_CONFIG_FILE).exists() {
+            self.project_type = ProjectType::Hardhat;
+        }
+
+        if path.join(ProjectType::BROWNIE_CONFIG_FILE).exists() {
+            self.project_type = ProjectType::Brownie { remappings: HashMap::new() };
+            self.project_type = ProjectType::Brownie { remappings: self.get_remappings(path).map_err(|e| Error::Wrapped(
+                format!("Failed to get remappings for Brownie project: {:#?}", e).into()
+            ))? };
+        }
+
+        if path.join(ProjectType::TRUFFLE_CONFIG_FILE).exists() {
+            self.project_type = ProjectType::Truffle;
+        }
+        
+        Ok(())
+    }
+
+    /// Get the project type path from the [ProjectType] and return a [PathBuf]
+    pub fn get_project_type_path(&self, source_unit_directory: &Path, filename: String) -> Result<PathBuf, Error> {
+        let project_root_folder = self.find_project_root_folder(source_unit_directory);
+        if let Some(project_root_folder) = project_root_folder {
+            match &self.project_type {
+                // Remappings in foundry and brownie are handled using the same pattern
+                ProjectType::Foundry { remappings } | ProjectType::Brownie { remappings } => {
+                    for (k, v) in remappings {
+                        if filename.starts_with(k) {
+                            let project_full_path = project_root_folder.join(v);
+                            return Ok(PathBuf::from(filename.replace(k, project_full_path.to_string_lossy().as_ref())))
+                        }
+                    }
+                },
+                // Remappings in hardhat and truffle are done using the @ symbol and the node_modules folder
+                ProjectType::Hardhat | ProjectType::Truffle => {
+                    if filename.starts_with('.') {
+                       return Ok(project_root_folder.join(filename))
+                    } else {
+                        return Ok(project_root_folder.join("node_modules").join(filename))
+                    }
+                },
+                // If we find that the project type is unknown we return the filename as is
+                ProjectType::Unknown => return Ok(PathBuf::from(filename.clone())),
+            }
+        }
+        
+        // If we cant find a project root folder we return the filename as is
+        Ok(PathBuf::from(filename.clone()))
+    }
+
+    /// Get the re mappings from the re mappings file on the root folder of the project represented by the [PathBuf]
+    fn get_remappings(&self, root_folder_path: &Path) -> Result<HashMap<String, String>, Error> {
+        let remappings_filename = "remappings.txt";
+        match &self.project_type {
+            ProjectType::Foundry { .. } => if root_folder_path.join(remappings_filename).exists() {
+                // Get the remappings.txt file from the root of the project folder
+                let remappings_content = std::fs::read_to_string(root_folder_path.join(remappings_filename))
+                .map_err(|e| Error::Wrapped(e.into()))?;
+                let mut remappings = HashMap::new();
+                for remapping in remappings_content.lines() {
+                    let mut split = remapping.split('=');
+                    let from = split.next().unwrap().to_string();
+                    let to = split.next().unwrap().to_string();
+                    remappings.insert(from, to);
+                }
+            Ok(remappings)
+            
+            } else {
+                // Get foundry toml file from the root of the project folder
+                let remappings_from_toml_str = std::fs::read_to_string(root_folder_path.join(ProjectType::FOUNDRY_CONFIG_FILE))
+                .map_err(|e| Error::Wrapped(e.into()))?;
+    
+                let remappings_from_toml = toml::from_str::<toml::Value>(&remappings_from_toml_str).map_err(|e| Error::Wrapped(e.into()))?;
+                let value = find_in_toml_value(&remappings_from_toml, remappings_filename.strip_suffix(".txt").unwrap());
+                if value.is_some() {
+                    match value.unwrap() {
+                        toml::Value::Array(arr) =>  {
+                            let mut remappings = HashMap::new();
+                            for v in arr {
+                                let mut split = v.as_str().unwrap().split('=');
+                                let from = split.next().unwrap().to_string();
+                                let to = split.next().unwrap().to_string();
+                                remappings.insert(from, to);
+                            }
+                            Ok(remappings)
+                        },
+                        _ => panic!("remappings key in foundry.toml should be an array"),
+                    }
+                } else {
+                    println!("remappings key not found in foundry.toml");
+                    Ok(HashMap::new())
+                } 
+            },
+            ProjectType::Brownie { .. } => {
+                let remappings_from_yaml_str = std::fs::read_to_string(root_folder_path.join(ProjectType::BROWNIE_CONFIG_FILE))
+                .map_err(|e| Error::Wrapped(e.into()))?;
+                let remappings_from_yaml: serde_yaml::Value = serde_yaml::from_str(&remappings_from_yaml_str).map_err(|e| Error::Wrapped(e.into()))?;
+                println!("{:#?}", remappings_from_yaml);
+                let Some(compiler) = remappings_from_yaml.get("compiler") else { return Err(Error::Wrapped("compiler key not found in brownie-config.yaml".into())) };
+                let Some(solc) = compiler.get("solc") else { return Err(Error::Wrapped("solc key not found in brownie-config.yaml".into())) };
+                match solc.get("solidity.remappings").or_else(|| solc.get("remappings"))  {
+                    Some(remappings) => {
+                        match remappings.as_sequence() {
+                            Some(remaps) => {
+                                let mut remappings = HashMap::new();
+                                    for v in remaps {
+                                        let mut split = v.as_str().unwrap().split('=');
+                                        let from = split.next().unwrap().to_string();
+                                        let to = split.next().unwrap().to_string();
+                                        remappings.insert(from, to);
+                                    }
+                                    Ok(remappings)
+                            },
+                            None => Err(Error::Wrapped("solidity.remappings should be a sequence".into()))
+                        }
+                    },
+                    None => Err(Error::Wrapped("solidity.remappings key not found in brownie-config.yaml".into()))
+                }
+            },
+            _ => Ok(HashMap::new())
+        }
+    }
 }
+
+/// Represents the type of project as [ProjectType] default is [ProjectType::Unknown]
+#[derive(Clone, Debug, Default)]
+pub enum ProjectType {
+    Foundry {
+        remappings: HashMap<String, String>,
+    },
+    Hardhat,
+    Brownie {
+        remappings: HashMap<String, String>,
+    },
+    Truffle,
+    #[default]
+    Unknown,
+}
+
+impl ProjectType {
+    pub const FOUNDRY_CONFIG_FILE: &'static str = "foundry.toml";
+    pub const HARDHAT_CONFIG_FILE: &'static str = "hardhat.config.js";
+    pub const BROWNIE_CONFIG_FILE: &'static str = "brownie-config.yaml";
+    pub const TRUFFLE_CONFIG_FILE: &'static str = "truffle-config.js";
+}
+
+/// Find a key in a [toml::Table] and return the [toml::Value]
+fn find_in_toml_value(value: &toml::Value, key: &str) -> Option<toml::Value> {
+    match value {
+        toml::Value::Table(table) => {
+            for (k, v) in table {
+                if k == key {
+                    return Some(v.clone());
+                }
+                if let Some(val) = find_in_toml_value(v, key) {
+                    return Some(val);
+                }
+            }
+            None
+        },
+        _ => None,
+    }
+}
+
+
