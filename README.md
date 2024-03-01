@@ -36,6 +36,10 @@ See the [Rust Install](https://www.rust-lang.org/tools/install) page for install
     - [x] Libraries
     - [x] `using`/`for`
     - [ ] Inline Assembly
+* Contract-related
+    - [x] `this`
+    - [x] `super`
+    - [ ] ~~`selfdestruct(address payable recipient)`~~ (NOTE: Unsupported)
 * State Variables
     - [x] Constant
     - [x] Immutable
@@ -67,8 +71,8 @@ See the [Rust Install](https://www.rust-lang.org/tools/install) page for install
     - [x] `assert(bool condition)`
     - [x] `require(bool condition)`
     - [x] `require(bool condition, string memory message)`
-    - [ ] `revert()`
-    - [ ] `revert(string memory reason)`
+    - [x] `revert()`
+    - [x] `revert(string memory reason)`
 * Control Structures
     - [x] `if`/`else`
     - [x] `while`
@@ -140,10 +144,6 @@ See the [Rust Install](https://www.rust-lang.org/tools/install) page for install
     - [x] `<address>.call(bytes memory) returns (bool, bytes memory)`
     - [ ] ~~`<address>.delegatecall(bytes memory) returns (bool, bytes memory)`~~ (NOTE: Unsupported)
     - [ ] ~~`<address>.staticcall(bytes memory) returns (bool, bytes memory)`~~ (NOTE: Unsupported)
-* Contract-related
-    - [x] `this`
-    - [x] `super`
-    - [ ] ~~`selfdestruct(address payable recipient)`~~ (NOTE: Unsupported)
 * Type Information
     - [ ] `type(C).name`
     - [ ] `type(C).creationCode`

@@ -1908,6 +1908,48 @@ pub fn translate_function_call_expression(
                     }))
                 }
 
+                "revert" => {
+                    // revert() => revert(0)
+                    // revert("msg") => {
+                    //     log("msg");
+                    //     revert(0);
+                    // }
+
+                    if parameters.is_empty() {
+                        return Ok(sway::Expression::from(sway::FunctionCall {
+                            function: sway::Expression::Identifier("revert".into()),
+                            generic_parameters: None,
+                            parameters: vec![
+                                sway::Expression::from(sway::Literal::DecInt(0)),
+                            ],
+                        }));
+                    }
+
+                    if parameters.len() != 1 {
+                        panic!("Invalid revert call: {expression:#?}");
+                    }
+
+                    Ok(sway::Expression::from(sway::Block {
+                        statements: vec![
+                            sway::Statement::from(sway::Expression::from(sway::FunctionCall {
+                                function: sway::Expression::Identifier("log".into()),
+                                generic_parameters: None,
+                                parameters,
+                            })),
+
+                            sway::Statement::from(sway::Expression::from(sway::FunctionCall {
+                                function: sway::Expression::Identifier("revert".into()),
+                                generic_parameters: None,
+                                parameters: vec![
+                                    sway::Expression::from(sway::Literal::DecInt(0)),
+                                ],
+                            })),
+                        ],
+                        
+                        final_expr: None,
+                    }))
+                }
+
                 old_name => {
                     // Check to see if the expression is an ABI type
                     if let Some(external_definition) = project.find_definition_with_abi(old_name) {
