@@ -35,12 +35,6 @@ pub fn translate_function_name(
         let old_name = function_definition.name.as_ref().map(|i| i.name.clone()).unwrap_or_default();
         let mut new_name = crate::translate_naming_convention(old_name.as_str(), Case::Snake);
 
-        // Prepend the definition name to the beginning of the function name if it is a library
-        if let solidity::ContractTy::Library(_)  = translated_definition.kind.as_ref().unwrap() {
-            let definition_name = crate::translate_naming_convention(translated_definition.name.as_str(), Case::Snake);
-            new_name = format!("{}_{}", definition_name, new_name);
-        }
-
         // Increase the function name count
         let count = translated_definition.function_name_counts.entry(new_name.clone()).or_insert(0);
         *count += 1;
