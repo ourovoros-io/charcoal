@@ -127,6 +127,7 @@ fn generate_forc_project<P1: AsRef<Path>, P2: AsRef<Path>>(
 
     for translated_definition in project.collect_translated_definitions(definition_name, source_unit_path) {
         let definition_snake_name = translate_naming_convention(translated_definition.name.as_str(), Case::Snake);
+        let dependencies = translated_definition.dependencies.clone();
         
         let module: sway::Module = translated_definition.into();
 
@@ -156,10 +157,12 @@ fn generate_forc_project<P1: AsRef<Path>, P2: AsRef<Path>>(
                 entry = \"main.sw\"\n\
                 license = \"Apache-2.0\"\n\
                 name = \"{definition_snake_name}\"\n\
-               \n\
+                \n\
                 [dependencies]\n\
-               \n\
-                "
+                {}\
+                \n\
+                ",
+                dependencies.join("\n"),
             ),
         )
         .map_err(|e| Error::Wrapped(Box::new(e)))?;

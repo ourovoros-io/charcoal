@@ -3103,9 +3103,33 @@ pub fn translate_unary_expression(
     operator: &str,
     expression: &solidity::Expression,
 ) -> Result<sway::Expression, Error> {
+    let expression = translate_expression(project, translated_definition, scope.clone(), expression)?;
+
+    // NOTE: Sway does not have a negate operator, so we need to make sure to use the correct translation
+    if operator == "-" {
+        let type_name = translated_definition.get_expression_type(scope, &expression)?;
+
+        match &type_name {
+            sway::TypeName::Identifier { name, generic_parameters } => match (name.as_str(), generic_parameters.as_ref()) {
+                ("I8" | "I16" | "I32" | "I64" | "I128" | "I256", None) => return Ok(sway::Expression::from(sway::FunctionCall {
+                    function: sway::Expression::from(sway::MemberAccess {
+                        expression,
+                        member: "neg".into(),
+                    }),
+                    generic_parameters: None,
+                    parameters: vec![],
+                })),
+
+                _ => panic!("Unhandled {type_name} negate operator translation"),
+            }
+
+            _ => panic!("Unhandled {type_name} negate operator translation"),
+        }
+    }
+
     Ok(sway::Expression::from(sway::UnaryExpression {
         operator: operator.into(),
-        expression: translate_expression(project, translated_definition, scope.clone(), expression)?,
+        expression,
     }))
 }
 
