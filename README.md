@@ -65,7 +65,7 @@ See the [Rust Install](https://www.rust-lang.org/tools/install) page for install
     - [x] Error Type Declarations
     - [ ] ~~`<error>.selector`~~ (NOTE: Unsupported)
     - [x] `assert(bool condition)`
-    - [ ] `require(bool condition)`
+    - [x] `require(bool condition)`
     - [x] `require(bool condition, string memory message)`
     - [ ] `revert()`
     - [ ] `revert(string memory reason)`
@@ -141,7 +141,7 @@ See the [Rust Install](https://www.rust-lang.org/tools/install) page for install
     - [ ] ~~`<address>.delegatecall(bytes memory) returns (bool, bytes memory)`~~ (NOTE: Unsupported)
     - [ ] ~~`<address>.staticcall(bytes memory) returns (bool, bytes memory)`~~ (NOTE: Unsupported)
 * Contract-related
-    - [ ] `this`
+    - [x] `this`
     - [x] `super`
     - [ ] ~~`selfdestruct(address payable recipient)`~~ (NOTE: Unsupported)
 * Type Information

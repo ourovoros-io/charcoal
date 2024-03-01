@@ -1719,7 +1719,7 @@ pub fn translate_function_call_expression(
         }
 
         solidity::Expression::Variable(solidity::Identifier { name, .. }) => {
-            let parameters = arguments.iter()
+            let mut parameters = arguments.iter()
                 .map(|a| translate_expression(project, translated_definition, scope.clone(), a))
                 .collect::<Result<Vec<_>, _>>()?;
 
@@ -1886,7 +1886,16 @@ pub fn translate_function_call_expression(
                 }
 
                 "require" => {
+                    // require(x) => require(x, "Requirement failed: x")
                     // require(x, "msg") => require(x, "msg")
+
+                    if parameters.len() == 1 {
+                        parameters.push(
+                            sway::Expression::from(sway::Literal::String(
+                                format!("Requirement failed: {}", sway::TabbedDisplayer(&parameters[0])),
+                            ))
+                        );
+                    }
 
                     if parameters.len() != 2 {
                         panic!("Invalid require call: {expression:#?}");
