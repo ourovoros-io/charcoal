@@ -474,13 +474,6 @@ pub fn translate_function_definition(
        new_name = format!("{}_{}", crate::translate_naming_convention(&translated_definition.name, Case::Snake), new_name);
     }
 
-    println!(
-        "Translating {}.{} in {}",
-        translated_definition.name,
-        function_definition.name.as_ref().unwrap().name,
-        translated_definition.path.to_string_lossy(),
-    );
-
     // Translate the functions parameters
     let mut parameters = sway::ParameterList::default();
 

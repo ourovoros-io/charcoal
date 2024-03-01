@@ -399,7 +399,7 @@ pub fn translate_type_expression(
     // They should be handled in a higher level expression.
     //
 
-    unimplemented!("type expression: {} - {expression:#?}", expression.to_string())
+    unimplemented!("type expression: {expression} - {expression:#?}")
 }
 
 #[inline]
@@ -533,7 +533,7 @@ pub fn translate_array_slice_expression(
     _scope: Rc<RefCell<TranslationScope>>,
     expression: &solidity::Expression,
 ) -> Result<sway::Expression, Error> {
-    todo!("translate array slice expression: {} - {expression:#?}", expression.to_string())
+    todo!("translate array slice expression: {expression} - {expression:#?}")
 }
 
 #[inline]
@@ -597,11 +597,11 @@ pub fn translate_member_access_expression(
                         //
 
                         let solidity::Expression::Variable(solidity::Identifier { name, .. }) = &args[0] else {
-                            todo!("translate address cast member `{member}`: {}", expression.to_string());
+                            todo!("translate address cast member `{member}`: {expression}");
                         };
 
                         if name != "this" {
-                            todo!("translate address cast member `{member}`: {}", expression.to_string());
+                            todo!("translate address cast member `{member}`: {expression}");
                         }
 
                         match member.name.as_str() {
@@ -635,16 +635,16 @@ pub fn translate_member_access_expression(
                                 todo!("{expression}")
                             }
                             
-                            member => todo!("translate address cast member `{member}`: {}", expression.to_string()),
+                            member => todo!("translate address cast member `{member}`: {expression}"),
                         }
                     }
                     
-                    solidity::Type::Bool => todo!("translate bool cast member access: {}", expression.to_string()),
-                    solidity::Type::String => todo!("translate string cast member access: {}", expression.to_string()),
-                    solidity::Type::Int(_) => todo!("translate int cast member access: {}", expression.to_string()),
-                    solidity::Type::Uint(_) => todo!("translate uint cast member access: {}", expression.to_string()),
-                    solidity::Type::Bytes(_) => todo!("translate bytes cast member access: {}", expression.to_string()),
-                    solidity::Type::Rational => todo!("translate rational cast member access: {}", expression.to_string()),
+                    solidity::Type::Bool => todo!("translate bool cast member access: {expression}"),
+                    solidity::Type::String => todo!("translate string cast member access: {expression}"),
+                    solidity::Type::Int(_) => todo!("translate int cast member access: {expression}"),
+                    solidity::Type::Uint(_) => todo!("translate uint cast member access: {expression}"),
+                    solidity::Type::Bytes(_) => todo!("translate bytes cast member access: {expression}"),
+                    solidity::Type::Rational => todo!("translate rational cast member access: {expression}"),
                     
                     solidity::Type::DynamicBytes => {
                         // Translate the value being casted
@@ -664,12 +664,12 @@ pub fn translate_member_access_expression(
                                 parameters: vec![],
                             })),
 
-                            _ => todo!("translate dynamic bytes cast member access: {}", expression.to_string()),
+                            _ => todo!("translate dynamic bytes cast member access: {expression}"),
                         }
                     }
 
-                    solidity::Type::Mapping { .. } => todo!("translate mapping cast member access: {}", expression.to_string()),
-                    solidity::Type::Function { .. } => todo!("translate function cast member access: {}", expression.to_string()),
+                    solidity::Type::Mapping { .. } => todo!("translate mapping cast member access: {expression}"),
+                    solidity::Type::Function { .. } => todo!("translate function cast member access: {expression}"),
                 }
             }
 
@@ -686,19 +686,19 @@ pub fn translate_member_access_expression(
 
                         sway::TypeName::Identifier { name, .. } => match (name.as_str(), member.name.as_str()) {
                             ("Identity", "name") => {
-                                todo!("translate type member access: {} - {expression:#?}", expression.to_string())
+                                todo!("translate type member access: {expression} - {expression:#?}")
                             }
 
                             ("Identity", "creationCode") => {
-                                todo!("translate type member access: {} - {expression:#?}", expression.to_string())
+                                todo!("translate type member access: {expression} - {expression:#?}")
                             }
 
                             ("Identity", "runtimeCode") => {
-                                todo!("translate type member access: {} - {expression:#?}", expression.to_string())
+                                todo!("translate type member access: {expression} - {expression:#?}")
                             }
 
                             ("Identity", "interfaceId") => {
-                                todo!("translate type member access: {} - {expression:#?}", expression.to_string())
+                                todo!("translate type member access: {expression} - {expression:#?}")
                             }
 
                             ("u8" | "u16" | "u32" | "u64" | "u256", "min") => return Ok(sway::Expression::from(sway::FunctionCall {
@@ -713,13 +713,13 @@ pub fn translate_member_access_expression(
                                 parameters: vec![],
                             })),
 
-                            _ => todo!("translate type member access: {} - {expression:#?}", expression.to_string()),
+                            _ => todo!("translate type member access: {expression} - {expression:#?}"),
                         }
 
-                        sway::TypeName::Array { .. } => todo!("translate type member access: {} - {expression:#?}", expression.to_string()),
-                        sway::TypeName::Tuple { .. } => todo!("translate type member access: {} - {expression:#?}", expression.to_string()),
-                        sway::TypeName::StringSlice => todo!("translate type member access: {} - {expression:#?}", expression.to_string()),
-                        sway::TypeName::StringArray { .. } => todo!("translate type member access: {} - {expression:#?}", expression.to_string()),
+                        sway::TypeName::Array { .. } => todo!("translate type member access: {expression} - {expression:#?}"),
+                        sway::TypeName::Tuple { .. } => todo!("translate type member access: {expression} - {expression:#?}"),
+                        sway::TypeName::StringSlice => todo!("translate type member access: {expression} - {expression:#?}"),
+                        sway::TypeName::StringArray { .. } => todo!("translate type member access: {expression} - {expression:#?}"),
                     }
                 }
 
@@ -1081,14 +1081,14 @@ pub fn translate_member_access_expression(
                                 }));
                             }
 
-                            todo!("translate {} variable member: {} - {expression:#?}", variable.type_name, expression.to_string())
+                            todo!("translate {} variable member: {expression} - {expression:#?}", variable.type_name)
                         }
                     }
                     
-                    sway::TypeName::Array { .. } => todo!("translate {} variable member: {} - {expression:#?}", variable.type_name, expression.to_string()),
-                    sway::TypeName::Tuple { .. } => todo!("translate {} variable member: {} - {expression:#?}", variable.type_name, expression.to_string()),
-                    sway::TypeName::StringSlice => todo!("translate {} variable member: {} - {expression:#?}", variable.type_name, expression.to_string()),
-                    sway::TypeName::StringArray { .. } => todo!("translate {} variable member: {} - {expression:#?}", variable.type_name, expression.to_string()),
+                    sway::TypeName::Array { .. } => todo!("translate {} variable member: {expression} - {expression:#?}", variable.type_name),
+                    sway::TypeName::Tuple { .. } => todo!("translate {} variable member: {expression} - {expression:#?}", variable.type_name),
+                    sway::TypeName::StringSlice => todo!("translate {} variable member: {expression} - {expression:#?}", variable.type_name),
+                    sway::TypeName::StringArray { .. } => todo!("translate {} variable member: {expression} - {expression:#?}", variable.type_name),
                 }
             }
         }
@@ -1137,7 +1137,7 @@ pub fn translate_member_access_expression(
                     return Ok(result);
                 }
 
-                todo!("member access type name expression: {} - {expression:#?}", expression.to_string())
+                todo!("member access type name expression: {expression} - {expression:#?}")
             }
 
             _ => {}
@@ -1199,11 +1199,11 @@ pub fn translate_member_access_expression(
                 _ => {}
             }
         
-            todo!("translate member access expression: {} - {expression:#?}", expression.to_string())
+            todo!("translate member access expression: {expression} - {expression:#?}")
         }
     }
 
-    todo!("translate member access expression: {} - {expression:#?}", expression.to_string())
+    todo!("translate member access expression: {expression} - {expression:#?}")
 }
 
 #[inline]
@@ -1950,24 +1950,6 @@ pub fn translate_function_call_expression(
 
                     // Ensure the function exists in scope
                     let Some(function) = scope.borrow().find_function_matching_types(old_name, parameters.as_slice(), parameter_types.as_slice()) else {
-                        fn dump_scope(scope: Rc<RefCell<TranslationScope>>) {
-                            if let Some(p) = scope.borrow().parent.as_ref() {
-                                dump_scope(p.clone());
-                            }
-                            for f in scope.borrow().functions.iter() {
-                                println!(
-                                    "fn {}{}{}",
-                                    f.borrow().old_name,
-                                    f.borrow().parameters,
-                                    if let Some(return_type) = f.borrow().return_type.as_ref() {
-                                        format!(" -> {return_type}")
-                                    } else {
-                                        String::new()
-                                    },
-                                );
-                            }
-                        }
-                        dump_scope(scope.clone());
                         panic!(
                             "Failed to find function `{old_name}({})` in scope",
                             parameter_types.iter().map(|t| t.to_string()).collect::<Vec<_>>().join(", "),
@@ -2363,8 +2345,6 @@ pub fn translate_function_call_expression(
                             .map(|p| translated_definition.get_expression_type(scope.clone(), p))
                             .collect::<Result<Vec<_>, _>>()?;
 
-                        println!("Checking for {name} - {expression}");
-
                         // Check to see if container is a user-defined type name
                         if translated_definition.type_definitions.iter().any(|t| {
                             let sway::TypeName::Identifier { name: type_name, generic_parameters: None } = &t.name else { return false };
@@ -2373,15 +2353,11 @@ pub fn translate_function_call_expression(
                             if let "wrap" | "unwrap" = member.name.as_str() {
                                 return Ok(parameters[0].clone());
                             }
-
-                            println!("Wasn't wrap or unwrap");
                         }
 
                         if let Some(result) = || -> Result<Option<sway::Expression>, Error> {
                             // Check if function is contained in an external definition
                             let Some(external_definition) = project.translated_definitions.iter().find(|x| x.name == name) else { return Ok(None) };
-
-                            println!("Found {name}");
 
                             let old_name = member.name.clone();
                             let new_name = crate::translate_naming_convention(format!("{}_{}", container, member.name).as_str(), Case::Snake);
@@ -2393,8 +2369,6 @@ pub fn translate_function_call_expression(
                                 parameter_types.as_slice(),
                             ) else { return Ok(None) };
 
-                            println!("Found {name}.{old_name}");
-
                             let external_function_declaration = external_function_declaration.borrow();
 
                             // Don't import the function if we already have
@@ -2403,7 +2377,6 @@ pub fn translate_function_call_expression(
                                 parameters.as_slice(),
                                 parameter_types.as_slice(),
                             ).is_some() {
-                                println!("We already have {name}.{old_name}, skipping...");
                                 return Ok(None);
                             }
 
@@ -2440,14 +2413,11 @@ pub fn translate_function_call_expression(
                             });
 
                             *translated_definition.function_call_counts.entry(new_name.clone()).or_insert(0) += 1;
-
-                            println!("Function {name}.{old_name} used");
+                            
                             Ok(Some(function_call))
                         }()? {
                             return Ok(result);
                         }
-
-                        println!("Couldn't find {name} - {expression}");
                     }
                 }
 
@@ -2849,10 +2819,10 @@ pub fn translate_function_call_expression(
                 } 
             }
 
-            _ => todo!("translate function call block expression: {} - {expression:#?}", expression.to_string())
+            _ => todo!("translate function call block expression: {expression} - {expression:#?}")
         }
 
-        _ => todo!("translate function call expression: {} - {expression:#?}", expression.to_string()),
+        _ => todo!("translate function call expression: {expression} - {expression:#?}"),
     }
 }
 
@@ -3268,7 +3238,6 @@ pub fn translate_variable_access_expression(
         }
         
         solidity::Expression::MemberAccess(_, container, member) => {
-            println!("{expression} - {expression:#?}");
             let translated_container = translate_expression(project, translated_definition, scope.clone(), container)?;
         
             let container_type_name = translated_definition.get_expression_type(scope.clone(), &translated_container)?;
@@ -3291,23 +3260,27 @@ pub fn translate_variable_access_expression(
                 }
             }
         
-            todo!("translate variable access expression: {} - {expression:#?}", expression.to_string())
+            todo!("translate variable access expression: {expression} - {expression:#?}")
         }
 
         solidity::Expression::FunctionCall(_, function, arguments) => {
             let arguments = arguments.iter()
                 .map(|a| translate_expression(project, translated_definition, scope.clone(), a))
                 .collect::<Result<Vec<_>, _>>()?;
+
             let (variable, expression) = translate_variable_access_expression(project, translated_definition, scope.clone(), function)?;
-            Ok((variable, sway::Expression::from(sway::FunctionCall {
-                function: expression,
-                generic_parameters: None,
-                parameters: arguments,
-            })))
-            
+
+            Ok((
+                variable,
+                sway::Expression::from(sway::FunctionCall {
+                    function: expression,
+                    generic_parameters: None,
+                    parameters: arguments,
+                })
+            ))
         }
 
-        _ => todo!("translate variable access expression: {expression:#?}")
+        _ => todo!("translate variable access expression: {expression} - {expression:#?}"),
     }
 }
 

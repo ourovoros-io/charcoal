@@ -780,7 +780,6 @@ impl TranslatedDefinition {
                             
                             // Ensure the supplied function call args match the function's parameters
                             if function_call.parameters.len() != f.parameters.entries.len() {
-                                println!("{} != {}", function_call.parameters.len(), f.parameters.entries.len());
                                 return false;
                             }
 
@@ -804,7 +803,6 @@ impl TranslatedDefinition {
                                 }
 
                                 if value_type_name != parameter_type_name {
-                                    println!("{value_type_name} != {parameter_type_name}");
                                     return false;
                                 }
                             }
