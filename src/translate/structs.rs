@@ -1,7 +1,7 @@
-use crate::{Error, project::Project, sway};
+use super::{translate_type_name, TranslatedDefinition};
+use crate::{project::Project, sway, Error};
 use convert_case::Case;
 use solang_parser::pt as solidity;
-use super::{translate_type_name, TranslatedDefinition};
 
 #[inline]
 pub fn translate_struct_definition(

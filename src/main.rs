@@ -93,7 +93,6 @@ fn translate_project() -> Result<(), Error> {
         project.project_type = crate::project::ProjectType::Unknown;
     }
     
-    
     let source_unit_paths = collect_source_unit_paths(&options.target)
         .map_err(|e| Error::Wrapped(Box::new(e)))?;
     
@@ -208,5 +207,3 @@ fn collect_source_unit_paths(dir: &Path) -> std::io::Result<Vec<PathBuf>> {
 
     Ok(source_unit_paths)
 }
-
-

@@ -1,9 +1,8 @@
-use std::{cell::RefCell, rc::Rc};
-
 use super::{translate_type_name, TranslatedDefinition, TranslatedVariable, TranslationScope};
 use crate::{project::Project, sway, translate::resolve_import, Error};
 use convert_case::Case;
 use solang_parser::pt as solidity;
+use std::{cell::RefCell, rc::Rc};
 
 pub fn create_value_expression(
     translated_definition: &mut TranslatedDefinition,
@@ -1160,46 +1159,43 @@ pub fn translate_member_access_expression(
                     }))
                 }
             }
-            match expression {
-                solidity::Expression::MemberAccess(_, expr, identifier) => {
-                    let expr = translate_expression(project, translated_definition, scope.clone(), expr)?;
-                    let type_name = translated_definition.get_expression_type(scope.clone(), &expr)?;
-                    match type_name {
-                        sway::TypeName::Identifier { name, generic_parameters } => match (name.as_str(), generic_parameters.as_ref()) {
-                            ("Identity", None) => match identifier.name.as_str() {
-                                "balance" => return Ok(sway::Expression::from(sway::FunctionCall {
-                                    function: sway::Expression::Identifier("std::context::balance_of".into()),
-                                    generic_parameters: None,
-                                    parameters: vec![
-                                        sway::Expression::from(sway::FunctionCall {
+
+            match container_type_name {
+                sway::TypeName::Identifier { name, generic_parameters } => match (name.as_str(), generic_parameters.as_ref()) {
+                    ("Identity", None) => match member.name.as_str() {
+                        "balance" => return Ok(sway::Expression::from(sway::FunctionCall {
+                            function: sway::Expression::Identifier("std::context::balance_of".into()),
+                            generic_parameters: None,
+                            parameters: vec![
+                                sway::Expression::from(sway::FunctionCall {
+                                    function: sway::Expression::from(sway::MemberAccess {
+                                        expression: sway::Expression::from(sway::FunctionCall {
                                             function: sway::Expression::from(sway::MemberAccess {
-                                                expression: sway::Expression::from(sway::FunctionCall {
-                                                    function: sway::Expression::from(sway::MemberAccess {
-                                                        expression: expr,
-                                                        member: "as_contract_id".into(),
-                                                    }),
-                                                    generic_parameters: None,
-                                                    parameters: vec![],
-                                                }),
-                                                member: "unwrap".into(),
+                                                expression: container,
+                                                member: "as_contract_id".into(),
                                             }),
                                             generic_parameters: None,
                                             parameters: vec![],
                                         }),
-                                        sway::Expression::from(sway::FunctionCall {
-                                            function: sway::Expression::Identifier("AssetId::default".into()),
-                                            generic_parameters: None,
-                                            parameters: vec![],
-                                        }),
-                                    ],
-                                })), 
-                                _ => {},
-                            }
-                            _ => {}
-                        },
-                        _ => {}
+                                        member: "unwrap".into(),
+                                    }),
+                                    generic_parameters: None,
+                                    parameters: vec![],
+                                }),
+                                sway::Expression::from(sway::FunctionCall {
+                                    function: sway::Expression::Identifier("AssetId::default".into()),
+                                    generic_parameters: None,
+                                    parameters: vec![],
+                                }),
+                            ],
+                        })),
+
+                        _ => {},
                     }
-                } 
+
+                    _ => {}
+                }
+
                 _ => {}
             }
         

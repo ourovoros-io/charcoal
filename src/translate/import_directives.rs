@@ -8,8 +8,9 @@ pub fn resolve_import(
     definition_name: &String,
     source_unit_path: &Path,
 ) -> Result<Option<TranslatedDefinition>, Error> {
-    let source_unit_directory = source_unit_path.parent().map(PathBuf::from).unwrap();
     let mut source_unit_path = PathBuf::from(source_unit_path);
+    let source_unit_directory = source_unit_path.parent().map(PathBuf::from).unwrap();
+    
     if !source_unit_path.to_string_lossy().starts_with('.') {
         source_unit_path = project.get_project_type_path(&source_unit_directory, source_unit_path.to_string_lossy().to_string())?;
     } else {
@@ -68,6 +69,7 @@ pub fn translate_import_directives(
     for import_directive in import_directives.iter() {
         let mut translate_import_directive = |definition_name: Option<&String>, filename: &solidity::StringLiteral| -> Result<(), Error> {
             let mut import_path = PathBuf::from(filename.string.clone());
+
             if !import_path.to_string_lossy().starts_with('.') {
                 import_path = project.get_project_type_path(source_unit_directory.as_path(), filename.string.clone())?;
             } else {
@@ -75,14 +77,15 @@ pub fn translate_import_directives(
             }
             
             import_path = crate::get_canonical_path(import_path, false, false)
-            .map_err(|e| Error::Wrapped(Box::new(e))).unwrap();
+                .map_err(|e| Error::Wrapped(Box::new(e))).unwrap();
             
-           
-
             if !import_path.exists() {
-                return Err(
-                    Error::Wrapped(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, format!("File not found: {}", import_path.to_string_lossy()))))
-                );
+                return Err(Error::Wrapped(Box::new(
+                    std::io::Error::new(
+                        std::io::ErrorKind::NotFound,
+                        format!("File not found: {}", import_path.to_string_lossy()),
+                    )
+                )));
             }
 
             let import_path = crate::get_canonical_path(import_path, false, false)
