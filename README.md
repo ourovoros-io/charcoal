@@ -76,7 +76,7 @@ See the [Rust Install](https://www.rust-lang.org/tools/install) page for install
 * Control Structures
     - [x] `if`/`else`
     - [x] `while`
-    - [ ] `do`/`while`
+    - [x] `do`/`while`
     - [x] `for`
     - [x] `break`
     - [x] `continue`

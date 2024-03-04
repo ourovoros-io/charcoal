@@ -155,7 +155,7 @@ pub fn translate_statement(
         solidity::Statement::Expression(_, expression) => translate_expression_statement(project, translated_definition, scope.clone(), expression),
         solidity::Statement::VariableDefinition(_, variable_declaration, initializer) => translate_variable_definition_statement(project, translated_definition, scope.clone(), variable_declaration, initializer),
         solidity::Statement::For(_, initialization, condition, update, body) => translate_for_statement(project, translated_definition, scope.clone(), initialization, condition, update, body),
-        solidity::Statement::DoWhile(_, _, _) => todo!("translate do while statement: {statement:#?}"),
+        solidity::Statement::DoWhile(_, body, condition) => translate_do_while_statement(project, translated_definition, scope.clone(), body, condition),
         solidity::Statement::Continue(_) => Ok(sway::Statement::from(sway::Expression::Continue)),
         solidity::Statement::Break(_) => Ok(sway::Statement::from(sway::Expression::Break)),
         solidity::Statement::Return(_, expression) => translate_return_statement(project, translated_definition, scope.clone(), expression),
@@ -617,6 +617,44 @@ pub fn translate_for_statement(
     finalize_block_translation(project, inner_scope.clone(), &mut block)?;
 
     Ok(sway::Statement::from(sway::Expression::from(block)))
+}
+
+#[inline]
+pub fn translate_do_while_statement(
+    project: &mut Project,
+    translated_definition: &mut TranslatedDefinition,
+    scope: Rc<RefCell<TranslationScope>>,
+    body: &solidity::Statement,
+    condition: &solidity::Expression,
+) -> Result<sway::Statement, Error> {
+    Ok(sway::Statement::from(sway::Expression::from(sway::While {
+        condition: sway::Expression::from(sway::Literal::Bool(true)),
+        body: {
+            let mut body = match translate_statement(project, translated_definition, scope.clone(), body)? {
+                sway::Statement::Expression(sway::Expression::Block(block)) => *block,
+                statement => sway::Block {
+                    statements: vec![statement],
+                    final_expr: None,
+                }
+            };
+
+            body.statements.push(sway::Statement::from(sway::Expression::from(sway::If {
+                condition: Some(sway::Expression::from(sway::UnaryExpression {
+                    operator: "!".into(),
+                    expression: translate_expression(project, translated_definition, scope.clone(), condition)?,
+                })),
+                then_body: sway::Block {
+                    statements: vec![
+                        sway::Statement::from(sway::Expression::Break),
+                    ],
+                    final_expr: None,
+                },
+                else_if: None,
+            })));
+
+            body
+        }
+    })))
 }
 
 #[inline]
