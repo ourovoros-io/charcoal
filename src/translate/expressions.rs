@@ -885,12 +885,12 @@ pub fn translate_member_access_expression(
 
             // TODO: find out the appropriate sway version of `block.gaslimit`
             ("block", "gaslimit") => {
-                // todo!("block.gaslimit")
+                // block.gaslimit => ???
                 return Ok(sway::Expression::create_todo(Some("block.gaslimit".into())))
             }
 
             ("block", "number") => {
-                // std::block::height()
+                // block.number => std::block::height()
                 return Ok(sway::Expression::from(sway::FunctionCall {
                     function: sway::Expression::Identifier("std::block::height".into()),
                     generic_parameters: None,
@@ -923,7 +923,7 @@ pub fn translate_member_access_expression(
             }
 
             ("msg", "data") => {
-                // std::inputs::input_message_data(0, 0)
+                // msg.data => std::inputs::input_message_data(0, 0)
                 return Ok(sway::Expression::from(sway::FunctionCall {
                     function: sway::Expression::Identifier("std::inputs::input_message_data".into()),
                     generic_parameters: None,
@@ -935,7 +935,7 @@ pub fn translate_member_access_expression(
             }
 
             ("msg", "sender") => {
-                // msg_sender().unwrap()
+                // msg.sender => msg_sender().unwrap()
                 return Ok(sway::Expression::from(sway::FunctionCall {
                     function: sway::Expression::from(sway::MemberAccess {
                         expression: sway::Expression::from(sway::FunctionCall {
@@ -966,7 +966,7 @@ pub fn translate_member_access_expression(
             }
 
             ("msg", "value") => {
-                // std::context::msg_amount()
+                // msg.value => std::context::msg_amount()
                 return Ok(sway::Expression::from(sway::FunctionCall {
                     function: sway::Expression::Identifier("std::context::msg_amount".into()),
                     generic_parameters: None,
@@ -975,7 +975,7 @@ pub fn translate_member_access_expression(
             }
 
             ("tx", "gasprice") => {
-                // std::tx::tx_gas_price().unwrap_or(0)
+                // tx.gasprice => std::tx::tx_gas_price().unwrap_or(0)
                 return Ok(sway::Expression::from(sway::FunctionCall {
                     function: sway::Expression::from(sway::MemberAccess {
                         expression: sway::Expression::from(sway::FunctionCall {

@@ -35,7 +35,6 @@ See the [Rust Install](https://www.rust-lang.org/tools/install) page for install
     - [x] Interfaces
     - [x] Libraries
     - [x] `using`/`for`
-    - [ ] Inline Assembly
 * Contract-related
     - [x] `this`
     - [x] `super`
@@ -100,9 +99,9 @@ See the [Rust Install](https://www.rust-lang.org/tools/install) page for install
     - [ ] `weeks`
 * Block and Transaction Properties
     - [x] `blockhash(uint blockNumber) returns (bytes32)`
-    - [ ] `blobhash(uint index) returns (bytes32)`
+    - [ ] ~~`blobhash(uint index) returns (bytes32)`~~ (NOTE: Unsupported)
     - [ ] ~~`block.basefee`~~ (NOTE: Unsupported)
-    - [ ] `block.blobbasefee`
+    - [ ] ~~`block.blobbasefee`~~ (NOTE: Unsupported)
     - [x] `block.chainid`
     - [x] `block.coinbase`
     - [ ] ~~`block.difficulty`~~ (NOTE: Unsupported)
@@ -151,3 +150,97 @@ See the [Rust Install](https://www.rust-lang.org/tools/install) page for install
     - [ ] `type(I).interfaceId`
     - [x] `type(T).min`
     - [x] `type(T).max`
+* Inline Assembly Statements
+    - [x] Assignments
+    - [x] Variable Declarations
+    - [ ] If Statements
+    - [ ] For Statements
+    - [ ] Switch Statements
+    - [ ] Leave Statements
+    - [ ] Break Statements
+    - [ ] Continue Statements
+    - [ ] Block Statements
+    - [ ] Function Definitions
+    - [x] Function Calls
+* Inline Assembly Expressions
+    - [x] Boolean Literals
+    - [x] Number Literals
+    - [x] Hex Number Literals
+    - [ ] Hex String Literals
+    - [x] String Literals
+    - [x] Variable Identifiers
+    - [x] Function Calls
+    - [ ] Suffix Access
+* Inline Assembly Built-In Functions
+    - [x] `add`
+    - [x] `mul`
+    - [x] `sub`
+    - [x] `div`
+    - [x] `sdiv`
+    - [x] `mod`
+    - [x] `smod`
+    - [x] `addmod`
+    - [x] `mulmod`
+    - [x] `exp`
+    - [ ] `signextend`
+    - [x] `lt`
+    - [x] `gt`
+    - [x] `slt`
+    - [x] `sgt`
+    - [x] `eq`
+    - [x] `iszero`
+    - [x] `and`
+    - [x] `or`
+    - [x] `xor`
+    - [x] `not`
+    - [ ] `byte`
+    - [x] `shl`
+    - [x] `shr`
+    - [x] `sar`
+    - [ ] `sha3`
+    - [x] `address`
+    - [ ] `balance`
+    - [ ] `origin`
+    - [x] `caller`
+    - [x] `callvalue`
+    - [ ] `calldataload`
+    - [x] `calldatasize`
+    - [ ] `calldatacopy`
+    - [ ] `codesize`
+    - [ ] `codecopy`
+    - [x] `gasprice`
+    - [ ] `extcodesize`
+    - [ ] `extcodecopy`
+    - [x] `returndatasize`
+    - [ ] `returndatacopy`
+    - [ ] `extcodehash`
+    - [ ] `blockhash`
+    - [x] `coinbase`
+    - [x] `timestamp`
+    - [x] `number`
+    - [ ] `difficulty`
+    - [ ] `gaslimit`
+    - [x] `chainid`
+    - [x] `selfbalance`
+    - [ ] `basefee`
+    - [ ] `mload`
+    - [ ] `mstore`
+    - [ ] `mstore8`
+    - [ ] `sload`
+    - [ ] `sstore`
+    - [ ] `msize`
+    - [ ] `gas`
+    - [ ] `log0`
+    - [ ] `log1`
+    - [ ] `log2`
+    - [ ] `log3`
+    - [ ] `log4`
+    - [ ] `create`
+    - [ ] `call`
+    - [ ] `callcode`
+    - [ ] `return`
+    - [ ] `delegatecall`
+    - [ ] `create2`
+    - [ ] `staticcall`
+    - [ ] `revert`
+    - [ ] `selfdestruct`
