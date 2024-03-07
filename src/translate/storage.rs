@@ -261,7 +261,7 @@ pub fn translate_state_variable(
                 generic_parameters: None,
                 parameters: vec![],
             })
-        } else if is_constant {
+        } else if is_constant || is_immutable {
             sway::Expression::Identifier(new_name.clone())
         } else {
             todo!("Handle getter function for non-storage variables: {} - {variable_definition:#?}", variable_definition.to_string())

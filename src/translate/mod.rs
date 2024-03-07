@@ -671,7 +671,11 @@ impl TranslatedDefinition {
             }
 
             sway::Expression::Identifier(name) => {
-                let variable = scope.borrow().get_variable_from_new_name(name)?;
+                let variable = match scope.borrow().get_variable_from_new_name(name) {
+                    Ok(variable) => variable,
+                    Err(e) => panic!("{e}"),
+                };
+        
                 let variable = variable.borrow();
 
                 // Variable should not be a storage field

@@ -17,6 +17,17 @@ pub fn create_value_expression(
             "bool" => match value {
                 None => sway::Expression::Literal(sway::Literal::Bool(false)),
                 Some(sway::Expression::Literal(sway::Literal::Bool(value))) => sway::Expression::Literal(sway::Literal::Bool(*value)),
+                
+                Some(sway::Expression::UnaryExpression(unary_expression)) => match unary_expression.operator.as_str() {
+                    "!" => value.unwrap().clone(),
+                    _ => panic!("Invalid bool value expression: {value:#?}"),
+                }
+                
+                Some(sway::Expression::BinaryExpression(binary_expression)) => match binary_expression.operator.as_str() {
+                    "==" | "!=" | ">" | "<" | ">=" | "<=" | "&&" | "||" => value.unwrap().clone(),
+                    _ => panic!("Invalid bool value expression: {value:#?}"),
+                }
+
                 Some(value) => panic!("Invalid bool value expression: {value:#?}"),
             }
 
@@ -128,21 +139,42 @@ pub fn create_value_expression(
                 Some(value) => panic!("Invalid StorageVec value expression: {value:#?}"),
             }
 
-            type_name => {
-                let Some(struct_definition) = translated_definition.structs.iter().find(|s| s.name == *type_name).cloned() else {
-                    panic!("Failed to find struct definition: {type_name}");
-                };
+            name => {
+                // Check to see if the type is a type definition
+                if translated_definition.type_definitions.iter().any(|s| {
+                    let sway::TypeName::Identifier { name: type_name, generic_parameters: None } = &s.name else { return false };
+                    type_name == name
+                }) {
+                    let underlying_type = translated_definition.get_underlying_type(type_name);
+                    return create_value_expression(translated_definition, scope, &underlying_type, value);
+                }
+                // Check to see if the type is a translated enum
+                else if let Some(translated_enum) = translated_definition.enums.iter().find(|s| {
+                    let sway::TypeName::Identifier { name: enum_name, generic_parameters: None } = &s.type_definition.name else { return false };
+                    enum_name == name
+                }) {
+                    let Some(sway::ImplItem::Constant(value)) = translated_enum.variants_impl.items.first() else {
+                        let underlying_type = translated_definition.get_underlying_type(type_name);
+                        return create_value_expression(translated_definition, scope, &underlying_type, value);
+                    };
 
-                sway::Expression::from(sway::Constructor {
-                    type_name: sway::TypeName::Identifier { 
-                        name: type_name.to_string(), 
-                        generic_parameters: None,
-                    },
-                    fields: struct_definition.fields.iter().map(|f| sway::ConstructorField {
-                        name: f.name.clone(), 
-                        value: create_value_expression(translated_definition, scope.clone(), &f.type_name, value)
-                    }).collect(),
-                })
+                    return sway::Expression::Identifier(format!("{}::{}", name, value.name));
+                }
+                // Check to see if the type is a struct definition
+                else if let Some(struct_definition) = translated_definition.structs.iter().find(|s| s.name == *name).cloned() {
+                    return sway::Expression::from(sway::Constructor {
+                        type_name: sway::TypeName::Identifier { 
+                            name: name.to_string(), 
+                            generic_parameters: None,
+                        },
+                        fields: struct_definition.fields.iter().map(|f| sway::ConstructorField {
+                            name: f.name.clone(), 
+                            value: create_value_expression(translated_definition, scope.clone(), &f.type_name, value)
+                        }).collect(),
+                    });
+                }
+
+                panic!("Unknown value type: {type_name}")
             }
         },
 
@@ -2709,7 +2741,10 @@ pub fn translate_function_call_expression(
                                 if f.old_name != member.name {
                                     return false;
                                 }
-                                
+
+                                let mut parameters = parameters.clone();
+                                parameters.insert(0, container.clone());
+
                                 // Ensure the supplied function call args match the function's parameters
                                 if parameters.len() != f.parameters.entries.len() {
                                     return false;
