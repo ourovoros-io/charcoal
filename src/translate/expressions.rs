@@ -39,8 +39,22 @@ pub fn create_value_expression(
                     sway::Expression::Identifier("ZERO_B256".into())
                 }
 
-                Some(value) if matches!(value, sway::Expression::Literal(sway::Literal::DecInt(_) | sway::Literal::HexInt(_))) => value.clone(),
-                Some(value) => panic!("Invalid {name} value expression: {value:#?}"),
+                Some(value) => {
+                    if matches!(value, sway::Expression::Literal(sway::Literal::DecInt(_) | sway::Literal::HexInt(_))) {
+                        return value.clone();
+                    }
+
+                    let value_type_name = translated_definition.get_expression_type(scope.clone(), value).unwrap();
+
+                    match value_type_name {
+                        sway::TypeName::Identifier { name, generic_parameters } => match (name.as_str(), generic_parameters.as_ref()) {
+                            ("b256", None) => value.clone(),
+                            _ => panic!("Invalid {name} value expression: {value:#?}"),
+                        }
+
+                        _ => panic!("Invalid {name} value expression: {value:#?}"),
+                    }
+                }
             }
 
             "u8" | "u16" | "u32" | "u64" | "u256" => match value.as_ref() {
@@ -2723,9 +2737,20 @@ pub fn translate_function_call_expression(
                     }
                     
                     _ => {
-                        let mut parameters = arguments.iter()
+                        let parameters = arguments.iter()
                             .map(|a| translate_expression(project, translated_definition, scope.clone(), a))
                             .collect::<Result<Vec<_>, _>>()?;
+
+                        let parameter_types = parameters.iter()
+                            .map(|p| translated_definition.get_expression_type(scope.clone(), p))
+                            .collect::<Result<Vec<_>, _>>()
+                            .unwrap();
+
+                        let mut using_parameters = parameters.clone();
+                        using_parameters.insert(0, container.clone());
+
+                        let mut using_parameter_types = parameter_types.clone();
+                        using_parameter_types.insert(0, translated_definition.get_expression_type(scope.clone(), &container).unwrap());
 
                         // Check if this is a function from a using directive
                         for using_directive in translated_definition.using_directives.iter() {
@@ -2742,36 +2767,15 @@ pub fn translate_function_call_expression(
                                     return false;
                                 }
 
-                                let mut parameters = parameters.clone();
-                                parameters.insert(0, container.clone());
-
                                 // Ensure the supplied function call args match the function's parameters
-                                if parameters.len() != f.parameters.entries.len() {
+                                if using_parameters.len() != f.parameters.entries.len() {
                                     return false;
                                 }
     
-                                for (i, parameter) in parameters.iter().enumerate() {
+                                for (i, value_type_name) in using_parameter_types.iter().enumerate() {
                                     let Some(parameter_type_name) = f.parameters.entries[i].type_name.as_ref() else { continue };
-    
-                                    // Don't check literal integer value types
-                                    if let sway::Expression::Literal(sway::Literal::DecInt(_) | sway::Literal::HexInt(_)) = parameter {
-                                        if let sway::TypeName::Identifier { name, generic_parameters: None } = parameter_type_name {
-                                            if let "u8" | "u16" | "u32" | "u64" | "u256" = name.as_str() {
-                                                continue;
-                                            }
-                                        }
-                                    }
-    
-                                    let value_type_name = translated_definition.get_expression_type(scope.clone(), parameter).unwrap();
-    
-                                    // HACK: Don't check todo! value types
-                                    if let sway::TypeName::Identifier { name, generic_parameters: None } = &value_type_name {
-                                        if name == "todo!" {
-                                            continue;
-                                        }
-                                    }
-    
-                                    if value_type_name != *parameter_type_name {
+                                    
+                                    if !value_type_name.is_compatible_with(parameter_type_name) {
                                         return false;
                                     }
                                 }
@@ -2780,59 +2784,17 @@ pub fn translate_function_call_expression(
                             }) {
                                 *translated_definition.function_call_counts.entry(function.new_name.clone()).or_insert(0) += 1;
 
-                                parameters.insert(0, container.clone());
-
                                 return Ok(sway::Expression::from(sway::FunctionCall {
                                     function: sway::Expression::Identifier(function.new_name.clone()),
                                     generic_parameters: None,
-                                    parameters,
+                                    parameters: using_parameters,
                                 }));
                             }
                         }
 
                         // Check if this is a function from an ABI
                         if let Some(definition) = project.find_definition_with_abi(name) {
-                            if let Some(function) = definition.toplevel_scope.borrow().functions.iter().find(|f| {
-                                let f = f.borrow();
-
-                                // Ensure the function's old name matches the function call we're translating
-                                if f.old_name != member.name {
-                                    return false;
-                                }
-                                
-                                // Ensure the supplied function call args match the function's parameters
-                                if parameters.len() != f.parameters.entries.len() {
-                                    return false;
-                                }
-    
-                                for (i, parameter) in parameters.iter().enumerate() {
-                                    let Some(parameter_type_name) = f.parameters.entries[i].type_name.as_ref() else { continue };
-    
-                                    // Don't check literal integer value types
-                                    if let sway::Expression::Literal(sway::Literal::DecInt(_) | sway::Literal::HexInt(_)) = parameter {
-                                        if let sway::TypeName::Identifier { name, generic_parameters: None } = parameter_type_name {
-                                            if let "u8" | "u16" | "u32" | "u64" | "u256" = name.as_str() {
-                                                continue;
-                                            }
-                                        }
-                                    }
-    
-                                    let value_type_name = translated_definition.get_expression_type(scope.clone(), parameter).unwrap();
-    
-                                    // HACK: Don't check todo! value types
-                                    if let sway::TypeName::Identifier { name, generic_parameters: None } = &value_type_name {
-                                        if name == "todo!" {
-                                            continue;
-                                        }
-                                    }
-    
-                                    if value_type_name != *parameter_type_name {
-                                        return false;
-                                    }
-                                }
-
-                                true
-                            }) {
+                            if let Some(function) = definition.toplevel_scope.borrow().find_function_matching_types(&member.name, &parameters, &parameter_types) {
                                 let function = function.borrow();
                                 
                                 *translated_definition.function_call_counts.entry(function.new_name.clone()).or_insert(0) += 1;

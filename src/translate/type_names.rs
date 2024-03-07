@@ -230,7 +230,7 @@ pub fn translate_type_name(
             }
             
             // Check if type is a struct
-            if translated_definition.structs.iter().any(|t| t.name == *name) {
+            if translated_definition.struct_names.iter().any(|n| n == name) {
                 return sway::TypeName::Identifier {
                     name: name.clone(),
                     generic_parameters: None,
@@ -248,6 +248,11 @@ pub fn translate_type_name(
                 };
             }
             
+            // Check if type is a contract that hasn't been defined yet
+            if project.find_definition_with_abi(name.as_str()).is_none() && translated_definition.contract_names.iter().any(|n| n == name) {
+                project.translate(Some(name), &translated_definition.path).unwrap();
+            }
+
             // Check if type is an ABI
             if let Some(external_definition) = project.find_definition_with_abi(name.as_str()) {
                 // Ensure the ABI is added to the current definition

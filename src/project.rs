@@ -138,6 +138,7 @@ impl Project {
         let mut toplevel_structs = vec![];
         let mut toplevel_events = vec![];
         let mut toplevel_errors = vec![];
+        let mut contract_names = vec![];
 
         for source_unit_part in source_unit.0.iter() {
             match source_unit_part {
@@ -149,8 +150,8 @@ impl Project {
                     import_directives.push(import_directive.clone());
                 }
 
-                solidity::SourceUnitPart::ContractDefinition(_) => {
-                    // NOTE: contracts are handled below
+                solidity::SourceUnitPart::ContractDefinition(contract_definition) => {
+                    contract_names.push(contract_definition.name.as_ref().unwrap().name.clone());
                 }
 
                 solidity::SourceUnitPart::EnumDefinition(enum_definition) => {
@@ -257,6 +258,7 @@ impl Project {
                 toplevel_structs.as_slice(),
                 toplevel_events.as_slice(),
                 toplevel_errors.as_slice(),
+                contract_names.as_slice(),
                 contract_definition,
             )?;
         }

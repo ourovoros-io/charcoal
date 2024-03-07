@@ -60,6 +60,11 @@ pub fn translate_state_variable(
 
     // Check if the variable's type is an ABI
     if let sway::TypeName::Identifier { name, generic_parameters: None } = &variable_type_name {
+        // Check if type is a contract that hasn't been defined yet
+        if project.find_definition_with_abi(name.as_str()).is_none() && translated_definition.contract_names.iter().any(|n| n == name) {
+            project.translate(Some(name), &translated_definition.path).unwrap();
+        }
+
         if project.find_definition_with_abi(name.as_str()).is_some() {
             abi_type_name = Some(variable_type_name.clone());
 

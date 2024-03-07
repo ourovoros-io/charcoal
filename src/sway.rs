@@ -377,6 +377,23 @@ impl TypeName {
         }
     }
 
+    /// Checks to see if the type name is compatible with another type name
+    pub fn is_compatible_with(&self, other: &TypeName) -> bool {
+        // HACK: Don't check uint value types
+        if self.is_uint() && other.is_uint() {
+            return true;
+        }
+
+        // HACK: Don't check todo! value types
+        if let TypeName::Identifier { name, generic_parameters: None } = self {
+            if name == "todo!" {
+                return true;
+            }
+        }
+
+        self == other
+    }
+
     /// Gets the parameters and return type name for the getter function of the type name
     pub fn getter_function_parameters_and_return_type(&self) -> Option<(Vec<(Parameter, bool)>, TypeName)> {
         match self {

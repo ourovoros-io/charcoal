@@ -140,6 +140,8 @@ impl TranslationScope {
         parameters: &[sway::Expression],
         parameter_types: &[sway::TypeName],
     ) -> Option<Rc<RefCell<TranslatedFunction>>> {
+        println!("Checking for {old_name}");
+
         self.find_function(|f| {
             let f = f.borrow();
 
@@ -148,36 +150,17 @@ impl TranslationScope {
                 return false;
             }
 
+            println!("Found {old_name}");
+
             // Ensure the supplied function call args match the function's parameters
             if parameters.len() != f.parameters.entries.len() {
                 return false;
             }
 
-            for (i, (parameter, value_type_name)) in parameters.iter().zip(parameter_types.iter()).enumerate() {
+            for (i, value_type_name) in parameter_types.iter().enumerate() {
                 let Some(parameter_type_name) = f.parameters.entries[i].type_name.as_ref() else { continue };
 
-                // HACK: Don't check uint value types
-                if value_type_name.is_uint() && parameter_type_name.is_uint() {
-                    continue;
-                }
-
-                // HACK: Don't check literal integer value types
-                if let sway::Expression::Literal(sway::Literal::DecInt(_) | sway::Literal::HexInt(_)) = parameter {
-                    if let sway::TypeName::Identifier { name, generic_parameters: None } = parameter_type_name {
-                        if let "u8" | "u16" | "u32" | "u64" | "u256" = name.as_str() {
-                            continue;
-                        }
-                    }
-                }
-
-                // HACK: Don't check todo! value types
-                if let sway::TypeName::Identifier { name, generic_parameters: None } = &value_type_name {
-                    if name == "todo!" {
-                        continue;
-                    }
-                }
-
-                if value_type_name != parameter_type_name {
+                if !value_type_name.is_compatible_with(parameter_type_name) {
                     return false;
                 }
             }
@@ -226,6 +209,9 @@ pub struct TranslatedDefinition {
     pub modifiers: Vec<TranslatedModifier>,
     pub functions: Vec<sway::Function>,
     pub impls: Vec<sway::Impl>,
+
+    pub struct_names: Vec<String>,
+    pub contract_names: Vec<String>,
     
     pub function_name_counts: HashMap<String, usize>,
     pub function_names: HashMap<String, String>,
@@ -453,7 +439,7 @@ impl Into<sway::Module> for TranslatedDefinition {
 }
 
 impl TranslatedDefinition {
-    pub fn new<P: AsRef<Path>, S: ToString>(path: P, kind: solidity::ContractTy, name: S, inherits: Vec<S>) -> Self {
+    pub fn new<P: AsRef<Path>, S1: ToString, S2: ToString>(path: P, kind: solidity::ContractTy, name: S1, inherits: Vec<S2>) -> Self {
         Self {
             path: path.as_ref().into(),
             toplevel_scope: Rc::new(RefCell::new(TranslationScope::default())),
@@ -477,6 +463,9 @@ impl TranslatedDefinition {
             modifiers: vec![],
             functions: vec![],
             impls: vec![],
+
+            struct_names: vec![],
+            contract_names: vec![],
 
             function_name_counts: HashMap::new(),
             function_names: HashMap::new(),
@@ -738,6 +727,11 @@ impl TranslatedDefinition {
                         }),
                     }),
 
+                    "std::block::height" => Ok(sway::TypeName::Identifier {
+                        name: "u32".into(),
+                        generic_parameters: None,
+                    }),
+                    
                     "std::block::timestamp" => Ok(sway::TypeName::Identifier {
                         name: "u64".into(),
                         generic_parameters: None,
@@ -787,26 +781,10 @@ impl TranslatedDefinition {
                                 return false;
                             }
 
-                            for (i, (parameter, value_type_name)) in function_call.parameters.iter().zip(parameter_types.iter()).enumerate() {
+                            for (i, value_type_name) in parameter_types.iter().enumerate() {
                                 let Some(parameter_type_name) = f.parameters.entries[i].type_name.as_ref() else { continue };
 
-                                // Don't check literal integer value types
-                                if let sway::Expression::Literal(sway::Literal::DecInt(_) | sway::Literal::HexInt(_)) = parameter {
-                                    if let sway::TypeName::Identifier { name, generic_parameters: None } = parameter_type_name {
-                                        if let "u8" | "u16" | "u32" | "u64" | "u256" = name.as_str() {
-                                            continue;
-                                        }
-                                    }
-                                }
-
-                                // HACK: Don't check todo! value types
-                                if let sway::TypeName::Identifier { name, generic_parameters: None } = &value_type_name {
-                                    if name == "todo!" {
-                                        continue;
-                                    }
-                                }
-
-                                if value_type_name != parameter_type_name {
+                                if !value_type_name.is_compatible_with(parameter_type_name) {
                                     return false;
                                 }
                             }

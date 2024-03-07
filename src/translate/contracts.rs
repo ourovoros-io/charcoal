@@ -107,18 +107,22 @@ pub fn translate_contract_definition(
     toplevel_structs: &[solidity::StructDefinition],
     toplevel_events: &[solidity::EventDefinition],
     toplevel_errors: &[solidity::ErrorDefinition],
+    contract_names: &[String],
     contract_definition: &solidity::ContractDefinition,
 ) -> Result<(), Error> {
     let definition_name = contract_definition.name.as_ref().unwrap().name.clone();
     let inherits: Vec<String> = contract_definition.base.iter().map(|b| b.name.identifiers.iter().map(|i| i.name.clone()).collect::<Vec<_>>().join(".")).collect();
 
     // Create a new translation container
-    let mut translated_definition = TranslatedDefinition::new(
-        source_unit_path,
-        contract_definition.ty.clone(),
-        definition_name.clone(),
-        inherits.clone()
-    );
+    let mut translated_definition = TranslatedDefinition {
+        contract_names: contract_names.into(),
+        ..TranslatedDefinition::new(
+            source_unit_path,
+            contract_definition.ty.clone(),
+            definition_name.clone(),
+            inherits.clone()
+        )
+    };
 
     // Translate import directives
     translate_import_directives(project, &mut translated_definition, import_directives)?;
@@ -136,6 +140,15 @@ pub fn translate_contract_definition(
     // Translate toplevel enum definitions
     for enum_definition in toplevel_enums {
         translate_enum_definition(project, &mut translated_definition, enum_definition)?;
+    }
+
+    // Collect toplevel struct names ahead of time for contextual reasons
+    for struct_definition in toplevel_structs {
+        let struct_name = struct_definition.name.as_ref().unwrap().name.clone();
+
+        if !translated_definition.struct_names.contains(&struct_name) {
+            translated_definition.struct_names.push(struct_name);
+        }
     }
 
     // Translate toplevel struct definitions
@@ -172,6 +185,16 @@ pub fn translate_contract_definition(
     for part in contract_definition.parts.iter() {
         let solidity::ContractPart::EnumDefinition(enum_definition) = part else { continue };
         translate_enum_definition(project, &mut translated_definition, enum_definition)?;
+    }
+
+    // Collect contract struct names ahead of time for contextual reasons
+    for part in contract_definition.parts.iter() {
+        let solidity::ContractPart::StructDefinition(struct_definition) = part else { continue };
+        let struct_name = struct_definition.name.as_ref().unwrap().name.clone();
+
+        if !translated_definition.struct_names.contains(&struct_name) {
+            translated_definition.struct_names.push(struct_name);
+        }
     }
 
     // Translate contract struct definitions
@@ -377,6 +400,13 @@ pub fn propagate_inherited_definitions(
         for inherited_struct in inherited_definition.structs.iter() {
             if !translated_definition.structs.contains(inherited_struct) {
                 translated_definition.structs.push(inherited_struct.clone());
+            }
+        }
+
+        // Extend the struct names
+        for inherited_struct_name in inherited_definition.struct_names.iter() {
+            if !translated_definition.struct_names.contains(inherited_struct_name) {
+                translated_definition.struct_names.push(inherited_struct_name.clone());
             }
         }
 
