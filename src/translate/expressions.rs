@@ -3393,12 +3393,9 @@ pub fn translate_variable_access_expression(
         }
         
         solidity::Expression::MemberAccess(_, container, member) => {
-            println!("container: {container}");
             let translated_container = translate_expression(project, translated_definition, scope.clone(), container)?;
-            println!("translated_container: {}", sway::TabbedDisplayer(&translated_container));
         
             let container_type_name = translated_definition.get_expression_type(scope.clone(), &translated_container)?;
-            println!("container_type_name: {container_type_name}");
             let container_type_name_string = container_type_name.to_string();
             
             let (variable, container) = translate_variable_access_expression(project, translated_definition, scope.clone(), &container)?;
