@@ -57,6 +57,36 @@ pub fn create_value_expression(
                 }
             }
 
+            "I8" | "I16" | "I32" | "I64" | "I128" | "I256" => match value.as_ref() {
+                None => sway::Expression::Literal(sway::Literal::DecInt(0)),
+                
+                Some(value) if matches!(value, sway::Expression::Literal(sway::Literal::DecInt(_) | sway::Literal::HexInt(_))) => (*value).clone(),
+                
+                Some(sway::Expression::FunctionCall(function_call)) => match &function_call.function {
+                    sway::Expression::Identifier(name) if name == "todo!" => {
+                        value.unwrap().clone()
+                    }
+
+                    _ => panic!("Invalid {name} value expression: {value:#?}"),
+                }
+
+                Some(x) if matches!(x, sway::Expression::BinaryExpression(_)) => (*x).clone(),
+
+                Some(sway::Expression::Identifier(name)) => {
+                    let Some(variable) = scope.borrow().get_variable_from_new_name(name) else {
+                        panic!("error: Variable not found in scope: \"{name}\"");
+                    };
+            
+                    if variable.borrow().type_name != *type_name {
+                        panic!("Invalid {name} value expression: {value:#?}");
+                    }
+
+                    sway::Expression::Identifier(name.clone())
+                }
+                
+                Some(value) => panic!("Invalid {name} value expression: {value:#?}"),
+            }
+
             "u8" | "u16" | "u32" | "u64" | "u256" => match value.as_ref() {
                 None => sway::Expression::Literal(sway::Literal::DecInt(0)),
                 
@@ -752,13 +782,13 @@ pub fn translate_member_access_expression(
                                 todo!("translate type member access: {expression} - {expression:#?}")
                             }
 
-                            ("u8" | "u16" | "u32" | "u64" | "u256", "min") => return Ok(sway::Expression::from(sway::FunctionCall {
+                            ("I8" | "I16" | "I32" | "I64" | "I128" | "I256" | "u8" | "u16" | "u32" | "u64" | "u256", "min") => return Ok(sway::Expression::from(sway::FunctionCall {
                                 function: sway::Expression::Identifier(format!("{name}::min")),
                                 generic_parameters: None,
                                 parameters: vec![],
                             })),
 
-                            ("u8" | "u16" | "u32" | "u64" | "u256", "max") => return Ok(sway::Expression::from(sway::FunctionCall {
+                            ("I8" | "I16" | "I32" | "I64" | "I128" | "I256" | "u8" | "u16" | "u32" | "u64" | "u256", "max") => return Ok(sway::Expression::from(sway::FunctionCall {
                                 function: sway::Expression::Identifier(format!("{name}::max")),
                                 generic_parameters: None,
                                 parameters: vec![],
@@ -1343,13 +1373,81 @@ pub fn translate_function_call_expression(
                     let value_expression = translate_expression(project, translated_definition, scope.clone(), &arguments[0])?;
                     let value_type_name = translated_definition.get_underlying_type(&translated_definition.get_expression_type(scope.clone(), &value_expression)?);
 
-                    match &value_type_name {
-                        sway::TypeName::Identifier { name, generic_parameters } => match (name.as_str(), generic_parameters.as_ref()) {
-                            ("I256", None) if *bits == 256 => {
-                                Ok(value_expression)
-                            }
+                    let create_int_try_from_unwrap_expression = |from_bits: usize, to_bits: usize, value: sway::Expression| -> Result<sway::Expression, Error> {
+                        if from_bits == to_bits {
+                            return Ok(value);
+                        }
 
-                            ("u256", None) if *bits == 256 => {
+                        Ok(sway::Expression::from(sway::FunctionCall {
+                            function: sway::Expression::Identifier(format!("I{to_bits}::from")),
+                            generic_parameters: None,
+                            parameters: vec![
+                                sway::Expression::from(sway::FunctionCall {
+                                    function: sway::Expression::from(sway::MemberAccess {
+                                        expression: sway::Expression::from(sway::FunctionCall {
+                                            function: sway::Expression::Identifier(format!("{}{to_bits}::try_from", if to_bits > 64 { "U" } else { "u" })),
+                                            generic_parameters: None,
+                                            parameters: vec![value],
+                                        }),
+                                        member: "unwrap".into(),
+                                    }),
+                                    generic_parameters: None,
+                                    parameters: vec![],
+                                }),
+                            ],
+                        }))
+                    };
+
+                    let bits = match bits {
+                        0..=8 => {
+                            if *bits != 8 {
+                                eprintln!("WARNING: unsupported signed integer type `int{bits}`, using `i8`...");
+                            }
+                            8
+                        }
+                        9..=16 => {
+                            if *bits != 16 {
+                                eprintln!("WARNING: unsupported signed integer type `int{bits}`, using `i16`...");
+                            }
+                            16
+                        }
+                        17..=32 => {
+                            if *bits != 32 {
+                                eprintln!("WARNING: unsupported signed integer type `int{bits}`, using `i32`...");
+                            }
+                            32
+                        }
+                        33..=64 => {
+                            if *bits != 64 {
+                                eprintln!("WARNING: unsupported signed integer type `int{bits}`, using `i64`...");
+                            }
+                            64
+                        }
+                        65..=128 => {
+                            if *bits != 128 {
+                                eprintln!("WARNING: unsupported signed integer type `int{bits}`, using `i128`...");
+                            }
+                            128
+                        }
+                        129..=256 => {
+                            if *bits != 256 {
+                                eprintln!("WARNING: unsupported signed integer type `int{bits}`, using `i256`...");
+                            }
+                            256
+                        }
+                        _ => panic!("Invalid int type: {expression:#?}"),
+                    };
+
+                    match &value_type_name {
+                        sway::TypeName::Identifier { name, generic_parameters: None } => match (name.as_str(), bits) {
+                            ("I8", 8 | 16 | 32 | 64 | 128 | 256) => create_int_try_from_unwrap_expression(8, bits as usize, value_expression),
+                            ("I16", 8 | 16 | 32 | 64 | 128 | 256) => create_int_try_from_unwrap_expression(16, bits as usize, value_expression),
+                            ("I32", 8 | 16 | 32 | 64 | 128 | 256) => create_int_try_from_unwrap_expression(32, bits as usize, value_expression),
+                            ("I64", 8 | 16 | 32 | 64 | 128 | 256) => create_int_try_from_unwrap_expression(64, bits as usize, value_expression),
+                            ("I128", 8 | 16 | 32 | 64 | 128 | 256) => create_int_try_from_unwrap_expression(128, bits as usize, value_expression),
+                            ("I256", 8 | 16 | 32 | 64 | 128 | 256) => create_int_try_from_unwrap_expression(256, bits as usize, value_expression),
+                            
+                            ("u256", 256) => {
                                 Ok(sway::Expression::from(sway::FunctionCall {
                                     function: sway::Expression::Identifier("I256::from".into()),
                                     generic_parameters: None,
@@ -1359,10 +1457,10 @@ pub fn translate_function_call_expression(
                                 }))
                             }
 
-                            _ => todo!("translate {} type cast: {value_expression:#?}", value_type_name),
+                            _ => todo!("translate type cast from {value_type_name} to I{bits}: {expression} - {expression:#?}"),
                         }
                         
-                        _ => todo!("translate type cast: {} - {expression:#?}", expression),
+                        _ => todo!("translate type cast from {value_type_name} to I{bits}: {expression} - {expression:#?}"),
                     }
                 }
 

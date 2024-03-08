@@ -738,6 +738,36 @@ impl TranslatedDefinition {
                             generic_parameters: None,
                         }),
     
+                        "I8::from" | "I8::max" | "I8::min" => Ok(sway::TypeName::Identifier {
+                            name: "I8".into(),
+                            generic_parameters: None,
+                        }),
+    
+                        "I16::from" | "I16::max" | "I16::min" => Ok(sway::TypeName::Identifier {
+                            name: "I16".into(),
+                            generic_parameters: None,
+                        }),
+    
+                        "I32::from" | "I32::max" | "I32::min" => Ok(sway::TypeName::Identifier {
+                            name: "I32".into(),
+                            generic_parameters: None,
+                        }),
+    
+                        "I64::from" | "I64::max" | "I64::min" => Ok(sway::TypeName::Identifier {
+                            name: "I64".into(),
+                            generic_parameters: None,
+                        }),
+    
+                        "I128::from" | "I128::max" | "I128::min" => Ok(sway::TypeName::Identifier {
+                            name: "I128".into(),
+                            generic_parameters: None,
+                        }),
+    
+                        "I256::from" | "I256::max" | "I256::min" => Ok(sway::TypeName::Identifier {
+                            name: "I256".into(),
+                            generic_parameters: None,
+                        }),
+    
                         "Identity::Address" | "Identity::ContractId" | "Identity::from" => Ok(sway::TypeName::Identifier {
                             name: "Identity".into(),
                             generic_parameters: None,
@@ -783,6 +813,71 @@ impl TranslatedDefinition {
                             generic_parameters: None,
                         }),
     
+                        "u8::from" | "u8::max" | "u8::min" => Ok(sway::TypeName::Identifier {
+                            name: "u8".into(),
+                            generic_parameters: None,
+                        }),
+    
+                        "u8::try_from" => Ok(sway::TypeName::Identifier {
+                            name: "Option".into(),
+                            generic_parameters: Some(sway::GenericParameterList {
+                                entries: vec![
+                                    sway::GenericParameter {
+                                        type_name: sway::TypeName::Identifier {
+                                            name: "u8".into(),
+                                            generic_parameters: None,
+                                        },
+                                        implements: None,
+                                    },
+                                ],
+                            }),
+                        }),
+    
+                        "u16::from" | "u16::max" | "u16::min" => Ok(sway::TypeName::Identifier {
+                            name: "u16".into(),
+                            generic_parameters: None,
+                        }),
+    
+                        "u32::try_from" => Ok(sway::TypeName::Identifier {
+                            name: "Option".into(),
+                            generic_parameters: Some(sway::GenericParameterList {
+                                entries: vec![
+                                    sway::GenericParameter {
+                                        type_name: sway::TypeName::Identifier {
+                                            name: "u32".into(),
+                                            generic_parameters: None,
+                                        },
+                                        implements: None,
+                                    },
+                                ],
+                            }),
+                        }),
+    
+                        "u32::from" | "u32::max" | "u32::min" => Ok(sway::TypeName::Identifier {
+                            name: "u32".into(),
+                            generic_parameters: None,
+                        }),
+    
+                        "u16::try_from" => Ok(sway::TypeName::Identifier {
+                            name: "Option".into(),
+                            generic_parameters: Some(sway::GenericParameterList {
+                                entries: vec![
+                                    sway::GenericParameter {
+                                        type_name: sway::TypeName::Identifier {
+                                            name: "u16".into(),
+                                            generic_parameters: None,
+                                        },
+                                        implements: None,
+                                    },
+                                ],
+                            }),
+                        }),
+    
+                        "u64::from" | "u64::max" | "u64::min" => Ok(sway::TypeName::Identifier {
+                            name: "u64".into(),
+                            generic_parameters: None,
+                        }),
+    
                         "u64::try_from" => Ok(sway::TypeName::Identifier {
                             name: "Option".into(),
                             generic_parameters: Some(sway::GenericParameterList {
@@ -790,6 +885,66 @@ impl TranslatedDefinition {
                                     sway::GenericParameter {
                                         type_name: sway::TypeName::Identifier {
                                             name: "u64".into(),
+                                            generic_parameters: None,
+                                        },
+                                        implements: None,
+                                    },
+                                ],
+                            }),
+                        }),
+    
+                        "u256::from" | "u256::max" | "u256::min" => Ok(sway::TypeName::Identifier {
+                            name: "u256".into(),
+                            generic_parameters: None,
+                        }),
+    
+                        "u256::try_from" => Ok(sway::TypeName::Identifier {
+                            name: "Option".into(),
+                            generic_parameters: Some(sway::GenericParameterList {
+                                entries: vec![
+                                    sway::GenericParameter {
+                                        type_name: sway::TypeName::Identifier {
+                                            name: "u256".into(),
+                                            generic_parameters: None,
+                                        },
+                                        implements: None,
+                                    },
+                                ],
+                            }),
+                        }),
+    
+                        "U128::from" | "U128::max" | "U128::min" => Ok(sway::TypeName::Identifier {
+                            name: "U128".into(),
+                            generic_parameters: None,
+                        }),
+    
+                        "U128::try_from" => Ok(sway::TypeName::Identifier {
+                            name: "Option".into(),
+                            generic_parameters: Some(sway::GenericParameterList {
+                                entries: vec![
+                                    sway::GenericParameter {
+                                        type_name: sway::TypeName::Identifier {
+                                            name: "U128".into(),
+                                            generic_parameters: None,
+                                        },
+                                        implements: None,
+                                    },
+                                ],
+                            }),
+                        }),
+    
+                        "U256::from" | "U256::max" | "U256::min" => Ok(sway::TypeName::Identifier {
+                            name: "U256".into(),
+                            generic_parameters: None,
+                        }),
+    
+                        "U256::try_from" => Ok(sway::TypeName::Identifier {
+                            name: "Option".into(),
+                            generic_parameters: Some(sway::GenericParameterList {
+                                entries: vec![
+                                    sway::GenericParameter {
+                                        type_name: sway::TypeName::Identifier {
+                                            name: "U256".into(),
                                             generic_parameters: None,
                                         },
                                         implements: None,

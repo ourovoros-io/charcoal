@@ -208,7 +208,7 @@ pub fn generate_enum_abi_encode_function(
         let mut add_encode_statement_to_block = |name: &str, type_name: &sway::TypeName| {
             block.statements.push(sway::Statement::from(match type_name {
                 sway::TypeName::Identifier { name: type_name, .. } => match type_name.as_str() {
-                    "bool" | "u8" | "u16" | "u32" | "u64" | "u256" | "b256" | "Bytes" | "Vec" => sway::Expression::from(sway::FunctionCall {
+                    "bool" | "I8" | "I16" | "I32" | "I64" | "I128" | "I256" | "u8" | "u16" | "u32" | "u64" | "u256" | "b256" | "Bytes" | "Vec" => sway::Expression::from(sway::FunctionCall {
                         function: sway::Expression::from(sway::MemberAccess {
                             expression: sway::Expression::Identifier(name.into()),
                             member: "abi_encode".into(),
