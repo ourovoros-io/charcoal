@@ -335,9 +335,9 @@ pub fn translate_expression(
         
         solidity::Expression::MemberAccess(_, container, member) => translate_member_access_expression(project, translated_definition, scope.clone(), expression, container, member),
         
-        solidity::Expression::FunctionCall(_, function, arguments) => translate_function_call_expression(project, translated_definition, scope.clone(), expression, function, arguments),
+        solidity::Expression::FunctionCall(_, function, arguments) => translate_function_call_expression(project, translated_definition, scope.clone(), expression, function, None, arguments),
         solidity::Expression::FunctionCallBlock(_, function, block) => translate_function_call_block_expression(project, translated_definition, scope.clone(), function, block),
-        solidity::Expression::NamedFunctionCall(_, function, named_arguments) => translate_named_function_call_expression(project, translated_definition, scope.clone(), function, named_arguments.as_slice()),
+        solidity::Expression::NamedFunctionCall(_, function, named_arguments) => translate_function_call_expression(project, translated_definition, scope.clone(), expression, function, Some(&named_arguments), &[]),
         
         solidity::Expression::Not(_, x) => translate_unary_expression(project, translated_definition, scope.clone(), "!", x),
         solidity::Expression::BitwiseNot(_, x) => translate_unary_expression(project, translated_definition, scope.clone(), "!", x),
@@ -1258,8 +1258,13 @@ pub fn translate_function_call_expression(
     scope: Rc<RefCell<TranslationScope>>,
     expression: &solidity::Expression,
     function: &solidity::Expression,
+    named_arguments: Option<&[solidity::NamedArgument]>,
     arguments: &[solidity::Expression],
 ) -> Result<sway::Expression, Error> {
+    if named_arguments.is_some() && !arguments.is_empty() {
+        panic!("Invalid call to translate_function_call_expression: named_arguments is Some(_) and arguments is not empty");
+    }
+    
     match function {
         solidity::Expression::Type(_, ty) => {
             // Type casting
@@ -1996,6 +2001,46 @@ pub fn translate_function_call_expression(
                 }
 
                 old_name => {
+                    // Check to see if the expression is a by-value struct constructor
+                    if let Some(struct_definition) = translated_definition.structs.iter().find(|s| s.name == old_name).cloned() {
+                        let mut valid = true;
+
+                        if parameters.len() != struct_definition.fields.len() {
+                            if let Some(named_arguments) = named_arguments {
+                                if named_arguments.len() != struct_definition.fields.len() {
+                                    valid = false;
+                                } else {
+                                    parameters = named_arguments.iter()
+                                        .map(|a| translate_expression(project, translated_definition, scope.clone(), &a.expr))
+                                        .collect::<Result<Vec<_>, _>>()?;
+                                }
+                            } else {
+                                valid = false;
+                            }
+                        }
+
+                        if valid && !struct_definition.fields.iter().zip(parameter_types.iter()).all(|(f, t)| f.type_name.is_compatible_with(t)) {
+                            valid = false;
+                        }
+
+                        if valid {
+                            return Ok(sway::Expression::from(sway::Constructor {
+                                type_name: sway::TypeName::Identifier {
+                                    name: struct_definition.name.clone(),
+                                    generic_parameters: None,
+                                },
+
+                                fields: struct_definition.fields.iter()
+                                    .zip(parameters.iter())
+                                    .map(|(field, value)| sway::ConstructorField {
+                                        name: field.name.clone(),
+                                        value: value.clone(),
+                                    })
+                                    .collect(),
+                            }));
+                        }
+                    }
+
                     // Check to see if the expression is an ABI type
                     if let Some(external_definition) = project.find_definition_with_abi(old_name) {
                         if parameters.len() == 1 {
@@ -2520,9 +2565,9 @@ pub fn translate_function_call_expression(
                 _ => {}
             }
 
-            let variable = match translate_variable_access_expression(project, translated_definition, scope.clone(), container) {
-                Ok((variable, _)) => Some(variable),
-                Err(_) => None,
+            let (variable, container_access) = match translate_variable_access_expression(project, translated_definition, scope.clone(), container) {
+                Ok((variable, expression)) => (Some(variable), Some(expression)),
+                Err(_) => (None, None),
             };
 
             let mut container = translate_expression(project, translated_definition, scope.clone(), container)?;
@@ -2531,8 +2576,8 @@ pub fn translate_function_call_expression(
             match &type_name {
                 sway::TypeName::Undefined => panic!("Undefined type name"),
                 
-                sway::TypeName::Identifier { name, .. } => match name.as_str() {
-                    "Identity" => match member.name.as_str() {
+                sway::TypeName::Identifier { name, generic_parameters } => match (name.as_str(), generic_parameters.as_ref()) {
+                    ("Identity", None) => match member.name.as_str() {
                         "transfer" => {
                             // to.transfer(amount) => std::asset::transfer(to, asset_id, amount)
 
@@ -2738,6 +2783,33 @@ pub fn translate_function_call_expression(
                         }
                     }
                     
+                    ("StorageVec", Some(_)) => match member.name.as_str() {
+                        "push" => {
+                            let (Some(variable), Some(container_access)) = (variable, container_access) else {
+                                panic!("StorageVec is not a variable");
+                            };
+
+                            if !variable.borrow().is_storage {
+                                panic!("StorageVec is not in storage");
+                            }
+
+                            Ok(sway::Expression::from(sway::FunctionCall {
+                                function: sway::Expression::from(sway::MemberAccess {
+                                    expression: container_access,
+                                    member: "push".into(),
+                                }),
+                                
+                                generic_parameters: None,
+                                
+                                parameters: arguments.iter()
+                                    .map(|a| translate_expression(project, translated_definition, scope.clone(), a))
+                                    .collect::<Result<Vec<_>, _>>()?,
+                            }))
+                        }
+
+                        _ => todo!("translate StorageVec member function call `{member}`: {} - {container:#?} - {:#?}", sway::TabbedDisplayer(&container), variable.unwrap().borrow())
+                    }
+
                     _ => {
                         let parameters = arguments.iter()
                             .map(|a| translate_expression(project, translated_definition, scope.clone(), a))
@@ -2812,7 +2884,7 @@ pub fn translate_function_call_expression(
                             }
                         }
 
-                        todo!("translate {name} member function call: {} - {container:#?}", sway::TabbedDisplayer(&container))
+                        todo!("translate {name} member function call: {}.{member} - {container:#?}", sway::TabbedDisplayer(&container))
                     }
                 }
 
@@ -3204,17 +3276,6 @@ pub fn translate_function_call_block_expression(
     _block: &solidity::Statement,
 ) -> Result<sway::Expression, Error> {
     todo!("translate function call block expression")
-}
-
-#[inline]
-pub fn translate_named_function_call_expression(
-    _project: &mut Project,
-    _translated_definition: &mut TranslatedDefinition,
-    _scope: Rc<RefCell<TranslationScope>>,
-    _function: &solidity::Expression,
-    _named_arguments: &[solidity::NamedArgument],
-) -> Result<sway::Expression, Error> {
-    todo!("translate named function call expression")
 }
 
 #[inline]
