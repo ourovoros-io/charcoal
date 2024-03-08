@@ -153,6 +153,12 @@ pub fn create_value_expression(
                 Some(value) => panic!("Invalid StorageVec value expression: {value:#?}"),
             }
 
+            "Vec" => sway::Expression::from(sway::FunctionCall {
+                function: sway::Expression::Identifier("Vec::new".into()),
+                generic_parameters: None,
+                parameters: vec![],
+            }),
+
             name => {
                 // Check to see if the type is a type definition
                 if translated_definition.type_definitions.iter().any(|s| {
@@ -1139,57 +1145,42 @@ pub fn translate_member_access_expression(
             }
         }
 
-        solidity::Expression::MemberAccess(_, container, member1) => match container.as_ref() {
-            solidity::Expression::Variable(solidity::Identifier { name, .. }) => {
-                let variant_name = crate::translate_naming_convention(member.name.as_str(), Case::ScreamingSnake);
-
-                let mut result = None;
-                let mut translated_enum = None;
-
-                // Check to see if container is an external definition
-                if let Some(external_definition) = project.translated_definitions.iter().find(|d| d.name == *name) {
-                    // Check to see if member is an enum
-                    if let Some(external_enum) = external_definition.enums.iter().find(|e| {
-                        let sway::TypeName::Identifier { name, generic_parameters: None } = &e.type_definition.name else {
-                            panic!("Expected Identifier type name, found {:#?}", e.type_definition.name);
-                        };
-
-                        *name == member1.name
-                    }) {
-                        let sway::TypeName::Identifier { name: enum_name, generic_parameters: None } = &external_enum.type_definition.name else {
-                            panic!("Expected Identifier type name, found {:#?}", external_enum.type_definition.name);
-                        };
-
-                        // Import the enum if we haven't already
-                        if !translated_definition.enums.contains(external_enum) {
-                            translated_enum = Some(external_enum.clone());
-                        }
-
-                        // Ensure the variant exists
-                        if external_enum.variants_impl.items.iter().any(|i| {
-                            let sway::ImplItem::Constant(c) = i else { return false };
-                            c.name == variant_name
+        _ => {
+            if let solidity::Expression::MemberAccess(_, container1, member1) = container {
+                if let solidity::Expression::Variable(solidity::Identifier { name, .. }) = container1.as_ref() {
+                    // Check to see if container is an external definition
+                    if let Some(external_definition) = project.translated_definitions.iter().find(|d| d.name == *name) {
+                        // Check to see if member is an enum
+                        if let Some(external_enum) = external_definition.enums.iter().find(|e| {
+                            let sway::TypeName::Identifier { name, generic_parameters: None } = &e.type_definition.name else {
+                                panic!("Expected Identifier type name, found {:#?}", e.type_definition.name);
+                            };
+    
+                            *name == member1.name
                         }) {
-                            result = Some(sway::Expression::Identifier(format!("{enum_name}::{variant_name}")));
+                            let sway::TypeName::Identifier { name: enum_name, generic_parameters: None } = &external_enum.type_definition.name else {
+                                panic!("Expected Identifier type name, found {:#?}", external_enum.type_definition.name);
+                            };
+    
+                            let variant_name = crate::translate_naming_convention(member.name.as_str(), Case::ScreamingSnake);
+    
+                            // Ensure the variant exists
+                            if external_enum.variants_impl.items.iter().any(|i| {
+                                let sway::ImplItem::Constant(c) = i else { return false };
+                                c.name == variant_name
+                            }) {
+                                // Import the enum if we haven't already
+                                if !translated_definition.enums.contains(external_enum) {
+                                    translated_definition.import_enum(external_enum);
+                                }
+        
+                                return Ok(sway::Expression::Identifier(format!("{enum_name}::{variant_name}")));
+                            }
                         }
                     }
                 }
-
-                if let Some(result) = result {
-                    if let Some(translated_enum) = translated_enum.as_ref() {
-                        translated_definition.import_enum(translated_enum);
-                    }
-
-                    return Ok(result);
-                }
-
-                todo!("member access type name expression: {expression} - {expression:#?}")
             }
 
-            _ => {}
-        }
-
-        _ => {
             let container = translate_expression(project, translated_definition, scope.clone(), container)?;
             let container_type_name = translated_definition.get_expression_type(scope.clone(), &container)?;
             let container_type_name_string = container_type_name.to_string();
@@ -1236,16 +1227,27 @@ pub fn translate_member_access_expression(
                             ],
                         })),
 
-                        _ => {},
+                        _ => todo!("translate {container_type_name_string} member access expression: {expression} - {expression:#?}"),
                     }
 
-                    _ => {}
+                    ("Vec", Some(_)) => match member.name.as_str() {
+                        "length" => return Ok(sway::Expression::from(sway::FunctionCall {
+                            function: sway::Expression::from(sway::MemberAccess {
+                                expression: container,
+                                member: "len".into(),
+                            }),
+                            generic_parameters: None,
+                            parameters: vec![],
+                        })),
+
+                        _ => todo!("translate {container_type_name_string} member access expression: {expression} - {expression:#?}"),
+                    }
+
+                    _ => todo!("translate {container_type_name_string} member access expression: {expression} - {expression:#?}"),
                 }
 
-                _ => {}
+                _ => todo!("translate {container_type_name_string} member access expression: {expression} - {expression:#?}"),
             }
-        
-            todo!("translate member access expression: {expression} - {expression:#?}")
         }
     }
 
@@ -2521,6 +2523,11 @@ pub fn translate_function_call_expression(
                 _ => {}
             }
 
+            let variable = match translate_variable_access_expression(project, translated_definition, scope.clone(), container) {
+                Ok((variable, _)) => Some(variable),
+                Err(_) => None,
+            };
+
             let mut container = translate_expression(project, translated_definition, scope.clone(), container)?;
             let type_name = translated_definition.get_expression_type(scope.clone(), &container)?;
 
@@ -2653,59 +2660,57 @@ pub fn translate_function_call_expression(
                             }
 
                             // Check if expression is a variable that had an ABI type
-                            if let sway::Expression::Identifier(id) = &container {
-                                if let Ok(variable) = scope.borrow().get_variable_from_new_name(id.as_str()) {
-                                    let variable = variable.borrow();
+                            if let Some(variable) = variable.as_ref() {
+                                let variable = variable.borrow();
 
-                                    if let Some(abi_type_name) = variable.abi_type_name.as_ref() {
-                                        let abi_type_name = abi_type_name.to_string();
+                                if let Some(abi_type_name) = variable.abi_type_name.as_ref() {
+                                    let abi_type_name = abi_type_name.to_string();
 
-                                        // Ensure the ABI is added to the current definition
-                                        if let Some(external_definition) = project.find_definition_with_abi(abi_type_name.as_str()) {
-                                            if let Some(abi) = external_definition.abi.as_ref() {
-                                                if abi.name == abi_type_name {
-                                                    if !translated_definition.abis.iter().any(|a| a.name == abi.name) {
-                                                        translated_definition.abis.push(abi.clone());
-                                                    }
+                                    // Ensure the ABI is added to the current definition
+                                    if let Some(external_definition) = project.find_definition_with_abi(abi_type_name.as_str()) {
+                                        if let Some(abi) = external_definition.abi.as_ref() {
+                                            if abi.name == abi_type_name {
+                                                if !translated_definition.abis.iter().any(|a| a.name == abi.name) {
+                                                    translated_definition.abis.push(abi.clone());
                                                 }
                                             }
                                         }
-                        
-                                        // Turn the expression into an ABI cast
-                                        container = sway::Expression::from(sway::FunctionCall {
-                                            function: sway::Expression::Identifier("abi".into()),
-                                            generic_parameters: None,
-                                            parameters: vec![
-                                                sway::Expression::Identifier(abi_type_name.clone()),
-
-                                                // x.as_contract_id().unwrap().into()
-                                                sway::Expression::from(sway::FunctionCall {
-                                                    function: sway::Expression::from(sway::MemberAccess {
-                                                        expression: sway::Expression::from(sway::FunctionCall {
-                                                            function: sway::Expression::from(sway::MemberAccess {
-                                                                expression: sway::Expression::from(sway::FunctionCall {
-                                                                    function: sway::Expression::from(sway::MemberAccess {
-                                                                        expression: container,
-                                                                        member: "as_contract_id".into(),
-                                                                    }),
-                                                                    generic_parameters: None,
-                                                                    parameters: vec![],
-                                                                }),
-                                                                member: "unwrap".into(),
-                                                            }),
-                                                            generic_parameters: None,
-                                                            parameters: vec![],
-                                                        }),
-                                                        member: "into".into(),
-                                                    }),
-                                                    generic_parameters: None,
-                                                    parameters: vec![],
-                                                }),
-                                            ],
-                                        });
-
-                                        name = abi_type_name.to_string();
                                     }
+                    
+                                    // Turn the expression into an ABI cast
+                                    container = sway::Expression::from(sway::FunctionCall {
+                                        function: sway::Expression::Identifier("abi".into()),
+                                        generic_parameters: None,
+                                        parameters: vec![
+                                            sway::Expression::Identifier(abi_type_name.clone()),
+
+                                            // x.as_contract_id().unwrap().into()
+                                            sway::Expression::from(sway::FunctionCall {
+                                                function: sway::Expression::from(sway::MemberAccess {
+                                                    expression: sway::Expression::from(sway::FunctionCall {
+                                                        function: sway::Expression::from(sway::MemberAccess {
+                                                            expression: sway::Expression::from(sway::FunctionCall {
+                                                                function: sway::Expression::from(sway::MemberAccess {
+                                                                    expression: container,
+                                                                    member: "as_contract_id".into(),
+                                                                }),
+                                                                generic_parameters: None,
+                                                                parameters: vec![],
+                                                            }),
+                                                            member: "unwrap".into(),
+                                                        }),
+                                                        generic_parameters: None,
+                                                        parameters: vec![],
+                                                    }),
+                                                    member: "into".into(),
+                                                }),
+                                                generic_parameters: None,
+                                                parameters: vec![],
+                                            }),
+                                        ],
+                                    });
+
+                                    name = abi_type_name.to_string();
                                 }
                             }
 
@@ -2732,7 +2737,7 @@ pub fn translate_function_call_expression(
                                 }
                             }
 
-                            todo!("translate Identity member function call `{member}`: {} - {container:#?}", sway::TabbedDisplayer(&container))
+                            todo!("translate Identity member function call `{member}`: {} - {container:#?} - {:#?}", sway::TabbedDisplayer(&container), variable.unwrap().borrow())
                         }
                     }
                     
@@ -2823,8 +2828,24 @@ pub fn translate_function_call_expression(
 
         solidity::Expression::FunctionCallBlock(_, function, block) => match function.as_ref() {
             solidity::Expression::MemberAccess(_, container, member) => {
-                let container = translate_expression(project, translated_definition, scope.clone(), container)?;
+                let variable = translate_variable_access_expression(project, translated_definition, scope.clone(), container).ok().map(|(v, _)| v);
+                let mut container = translate_expression(project, translated_definition, scope.clone(), container)?;
                 let type_name = translated_definition.get_expression_type(scope.clone(), &container)?;
+
+                let solidity::Statement::Args(_, block_args) = block.as_ref() else {
+                    panic!("Malformed `address.call` call, expected args block, found: {block:#?}");
+                };
+
+                let mut coins = None;
+                let mut gas = None;
+
+                for block_arg in block_args.iter() {
+                    match block_arg.name.name.as_str() {
+                        "value" => coins = Some(translate_expression(project, translated_definition, scope.clone(), &block_arg.expr)?),
+                        "gas" => gas = Some(translate_expression(project, translated_definition, scope.clone(), &block_arg.expr)?),
+                        arg => todo!("address.transfer block arg: {arg}"),
+                    }
+                }
 
                 match type_name {
                     sway::TypeName::Undefined => panic!("Undefined type name"),
@@ -2836,27 +2857,113 @@ pub fn translate_function_call_expression(
                                     panic!("Malformed `address.call` call, expected 1 argument, found {}", arguments.len());
                                 }
 
-                                let solidity::Statement::Args(_, block_args) = block.as_ref() else {
-                                    panic!("Malformed `address.call` call, expected args block, found: {block:#?}");
-                                };
-
-                                let mut coins = None;
-                                let mut gas = None;
-
-                                for block_arg in block_args.iter() {
-                                    match block_arg.name.name.as_str() {
-                                        "value" => coins = Some(translate_expression(project, translated_definition, scope.clone(), &block_arg.expr)?),
-                                        "gas" => gas = Some(translate_expression(project, translated_definition, scope.clone(), &block_arg.expr)?),
-                                        arg => todo!("address.transfer block arg: {arg}"),
-                                    }
-                                }
-
                                 let payload = translate_expression(project, translated_definition, scope.clone(), &arguments[0])?;
                                 translate_address_call_expression(project, translated_definition, scope.clone(), payload, coins, None, gas)
                             }
 
-                            _ => todo!("translate Identity member function call block `{member}`: {} - {container:#?}", sway::TabbedDisplayer(&container))
+                            _ => {
+                                let mut name = name.clone();
+                                let external_function_new_name = crate::translate_naming_convention(member.name.as_str(), Case::Snake);
+    
+                                // Check if expression is a variable that had an ABI type
+                                if let Some(variable) = variable.as_ref() {
+                                    let variable = variable.borrow();
+    
+                                    if let Some(abi_type_name) = variable.abi_type_name.as_ref() {
+                                        let abi_type_name = abi_type_name.to_string();
+    
+                                        // Ensure the ABI is added to the current definition
+                                        if let Some(external_definition) = project.find_definition_with_abi(abi_type_name.as_str()) {
+                                            if let Some(abi) = external_definition.abi.as_ref() {
+                                                if abi.name == abi_type_name {
+                                                    if !translated_definition.abis.iter().any(|a| a.name == abi.name) {
+                                                        translated_definition.abis.push(abi.clone());
+                                                    }
+                                                }
+                                            }
+                                        }
+                        
+                                        // Turn the expression into an ABI cast
+                                        container = sway::Expression::from(sway::FunctionCall {
+                                            function: sway::Expression::Identifier("abi".into()),
+                                            generic_parameters: None,
+                                            parameters: vec![
+                                                sway::Expression::Identifier(abi_type_name.clone()),
+    
+                                                // x.as_contract_id().unwrap().into()
+                                                sway::Expression::from(sway::FunctionCall {
+                                                    function: sway::Expression::from(sway::MemberAccess {
+                                                        expression: sway::Expression::from(sway::FunctionCall {
+                                                            function: sway::Expression::from(sway::MemberAccess {
+                                                                expression: sway::Expression::from(sway::FunctionCall {
+                                                                    function: sway::Expression::from(sway::MemberAccess {
+                                                                        expression: container,
+                                                                        member: "as_contract_id".into(),
+                                                                    }),
+                                                                    generic_parameters: None,
+                                                                    parameters: vec![],
+                                                                }),
+                                                                member: "unwrap".into(),
+                                                            }),
+                                                            generic_parameters: None,
+                                                            parameters: vec![],
+                                                        }),
+                                                        member: "into".into(),
+                                                    }),
+                                                    generic_parameters: None,
+                                                    parameters: vec![],
+                                                }),
+                                            ],
+                                        });
+    
+                                        name = abi_type_name.to_string();
+                                    }
+                                }
+        
+                                // Check to see if the type is located in an external ABI
+                                if let Some(external_definition) = project.find_definition_with_abi(name.as_str()) {
+                                    let external_abi = external_definition.abi.as_ref().unwrap();
+
+                                    if external_abi.functions.iter().any(|f| f.name == external_function_new_name) {
+                                        // Ensure the ABI is added to the current definition
+                                        if !translated_definition.abis.iter().any(|a| a.name == external_abi.name) {
+                                            translated_definition.abis.push(external_abi.clone());
+                                        }
+                                        
+                                        let mut fields = vec![];
+
+                                        if let Some(coins) = coins {
+                                            fields.push(sway::ConstructorField {
+                                                name: "coins".into(),
+                                                value: coins,
+                                            });
+                                        }
+                                        
+                                        if let Some(gas) = gas {
+                                            fields.push(sway::ConstructorField {
+                                                name: "gas".into(),
+                                                value: gas,
+                                            });
+                                        }
+
+                                        return Ok(sway::Expression::from(sway::FunctionCallBlock {
+                                            function: sway::Expression::from(sway::MemberAccess {
+                                                expression: container,
+                                                member: external_function_new_name,
+                                            }),
+                                            generic_parameters: None,
+                                            fields,
+                                            parameters: arguments.iter()
+                                                .map(|a| translate_expression(project, translated_definition, scope.clone(), a))
+                                                .collect::<Result<Vec<_>, _>>()?,
+                                        }));
+                                    }
+                                }
+
+                                todo!("translate Identity member function call block `{member}{}`: {} - {container:#?}", block.to_string(), sway::TabbedDisplayer(&container))
+                            }
                         }
+
                         _ => todo!("translate {name} member function call block: {} - {container:#?}", sway::TabbedDisplayer(&container))
                     }
 
@@ -3286,9 +3393,12 @@ pub fn translate_variable_access_expression(
         }
         
         solidity::Expression::MemberAccess(_, container, member) => {
+            println!("container: {container}");
             let translated_container = translate_expression(project, translated_definition, scope.clone(), container)?;
+            println!("translated_container: {}", sway::TabbedDisplayer(&translated_container));
         
             let container_type_name = translated_definition.get_expression_type(scope.clone(), &translated_container)?;
+            println!("container_type_name: {container_type_name}");
             let container_type_name_string = container_type_name.to_string();
             
             let (variable, container) = translate_variable_access_expression(project, translated_definition, scope.clone(), &container)?;
@@ -3308,7 +3418,7 @@ pub fn translate_variable_access_expression(
                 }
             }
         
-            todo!("translate variable access expression: {expression} - {expression:#?}")
+            todo!("translate variable {container_type_name_string} member access expression: {expression} - {expression:#?}")
         }
 
         solidity::Expression::FunctionCall(_, function, arguments) => {

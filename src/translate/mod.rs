@@ -140,7 +140,6 @@ impl TranslationScope {
         parameters: &[sway::Expression],
         parameter_types: &[sway::TypeName],
     ) -> Option<Rc<RefCell<TranslatedFunction>>> {
-        println!("Checking for {old_name}");
 
         self.find_function(|f| {
             let f = f.borrow();
@@ -149,8 +148,6 @@ impl TranslationScope {
             if f.old_name != old_name {
                 return false;
             }
-
-            println!("Found {old_name}");
 
             // Ensure the supplied function call args match the function's parameters
             if parameters.len() != f.parameters.entries.len() {
@@ -675,709 +672,717 @@ impl TranslatedDefinition {
                 Ok(variable.type_name.clone())
             }
 
-            sway::Expression::FunctionCall(function_call) => match &function_call.function {
-                sway::Expression::Identifier(name) => match name.as_str() {
-                    "todo!" => Ok(sway::TypeName::Identifier {
-                        name: "todo!".into(),
-                        generic_parameters: None,
-                    }),
+            sway::Expression::FunctionCall(_) | sway::Expression::FunctionCallBlock(_) => {
+                let (function, parameters) = match expression {
+                    sway::Expression::FunctionCall(f) => (&f.function, &f.parameters),
+                    sway::Expression::FunctionCallBlock(f) => (&f.function, &f.parameters),
+                    _ => unreachable!(),
+                };
 
-                    "abi" => {
-                        if function_call.parameters.len() != 2 {
-                            panic!("Malformed abi cast, expected 2 parameters, found {}", function_call.parameters.len());
-                        }
-
-                        let sway::Expression::Identifier(definition_name) = &function_call.parameters[0] else {
-                            panic!("Malformed abi cast, expected identifier, found {:#?}", function_call.parameters[0]);
-                        };
-
-                        Ok(sway::TypeName::Identifier {
-                            name: definition_name.clone(),
+                match function {
+                    sway::Expression::Identifier(name) => match name.as_str() {
+                        "todo!" => Ok(sway::TypeName::Identifier {
+                            name: "todo!".into(),
                             generic_parameters: None,
-                        })
-                    }
-
-                    "b256::from" => Ok(sway::TypeName::Identifier {
-                        name: "b256".into(),
-                        generic_parameters: None,
-                    }),
-
-                    "Bytes::new" | "Bytes::from" => Ok(sway::TypeName::Identifier {
-                        name: "Bytes".into(),
-                        generic_parameters: None,
-                    }),
-
-                    "Identity::Address" | "Identity::ContractId" | "Identity::from" => Ok(sway::TypeName::Identifier {
-                        name: "Identity".into(),
-                        generic_parameters: None,
-                    }),
-
-                    "msg_sender" => Ok(sway::TypeName::Identifier {
-                        name: "Option".into(),
-                        generic_parameters: Some(sway::GenericParameterList {
-                            entries: vec![
-                                sway::GenericParameter {
-                                    type_name: sway::TypeName::Identifier {
-                                        name: "Identity".into(),
-                                        generic_parameters: None,
-                                    },
-                                    implements: None,
-                                },
-                            ],
                         }),
-                    }),
-
-                    "std::block::height" => Ok(sway::TypeName::Identifier {
-                        name: "u32".into(),
-                        generic_parameters: None,
-                    }),
-                    
-                    "std::block::timestamp" => Ok(sway::TypeName::Identifier {
-                        name: "u64".into(),
-                        generic_parameters: None,
-                    }),
-                    
-                    "std::context::this_balance" => Ok(sway::TypeName::Identifier {
-                        name: "u64".into(),
-                        generic_parameters: None,
-                    }),
-
-                    "std::hash::keccak256" => Ok(sway::TypeName::Identifier {
-                        name: "b256".into(),
-                        generic_parameters: None,
-                    }),
-
-                    "u64::try_from" => Ok(sway::TypeName::Identifier {
-                        name: "Option".into(),
-                        generic_parameters: Some(sway::GenericParameterList {
-                            entries: vec![
-                                sway::GenericParameter {
-                                    type_name: sway::TypeName::Identifier {
-                                        name: "u64".into(),
-                                        generic_parameters: None,
-                                    },
-                                    implements: None,
-                                },
-                            ],
+    
+                        "abi" => {
+                            if parameters.len() != 2 {
+                                panic!("Malformed abi cast, expected 2 parameters, found {}", parameters.len());
+                            }
+    
+                            let sway::Expression::Identifier(definition_name) = &parameters[0] else {
+                                panic!("Malformed abi cast, expected identifier, found {:#?}", parameters[0]);
+                            };
+    
+                            Ok(sway::TypeName::Identifier {
+                                name: definition_name.clone(),
+                                generic_parameters: None,
+                            })
+                        }
+    
+                        "b256::from" => Ok(sway::TypeName::Identifier {
+                            name: "b256".into(),
+                            generic_parameters: None,
                         }),
-                    }),
-
-                    new_name => {
-                        let parameter_types = function_call.parameters.iter()
-                            .map(|p| self.get_expression_type(scope.clone(), p))
-                            .collect::<Result<Vec<_>, _>>()?;
-                        
-                        // Ensure the function exists in scope
-                        let Some(function) = scope.borrow().find_function(|f| {
-                            let f = f.borrow();
-
-                            // Ensure the function's new name matches the function call we're translating
-                            if f.new_name != new_name {
-                                return false;
-                            }
-                            
-                            // Ensure the supplied function call args match the function's parameters
-                            if function_call.parameters.len() != f.parameters.entries.len() {
-                                return false;
-                            }
-
-                            for (i, value_type_name) in parameter_types.iter().enumerate() {
-                                let Some(parameter_type_name) = f.parameters.entries[i].type_name.as_ref() else { continue };
-
-                                if !value_type_name.is_compatible_with(parameter_type_name) {
-                                    return false;
-                                }
-                            }
-
-                            true
-                        }) else {
-                            panic!("Failed to find function `{new_name}` in scope");
-                        };
-
-                        let function = function.borrow();
-
-                        if let Some(return_type) = function.return_type.as_ref() {
-                            Ok(return_type.clone())
-                        } else {
-                            Ok(sway::TypeName::Tuple { type_names: vec![] })
-                        }
-                    }
-                }
-
-                sway::Expression::MemberAccess(member_access) => match self.get_expression_type(scope.clone(), &member_access.expression)? {
-                    sway::TypeName::Undefined => panic!("Undefined type name"),
-
-                    sway::TypeName::Identifier { name, generic_parameters } => match (name.as_str(), generic_parameters.as_ref()) {
-                        ("b256", None) => match member_access.member.as_str() {
-                            "as_u256" => Ok(sway::TypeName::Identifier {
-                                name: "u256".into(),
-                                generic_parameters: None,
-                            }),
-
-                            "to_be_bytes" => Ok(sway::TypeName::Identifier {
-                                name: "Bytes".into(),
-                                generic_parameters: None,
-                            }),
-
-                            "to_le_bytes" => Ok(sway::TypeName::Identifier {
-                                name: "Bytes".into(),
-                                generic_parameters: None,
-                            }),
-
-                            _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
-                        }
-
-                        ("u8", None) => match member_access.member.as_str() {
-                            "as_u16" => Ok(sway::TypeName::Identifier {
-                                name: "u16".into(),
-                                generic_parameters: None,
-                            }),
-
-                            "as_u32" => Ok(sway::TypeName::Identifier {
-                                name: "u32".into(),
-                                generic_parameters: None,
-                            }),
-
-                            "as_u64" => Ok(sway::TypeName::Identifier {
-                                name: "u64".into(),
-                                generic_parameters: None,
-                            }),
-
-                            "as_u256" => Ok(sway::TypeName::Identifier {
-                                name: "u256".into(),
-                                generic_parameters: None,
-                            }),
-
-                            "pow" => Ok(sway::TypeName::Identifier {
-                                name: "u8".into(),
-                                generic_parameters: None,
-                            }),
-
-                            _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
-                        }
-
-                        ("u16", None) => match member_access.member.as_str() {
-                            "as_u32" => Ok(sway::TypeName::Identifier {
-                                name: "u32".into(),
-                                generic_parameters: None,
-                            }),
-
-                            "as_u64" => Ok(sway::TypeName::Identifier {
-                                name: "u64".into(),
-                                generic_parameters: None,
-                            }),
-
-                            "as_u256" => Ok(sway::TypeName::Identifier {
-                                name: "u256".into(),
-                                generic_parameters: None,
-                            }),
-
-                            "pow" => Ok(sway::TypeName::Identifier {
-                                name: "u16".into(),
-                                generic_parameters: None,
-                            }),
-
-                            "to_be_bytes" => Ok(sway::TypeName::Identifier {
-                                name: "Bytes".into(),
-                                generic_parameters: None,
-                            }),
-
-                            "to_le_bytes" => Ok(sway::TypeName::Identifier {
-                                name: "Bytes".into(),
-                                generic_parameters: None,
-                            }),
-
-                            _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
-                        }
-
-                        ("u32", None) => match member_access.member.as_str() {
-                            "as_u64" => Ok(sway::TypeName::Identifier {
-                                name: "u64".into(),
-                                generic_parameters: None,
-                            }),
-
-                            "as_u256" => Ok(sway::TypeName::Identifier {
-                                name: "u256".into(),
-                                generic_parameters: None,
-                            }),
-
-                            "pow" => Ok(sway::TypeName::Identifier {
-                                name: "u32".into(),
-                                generic_parameters: None,
-                            }),
-
-                            "to_be_bytes" => Ok(sway::TypeName::Identifier {
-                                name: "Bytes".into(),
-                                generic_parameters: None,
-                            }),
-
-                            "to_le_bytes" => Ok(sway::TypeName::Identifier {
-                                name: "Bytes".into(),
-                                generic_parameters: None,
-                            }),
-
-                            _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
-                        }
-
-                        ("u64", None) => match member_access.member.as_str() {
-                            "as_u256" => Ok(sway::TypeName::Identifier {
-                                name: "u256".into(),
-                                generic_parameters: None,
-                            }),
-
-                            "pow" => Ok(sway::TypeName::Identifier {
-                                name: "u64".into(),
-                                generic_parameters: None,
-                            }),
-
-                            "to_be_bytes" => Ok(sway::TypeName::Identifier {
-                                name: "Bytes".into(),
-                                generic_parameters: None,
-                            }),
-
-                            "to_le_bytes" => Ok(sway::TypeName::Identifier {
-                                name: "Bytes".into(),
-                                generic_parameters: None,
-                            }),
-
-                            _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
-                        }
-
-                        ("u256", None) => match member_access.member.as_str() {
-                            "as_b256" => Ok(sway::TypeName::Identifier {
-                                name: "b256".into(),
-                                generic_parameters: None,
-                            }),
-
-                            "pow" => Ok(sway::TypeName::Identifier {
-                                name: "u256".into(),
-                                generic_parameters: None,
-                            }),
-
-                            "to_be_bytes" => Ok(sway::TypeName::Identifier {
-                                name: "Bytes".into(),
-                                generic_parameters: None,
-                            }),
-
-                            "to_le_bytes" => Ok(sway::TypeName::Identifier {
-                                name: "Bytes".into(),
-                                generic_parameters: None,
-                            }),
-
-                            _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
-                        }
-
-                        ("Bytes", None) => match member_access.member.as_str() {
-                            "len" => Ok(sway::TypeName::Identifier {
-                                name: "u64".into(),
-                                generic_parameters: None,
-                            }),
-
-                            "split_at" => Ok(sway::TypeName::Tuple {
-                                type_names: vec![
-                                    sway::TypeName::Identifier {
-                                        name: "Bytes".into(),
-                                        generic_parameters: None,
-                                    },
-                                    sway::TypeName::Identifier {
-                                        name: "Bytes".into(),
-                                        generic_parameters: None,
+    
+                        "Bytes::new" | "Bytes::from" => Ok(sway::TypeName::Identifier {
+                            name: "Bytes".into(),
+                            generic_parameters: None,
+                        }),
+    
+                        "Identity::Address" | "Identity::ContractId" | "Identity::from" => Ok(sway::TypeName::Identifier {
+                            name: "Identity".into(),
+                            generic_parameters: None,
+                        }),
+    
+                        "msg_sender" => Ok(sway::TypeName::Identifier {
+                            name: "Option".into(),
+                            generic_parameters: Some(sway::GenericParameterList {
+                                entries: vec![
+                                    sway::GenericParameter {
+                                        type_name: sway::TypeName::Identifier {
+                                            name: "Identity".into(),
+                                            generic_parameters: None,
+                                        },
+                                        implements: None,
                                     },
                                 ],
                             }),
-                            "as_raw_slice" => Ok(sway::TypeName::Identifier {
-                                name: "RawSlice".into(),
-                                generic_parameters: None,
-                            }),
-
-                            _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
-                        }
-
-                        ("Identity", None) => match member_access.member.as_str() {
-                            "as_address" => Ok(sway::TypeName::Identifier {
-                                name: "Option".into(),
-                                generic_parameters: Some(sway::GenericParameterList {
-                                    entries: vec![
-                                        sway::GenericParameter {
-                                            type_name: sway::TypeName::Identifier {
-                                                name: "Address".into(),
-                                                generic_parameters: None,
-                                            },
-                                            implements: None,
-                                        },
-                                    ],
-                                }),
-                            }),
-
-                            "as_contract_id" => Ok(sway::TypeName::Identifier {
-                                name: "Option".into(),
-                                generic_parameters: Some(sway::GenericParameterList {
-                                    entries: vec![
-                                        sway::GenericParameter {
-                                            type_name: sway::TypeName::Identifier {
-                                                name: "ContractId".into(),
-                                                generic_parameters: None,
-                                            },
-                                            implements: None,
-                                        },
-                                    ],
-                                }),
-                            }),
-
-                            "is_address" => Ok(sway::TypeName::Identifier {
-                                name: "bool".into(),
-                                generic_parameters: None,
-                            }),
-
-                            "is_contract_id" => Ok(sway::TypeName::Identifier {
-                                name: "bool".into(),
-                                generic_parameters: None,
-                            }),
-
-                            _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
-                        }
-
-                        ("Option", Some(generic_parameters)) if generic_parameters.entries.len() == 1 => match member_access.member.as_str() {
-                            "unwrap" => Ok(generic_parameters.entries[0].type_name.clone()),
-                            
-                            _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
-                        }
+                        }),
+    
+                        "std::block::height" => Ok(sway::TypeName::Identifier {
+                            name: "u32".into(),
+                            generic_parameters: None,
+                        }),
                         
-                        ("Result", Some(generic_parameters)) if generic_parameters.entries.len() == 2 => match member_access.member.as_str() {
-                            "unwrap" => Ok(generic_parameters.entries[0].type_name.clone()),
-                            
-                            _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
-                        }
-                        
-                        ("StorageKey", Some(generic_parameters)) if generic_parameters.entries.len() == 1 => match member_access.member.as_str() {
-                            "clear" => Ok(sway::TypeName::Identifier {
-                                name: "bool".into(),
-                                generic_parameters: None,
-                            }),
-
-                            "read" => Ok(generic_parameters.entries[0].type_name.clone()),
-
-                            "try_read" => Ok(sway::TypeName::Identifier {
-                                name: "Option".into(),
-                                generic_parameters: Some(sway::GenericParameterList {
-                                    entries: vec![
-                                        sway::GenericParameter {
-                                            type_name: generic_parameters.entries[0].type_name.clone(),
-                                            implements: None,
-                                        },
-                                    ],
-                                }),
-                            }),
-
-                            "write" => Ok(sway::TypeName::Tuple { type_names: vec![] }),
-
-                            _ => match &generic_parameters.entries[0].type_name {
-                                sway::TypeName::Identifier { name, generic_parameters } => match (name.as_str(), generic_parameters.as_ref()) {
-                                    ("StorageBytes", None) => match member_access.member.as_str() {
-                                        "clear" => Ok(sway::TypeName::Identifier {
-                                            name: "bool".into(),
-                                            generic_parameters: None,
-                                        }),
-
-                                        "len" => Ok(sway::TypeName::Identifier {
-                                            name: "u64".into(),
-                                            generic_parameters: None,
-                                        }),
-                        
-                                        "read_slice" => Ok(sway::TypeName::Identifier {
-                                            name: "Option".into(),
-                                            generic_parameters: Some(sway::GenericParameterList {
-                                                entries: vec![
-                                                    sway::GenericParameter {
-                                                        type_name: sway::TypeName::Identifier {
-                                                            name: "Bytes".into(),
-                                                            generic_parameters: None,
-                                                        },
-                                                        implements: None,
-                                                    },
-                                                ],
-                                            }),
-                                        }),
-
-                                        "write_slice" => Ok(sway::TypeName::Tuple { type_names: vec![] }),
-
-                                        _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
-                                    }
-
-                                    ("StorageMap", Some(generic_parameters)) if generic_parameters.entries.len() == 2 => match member_access.member.as_str() {
-                                        "get" => Ok(sway::TypeName::Identifier {
-                                            name: "StorageKey".into(),
-                                            generic_parameters: Some(sway::GenericParameterList {
-                                                entries: vec![
-                                                    sway::GenericParameter {
-                                                        type_name: generic_parameters.entries[0].type_name.clone(),
-                                                        implements: None,
-                                                    },
-                                                ],
-                                            }),
-                                        }),
-
-                                        "insert" => Ok(sway::TypeName::Tuple { type_names: vec![] }),
-
-                                        "remove" => Ok(sway::TypeName::Identifier {
-                                            name: "bool".into(),
-                                            generic_parameters: None,
-                                        }),
-
-                                        "try_insert" => Ok(sway::TypeName::Identifier {
-                                            name: "Result".into(),
-                                            generic_parameters: Some(sway::GenericParameterList {
-                                                entries: vec![
-                                                    sway::GenericParameter {
-                                                        type_name: generic_parameters.entries[0].type_name.clone(),
-                                                        implements: None,
-                                                    },
-                                                    sway::GenericParameter {
-                                                        type_name: sway::TypeName::Identifier {
-                                                            name: "StorageMapError".into(),
-                                                            generic_parameters: Some(sway::GenericParameterList {
-                                                                entries: vec![
-                                                                    sway::GenericParameter {
-                                                                        type_name: generic_parameters.entries[0].type_name.clone(),
-                                                                        implements: None,
-                                                                    },
-                                                                ],
-                                                            }),
-                                                        },
-                                                        implements: None,
-                                                    },
-                                                ],
-                                            }),
-                                        }),
-
-                                        _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
-                                    }
-
-                                    ("StorageString", None) => match member_access.member.as_str() {
-                                        "clear" => Ok(sway::TypeName::Identifier {
-                                            name: "bool".into(),
-                                            generic_parameters: None,
-                                        }),
-
-                                        "len" => Ok(sway::TypeName::Identifier {
-                                            name: "u64".into(),
-                                            generic_parameters: None,
-                                        }),
-                        
-                                        "read_slice" => Ok(sway::TypeName::Identifier {
-                                            name: "Option".into(),
-                                            generic_parameters: Some(sway::GenericParameterList {
-                                                entries: vec![
-                                                    sway::GenericParameter {
-                                                        type_name: sway::TypeName::Identifier {
-                                                            name: "String".into(),
-                                                            generic_parameters: None,
-                                                        },
-                                                        implements: None,
-                                                    },
-                                                ],
-                                            }),
-                                        }),
-
-                                        "write_slice" => Ok(sway::TypeName::Tuple { type_names: vec![] }),
-
-                                        _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
-                                    }
-
-                                    ("StorageVec", Some(generic_parameters)) if generic_parameters.entries.len() == 1 => match member_access.member.as_str() {
-                                        "fill" => Ok(sway::TypeName::Tuple { type_names: vec![] }),
-
-                                        "first" => Ok(sway::TypeName::Identifier {
-                                            name: "Option".into(),
-                                            generic_parameters: Some(sway::GenericParameterList {
-                                                entries: vec![
-                                                    sway::GenericParameter {
-                                                        type_name: sway::TypeName::Identifier {
-                                                            name: "StorageKey".into(),
-                                                            generic_parameters: Some(sway::GenericParameterList {
-                                                                entries: vec![
-                                                                    sway::GenericParameter {
-                                                                        type_name: generic_parameters.entries[0].type_name.clone(),
-                                                                        implements: None,
-                                                                    },
-                                                                ],
-                                                            }),
-                                                        },
-                                                        implements: None,
-                                                    },
-                                                ],
-                                            }),
-                                        }),
-
-                                        "get" => Ok(sway::TypeName::Identifier {
-                                            name: "Option".into(),
-                                            generic_parameters: Some(sway::GenericParameterList {
-                                                entries: vec![
-                                                    sway::GenericParameter {
-                                                        type_name: sway::TypeName::Identifier {
-                                                            name: "StorageKey".into(),
-                                                            generic_parameters: Some(sway::GenericParameterList {
-                                                                entries: vec![
-                                                                    sway::GenericParameter {
-                                                                        type_name: generic_parameters.entries[0].type_name.clone(),
-                                                                        implements: None,
-                                                                    },
-                                                                ],
-                                                            }),
-                                                        },
-                                                        implements: None,
-                                                    },
-                                                ],
-                                            }),
-                                        }),
-
-                                        "insert" => Ok(sway::TypeName::Tuple { type_names: vec![] }),
-
-                                        "is_empty" => Ok(sway::TypeName::Identifier {
-                                            name: "bool".into(),
-                                            generic_parameters: None,
-                                        }),
-
-                                        "last" => Ok(sway::TypeName::Identifier {
-                                            name: "Option".into(),
-                                            generic_parameters: Some(sway::GenericParameterList {
-                                                entries: vec![
-                                                    sway::GenericParameter {
-                                                        type_name: sway::TypeName::Identifier {
-                                                            name: "StorageKey".into(),
-                                                            generic_parameters: Some(sway::GenericParameterList {
-                                                                entries: vec![
-                                                                    sway::GenericParameter {
-                                                                        type_name: generic_parameters.entries[0].type_name.clone(),
-                                                                        implements: None,
-                                                                    },
-                                                                ],
-                                                            }),
-                                                        },
-                                                        implements: None,
-                                                    },
-                                                ],
-                                            }),
-                                        }),
-
-                                        "len" => Ok(sway::TypeName::Identifier {
-                                            name: "u64".into(),
-                                            generic_parameters: None,
-                                        }),
-
-                                        "load_vec" => Ok(sway::TypeName::Identifier {
-                                            name: "Vec".into(),
-                                            generic_parameters: Some(sway::GenericParameterList {
-                                                entries: vec![
-                                                    sway::GenericParameter {
-                                                        type_name: generic_parameters.entries[0].type_name.clone(),
-                                                        implements: None,
-                                                    },
-                                                ],
-                                            }),
-                                        }),
-
-                                        "pop" => Ok(sway::TypeName::Identifier {
-                                            name: "Option".into(),
-                                            generic_parameters: Some(sway::GenericParameterList {
-                                                entries: vec![
-                                                    sway::GenericParameter {
-                                                        type_name: generic_parameters.entries[0].type_name.clone(),
-                                                        implements: None,
-                                                    },
-                                                ],
-                                            }),
-                                        }),
-
-                                        "push" => Ok(sway::TypeName::Tuple { type_names: vec![] }),
-
-                                        "remove" => Ok(generic_parameters.entries[0].type_name.clone()),
-
-                                        "resize" => Ok(sway::TypeName::Tuple { type_names: vec![] }),
-
-                                        "reverse" => Ok(sway::TypeName::Tuple { type_names: vec![] }),
-
-                                        "set" => Ok(sway::TypeName::Tuple { type_names: vec![] }),
-
-                                        "store_vec" => Ok(sway::TypeName::Tuple { type_names: vec![] }),
-
-                                        "swap_remove" => Ok(generic_parameters.entries[0].type_name.clone()),
-
-                                        "swap" => Ok(sway::TypeName::Tuple { type_names: vec![] }),
-
-                                        _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
-                                    }
-
-                                    _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
-                                }
-
-                                _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
-                            }
-                        }
-
-                        ("String", None) => match member_access.member.as_str() {
-                            "len" => Ok(sway::TypeName::Identifier {
-                                name: "u64".into(),
-                                generic_parameters: None,
-                            }),
-
-                            _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
-                        }
-
-                        ("Vec", Some(generic_parameters)) if generic_parameters.entries.len() == 1 => match member_access.member.as_str() {
-                            "get" => Ok(sway::TypeName::Identifier {
-                                name: "Option".into(),
-                                generic_parameters: Some(sway::GenericParameterList {
-                                    entries: vec![
-                                        generic_parameters.entries.first().unwrap().clone(),
-                                    ],
-                                }),
-                            }),
-
-                            "len" => Ok(sway::TypeName::Identifier {
-                                name: "u64".into(),
-                                generic_parameters: None,
-                            }),
-
-                            _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
-                        }
-
-                        (name, None) => {
-                            if let Some(abi) = self.abi.as_ref() {
-                                if abi.name == name {
-                                    if let Some(function_definition) = abi.functions.iter().find(|f| f.name == member_access.member) {
-                                        return Ok(function_definition.return_type.clone().unwrap_or_else(|| sway::TypeName::Tuple { type_names: vec![] }))
-                                    }
-                                }
-                            }
-
-                            for abi in self.abis.iter() {
-                                if abi.name == name {
-                                    if let Some(function_definition) = abi.functions.iter().find(|f| f.name == member_access.member) {
-                                        return Ok(function_definition.return_type.clone().unwrap_or_else(|| sway::TypeName::Tuple { type_names: vec![] }))
-                                    }
-                                }
-                            }
-
-                            todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression))
-                        }
-
-                        _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
-                    }
-
-                    sway::TypeName::StringSlice => match member_access.member.as_str() {
-                        "len" => Ok(sway::TypeName::Identifier {
+                        "std::block::timestamp" => Ok(sway::TypeName::Identifier {
                             name: "u64".into(),
                             generic_parameters: None,
                         }),
-
+                        
+                        "std::context::this_balance" => Ok(sway::TypeName::Identifier {
+                            name: "u64".into(),
+                            generic_parameters: None,
+                        }),
+    
+                        "std::hash::keccak256" => Ok(sway::TypeName::Identifier {
+                            name: "b256".into(),
+                            generic_parameters: None,
+                        }),
+    
+                        "u64::try_from" => Ok(sway::TypeName::Identifier {
+                            name: "Option".into(),
+                            generic_parameters: Some(sway::GenericParameterList {
+                                entries: vec![
+                                    sway::GenericParameter {
+                                        type_name: sway::TypeName::Identifier {
+                                            name: "u64".into(),
+                                            generic_parameters: None,
+                                        },
+                                        implements: None,
+                                    },
+                                ],
+                            }),
+                        }),
+    
+                        new_name => {
+                            let parameter_types = parameters.iter()
+                                .map(|p| self.get_expression_type(scope.clone(), p))
+                                .collect::<Result<Vec<_>, _>>()?;
+                            
+                            // Ensure the function exists in scope
+                            let Some(function) = scope.borrow().find_function(|f| {
+                                let f = f.borrow();
+    
+                                // Ensure the function's new name matches the function call we're translating
+                                if f.new_name != new_name {
+                                    return false;
+                                }
+                                
+                                // Ensure the supplied function call args match the function's parameters
+                                if parameters.len() != f.parameters.entries.len() {
+                                    return false;
+                                }
+    
+                                for (i, value_type_name) in parameter_types.iter().enumerate() {
+                                    let Some(parameter_type_name) = f.parameters.entries[i].type_name.as_ref() else { continue };
+    
+                                    if !value_type_name.is_compatible_with(parameter_type_name) {
+                                        return false;
+                                    }
+                                }
+    
+                                true
+                            }) else {
+                                panic!("Failed to find function `{new_name}` in scope");
+                            };
+    
+                            let function = function.borrow();
+    
+                            if let Some(return_type) = function.return_type.as_ref() {
+                                Ok(return_type.clone())
+                            } else {
+                                Ok(sway::TypeName::Tuple { type_names: vec![] })
+                            }
+                        }
+                    }
+    
+                    sway::Expression::MemberAccess(member_access) => match self.get_expression_type(scope.clone(), &member_access.expression)? {
+                        sway::TypeName::Undefined => panic!("Undefined type name"),
+    
+                        sway::TypeName::Identifier { name, generic_parameters } => match (name.as_str(), generic_parameters.as_ref()) {
+                            ("b256", None) => match member_access.member.as_str() {
+                                "as_u256" => Ok(sway::TypeName::Identifier {
+                                    name: "u256".into(),
+                                    generic_parameters: None,
+                                }),
+    
+                                "to_be_bytes" => Ok(sway::TypeName::Identifier {
+                                    name: "Bytes".into(),
+                                    generic_parameters: None,
+                                }),
+    
+                                "to_le_bytes" => Ok(sway::TypeName::Identifier {
+                                    name: "Bytes".into(),
+                                    generic_parameters: None,
+                                }),
+    
+                                _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
+                            }
+    
+                            ("u8", None) => match member_access.member.as_str() {
+                                "as_u16" => Ok(sway::TypeName::Identifier {
+                                    name: "u16".into(),
+                                    generic_parameters: None,
+                                }),
+    
+                                "as_u32" => Ok(sway::TypeName::Identifier {
+                                    name: "u32".into(),
+                                    generic_parameters: None,
+                                }),
+    
+                                "as_u64" => Ok(sway::TypeName::Identifier {
+                                    name: "u64".into(),
+                                    generic_parameters: None,
+                                }),
+    
+                                "as_u256" => Ok(sway::TypeName::Identifier {
+                                    name: "u256".into(),
+                                    generic_parameters: None,
+                                }),
+    
+                                "pow" => Ok(sway::TypeName::Identifier {
+                                    name: "u8".into(),
+                                    generic_parameters: None,
+                                }),
+    
+                                _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
+                            }
+    
+                            ("u16", None) => match member_access.member.as_str() {
+                                "as_u32" => Ok(sway::TypeName::Identifier {
+                                    name: "u32".into(),
+                                    generic_parameters: None,
+                                }),
+    
+                                "as_u64" => Ok(sway::TypeName::Identifier {
+                                    name: "u64".into(),
+                                    generic_parameters: None,
+                                }),
+    
+                                "as_u256" => Ok(sway::TypeName::Identifier {
+                                    name: "u256".into(),
+                                    generic_parameters: None,
+                                }),
+    
+                                "pow" => Ok(sway::TypeName::Identifier {
+                                    name: "u16".into(),
+                                    generic_parameters: None,
+                                }),
+    
+                                "to_be_bytes" => Ok(sway::TypeName::Identifier {
+                                    name: "Bytes".into(),
+                                    generic_parameters: None,
+                                }),
+    
+                                "to_le_bytes" => Ok(sway::TypeName::Identifier {
+                                    name: "Bytes".into(),
+                                    generic_parameters: None,
+                                }),
+    
+                                _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
+                            }
+    
+                            ("u32", None) => match member_access.member.as_str() {
+                                "as_u64" => Ok(sway::TypeName::Identifier {
+                                    name: "u64".into(),
+                                    generic_parameters: None,
+                                }),
+    
+                                "as_u256" => Ok(sway::TypeName::Identifier {
+                                    name: "u256".into(),
+                                    generic_parameters: None,
+                                }),
+    
+                                "pow" => Ok(sway::TypeName::Identifier {
+                                    name: "u32".into(),
+                                    generic_parameters: None,
+                                }),
+    
+                                "to_be_bytes" => Ok(sway::TypeName::Identifier {
+                                    name: "Bytes".into(),
+                                    generic_parameters: None,
+                                }),
+    
+                                "to_le_bytes" => Ok(sway::TypeName::Identifier {
+                                    name: "Bytes".into(),
+                                    generic_parameters: None,
+                                }),
+    
+                                _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
+                            }
+    
+                            ("u64", None) => match member_access.member.as_str() {
+                                "as_u256" => Ok(sway::TypeName::Identifier {
+                                    name: "u256".into(),
+                                    generic_parameters: None,
+                                }),
+    
+                                "pow" => Ok(sway::TypeName::Identifier {
+                                    name: "u64".into(),
+                                    generic_parameters: None,
+                                }),
+    
+                                "to_be_bytes" => Ok(sway::TypeName::Identifier {
+                                    name: "Bytes".into(),
+                                    generic_parameters: None,
+                                }),
+    
+                                "to_le_bytes" => Ok(sway::TypeName::Identifier {
+                                    name: "Bytes".into(),
+                                    generic_parameters: None,
+                                }),
+    
+                                _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
+                            }
+    
+                            ("u256", None) => match member_access.member.as_str() {
+                                "as_b256" => Ok(sway::TypeName::Identifier {
+                                    name: "b256".into(),
+                                    generic_parameters: None,
+                                }),
+    
+                                "pow" => Ok(sway::TypeName::Identifier {
+                                    name: "u256".into(),
+                                    generic_parameters: None,
+                                }),
+    
+                                "to_be_bytes" => Ok(sway::TypeName::Identifier {
+                                    name: "Bytes".into(),
+                                    generic_parameters: None,
+                                }),
+    
+                                "to_le_bytes" => Ok(sway::TypeName::Identifier {
+                                    name: "Bytes".into(),
+                                    generic_parameters: None,
+                                }),
+    
+                                _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
+                            }
+    
+                            ("Bytes", None) => match member_access.member.as_str() {
+                                "len" => Ok(sway::TypeName::Identifier {
+                                    name: "u64".into(),
+                                    generic_parameters: None,
+                                }),
+    
+                                "split_at" => Ok(sway::TypeName::Tuple {
+                                    type_names: vec![
+                                        sway::TypeName::Identifier {
+                                            name: "Bytes".into(),
+                                            generic_parameters: None,
+                                        },
+                                        sway::TypeName::Identifier {
+                                            name: "Bytes".into(),
+                                            generic_parameters: None,
+                                        },
+                                    ],
+                                }),
+                                "as_raw_slice" => Ok(sway::TypeName::Identifier {
+                                    name: "RawSlice".into(),
+                                    generic_parameters: None,
+                                }),
+    
+                                _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
+                            }
+    
+                            ("Identity", None) => match member_access.member.as_str() {
+                                "as_address" => Ok(sway::TypeName::Identifier {
+                                    name: "Option".into(),
+                                    generic_parameters: Some(sway::GenericParameterList {
+                                        entries: vec![
+                                            sway::GenericParameter {
+                                                type_name: sway::TypeName::Identifier {
+                                                    name: "Address".into(),
+                                                    generic_parameters: None,
+                                                },
+                                                implements: None,
+                                            },
+                                        ],
+                                    }),
+                                }),
+    
+                                "as_contract_id" => Ok(sway::TypeName::Identifier {
+                                    name: "Option".into(),
+                                    generic_parameters: Some(sway::GenericParameterList {
+                                        entries: vec![
+                                            sway::GenericParameter {
+                                                type_name: sway::TypeName::Identifier {
+                                                    name: "ContractId".into(),
+                                                    generic_parameters: None,
+                                                },
+                                                implements: None,
+                                            },
+                                        ],
+                                    }),
+                                }),
+    
+                                "is_address" => Ok(sway::TypeName::Identifier {
+                                    name: "bool".into(),
+                                    generic_parameters: None,
+                                }),
+    
+                                "is_contract_id" => Ok(sway::TypeName::Identifier {
+                                    name: "bool".into(),
+                                    generic_parameters: None,
+                                }),
+    
+                                _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
+                            }
+    
+                            ("Option", Some(generic_parameters)) if generic_parameters.entries.len() == 1 => match member_access.member.as_str() {
+                                "unwrap" => Ok(generic_parameters.entries[0].type_name.clone()),
+                                
+                                _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
+                            }
+                            
+                            ("Result", Some(generic_parameters)) if generic_parameters.entries.len() == 2 => match member_access.member.as_str() {
+                                "unwrap" => Ok(generic_parameters.entries[0].type_name.clone()),
+                                
+                                _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
+                            }
+                            
+                            ("StorageKey", Some(generic_parameters)) if generic_parameters.entries.len() == 1 => match member_access.member.as_str() {
+                                "clear" => Ok(sway::TypeName::Identifier {
+                                    name: "bool".into(),
+                                    generic_parameters: None,
+                                }),
+    
+                                "read" => Ok(generic_parameters.entries[0].type_name.clone()),
+    
+                                "try_read" => Ok(sway::TypeName::Identifier {
+                                    name: "Option".into(),
+                                    generic_parameters: Some(sway::GenericParameterList {
+                                        entries: vec![
+                                            sway::GenericParameter {
+                                                type_name: generic_parameters.entries[0].type_name.clone(),
+                                                implements: None,
+                                            },
+                                        ],
+                                    }),
+                                }),
+    
+                                "write" => Ok(sway::TypeName::Tuple { type_names: vec![] }),
+    
+                                _ => match &generic_parameters.entries[0].type_name {
+                                    sway::TypeName::Identifier { name, generic_parameters } => match (name.as_str(), generic_parameters.as_ref()) {
+                                        ("StorageBytes", None) => match member_access.member.as_str() {
+                                            "clear" => Ok(sway::TypeName::Identifier {
+                                                name: "bool".into(),
+                                                generic_parameters: None,
+                                            }),
+    
+                                            "len" => Ok(sway::TypeName::Identifier {
+                                                name: "u64".into(),
+                                                generic_parameters: None,
+                                            }),
+                            
+                                            "read_slice" => Ok(sway::TypeName::Identifier {
+                                                name: "Option".into(),
+                                                generic_parameters: Some(sway::GenericParameterList {
+                                                    entries: vec![
+                                                        sway::GenericParameter {
+                                                            type_name: sway::TypeName::Identifier {
+                                                                name: "Bytes".into(),
+                                                                generic_parameters: None,
+                                                            },
+                                                            implements: None,
+                                                        },
+                                                    ],
+                                                }),
+                                            }),
+    
+                                            "write_slice" => Ok(sway::TypeName::Tuple { type_names: vec![] }),
+    
+                                            _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
+                                        }
+    
+                                        ("StorageMap", Some(generic_parameters)) if generic_parameters.entries.len() == 2 => match member_access.member.as_str() {
+                                            "get" => Ok(sway::TypeName::Identifier {
+                                                name: "StorageKey".into(),
+                                                generic_parameters: Some(sway::GenericParameterList {
+                                                    entries: vec![
+                                                        sway::GenericParameter {
+                                                            type_name: generic_parameters.entries[1].type_name.clone(),
+                                                            implements: None,
+                                                        },
+                                                    ],
+                                                }),
+                                            }),
+    
+                                            "insert" => Ok(sway::TypeName::Tuple { type_names: vec![] }),
+    
+                                            "remove" => Ok(sway::TypeName::Identifier {
+                                                name: "bool".into(),
+                                                generic_parameters: None,
+                                            }),
+    
+                                            "try_insert" => Ok(sway::TypeName::Identifier {
+                                                name: "Result".into(),
+                                                generic_parameters: Some(sway::GenericParameterList {
+                                                    entries: vec![
+                                                        sway::GenericParameter {
+                                                            type_name: generic_parameters.entries[0].type_name.clone(),
+                                                            implements: None,
+                                                        },
+                                                        sway::GenericParameter {
+                                                            type_name: sway::TypeName::Identifier {
+                                                                name: "StorageMapError".into(),
+                                                                generic_parameters: Some(sway::GenericParameterList {
+                                                                    entries: vec![
+                                                                        sway::GenericParameter {
+                                                                            type_name: generic_parameters.entries[0].type_name.clone(),
+                                                                            implements: None,
+                                                                        },
+                                                                    ],
+                                                                }),
+                                                            },
+                                                            implements: None,
+                                                        },
+                                                    ],
+                                                }),
+                                            }),
+    
+                                            _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
+                                        }
+    
+                                        ("StorageString", None) => match member_access.member.as_str() {
+                                            "clear" => Ok(sway::TypeName::Identifier {
+                                                name: "bool".into(),
+                                                generic_parameters: None,
+                                            }),
+    
+                                            "len" => Ok(sway::TypeName::Identifier {
+                                                name: "u64".into(),
+                                                generic_parameters: None,
+                                            }),
+                            
+                                            "read_slice" => Ok(sway::TypeName::Identifier {
+                                                name: "Option".into(),
+                                                generic_parameters: Some(sway::GenericParameterList {
+                                                    entries: vec![
+                                                        sway::GenericParameter {
+                                                            type_name: sway::TypeName::Identifier {
+                                                                name: "String".into(),
+                                                                generic_parameters: None,
+                                                            },
+                                                            implements: None,
+                                                        },
+                                                    ],
+                                                }),
+                                            }),
+    
+                                            "write_slice" => Ok(sway::TypeName::Tuple { type_names: vec![] }),
+    
+                                            _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
+                                        }
+    
+                                        ("StorageVec", Some(generic_parameters)) if generic_parameters.entries.len() == 1 => match member_access.member.as_str() {
+                                            "fill" => Ok(sway::TypeName::Tuple { type_names: vec![] }),
+    
+                                            "first" => Ok(sway::TypeName::Identifier {
+                                                name: "Option".into(),
+                                                generic_parameters: Some(sway::GenericParameterList {
+                                                    entries: vec![
+                                                        sway::GenericParameter {
+                                                            type_name: sway::TypeName::Identifier {
+                                                                name: "StorageKey".into(),
+                                                                generic_parameters: Some(sway::GenericParameterList {
+                                                                    entries: vec![
+                                                                        sway::GenericParameter {
+                                                                            type_name: generic_parameters.entries[0].type_name.clone(),
+                                                                            implements: None,
+                                                                        },
+                                                                    ],
+                                                                }),
+                                                            },
+                                                            implements: None,
+                                                        },
+                                                    ],
+                                                }),
+                                            }),
+    
+                                            "get" => Ok(sway::TypeName::Identifier {
+                                                name: "Option".into(),
+                                                generic_parameters: Some(sway::GenericParameterList {
+                                                    entries: vec![
+                                                        sway::GenericParameter {
+                                                            type_name: sway::TypeName::Identifier {
+                                                                name: "StorageKey".into(),
+                                                                generic_parameters: Some(sway::GenericParameterList {
+                                                                    entries: vec![
+                                                                        sway::GenericParameter {
+                                                                            type_name: generic_parameters.entries[0].type_name.clone(),
+                                                                            implements: None,
+                                                                        },
+                                                                    ],
+                                                                }),
+                                                            },
+                                                            implements: None,
+                                                        },
+                                                    ],
+                                                }),
+                                            }),
+    
+                                            "insert" => Ok(sway::TypeName::Tuple { type_names: vec![] }),
+    
+                                            "is_empty" => Ok(sway::TypeName::Identifier {
+                                                name: "bool".into(),
+                                                generic_parameters: None,
+                                            }),
+    
+                                            "last" => Ok(sway::TypeName::Identifier {
+                                                name: "Option".into(),
+                                                generic_parameters: Some(sway::GenericParameterList {
+                                                    entries: vec![
+                                                        sway::GenericParameter {
+                                                            type_name: sway::TypeName::Identifier {
+                                                                name: "StorageKey".into(),
+                                                                generic_parameters: Some(sway::GenericParameterList {
+                                                                    entries: vec![
+                                                                        sway::GenericParameter {
+                                                                            type_name: generic_parameters.entries[0].type_name.clone(),
+                                                                            implements: None,
+                                                                        },
+                                                                    ],
+                                                                }),
+                                                            },
+                                                            implements: None,
+                                                        },
+                                                    ],
+                                                }),
+                                            }),
+    
+                                            "len" => Ok(sway::TypeName::Identifier {
+                                                name: "u64".into(),
+                                                generic_parameters: None,
+                                            }),
+    
+                                            "load_vec" => Ok(sway::TypeName::Identifier {
+                                                name: "Vec".into(),
+                                                generic_parameters: Some(sway::GenericParameterList {
+                                                    entries: vec![
+                                                        sway::GenericParameter {
+                                                            type_name: generic_parameters.entries[0].type_name.clone(),
+                                                            implements: None,
+                                                        },
+                                                    ],
+                                                }),
+                                            }),
+    
+                                            "pop" => Ok(sway::TypeName::Identifier {
+                                                name: "Option".into(),
+                                                generic_parameters: Some(sway::GenericParameterList {
+                                                    entries: vec![
+                                                        sway::GenericParameter {
+                                                            type_name: generic_parameters.entries[0].type_name.clone(),
+                                                            implements: None,
+                                                        },
+                                                    ],
+                                                }),
+                                            }),
+    
+                                            "push" => Ok(sway::TypeName::Tuple { type_names: vec![] }),
+    
+                                            "remove" => Ok(generic_parameters.entries[0].type_name.clone()),
+    
+                                            "resize" => Ok(sway::TypeName::Tuple { type_names: vec![] }),
+    
+                                            "reverse" => Ok(sway::TypeName::Tuple { type_names: vec![] }),
+    
+                                            "set" => Ok(sway::TypeName::Tuple { type_names: vec![] }),
+    
+                                            "store_vec" => Ok(sway::TypeName::Tuple { type_names: vec![] }),
+    
+                                            "swap_remove" => Ok(generic_parameters.entries[0].type_name.clone()),
+    
+                                            "swap" => Ok(sway::TypeName::Tuple { type_names: vec![] }),
+    
+                                            _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
+                                        }
+    
+                                        _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
+                                    }
+    
+                                    _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
+                                }
+                            }
+    
+                            ("String", None) => match member_access.member.as_str() {
+                                "len" => Ok(sway::TypeName::Identifier {
+                                    name: "u64".into(),
+                                    generic_parameters: None,
+                                }),
+    
+                                _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
+                            }
+    
+                            ("Vec", Some(generic_parameters)) if generic_parameters.entries.len() == 1 => match member_access.member.as_str() {
+                                "get" => Ok(sway::TypeName::Identifier {
+                                    name: "Option".into(),
+                                    generic_parameters: Some(sway::GenericParameterList {
+                                        entries: vec![
+                                            generic_parameters.entries.first().unwrap().clone(),
+                                        ],
+                                    }),
+                                }),
+    
+                                "len" => Ok(sway::TypeName::Identifier {
+                                    name: "u64".into(),
+                                    generic_parameters: None,
+                                }),
+    
+                                _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
+                            }
+    
+                            (name, None) => {
+                                if let Some(abi) = self.abi.as_ref() {
+                                    if abi.name == name {
+                                        if let Some(function_definition) = abi.functions.iter().find(|f| f.name == member_access.member) {
+                                            return Ok(function_definition.return_type.clone().unwrap_or_else(|| sway::TypeName::Tuple { type_names: vec![] }))
+                                        }
+                                    }
+                                }
+    
+                                for abi in self.abis.iter() {
+                                    if abi.name == name {
+                                        if let Some(function_definition) = abi.functions.iter().find(|f| f.name == member_access.member) {
+                                            return Ok(function_definition.return_type.clone().unwrap_or_else(|| sway::TypeName::Tuple { type_names: vec![] }))
+                                        }
+                                    }
+                                }
+    
+                                todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression))
+                            }
+    
+                            _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
+                        }
+    
+                        sway::TypeName::StringSlice => match member_access.member.as_str() {
+                            "len" => Ok(sway::TypeName::Identifier {
+                                name: "u64".into(),
+                                generic_parameters: None,
+                            }),
+    
+                            _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
+                        }
+    
                         _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
                     }
-
+    
                     _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
                 }
-
-                _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
             }
 
             sway::Expression::Block(block) => {
@@ -1547,7 +1552,16 @@ impl TranslatedDefinition {
                                     _ => todo!("get type of {container_type} member access expression: {expression:#?}"),
                                 }
 
-                                _ => todo!("get type of {container_type} member access expression: {expression:#?}"),
+                                _ => {
+                                    // Check if container is a struct
+                                    if let Some(struct_definition) = self.structs.iter().find(|s| s.name == *name) {
+                                        if let Some(field) = struct_definition.fields.iter().find(|f| f.name == member_access.member) {
+                                            return Ok(field.type_name.clone());
+                                        }
+                                    }
+
+                                    todo!("get type of {container_type} member access expression: {expression:#?}")
+                                }
                             }
                             
                             _ => todo!("get type of {container_type} member access expression: {expression:#?}"),

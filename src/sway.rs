@@ -1138,6 +1138,7 @@ pub enum Expression {
     Literal(Literal),
     Identifier(String),
     FunctionCall(Box<FunctionCall>),
+    FunctionCallBlock(Box<FunctionCallBlock>),
     Block(Box<Block>),
     Return(Option<Box<Expression>>),
     Array(Array),
@@ -1163,6 +1164,7 @@ impl TabbedDisplay for Expression {
             Expression::Literal(x) => x.tabbed_fmt(depth, f),
             Expression::Identifier(x) => write!(f, "{x}"),
             Expression::FunctionCall(x) => x.tabbed_fmt(depth, f),
+            Expression::FunctionCallBlock(x) => x.tabbed_fmt(depth, f),
             Expression::Block(x) => x.tabbed_fmt(depth, f),
             Expression::Return(x) => {
                 write!(f, "return")?;
@@ -1224,6 +1226,7 @@ macro_rules! impl_expr_box_from {
 
 impl_expr_from!(Literal);
 impl_expr_box_from!(FunctionCall);
+impl_expr_box_from!(FunctionCallBlock);
 impl_expr_box_from!(Block);
 impl_expr_from!(Array);
 impl_expr_box_from!(ArrayAccess);
@@ -1284,6 +1287,49 @@ impl TabbedDisplay for FunctionCall {
         }
 
         write!(f, "(")?;
+
+        for (i, parameter) in self.parameters.iter().enumerate() {
+            if i > 0 {
+                write!(f, ", ")?;
+            }
+
+            parameter.tabbed_fmt(depth, f)?;
+        }
+
+        write!(f, ")")
+    }
+}
+
+// -------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct FunctionCallBlock {
+    pub function: Expression,
+    pub generic_parameters: Option<GenericParameterList>,
+    pub fields: Vec<ConstructorField>,
+    pub parameters: Vec<Expression>,
+}
+
+impl TabbedDisplay for FunctionCallBlock {
+    fn tabbed_fmt(&self, depth: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.function.tabbed_fmt(depth, f)?;
+        
+        if let Some(generic_parameters) = self.generic_parameters.as_ref() {
+            write!(f, "::{generic_parameters}")?;
+        }
+
+        writeln!(f, " {{")?;
+
+        for field in self.fields.iter() {
+            "".tabbed_fmt(depth + 1, f)?;
+            field.tabbed_fmt(depth + 1, f)?;
+            writeln!(f)?;
+        }
+
+        "}".tabbed_fmt(depth, f)?;
+        writeln!(f)?;
+
+        "(".tabbed_fmt(depth, f)?;
 
         for (i, parameter) in self.parameters.iter().enumerate() {
             if i > 0 {
