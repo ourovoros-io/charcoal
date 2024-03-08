@@ -768,6 +768,11 @@ impl TranslatedDefinition {
                             generic_parameters: None,
                         }),
                         
+                        "std::context::msg_amount" => Ok(sway::TypeName::Identifier {
+                            name: "u64".into(),
+                            generic_parameters: None,
+                        }),
+    
                         "std::context::this_balance" => Ok(sway::TypeName::Identifier {
                             name: "u64".into(),
                             generic_parameters: None,

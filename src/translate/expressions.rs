@@ -4109,7 +4109,7 @@ pub fn translate_new_expression(
     match expr.as_ref() {
         solidity::Expression::Variable(solidity::Identifier {name, ..}) => {
             if project.find_definition_with_abi(name).is_some() {
-                panic!("Attempting to create a new contract '{name}' that is not supported")
+                panic!("Attempting to create a new contract '{name}', which is not supported")
             }
         }
 

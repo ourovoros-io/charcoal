@@ -72,6 +72,8 @@ See the [Rust Install](https://www.rust-lang.org/tools/install) page for install
     - [x] `require(bool condition, string memory message)`
     - [x] `revert()`
     - [x] `revert(string memory reason)`
+    - [x] `revert Error(1, 2, 3)`
+    - [ ] `revert Error({a: 1, b: 2, c: 3})`
 * Control Structures
     - [x] `if`/`else`
     - [x] `while`
