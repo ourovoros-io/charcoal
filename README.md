@@ -84,8 +84,8 @@ See the [Rust Install](https://www.rust-lang.org/tools/install) page for install
 * Function Calls
     - [x] Internal Function Calls
     - [x] External Function Calls
-    - [ ] Function Calls with Named Parameters
-    - [ ] Omitted Names in Function Definitions
+    - [x] Function Calls with Named Parameters
+    - [x] Omitted Names in Function Definitions
     - [ ] Creating Contracts via `new`
 * Ether Units
     - [ ] `wei`

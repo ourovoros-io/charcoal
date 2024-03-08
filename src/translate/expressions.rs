@@ -2523,8 +2523,6 @@ pub fn translate_function_call_expression(
                 _ => {}
             }
 
-            println!("translating {container} - {container:#?}");
-
             let variable = match translate_variable_access_expression(project, translated_definition, scope.clone(), container) {
                 Ok((variable, _)) => Some(variable),
                 Err(_) => None,
