@@ -73,11 +73,10 @@ pub fn create_value_expression(
                 Some(x) if matches!(x, sway::Expression::BinaryExpression(_)) => (*x).clone(),
 
                 Some(sway::Expression::Identifier(name)) => {
-                    let variable = match scope.borrow().get_variable_from_new_name(name.as_str()) {
-                        Ok(variable) => variable,
-                        Err(e) => panic!("{e}"),
+                    let Some(variable) = scope.borrow().get_variable_from_new_name(name) else {
+                        panic!("error: Variable not found in scope: \"{name}\"");
                     };
-
+            
                     if variable.borrow().type_name != *type_name {
                         panic!("Invalid {name} value expression: {value:#?}");
                     }
@@ -1086,9 +1085,8 @@ pub fn translate_member_access_expression(
                 }
 
                 if let Some(t) = resolve_import(project, &name.to_string(), &translated_definition.path)? {
-                    let variable = match t.toplevel_scope.borrow().get_variable_from_old_name(member) {
-                        Ok(variable) => variable.clone(),
-                        Err(e) => panic!("{e}"),
+                    let Some(variable) = t.toplevel_scope.borrow().get_variable_from_old_name(member) else {
+                        panic!("error: Variable not found in scope: \"{member}\"");
                     };
 
                     let variable = variable.borrow();
@@ -1098,11 +1096,10 @@ pub fn translate_member_access_expression(
                     }
                 }
 
-                let variable = match scope.borrow().get_variable_from_old_name(name) {
-                    Ok(variable) => variable,
-                    Err(e) => panic!("{e}"),
+                let Some(variable) = scope.borrow().get_variable_from_old_name(name) else {
+                    panic!("error: Variable not found in scope: \"{name}\"");
                 };
-
+    
                 let variable = variable.borrow();
                 
                 match &variable.type_name {
@@ -3346,9 +3343,8 @@ pub fn translate_variable_access_expression(
 ) -> Result<(Rc<RefCell<TranslatedVariable>>, sway::Expression), Error> {
     match expression {
         solidity::Expression::Variable(solidity::Identifier { name, .. }) => {  
-            let variable = match scope.borrow().get_variable_from_old_name(name.as_str()) {
-                Ok(variable) => variable,
-                Err(e) => panic!("{e}"),
+            let Some(variable) = scope.borrow().get_variable_from_old_name(name) else {
+                panic!("error: Variable not found in scope: \"{name}\"");
             };
 
             let variable_name = variable.borrow().new_name.clone();

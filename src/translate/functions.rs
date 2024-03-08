@@ -707,9 +707,8 @@ pub fn translate_function_definition(
 
     // Check for parameters that were mutated and make them local variables
     for parameter in parameters.iter().rev() {
-        let variable = match scope.borrow().get_variable_from_new_name(&parameter.new_name) {
-            Ok(variable) => variable,
-            Err(e) => panic!("{e}"),
+        let Some(variable) = scope.borrow().get_variable_from_new_name(&parameter.new_name) else {
+            panic!("error: Variable not found in scope: \"{}\"", parameter.new_name);
         };
 
         if variable.borrow().mutation_count > 0 {

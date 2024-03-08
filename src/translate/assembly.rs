@@ -27,11 +27,10 @@ pub fn translate_assembly_statement(
                 for identifier in identifiers.iter() {
                     let sway::Expression::Identifier(name) = identifier else { continue };
 
-                    let variable = match scope.borrow().get_variable_from_new_name(name) {
-                        Ok(variable) => variable,
-                        Err(e) => panic!("{e}"),
+                    let Some(variable) = scope.borrow().get_variable_from_new_name(name) else {
+                        panic!("error: Variable not found in scope: \"{name}\"");
                     };
-
+            
                     variable.borrow_mut().mutation_count += 1;
                 }
 
@@ -136,11 +135,10 @@ pub fn translate_yul_expression(
         solidity::YulExpression::StringLiteral(string_literal, _) => Ok(sway::Expression::from(sway::Literal::String(string_literal.string.clone()))),
         
         solidity::YulExpression::Variable(solidity::Identifier { name, .. }) => {
-            let variable = match scope.borrow().get_variable_from_old_name(name.as_str()) {
-                Ok(variable) => variable,
-                Err(e) => panic!("{e}"),
+            let Some(variable) = scope.borrow().get_variable_from_old_name(name) else {
+                panic!("error: Variable not found in scope: \"{name}\"");
             };
-
+    
             let variable = variable.borrow();
 
             if variable.is_storage {

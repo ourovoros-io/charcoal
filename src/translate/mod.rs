@@ -81,7 +81,7 @@ impl TranslationScope {
     pub fn generate_unique_variable_name(&self, name: &str) -> String {
         let mut result = name.to_string();
 
-        while self.get_variable_from_new_name(result.as_str()).is_ok() {
+        while self.get_variable_from_new_name(result.as_str()).is_some() {
             result = format!("_{result}");
         }
 
@@ -89,33 +89,33 @@ impl TranslationScope {
     }
 
     /// Attempts to get a reference to a translated variable using its old name
-    pub fn get_variable_from_old_name(&self, old_name: &str) -> Result<Rc<RefCell<TranslatedVariable>>, Error> {
+    pub fn get_variable_from_old_name(&self, old_name: &str) -> Option<Rc<RefCell<TranslatedVariable>>> {
         if let Some(variable) = self.variables.iter().rev().find(|v| v.borrow().old_name == old_name) {
-            return Ok(variable.clone());
+            return Some(variable.clone());
         }
 
         if let Some(parent) = self.parent.as_ref() {
-            if let Ok(variable) = parent.borrow().get_variable_from_old_name(old_name) {
-                return Ok(variable);
+            if let Some(variable) = parent.borrow().get_variable_from_old_name(old_name) {
+                return Some(variable);
             }
         }
 
-        Err(Error::VariableNotInScope(old_name.into()))
+        None
     }
 
     /// Attempts to get a reference to a translated variable using its new name
-    pub fn get_variable_from_new_name(&self, new_name: &str) -> Result<Rc<RefCell<TranslatedVariable>>, Error> {
+    pub fn get_variable_from_new_name(&self, new_name: &str) -> Option<Rc<RefCell<TranslatedVariable>>> {
         if let Some(variable) = self.variables.iter().rev().find(|v| v.borrow().new_name == new_name) {
-            return Ok(variable.clone());
+            return Some(variable.clone());
         }
 
         if let Some(parent) = self.parent.as_ref() {
-            if let Ok(variable) = parent.borrow().get_variable_from_new_name(new_name) {
-                return Ok(variable);
+            if let Some(variable) = parent.borrow().get_variable_from_new_name(new_name) {
+                return Some(variable);
             }
         }
 
-        Err(Error::VariableNotInScope(new_name.into()))
+        None
     }
 
     /// Attempts to find a translated variable using a custom function
@@ -657,16 +657,43 @@ impl TranslatedDefinition {
             }
 
             sway::Expression::Identifier(name) => {
-                let variable = match scope.borrow().get_variable_from_new_name(name) {
-                    Ok(variable) => variable,
-                    Err(e) => panic!("{e}"),
+                // HACK: Check if the identifier is a translated enum variant
+                if name.contains("::") {
+                    let parts = name.split("::").collect::<Vec<_>>();
+
+                    if parts.len() == 2 {
+                        let enum_name = parts[0];
+                        let variant_name = parts[1];
+
+                        if self.enums.iter().any(|e| {
+                            let sway::TypeName::Identifier { name, generic_parameters: None } = &e.type_definition.name else { return false };
+                            
+                            if !e.variants_impl.items.iter().any(|i| {
+                                let sway::ImplItem::Constant(variant) = i else { return false };
+                                variant.name == variant_name
+                            }) {
+                                return false;
+                            }
+
+                            name == enum_name
+                        }) {
+                            return Ok(sway::TypeName::Identifier {
+                                name: enum_name.into(),
+                                generic_parameters: None,
+                            });
+                        }
+                    }
+                }
+
+                let Some(variable) = scope.borrow().get_variable_from_new_name(name) else {
+                    panic!("error: Variable not found in scope: \"{name}\"");
                 };
         
                 let variable = variable.borrow();
 
                 // Variable should not be a storage field
                 if variable.is_storage {
-                    return Err(Error::VariableNotInScope(name.clone()));
+                    panic!("error: Variable not found in scope: \"{name}\"");
                 }
 
                 Ok(variable.type_name.clone())

@@ -98,7 +98,7 @@ pub fn finalize_block_translation(
 
                 let mut check_let_identifier = |identifier: &sway::LetIdentifier| {
                     if let Some(scope) = scope.borrow().parent.as_ref() {
-                        if scope.borrow().get_variable_from_new_name(&identifier.name).is_ok() {
+                        if scope.borrow().get_variable_from_new_name(&identifier.name).is_some() {
                             var_count += 1;
                         }
                     }
@@ -541,10 +541,10 @@ pub fn translate_for_statement(
         // Store the statement index of variable declaration statements in their scope entries
         if let sway::Statement::Let(sway::Let { pattern, .. }) = &mut statement {
             let store_let_identifier_statement_index = |id: &mut sway::LetIdentifier| {
-                let Ok(variable) = inner_scope.borrow().get_variable_from_new_name(id.name.as_str()) else {
-                    panic!("Failed to find variable in scope: \"{id}\"");
+                let Some(variable) = scope.borrow().get_variable_from_new_name(&id.name) else {
+                    panic!("error: Variable not found in scope: \"{}\"", id.name);
                 };
-
+                
                 variable.borrow_mut().statement_index = Some(statement_index);
             };
 
