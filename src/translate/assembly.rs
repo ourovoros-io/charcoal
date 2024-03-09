@@ -525,6 +525,11 @@ pub fn translate_yul_expression(
                     Ok(sway::Expression::create_todo(Some(expression.to_string())))
                 }
 
+                "keccak256" => {
+                    // TODO: keccak256(offset, length) => ???
+                    Ok(sway::Expression::create_todo(Some(expression.to_string())))
+                }
+
                 "address" => {
                     // address() => Identity::from(ContractId::this())
 

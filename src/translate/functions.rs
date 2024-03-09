@@ -467,7 +467,7 @@ pub fn translate_function_definition(
     if let Some(solidity::ContractTy::Abstract(_) | solidity::ContractTy::Library(_)) = &translated_definition.kind {
        new_name = format!("{}_{}", crate::translate_naming_convention(&translated_definition.name, Case::Snake), new_name);
     }
-
+    
     // Translate the functions parameters
     let mut parameters = sway::ParameterList::default();
 

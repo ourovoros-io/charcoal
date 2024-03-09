@@ -1114,14 +1114,26 @@ pub fn translate_member_access_expression(
                     }
                 }
 
-                if let Some(t) = resolve_import(project, &name.to_string(), &translated_definition.path)? {
-                    let Some(variable) = t.toplevel_scope.borrow().get_variable_from_old_name(member) else {
+                // Check to see if the variable is an external definition
+                if let Some(external_definition) = resolve_import(project, &name.to_string(), &translated_definition.path)? {
+                    let Some(variable) = external_definition.toplevel_scope.borrow().get_variable_from_old_name(member) else {
                         panic!("error: Variable not found in scope: \"{member}\"");
                     };
 
                     let variable = variable.borrow();
                 
+                    // If the variable is a constant, ensure it is added to the current definition
                     if variable.is_constant {
+                        let constant = external_definition.constants.iter().find(|c| c.name == variable.new_name).unwrap();
+                        
+                        if !translated_definition.constants.contains(constant) {
+                            translated_definition.constants.push(constant.clone());
+                        }
+
+                        if !translated_definition.toplevel_scope.borrow().variables.iter().any(|v| v.borrow().new_name == variable.new_name) {
+                            translated_definition.toplevel_scope.borrow_mut().variables.push(Rc::new(RefCell::new(variable.clone())));
+                        }
+
                         return Ok(sway::Expression::Identifier(variable.new_name.clone()));
                     }
                 }
@@ -1131,7 +1143,7 @@ pub fn translate_member_access_expression(
                 };
     
                 let variable = variable.borrow();
-                
+
                 match &variable.type_name {
                     sway::TypeName::Undefined => panic!("Undefined type name"),
 
@@ -1639,7 +1651,7 @@ pub fn translate_function_call_expression(
                             _ => panic!("translate from {value_type_name} to u{bits}: {value_expression:#?}"),
                         }
 
-                        _ => todo!("translate type cast: {} - {expression:#?}", expression),
+                        _ => todo!("translate {value_type_name} type cast: {} - {expression:#?}", expression),
                     }
                 }
 
@@ -2735,10 +2747,8 @@ pub fn translate_function_call_expression(
                             }
                         }
 
-                        if let Some(result) = || -> Result<Option<sway::Expression>, Error> {
-                            // Check if function is contained in an external definition
-                            let Some(external_definition) = project.translated_definitions.iter().find(|x| x.name == name).cloned() else { return Ok(None) };
-
+                        // Check if function is contained in an external definition
+                        if let Some(external_definition) = project.translated_definitions.iter().find(|x| x.name == name).cloned() {
                             let old_name = member.name.clone();
                             let new_name = crate::translate_naming_convention(format!("{}_{}", container, member.name).as_str(), Case::Snake);
     
@@ -2790,19 +2800,15 @@ pub fn translate_function_call_expression(
                                 old_name.as_str(),
                                 parameters.as_slice(),
                                 parameter_types.as_slice(),
-                            ) else { return Ok(None) };
-
+                            ) else {
+                                panic!(
+                                    "error: Failed to find function in scope: {name}.{old_name}({})",
+                                    parameter_types.iter().map(|t| t.to_string()).collect::<Vec<_>>().join(", "),
+                                );
+                            };
+    
                             let external_function_declaration = external_function_declaration.borrow();
-
-                            // Don't import the function if we already have
-                            if translated_definition.toplevel_scope.borrow().find_function_matching_types(
-                                old_name.as_str(),
-                                parameters.as_slice(),
-                                parameter_types.as_slice(),
-                            ).is_some() {
-                                return Ok(None);
-                            }
-
+    
                             // Get the external function definition
                             let Some(external_function_definition) = external_definition.functions.iter().find(|f| {
                                 f.name == external_function_declaration.new_name
@@ -2810,22 +2816,29 @@ pub fn translate_function_call_expression(
                             }) else {
                                 panic!("Failed to find external function definition");
                             };
-
-                            // Create the local function definition
-                            let mut local_function_definition = external_function_definition.clone();
-                            local_function_definition.name = new_name.clone();
-                            
-                            // Add the local function definition to the beginning of the list
-                            translated_definition.functions.insert(0, local_function_definition);
-
-                            // Create the local function declaration for the toplevel scope
-                            let mut local_function_declaration = external_function_declaration.clone();
-                            local_function_declaration.old_name = old_name.clone();
-                            local_function_declaration.new_name = new_name.clone();
-
-                            // Add the local function to the beginning of the toplevel scope
-                            translated_definition.toplevel_scope.borrow_mut().functions.insert(0, Rc::new(RefCell::new(local_function_declaration.clone())));
-
+    
+                            // Import the function if we haven't already
+                            if translated_definition.toplevel_scope.borrow().find_function_matching_types(
+                                old_name.as_str(),
+                                parameters.as_slice(),
+                                parameter_types.as_slice(),
+                            ).is_none() {
+                                // Create the local function definition
+                                let mut local_function_definition = external_function_definition.clone();
+                                local_function_definition.name = new_name.clone();
+                                
+                                // Add the local function definition to the beginning of the list
+                                translated_definition.functions.insert(0, local_function_definition);
+    
+                                // Create the local function declaration for the toplevel scope
+                                let mut local_function_declaration = external_function_declaration.clone();
+                                local_function_declaration.old_name = old_name.clone();
+                                local_function_declaration.new_name = new_name.clone();
+    
+                                // Add the local function to the beginning of the toplevel scope
+                                translated_definition.toplevel_scope.borrow_mut().functions.insert(0, Rc::new(RefCell::new(local_function_declaration.clone())));    
+                            }
+    
                             // Create the function call
                             let function_call = sway::Expression::from(sway::FunctionCall {
                                 function: sway::Expression::Identifier(new_name.clone()),
@@ -2834,12 +2847,10 @@ pub fn translate_function_call_expression(
                                     .map(|a| translate_expression(project, translated_definition, scope.clone(), a))
                                     .collect::<Result<Vec<_>, _>>()?,
                             });
-
+    
                             *translated_definition.function_call_counts.entry(new_name.clone()).or_insert(0) += 1;
                             
-                            Ok(Some(function_call))
-                        }()? {
-                            return Ok(result);
+                            return Ok(function_call);
                         }
                     }
                 }
@@ -3772,7 +3783,10 @@ pub fn translate_variable_access_expression(
     match expression {
         solidity::Expression::Variable(solidity::Identifier { name, .. }) => {  
             let Some(variable) = scope.borrow().get_variable_from_old_name(name) else {
-                panic!("error: Variable not found in scope: \"{name}\"");
+                return Err(Error::Wrapped(Box::new(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!("error: Variable not found in scope: \"{name}\""),
+                ))));
             };
 
             let variable_name = variable.borrow().new_name.clone();

@@ -276,6 +276,19 @@ pub fn translate_expression_statement(
         // Check for an assignment expression where lhs is a list expression
         solidity::Expression::Assign(_, lhs, rhs) => {
             if let solidity::Expression::List(_, parameters) = lhs.as_ref() {
+                // Check for a pure assignment without new variable declarations
+                if parameters.iter().all(|(_, p)| p.as_ref().map(|p| p.name.is_none()).unwrap_or(true)) {
+                    return Ok(sway::Statement::from(sway::Expression::from(sway::BinaryExpression {
+                        operator: "=".into(),
+                        lhs: sway::Expression::Tuple(
+                            parameters.iter()
+                                .map(|(_, p)| translate_expression(project, translated_definition, scope.clone(), &p.as_ref().unwrap().ty))
+                                .collect::<Result<Vec<_>, _>>()?
+                        ),
+                        rhs: translate_expression(project, translated_definition, scope.clone(), rhs)?,
+                    })));
+                }
+
                 // Collect variable translations for the scope
                 let mut variables = vec![];
 
@@ -541,7 +554,7 @@ pub fn translate_for_statement(
         // Store the statement index of variable declaration statements in their scope entries
         if let sway::Statement::Let(sway::Let { pattern, .. }) = &mut statement {
             let store_let_identifier_statement_index = |id: &mut sway::LetIdentifier| {
-                let Some(variable) = scope.borrow().get_variable_from_new_name(&id.name) else {
+                let Some(variable) = inner_scope.borrow().get_variable_from_new_name(&id.name) else {
                     panic!("error: Variable not found in scope: \"{}\"", id.name);
                 };
                 
@@ -684,12 +697,31 @@ pub fn translate_revert_statement(
     parameters: &Vec<solidity::Expression>,
 ) -> Result<sway::Statement, Error> {
     if let Some(error_type) = error_type.as_ref() {
-        let error_variant_name = error_type.identifiers.first().unwrap().name.clone();
+        if !(1..=2).contains(&error_type.identifiers.len()) {
+            panic!("Unexpected error type: expected 1 or 2 identifiers, found {}", error_type.identifiers.len());
+        }
 
-        // Find the errors enum containing the variant
-        let Some((errors_enum, _)) = translated_definition.errors_enums.iter().find(|(e, _)| e.variants.iter().any(|v| v.name == error_variant_name)) else {
-            panic!("Failed to find error variant \"{error_variant_name}\"");
+        let mut ids_iter = error_type.identifiers.iter();
+
+        // Find the error variant
+        let (error_variant_name, errors_enum_and_impl) = if error_type.identifiers.len() == 2 {
+            let external_definition_name = ids_iter.next().unwrap().name.clone();
+            let error_variant_name = ids_iter.next().unwrap().name.clone();
+            let external_definition = project.translated_definitions.iter_mut().find(|d| d.name == external_definition_name).unwrap();
+            let errors_enum_and_impl = external_definition.errors_enums.iter().find(|(e, _)| e.variants.iter().any(|v| v.name == error_variant_name)).cloned().unwrap();
+            (error_variant_name, errors_enum_and_impl)
+        } else {
+            let error_variant_name = ids_iter.next().unwrap().name.clone();
+            let errors_enum_and_impl = translated_definition.errors_enums.iter().find(|(e, _)| e.variants.iter().any(|v| v.name == error_variant_name)).cloned().unwrap();
+            (error_variant_name, errors_enum_and_impl)
         };
+
+        // Add the error definition to the current definition if we haven't already
+        if !translated_definition.errors_enums.contains(&errors_enum_and_impl) {
+            translated_definition.errors_enums.push(errors_enum_and_impl.clone());
+        }
+
+        let (errors_enum, _) = errors_enum_and_impl;
         
         return Ok(sway::Statement::from(sway::Expression::from(sway::Block {
             statements: vec![
