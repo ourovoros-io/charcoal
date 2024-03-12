@@ -148,11 +148,8 @@ impl TranslationScope {
                 return false;
             }
 
-            println!("Found {old_name}");
-
             // Ensure the supplied function call args match the function's parameters
             if parameters.len() != f.parameters.entries.len() {
-                println!("Parameter count mismatch for {old_name}");
                 return false;
             }
 
@@ -165,7 +162,6 @@ impl TranslationScope {
                 }
 
                 if !value_type_name.is_compatible_with(parameter_type_name) {
-                    println!("Parameter type {} is incompatible with parameter type {} in {old_name}", value_type_name, parameter_type_name);
                     return false;
                 }
             }

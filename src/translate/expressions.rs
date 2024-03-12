@@ -3319,12 +3319,8 @@ pub fn translate_function_call_expression(
                                 }
                             }
                             
-                            println!("Found definition {}", definition.name);
-
                             if let Some(function) = definition.toplevel_scope.borrow().find_function_matching_types(&member.name, &parameters, &parameter_types) {
                                 let function = function.borrow();
-
-                                println!("Found function {}", function.new_name);
                                 
                                 *translated_definition.function_call_counts.entry(function.new_name.clone()).or_insert(0) += 1;
 

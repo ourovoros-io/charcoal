@@ -468,15 +468,15 @@ pub fn translate_function_definition(
        new_name = format!("{}_{}", crate::translate_naming_convention(&translated_definition.name, Case::Snake), new_name);
     }
 
-    println!(
-        "Translating {}.{} {}",
-        translated_definition.name,
-        function_definition.name.as_ref().map(|n| n.name.as_str()).unwrap_or_else(|| new_name_2.as_str()),
-        match project.loc_to_line_and_column(&translated_definition.path, &function_definition.loc) {
-            Some((line, col)) => format!("at {}:{}:{}", translated_definition.path.to_string_lossy(), line, col),
-            None => format!("in {}...", translated_definition.path.to_string_lossy()),
-        },
-    );
+    // println!(
+    //     "Translating {}.{} {}",
+    //     translated_definition.name,
+    //     function_definition.name.as_ref().map(|n| n.name.as_str()).unwrap_or_else(|| new_name_2.as_str()),
+    //     match project.loc_to_line_and_column(&translated_definition.path, &function_definition.loc) {
+    //         Some((line, col)) => format!("at {}:{}:{}", translated_definition.path.to_string_lossy(), line, col),
+    //         None => format!("in {}...", translated_definition.path.to_string_lossy()),
+    //     },
+    // );
     
     // Translate the functions parameters
     let mut parameters = sway::ParameterList::default();
