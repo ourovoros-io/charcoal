@@ -370,7 +370,7 @@ impl TypeName {
     pub fn is_uint(&self) -> bool {
         match self {
             TypeName::Identifier { name, generic_parameters: None } => match name.as_str() {
-                "u8" | "u16" | "u32" | "u64" | "u256" => true,
+                "u8" | "u16" | "u32" | "u64" | "u256" | "U128" | "U256" => true,
                 _ => false,
             }
             _ => false,

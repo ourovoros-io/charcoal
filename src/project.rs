@@ -92,6 +92,28 @@ impl Project {
         }
     }
 
+    #[inline]
+    pub fn loc_to_line_and_column<P: AsRef<Path>>(&self, path: P, loc: &solidity::Loc) -> Option<(usize, usize)> {
+        let Some(line_ranges) = self.line_ranges.get(path.as_ref()) else { return None };
+
+        let start = match loc {
+            solidity::Loc::Builtin
+            | solidity::Loc::CommandLine
+            | solidity::Loc::Implicit
+            | solidity::Loc::Codegen => return None,
+
+            solidity::Loc::File(_, start, _) => start,
+        };
+
+        for (i, (line_start, line_end)) in line_ranges.iter().enumerate() {
+            if start >= line_start && start < line_end {
+                return Some((i + 1, (start - line_start) + 1));
+            }
+        }
+        
+        None
+    }
+
     pub fn collect_translated_definitions<P: AsRef<Path>>(&self, definition_name: Option<&String>, source_unit_path: P) -> Vec<TranslatedDefinition> {
         let mut result = vec![];
         

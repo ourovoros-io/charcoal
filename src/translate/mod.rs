@@ -140,7 +140,6 @@ impl TranslationScope {
         parameters: &[sway::Expression],
         parameter_types: &[sway::TypeName],
     ) -> Option<Rc<RefCell<TranslatedFunction>>> {
-
         self.find_function(|f| {
             let f = f.borrow();
 
@@ -149,8 +148,11 @@ impl TranslationScope {
                 return false;
             }
 
+            println!("Found {old_name}");
+
             // Ensure the supplied function call args match the function's parameters
             if parameters.len() != f.parameters.entries.len() {
+                println!("Parameter count mismatch for {old_name}");
                 return false;
             }
 
@@ -163,6 +165,7 @@ impl TranslationScope {
                 }
 
                 if !value_type_name.is_compatible_with(parameter_type_name) {
+                    println!("Parameter type {} is incompatible with parameter type {} in {old_name}", value_type_name, parameter_type_name);
                     return false;
                 }
             }
@@ -1815,7 +1818,39 @@ impl TranslatedDefinition {
                     }
                 }
 
-                _ => todo!("get type of member access expression: {expression:#?}"),
+                _ => {
+                    let type_name = self.get_expression_type(scope.clone(), &member_access.expression)?;
+                    let type_name_string = type_name.to_string();
+
+                    // Check to see if container is a built-in type
+                    match &type_name {
+                        sway::TypeName::Identifier { name, generic_parameters } => match (name.as_str(), generic_parameters.as_ref()) {
+                            ("I256", None) => match member_access.member.as_str() {
+                                "underlying" => return Ok(sway::TypeName::Identifier {
+                                    name: "U256".into(),
+                                    generic_parameters: None,
+                                }),
+
+                                _ => {}
+                            }
+
+                            _ => {}
+                        }
+                        
+                        _ => {}
+                    }
+
+                    // Check to see if container is a struct
+                    if let Some(struct_definition) = self.structs.iter().find(|s| s.name == type_name_string) {
+                        let Some(field) = struct_definition.fields.iter().find(|f| f.name == member_access.member) else {
+                            panic!("{type_name} does not contain a field named \"{}\" - member access expression: {:#?}", member_access.member, member_access.expression)
+                        };
+
+                        return Ok(field.type_name.clone());
+                    }
+
+                    todo!("get type of {type_name} member access expression: {:#?}", expression)
+                }
             }
             
             sway::Expression::Tuple(tuple) => {

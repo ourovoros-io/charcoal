@@ -1,7 +1,7 @@
 use super::{create_value_expression, TranslatedDefinition, TranslatedVariable, TranslationScope};
 use crate::{errors::Error, project::Project, sway};
 use convert_case::Case;
-use solang_parser::pt as solidity;
+use solang_parser::{helpers::CodeLocation, pt as solidity};
 use std::{cell::RefCell, rc::Rc};
 
 #[inline]
@@ -20,15 +20,21 @@ pub fn translate_assembly_statement(
         
         match yul_statement {
             solidity::YulStatement::Assign(_, identifiers, value) => {
-                let identifiers = identifiers.iter()
+                let translated_identifiers = identifiers.iter()
                     .map(|i| translate_yul_expression(project, translated_definition, scope.clone(), i))
                     .collect::<Result<Vec<_>, _>>()?;
 
-                for identifier in identifiers.iter() {
+                for (i, identifier) in translated_identifiers.iter().enumerate() {
                     let sway::Expression::Identifier(name) = identifier else { continue };
 
                     let Some(variable) = scope.borrow().get_variable_from_new_name(name) else {
-                        panic!("error: Variable not found in scope: \"{name}\"");
+                        panic!(
+                            "{}error: Variable not found in scope: \"{name}\"",
+                            match project.loc_to_line_and_column(&translated_definition.path, &identifiers[i].loc()) {
+                                Some((line, col)) => format!("{}:{}:{} - ", translated_definition.path.to_string_lossy(), line, col),
+                                None => format!("{} - ", translated_definition.path.to_string_lossy()),
+                            }
+                        );
                     };
             
                     variable.borrow_mut().mutation_count += 1;
@@ -38,10 +44,10 @@ pub fn translate_assembly_statement(
                 
                 block.statements.push(sway::Statement::from(sway::Expression::from(sway::BinaryExpression {
                     operator: "=".into(),
-                    lhs: if identifiers.len() == 1 {
-                        identifiers[0].clone()
+                    lhs: if translated_identifiers.len() == 1 {
+                        translated_identifiers[0].clone()
                     } else {
-                        sway::Expression::Tuple(identifiers)
+                        sway::Expression::Tuple(translated_identifiers)
                     },
                     rhs: value,
                 })));
@@ -136,7 +142,13 @@ pub fn translate_yul_expression(
         
         solidity::YulExpression::Variable(solidity::Identifier { name, .. }) => {
             let Some(variable) = scope.borrow().get_variable_from_old_name(name) else {
-                panic!("error: Variable not found in scope: \"{name}\"");
+                panic!(
+                    "{}error: Variable not found in scope: \"{name}\"",
+                    match project.loc_to_line_and_column(&translated_definition.path, &expression.loc()) {
+                        Some((line, col)) => format!("{}:{}:{} - ", translated_definition.path.to_string_lossy(), line, col),
+                        None => format!("{} - ", translated_definition.path.to_string_lossy()),
+                    }
+                );
             };
     
             let variable = variable.borrow();

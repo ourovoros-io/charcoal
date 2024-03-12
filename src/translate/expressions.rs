@@ -1,7 +1,7 @@
 use super::{translate_type_name, TranslatedDefinition, TranslatedVariable, TranslationScope};
 use crate::{project::Project, sway, translate::resolve_import, Error};
 use convert_case::Case;
-use solang_parser::pt as solidity;
+use solang_parser::{helpers::CodeLocation, pt as solidity};
 use std::{cell::RefCell, rc::Rc};
 
 pub fn create_value_expression(
@@ -1117,7 +1117,13 @@ pub fn translate_member_access_expression(
                 // Check to see if the variable is an external definition
                 if let Some(external_definition) = resolve_import(project, &name.to_string(), &translated_definition.path)? {
                     let Some(variable) = external_definition.toplevel_scope.borrow().get_variable_from_old_name(member) else {
-                        panic!("error: Variable not found in scope: \"{member}\"");
+                        panic!(
+                            "{}error: Variable not found in scope: \"{member}\"",
+                            match project.loc_to_line_and_column(&translated_definition.path, &container.loc()) {
+                                Some((line, col)) => format!("{}:{}:{} - ", translated_definition.path.to_string_lossy(), line, col),
+                                None => format!("{} - ", translated_definition.path.to_string_lossy()),
+                            }
+                        );
                     };
 
                     let variable = variable.borrow();
@@ -1139,7 +1145,13 @@ pub fn translate_member_access_expression(
                 }
 
                 let Some(variable) = scope.borrow().get_variable_from_old_name(name) else {
-                    panic!("error: Variable not found in scope: \"{name}\"");
+                    panic!(
+                        "{}error: Variable not found in scope: \"{member}\"",
+                        match project.loc_to_line_and_column(&translated_definition.path, &container.loc()) {
+                            Some((line, col)) => format!("{}:{}:{} - ", translated_definition.path.to_string_lossy(), line, col),
+                            None => format!("{} - ", translated_definition.path.to_string_lossy()),
+                        }
+                    );
                 };
     
                 let variable = variable.borrow();
@@ -3100,7 +3112,68 @@ pub fn translate_function_call_expression(
                             }))
                         }
 
+                        "pop" => {
+                            let (Some(variable), Some(container_access)) = (variable, container_access) else {
+                                panic!("StorageVec is not a variable");
+                            };
+
+                            if !variable.borrow().is_storage {
+                                panic!("StorageVec is not in storage");
+                            }
+
+                            Ok(sway::Expression::from(sway::FunctionCall {
+                                function: sway::Expression::from(sway::MemberAccess {
+                                    expression: container_access,
+                                    member: "pop".into(),
+                                }),
+                                generic_parameters: None,
+                                parameters: vec![],
+                            }))
+                        }
+
                         _ => todo!("translate StorageVec member function call `{member}`: {} - {container:#?} - {:#?}", sway::TabbedDisplayer(&container), variable.unwrap().borrow())
+                    }
+
+                    ("Vec", Some(_)) => match member.name.as_str() {
+                        "push" => {
+                            let (Some(variable), Some(container_access)) = (variable, container_access) else {
+                                panic!("Vec is not a variable");
+                            };
+
+                            if !variable.borrow().is_storage {
+                                panic!("Vec is not in storage");
+                            }
+
+                            Ok(sway::Expression::from(sway::FunctionCall {
+                                function: sway::Expression::from(sway::MemberAccess {
+                                    expression: container_access,
+                                    member: "push".into(),
+                                }),
+                                
+                                generic_parameters: None,
+                                
+                                parameters: arguments.iter()
+                                    .map(|a| translate_expression(project, translated_definition, scope.clone(), a))
+                                    .collect::<Result<Vec<_>, _>>()?,
+                            }))
+                        }
+
+                        "pop" => {
+                            let (Some(_), Some(container_access)) = (variable, container_access) else {
+                                panic!("Vec is not a variable");
+                            };
+
+                            Ok(sway::Expression::from(sway::FunctionCall {
+                                function: sway::Expression::from(sway::MemberAccess {
+                                    expression: container_access,
+                                    member: "pop".into(),
+                                }),
+                                generic_parameters: None,
+                                parameters: vec![],
+                            }))
+                        }
+
+                        _ => todo!("translate Vec member function call `{member}`: {} - {container:#?} - {:#?}", sway::TabbedDisplayer(&container), variable.unwrap().borrow())
                     }
 
                     _ => {
@@ -3245,9 +3318,13 @@ pub fn translate_function_call_expression(
                                     }
                                 }
                             }
-        
+                            
+                            println!("Found definition {}", definition.name);
+
                             if let Some(function) = definition.toplevel_scope.borrow().find_function_matching_types(&member.name, &parameters, &parameter_types) {
                                 let function = function.borrow();
+
+                                println!("Found function {}", function.new_name);
                                 
                                 *translated_definition.function_call_counts.entry(function.new_name.clone()).or_insert(0) += 1;
 
@@ -3262,7 +3339,7 @@ pub fn translate_function_call_expression(
                             }
                         }
 
-                        todo!("translate {name} member function call: {}.{member} - {container:#?}", sway::TabbedDisplayer(&container))
+                        todo!("translate {name} member function call: {}.{member}({}) - {container:#?}", sway::TabbedDisplayer(&container), parameter_types.iter().map(|t| t.to_string()).collect::<Vec<_>>().join(", "))
                     }
                 }
 
@@ -3785,7 +3862,13 @@ pub fn translate_variable_access_expression(
             let Some(variable) = scope.borrow().get_variable_from_old_name(name) else {
                 return Err(Error::Wrapped(Box::new(std::io::Error::new(
                     std::io::ErrorKind::NotFound,
-                    format!("error: Variable not found in scope: \"{name}\""),
+                    format!(
+                        "{}error: Variable not found in scope: \"{name}\"",
+                        match project.loc_to_line_and_column(&translated_definition.path, &expression.loc()) {
+                            Some((line, col)) => format!("{}:{}:{} - ", translated_definition.path.to_string_lossy(), line, col),
+                            None => format!("{} - ", translated_definition.path.to_string_lossy()),
+                        }
+                    ),
                 ))));
             };
 
@@ -3835,7 +3918,6 @@ pub fn translate_variable_access_expression(
         
             let container_type_name = translated_definition.get_expression_type(scope.clone(), &translated_container)?;
             let container_type_name_string = container_type_name.to_string();
-            
             let (variable, container) = translate_variable_access_expression(project, translated_definition, scope.clone(), &container)?;
         
             // Check if container is a struct
