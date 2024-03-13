@@ -174,6 +174,7 @@ See the [Rust Install](https://www.rust-lang.org/tools/install) page for install
     - [x] Function Calls
     - [ ] Suffix Access
 * Inline Assembly Built-In Functions
+    - [ ] `stop`
     - [x] `add`
     - [x] `mul`
     - [x] `sub`
@@ -181,10 +182,8 @@ See the [Rust Install](https://www.rust-lang.org/tools/install) page for install
     - [x] `sdiv`
     - [x] `mod`
     - [x] `smod`
-    - [x] `addmod`
-    - [x] `mulmod`
     - [x] `exp`
-    - [ ] `signextend`
+    - [x] `not`
     - [x] `lt`
     - [x] `gt`
     - [x] `slt`
@@ -194,55 +193,75 @@ See the [Rust Install](https://www.rust-lang.org/tools/install) page for install
     - [x] `and`
     - [x] `or`
     - [x] `xor`
-    - [x] `not`
     - [ ] `byte`
     - [x] `shl`
     - [x] `shr`
     - [x] `sar`
-    - [ ] `sha3`
-    - [x] `address`
-    - [ ] `balance`
-    - [ ] `origin`
-    - [x] `caller`
-    - [x] `callvalue`
-    - [ ] `calldataload`
-    - [x] `calldatasize`
-    - [ ] `calldatacopy`
-    - [ ] `codesize`
-    - [ ] `codecopy`
-    - [x] `gasprice`
-    - [ ] `extcodesize`
-    - [ ] `extcodecopy`
-    - [x] `returndatasize`
-    - [ ] `returndatacopy`
-    - [ ] `extcodehash`
-    - [ ] `blockhash`
-    - [x] `coinbase`
-    - [x] `timestamp`
-    - [x] `number`
-    - [ ] `difficulty`
-    - [ ] `gaslimit`
-    - [x] `chainid`
-    - [x] `selfbalance`
-    - [ ] `basefee`
+    - [x] `addmod`
+    - [x] `mulmod`
+    - [ ] `signextend`
+    - [x] `sha3`
+    - [x] `keccak256`
+    - [ ] `pc`
+    - [ ] `pop`
     - [ ] `mload`
     - [ ] `mstore`
     - [ ] `mstore8`
     - [ ] `sload`
     - [ ] `sstore`
+    - [ ] `tload`
+    - [ ] `tstore`
     - [ ] `msize`
     - [ ] `gas`
+    - [x] `address`
+    - [ ] `balance`
+    - [x] `selfbalance`
+    - [x] `caller`
+    - [x] `callvalue`
+    - [ ] `calldataload`
+    - [ ] `calldatasize`
+    - [ ] `calldatacopy`
+    - [ ] `codesize`
+    - [ ] `codecopy`
+    - [ ] `extcodesize`
+    - [ ] `extcodecopy`
+    - [ ] `returndatasize`
+    - [ ] `returndatacopy`
+    - [ ] `mcopy`
+    - [ ] `extcodehash`
+    - [ ] `create`
+    - [ ] `create2`
+    - [ ] `call`
+    - [ ] `callcode`
+    - [ ] `delegatecall`
+    - [ ] `staticcall`
+    - [ ] `return`
+    - [ ] `revert`
+    - [ ] `selfdestruct`
+    - [ ] `invalid`
     - [ ] `log0`
     - [ ] `log1`
     - [ ] `log2`
     - [ ] `log3`
     - [ ] `log4`
-    - [ ] `create`
-    - [ ] `call`
-    - [ ] `callcode`
-    - [ ] `return`
-    - [ ] `delegatecall`
-    - [ ] `create2`
-    - [ ] `staticcall`
-    - [ ] `revert`
-    - [ ] `selfdestruct`
+    - [x] `chainid`
+    - [ ] `basefee`
+    - [ ] `blobbasefee`
+    - [ ] `origin`
+    - [x] `gasprice`
+    - [ ] `blockhash`
+    - [ ] `blobhash`
+    - [x] `coinbase`
+    - [x] `timestamp`
+    - [x] `number`
+    - [ ] `difficulty`
+    - [ ] `prevrandao`
+    - [ ] `gaslimit`
+    - [ ] `datasize`
+    - [ ] `dataoffset`
+    - [ ] `datacopy`
+    - [ ] `setimmutable`
+    - [ ] `loadimmutable`
+    - [ ] `linkersymbol`
+    - [ ] `memoryguard`
+    - [ ] `verbatim...`

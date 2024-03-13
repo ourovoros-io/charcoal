@@ -176,6 +176,11 @@ pub fn translate_yul_expression(
                 .collect::<Result<Vec<_>, _>>()?;
 
             match function_call.id.name.as_str() {
+                "stop" => {
+                    // TODO: stop() => ???
+                    Ok(sway::Expression::create_todo(Some(expression.to_string())))
+                }
+
                 "add" => {
                     // add(a, b) => a + b
 
@@ -274,46 +279,6 @@ pub fn translate_yul_expression(
                     }))
                 }
 
-                "addmod" => {
-                    // addmod(a, b, c) => (a + b) % c
-
-                    if parameters.len() != 3 {
-                        panic!("Invalid yul addmod function call, expected 3 parameters, found {}", parameters.len());
-                    }
-
-                    Ok(sway::Expression::from(sway::BinaryExpression {
-                        operator: "%".into(),
-                        lhs: sway::Expression::Tuple(vec![
-                            sway::Expression::from(sway::BinaryExpression {
-                                operator: "+".into(),
-                                lhs: parameters[0].clone(),
-                                rhs: parameters[1].clone(),
-                            }),
-                        ]),
-                        rhs: parameters[3].clone(),
-                    }))
-                }
-
-                "mulmod" => {
-                    // mulmod(a, b, c) => (a * b) % c
-
-                    if parameters.len() != 3 {
-                        panic!("Invalid yul addmod function call, expected 3 parameters, found {}", parameters.len());
-                    }
-
-                    Ok(sway::Expression::from(sway::BinaryExpression {
-                        operator: "%".into(),
-                        lhs: sway::Expression::Tuple(vec![
-                            sway::Expression::from(sway::BinaryExpression {
-                                operator: "*".into(),
-                                lhs: parameters[0].clone(),
-                                rhs: parameters[1].clone(),
-                            }),
-                        ]),
-                        rhs: parameters[2].clone(),
-                    }))
-                }
-
                 "exp" => {
                     // exp(a, b) => {
                     //     use std::math::Power;
@@ -339,9 +304,17 @@ pub fn translate_yul_expression(
                     }))
                 }
 
-                "signextend" => {
-                    // TODO: signextend(b, x) => ???
-                    Ok(sway::Expression::create_todo(Some(expression.to_string())))
+                "not" => {
+                    // not(a) => !a
+
+                    if parameters.len() != 1 {
+                        panic!("Invalid yul not function call, expected 1 parameter, found {}", parameters.len());
+                    }
+
+                    Ok(sway::Expression::from(sway::UnaryExpression {
+                        operator: "!".into(),
+                        expression: parameters[0].clone(),
+                    }))
                 }
 
                 "lt" => {
@@ -472,19 +445,6 @@ pub fn translate_yul_expression(
                     }))
                 }
 
-                "not" => {
-                    // not(a) => !a
-
-                    if parameters.len() != 1 {
-                        panic!("Invalid yul not function call, expected 1 parameter, found {}", parameters.len());
-                    }
-
-                    Ok(sway::Expression::from(sway::UnaryExpression {
-                        operator: "!".into(),
-                        expression: parameters[0].clone(),
-                    }))
-                }
-
                 "byte" => {
                     // TODO: byte(i, x) => ???
                     Ok(sway::Expression::create_todo(Some(expression.to_string())))
@@ -532,6 +492,51 @@ pub fn translate_yul_expression(
                     }))
                 }
 
+                "addmod" => {
+                    // addmod(a, b, c) => (a + b) % c
+
+                    if parameters.len() != 3 {
+                        panic!("Invalid yul addmod function call, expected 3 parameters, found {}", parameters.len());
+                    }
+
+                    Ok(sway::Expression::from(sway::BinaryExpression {
+                        operator: "%".into(),
+                        lhs: sway::Expression::Tuple(vec![
+                            sway::Expression::from(sway::BinaryExpression {
+                                operator: "+".into(),
+                                lhs: parameters[0].clone(),
+                                rhs: parameters[1].clone(),
+                            }),
+                        ]),
+                        rhs: parameters[3].clone(),
+                    }))
+                }
+
+                "mulmod" => {
+                    // mulmod(a, b, c) => (a * b) % c
+
+                    if parameters.len() != 3 {
+                        panic!("Invalid yul addmod function call, expected 3 parameters, found {}", parameters.len());
+                    }
+
+                    Ok(sway::Expression::from(sway::BinaryExpression {
+                        operator: "%".into(),
+                        lhs: sway::Expression::Tuple(vec![
+                            sway::Expression::from(sway::BinaryExpression {
+                                operator: "*".into(),
+                                lhs: parameters[0].clone(),
+                                rhs: parameters[1].clone(),
+                            }),
+                        ]),
+                        rhs: parameters[2].clone(),
+                    }))
+                }
+
+                "signextend" => {
+                    // TODO: signextend(b, x) => ???
+                    Ok(sway::Expression::create_todo(Some(expression.to_string())))
+                }
+
                 "sha3" => {
                     // TODO: sha3(offset, length) => ???
                     Ok(sway::Expression::create_todo(Some(expression.to_string())))
@@ -539,6 +544,61 @@ pub fn translate_yul_expression(
 
                 "keccak256" => {
                     // TODO: keccak256(offset, length) => ???
+                    Ok(sway::Expression::create_todo(Some(expression.to_string())))
+                }
+
+                "pc" => {
+                    // TODO: pc() => ???
+                    Ok(sway::Expression::create_todo(Some(expression.to_string())))
+                }
+
+                "pop" => {
+                    // TODO: pop(x) => ???
+                    Ok(sway::Expression::create_todo(Some(expression.to_string())))
+                }
+
+                "mload" => {
+                    // TODO: mload(offset) => ???
+                    Ok(sway::Expression::create_todo(Some(expression.to_string())))
+                }
+
+                "mstore" => {
+                    // TODO: mstore(offset, value) => ???
+                    Ok(sway::Expression::create_todo(Some(expression.to_string())))
+                }
+
+                "mstore8" => {
+                    // TODO: mstore8(offset, value) => ???
+                    Ok(sway::Expression::create_todo(Some(expression.to_string())))
+                }
+
+                "sload" => {
+                    // TODO: sload(key) => ???
+                    Ok(sway::Expression::create_todo(Some(expression.to_string())))
+                }
+
+                "sstore" => {
+                    // TODO: sstore(key, value) => ???
+                    Ok(sway::Expression::create_todo(Some(expression.to_string())))
+                }
+
+                "tload" => {
+                    // TODO: tload(p) => ???
+                    Ok(sway::Expression::create_todo(Some(expression.to_string())))
+                }
+
+                "tstore" => {
+                    // TODO: tstore(p, v) => ???
+                    Ok(sway::Expression::create_todo(Some(expression.to_string())))
+                }
+
+                "msize" => {
+                    // TODO: msize() => ???
+                    Ok(sway::Expression::create_todo(Some(expression.to_string())))
+                }
+
+                "gas" => {
+                    // TODO: gas() => ???
                     Ok(sway::Expression::create_todo(Some(expression.to_string())))
                 }
 
@@ -567,9 +627,31 @@ pub fn translate_yul_expression(
                     Ok(sway::Expression::create_todo(Some(expression.to_string())))
                 }
 
-                "origin" => {
-                    // TODO: origin() => ???
-                    Ok(sway::Expression::create_todo(Some(expression.to_string())))
+                "selfbalance" => {
+                    // selfbalance() => std::context::this_balance(AssetId::default()).as_u256()
+
+                    if parameters.len() != 0 {
+                        panic!("Invalid yul balance function call, expected 0 parameters, found {}", parameters.len());
+                    }
+
+                    Ok(sway::Expression::from(sway::FunctionCall {
+                        function: sway::Expression::from(sway::MemberAccess {
+                            expression: sway::Expression::from(sway::FunctionCall {
+                                function: sway::Expression::Identifier("std::context::this_balance".into()),
+                                generic_parameters: None,
+                                parameters: vec![
+                                    sway::Expression::from(sway::FunctionCall {
+                                        function: sway::Expression::Identifier("AssetId::default".into()),
+                                        generic_parameters: None,
+                                        parameters: vec![],
+                                    }),
+                                ],
+                            }),
+                            member: "as_u256".into(),
+                        }),
+                        generic_parameters: None,
+                        parameters: vec![],
+                    }))
                 }
 
                 "caller" => {
@@ -643,29 +725,6 @@ pub fn translate_yul_expression(
                     Ok(sway::Expression::create_todo(Some(expression.to_string())))
                 }
 
-                "gasprice" => {
-                    // gasprice() => std::tx::tx_gas_price().unwrap_or(0)
-                    
-                    if parameters.len() != 0 {
-                        panic!("Invalid yul gasprice function call, expected 0 parameters, found {}", parameters.len());
-                    }
-
-                    Ok(sway::Expression::from(sway::FunctionCall {
-                        function: sway::Expression::from(sway::MemberAccess {
-                            expression: sway::Expression::from(sway::FunctionCall {
-                                function: sway::Expression::Identifier("std::tx::tx_gas_price".to_string()),
-                                generic_parameters: None,
-                                parameters: vec![],
-                            }),
-                            member: "unwrap_or".into(),
-                        }),
-                        generic_parameters: None,
-                        parameters: vec![
-                            sway::Expression::from(sway::Literal::DecInt(0)),
-                        ],
-                    }))
-                }
-
                 "extcodesize" => {
                     // TODO: extcodesize(addr) => ???
                     Ok(sway::Expression::create_todo(Some(expression.to_string())))
@@ -695,13 +754,172 @@ pub fn translate_yul_expression(
                     Ok(sway::Expression::create_todo(Some(expression.to_string())))
                 }
 
+                "mcopy" => {
+                    // TODO: mcopy(t, f, s) => ???
+                    Ok(sway::Expression::create_todo(Some(expression.to_string())))
+                }
+
                 "extcodehash" => {
                     // TODO: extcodehash(addr) => ???
                     Ok(sway::Expression::create_todo(Some(expression.to_string())))
                 }
 
+                "create" => {
+                    // TODO: create(value, offset, length) => ???
+                    Ok(sway::Expression::create_todo(Some(expression.to_string())))
+                }
+
+                "create2" => {
+                    // TODO: create2(value, offset, length, salt) => ???
+                    Ok(sway::Expression::create_todo(Some(expression.to_string())))
+                }
+
+                "call" => {
+                    // TODO: call(gas, addr, value, args_offset, args_length, ret_offset, ret_length) => ???
+                    Ok(sway::Expression::create_todo(Some(expression.to_string())))
+                }
+
+                "callcode" => {
+                    // TODO: callcode(gas, addr, value, args_offset, args_length, ret_offset, ret_length) => ???
+                    Ok(sway::Expression::create_todo(Some(expression.to_string())))
+                }
+
+                "delegatecall" => {
+                    // TODO: delegatecall(gas, addr, args_offset, args_length, ret_offset, ret_length) => ???
+                    Ok(sway::Expression::create_todo(Some(expression.to_string())))
+                }
+
+                "staticcall" => {
+                    // TODO: staticcall(gas, addr, args_offset, args_length, ret_offset, ret_length) => ???
+                    Ok(sway::Expression::create_todo(Some(expression.to_string())))
+                }
+
+                "return" => {
+                    // TODO: return(offset, length) => ???
+                    Ok(sway::Expression::create_todo(Some(expression.to_string())))
+                }
+
+                "revert" => {
+                    // TODO: revert(offset, length) => ???
+                    Ok(sway::Expression::create_todo(Some(expression.to_string())))
+                }
+
+                "selfdestruct" => {
+                    // TODO: selfdestruct(addr) => ???
+                    Ok(sway::Expression::create_todo(Some(expression.to_string())))
+                }
+                
+                "invalid" => {
+                    // TODO: invalid() => ???
+                    Ok(sway::Expression::create_todo(Some(expression.to_string())))
+                }
+                
+                "log0" => {
+                    // TODO: log0(offset, length) => ???
+                    Ok(sway::Expression::create_todo(Some(expression.to_string())))
+                }
+
+                "log1" => {
+                    // TODO: log1(offset, length, topic0) => ???
+                    Ok(sway::Expression::create_todo(Some(expression.to_string())))
+                }
+
+                "log2" => {
+                    // TODO: log2(offset, length, topic0, topic1) => ???
+                    Ok(sway::Expression::create_todo(Some(expression.to_string())))
+                }
+
+                "log3" => {
+                    // TODO: log3(offset, length, topic0, topic1, topic2) => ???
+                    Ok(sway::Expression::create_todo(Some(expression.to_string())))
+                }
+
+                "log4" => {
+                    // TODO: log4(offset, length, topic0, topic1, topic2, topic3) => ???
+                    Ok(sway::Expression::create_todo(Some(expression.to_string())))
+                }
+
+                "chainid" => {
+                    // chainid() => asm(r1) {
+                    //    gm r1 i4;
+                    //    r1: u64
+                    // }
+
+                    if parameters.len() != 0 {
+                        panic!("Invalid yul chainid function call, expected 0 parameters, found {}", parameters.len());
+                    }
+
+                    Ok(sway::Expression::from(sway::AsmBlock {
+                        registers: vec![
+                            sway::AsmRegister {
+                                name: "r1".into(),
+                                value: None,
+                            },
+                        ],
+                        instructions: vec![
+                            sway::AsmInstruction {
+                                op_code: "gm".into(),
+                                args: vec![
+                                    "r1".into(),
+                                    "i4".into(),
+                                ],
+                            }
+                        ],
+                        final_expression: Some(sway::AsmFinalExpression {
+                            register: "r1".into(),
+                            type_name: Some(sway::TypeName::Identifier {
+                                name: "u64".into(),
+                                generic_parameters: None,
+                            }),
+                        }),
+                    }))
+                }
+
+                "basefee" => {
+                    // TODO: basefee() => ???
+                    Ok(sway::Expression::create_todo(Some(expression.to_string())))
+                }
+                
+                "blobbasefee" => {
+                    // TODO: blobbasefee() => ???
+                    Ok(sway::Expression::create_todo(Some(expression.to_string())))
+                }
+                
+                "origin" => {
+                    // TODO: origin() => ???
+                    Ok(sway::Expression::create_todo(Some(expression.to_string())))
+                }
+
+                "gasprice" => {
+                    // gasprice() => std::tx::tx_gas_price().unwrap_or(0)
+                    
+                    if parameters.len() != 0 {
+                        panic!("Invalid yul gasprice function call, expected 0 parameters, found {}", parameters.len());
+                    }
+
+                    Ok(sway::Expression::from(sway::FunctionCall {
+                        function: sway::Expression::from(sway::MemberAccess {
+                            expression: sway::Expression::from(sway::FunctionCall {
+                                function: sway::Expression::Identifier("std::tx::tx_gas_price".to_string()),
+                                generic_parameters: None,
+                                parameters: vec![],
+                            }),
+                            member: "unwrap_or".into(),
+                        }),
+                        generic_parameters: None,
+                        parameters: vec![
+                            sway::Expression::from(sway::Literal::DecInt(0)),
+                        ],
+                    }))
+                }
+
                 "blockhash" => {
                     // TODO: blockhash(block_number) => ???
+                    Ok(sway::Expression::create_todo(Some(expression.to_string())))
+                }
+
+                "blobhash" => {
+                    // TODO: blobhash(i) => ???
                     Ok(sway::Expression::create_todo(Some(expression.to_string())))
                 }
 
@@ -846,184 +1064,56 @@ pub fn translate_yul_expression(
                     Ok(sway::Expression::create_todo(Some(expression.to_string())))
                 }
 
+                "prevrandao" => {
+                    // TODO: prevrandao() => ???
+                    Ok(sway::Expression::create_todo(Some(expression.to_string())))
+                }
+
                 "gaslimit" => {
                     // TODO: gaslimit() => ???
                     Ok(sway::Expression::create_todo(Some(expression.to_string())))
                 }
 
-                "chainid" => {
-                    // chainid() => asm(r1) {
-                    //    gm r1 i4;
-                    //    r1: u64
-                    // }
-
-                    if parameters.len() != 0 {
-                        panic!("Invalid yul chainid function call, expected 0 parameters, found {}", parameters.len());
-                    }
-
-                    Ok(sway::Expression::from(sway::AsmBlock {
-                        registers: vec![
-                            sway::AsmRegister {
-                                name: "r1".into(),
-                                value: None,
-                            },
-                        ],
-                        instructions: vec![
-                            sway::AsmInstruction {
-                                op_code: "gm".into(),
-                                args: vec![
-                                    "r1".into(),
-                                    "i4".into(),
-                                ],
-                            }
-                        ],
-                        final_expression: Some(sway::AsmFinalExpression {
-                            register: "r1".into(),
-                            type_name: Some(sway::TypeName::Identifier {
-                                name: "u64".into(),
-                                generic_parameters: None,
-                            }),
-                        }),
-                    }))
-                }
-
-                "selfbalance" => {
-                    // TODO: selfbalance() => std::context::this_balance(AssetId::default()).as_u256()
-
-                    if parameters.len() != 0 {
-                        panic!("Invalid yul balance function call, expected 0 parameters, found {}", parameters.len());
-                    }
-
-                    Ok(sway::Expression::from(sway::FunctionCall {
-                        function: sway::Expression::from(sway::MemberAccess {
-                            expression: sway::Expression::from(sway::FunctionCall {
-                                function: sway::Expression::Identifier("std::context::this_balance".into()),
-                                generic_parameters: None,
-                                parameters: vec![
-                                    sway::Expression::from(sway::FunctionCall {
-                                        function: sway::Expression::Identifier("AssetId::default".into()),
-                                        generic_parameters: None,
-                                        parameters: vec![],
-                                    }),
-                                ],
-                            }),
-                            member: "as_u256".into(),
-                        }),
-                        generic_parameters: None,
-                        parameters: vec![],
-                    }))
-                }
-
-                "basefee" => {
-                    // TODO: basefee() => ???
-                    Ok(sway::Expression::create_todo(Some(expression.to_string())))
-                }
-                
-                "mload" => {
-                    // TODO: mload(offset) => ???
+                "datasize" => {
+                    // TODO: datasize(x) => ???
                     Ok(sway::Expression::create_todo(Some(expression.to_string())))
                 }
 
-                "mstore" => {
-                    // TODO: mstore(offset, value) => ???
+                "dataoffset" => {
+                    // TODO: dataoffset(x) => ???
                     Ok(sway::Expression::create_todo(Some(expression.to_string())))
                 }
 
-                "mstore8" => {
-                    // TODO: mstore8(offset, value) => ???
+                "datacopy" => {
+                    // TODO: datacopy(t, f, l) => ???
                     Ok(sway::Expression::create_todo(Some(expression.to_string())))
                 }
 
-                "sload" => {
-                    // TODO: sload(key) => ???
+                "setimmutable" => {
+                    // TODO: setimmutable(offset, "name", value) => ???
                     Ok(sway::Expression::create_todo(Some(expression.to_string())))
                 }
 
-                "sstore" => {
-                    // TODO: sstore(key, value) => ???
+                "loadimmutable" => {
+                    // TODO: loadimmutable("name") => ???
                     Ok(sway::Expression::create_todo(Some(expression.to_string())))
                 }
 
-                "msize" => {
-                    // TODO: msize() => ???
+                "linkersymbol" => {
+                    // TODO: linkersymbol("library_id") => ???
                     Ok(sway::Expression::create_todo(Some(expression.to_string())))
                 }
 
-                "gas" => {
-                    // TODO: gas() => ???
+                "memoryguard" => {
+                    // TODO: memoryguard(size) => ???
                     Ok(sway::Expression::create_todo(Some(expression.to_string())))
                 }
 
-                "log0" => {
-                    // TODO: log0(offset, length) => ???
-                    Ok(sway::Expression::create_todo(Some(expression.to_string())))
-                }
+                // TODO: verbatim_<n>i_<m>o("<data>", ...), where
+                // n is a decimal between 0 and 99 that specifies the number of input stack slots / variables
+                // m is a decimal between 0 and 99 that specifies the number of output stack slots / variables
+                // data is a string literal that contains the sequence of bytes
 
-                "log1" => {
-                    // TODO: log1(offset, length, topic0) => ???
-                    Ok(sway::Expression::create_todo(Some(expression.to_string())))
-                }
-
-                "log2" => {
-                    // TODO: log2(offset, length, topic0, topic1) => ???
-                    Ok(sway::Expression::create_todo(Some(expression.to_string())))
-                }
-
-                "log3" => {
-                    // TODO: log3(offset, length, topic0, topic1, topic2) => ???
-                    Ok(sway::Expression::create_todo(Some(expression.to_string())))
-                }
-
-                "log4" => {
-                    // TODO: log4(offset, length, topic0, topic1, topic2, topic3) => ???
-                    Ok(sway::Expression::create_todo(Some(expression.to_string())))
-                }
-
-                "create" => {
-                    // TODO: create(value, offset, length) => ???
-                    Ok(sway::Expression::create_todo(Some(expression.to_string())))
-                }
-
-                "call" => {
-                    // TODO: call(gas, addr, value, args_offset, args_length, ret_offset, ret_length) => ???
-                    Ok(sway::Expression::create_todo(Some(expression.to_string())))
-                }
-
-                "callcode" => {
-                    // TODO: callcode(gas, addr, value, args_offset, args_length, ret_offset, ret_length) => ???
-                    Ok(sway::Expression::create_todo(Some(expression.to_string())))
-                }
-
-                "return" => {
-                    // TODO: return(offset, length) => ???
-                    Ok(sway::Expression::create_todo(Some(expression.to_string())))
-                }
-
-                "delegatecall" => {
-                    // TODO: delegatecall(gas, addr, args_offset, args_length, ret_offset, ret_length) => ???
-                    Ok(sway::Expression::create_todo(Some(expression.to_string())))
-                }
-
-                "create2" => {
-                    // TODO: create2(value, offset, length, salt) => ???
-                    Ok(sway::Expression::create_todo(Some(expression.to_string())))
-                }
-
-                "staticcall" => {
-                    // TODO: staticcall(gas, addr, args_offset, args_length, ret_offset, ret_length) => ???
-                    Ok(sway::Expression::create_todo(Some(expression.to_string())))
-                }
-
-                "revert" => {
-                    // TODO: revert(offset, length) => ???
-                    Ok(sway::Expression::create_todo(Some(expression.to_string())))
-                }
-
-                "selfdestruct" => {
-                    // TODO: selfdestruct(addr) => ???
-                    Ok(sway::Expression::create_todo(Some(expression.to_string())))
-                }
-                
                 name => todo!("look up yul function in scope: \"{name}\"")
             }
         }
