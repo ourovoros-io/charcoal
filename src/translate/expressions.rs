@@ -1095,6 +1095,7 @@ pub fn translate_member_access_expression(
         }
     }
 
+    // Check for fields of built-in solidity value types
     match container_type_name {
         sway::TypeName::Identifier { name, generic_parameters } => match (name.as_str(), generic_parameters.as_ref()) {
             ("Bytes", None) => match member.name.as_str() {
@@ -1107,7 +1108,7 @@ pub fn translate_member_access_expression(
                     parameters: vec![],
                 })),
 
-                _ => todo!("translate {container_type_name_string} member access expression: {expression} - {expression:#?}"),
+                _ => {}
             }
 
             ("Identity", None) => match member.name.as_str() {
@@ -1138,7 +1139,7 @@ pub fn translate_member_access_expression(
                     ],
                 })),
 
-                _ => todo!("translate {container_type_name_string} member access expression: {expression} - {expression:#?}"),
+                _ => {}
             }
 
             ("Vec", Some(_)) => match member.name.as_str() {
@@ -1151,14 +1152,16 @@ pub fn translate_member_access_expression(
                     parameters: vec![],
                 })),
 
-                _ => todo!("translate {container_type_name_string} member access expression: {expression} - {expression:#?}"),
+                _ => {}
             }
 
-            _ => todo!("translate {container_type_name_string} member access expression: {expression} - {expression:#?}"),
+            _ => {}
         }
 
-        _ => todo!("translate {container_type_name_string} member access expression: {expression} - {expression:#?}"),
+        _ => {}
     }
+
+    todo!("translate {container_type_name_string} member access expression: {expression} - {expression:#?}")
 }
 
 #[inline]
@@ -2148,11 +2151,6 @@ pub fn translate_function_call_expression(
         solidity::Expression::MemberAccess(_, container, member) => {
             match container.as_ref() {
                 solidity::Expression::Type(_, ty) => match ty {
-                    solidity::Type::Address => todo!("handle address member access function `{member:#?}`"),
-                    solidity::Type::AddressPayable => todo!("handle address payable member access function `{member:#?}`"),
-                    solidity::Type::Payable => todo!("handle payable member access function `{member:#?}`"),
-                    solidity::Type::Bool => todo!("handle bool member access function `{member:#?}`"),
-
                     solidity::Type::String => match member.name.as_str() {
                         "concat" => {
                             // string.concat(x) => ???
@@ -2164,14 +2162,9 @@ pub fn translate_function_call_expression(
                             return Ok(sway::Expression::create_todo(Some(expression.to_string())));
                         }
                         
-                        member => todo!("handle `string.{member} translation")
+                        member => todo!("translate `string.{member}``")
                     }
 
-                    solidity::Type::Int(_) => todo!("handle int member access function `{member:#?}`"),
-                    solidity::Type::Uint(_) => todo!("handle uint member access function `{member:#?}`"),
-                    solidity::Type::Bytes(_) => todo!("handle bytes member access function `{member:#?}`"),
-                    solidity::Type::Rational => todo!("handle rational member access function `{member:#?}`"),
-                    
                     solidity::Type::DynamicBytes => match member.name.as_str() {
                         "concat" => {
                             // bytes.concat(x) => ???
@@ -2183,11 +2176,10 @@ pub fn translate_function_call_expression(
                             return Ok(sway::Expression::create_todo(Some(expression.to_string())));
                         }
                         
-                        member => todo!("handle `bytes.{member} translation")
+                        member => todo!("translate `bytes.{member}`")
                     }
 
-                    solidity::Type::Mapping { .. } => todo!("handle mapping member access function `{member:#?}`"),
-                    solidity::Type::Function { .. } => todo!("handle function member access function `{member:#?}`"),
+                    _ => todo!("translate member access function call: {expression} - {expression:#?}"),
                 }
 
                 solidity::Expression::Variable(solidity::Identifier { name, .. }) => match name.as_str() {
