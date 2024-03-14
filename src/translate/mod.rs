@@ -742,6 +742,11 @@ impl TranslatedDefinition {
                                 generic_parameters: None,
                             })
                         }
+
+                        "AssetId::default" => Ok(sway::TypeName::Identifier {
+                            name: "AssetId".into(),
+                            generic_parameters: None,
+                        }),
     
                         "b256::from" => Ok(sway::TypeName::Identifier {
                             name: "b256".into(),
@@ -812,7 +817,12 @@ impl TranslatedDefinition {
                             name: "u64".into(),
                             generic_parameters: None,
                         }),
-                        
+
+                        "std::context::balance_of" => Ok(sway::TypeName::Identifier {
+                            name: "u64".into(),
+                            generic_parameters: None,
+                        }),
+                            
                         "std::context::msg_amount" => Ok(sway::TypeName::Identifier {
                             name: "u64".into(),
                             generic_parameters: None,
