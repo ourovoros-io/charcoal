@@ -186,12 +186,22 @@ impl TranslationScope {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct DeferredInitialization {
+    pub name: String,
+    pub is_storage: bool,
+    pub is_constant: bool,
+    pub is_configurable: bool,
+    pub value: sway::Expression,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct TranslatedDefinition {
     pub path: PathBuf,
     pub toplevel_scope: Rc<RefCell<TranslationScope>>,
     pub kind: Option<solidity::ContractTy>,
     pub dependencies: Vec<String>,
+    pub deferred_initializations: Vec<DeferredInitialization>,
 
     pub uses: Vec<sway::Use>,
     pub name: String,
@@ -446,6 +456,7 @@ impl TranslatedDefinition {
             toplevel_scope: Rc::new(RefCell::new(TranslationScope::default())),
             kind: Some(kind),
             dependencies: vec![],
+            deferred_initializations: vec![],
 
             uses: vec![],
             name: name.to_string(),

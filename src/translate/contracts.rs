@@ -1,9 +1,5 @@
 use super::{
-    generate_enum_abi_encode_function, resolve_import, translate_enum_definition,
-    translate_error_definition, translate_event_definition, translate_function_declaration,
-    translate_function_definition, translate_import_directives, translate_modifier_definition,
-    translate_state_variable, translate_struct_definition, translate_type_definition,
-    translate_type_name, TranslatedDefinition, TranslatedUsingDirective,
+    create_assignment_expression, generate_enum_abi_encode_function, resolve_import, translate_enum_definition, translate_error_definition, translate_event_definition, translate_function_declaration, translate_function_definition, translate_import_directives, translate_modifier_definition, translate_state_variable, translate_storage_name, translate_struct_definition, translate_type_definition, translate_type_name, TranslatedDefinition, TranslatedUsingDirective
 };
 use crate::{project::Project, sway, Error};
 use convert_case::Case;
@@ -291,6 +287,170 @@ pub fn translate_contract_definition(
         translate_function_definition(project, &mut translated_definition, function_definition)?;
     }
 
+    // Propagate deferred initializations into the constructor
+    if !translated_definition.deferred_initializations.is_empty() {
+        let mut assignment_statements = vec![];
+        let deferred_initializations = translated_definition.deferred_initializations.clone();
+
+        // Create assignment statements for all of the deferred initializations
+        for deferred_initialization in deferred_initializations.iter().rev() {
+            let lhs = sway::Expression::from(sway::MemberAccess {
+                expression: sway::Expression::Identifier("storage".into()),
+                member: deferred_initialization.name.clone(),
+            });
+            
+            let value_type_name = translated_definition.get_expression_type(translated_definition.toplevel_scope.clone(), &deferred_initialization.value)?;
+            let variable = translated_definition.toplevel_scope.borrow().get_variable_from_new_name(&deferred_initialization.name).unwrap();
+
+            match &deferred_initialization.value {
+                sway::Expression::Array(sway::Array { elements }) => {
+                    for element in elements {
+                        assignment_statements.push(sway::Statement::from(sway::Expression::from(sway::FunctionCall {
+                            function: sway::Expression::from(sway::MemberAccess {
+                                expression: sway::Expression::from(sway::MemberAccess {
+                                    expression: sway::Expression::Identifier("storage".into()),
+                                    member: deferred_initialization.name.clone(),
+                                }),
+                                member: "push".into(),
+                            }),
+                            generic_parameters: None,
+                            parameters: vec![
+                                element.clone(),
+                            ],
+                        })));
+                    }
+                }
+
+                _ => assignment_statements.push(sway::Statement::from(create_assignment_expression(
+                    project,
+                    &mut translated_definition,
+                    "=",
+                    &lhs,
+                    variable,
+                    &deferred_initialization.value,
+                    &value_type_name,
+                )?)),
+            }
+        }
+        
+        let mut constructor_function = translated_definition.functions.iter_mut().find(|f| f.name == "constructor");
+    
+        // Create the constructor if it doesn't exist
+        if constructor_function.is_none() {
+            let mut function = sway::Function {
+                attributes: None,
+                is_public: false,
+                name: "constructor".into(),
+                generic_parameters: None,
+                parameters: sway::ParameterList::default(),
+                return_type: None,
+                body: None,
+            };
+    
+            translated_definition.get_abi().functions.insert(0, function.clone());
+    
+            function.body = Some(sway::Block::default());
+            let function_body = function.body.as_mut().unwrap();
+    
+            let prefix = crate::translate_naming_convention(translated_definition.name.as_str(), Case::Snake);
+            let constructor_called_variable_name =  translate_storage_name(project, &mut translated_definition, format!("{prefix}_constructor_called").as_str());
+            
+            // Add the `constructor_called` field to the storage block
+            translated_definition.get_storage().fields.push(sway::StorageField {
+                name: constructor_called_variable_name.clone(),
+                type_name: sway::TypeName::Identifier {
+                    name: "bool".into(),
+                    generic_parameters: None,
+                },
+                value: sway::Expression::from(sway::Literal::Bool(false)),
+            });
+    
+            // Add the `constructor_called` requirement to the beginning of the function
+            // require(!storage.initialized.read(), "The Contract constructor has already been called");
+            function_body.statements.insert(0, sway::Statement::from(sway::Expression::from(sway::FunctionCall {
+                function: sway::Expression::Identifier("require".into()),
+                generic_parameters: None,
+                parameters: vec![
+                    sway::Expression::from(sway::UnaryExpression {
+                        operator: "!".into(),
+                        expression: sway::Expression::from(sway::FunctionCall {
+                            function: sway::Expression::from(sway::MemberAccess {
+                                expression: sway::Expression::from(sway::MemberAccess {
+                                    expression: sway::Expression::Identifier("storage".into()),
+                                    member: constructor_called_variable_name.clone(),
+                                }),
+                                member: "read".into(),
+                            }),
+                            generic_parameters: None,
+                            parameters: vec![],
+                        })
+                    }),
+                    sway::Expression::from(sway::Literal::String(format!("The {} constructor has already been called", translated_definition.name))),
+                ],
+            })));
+    
+            // Set the `constructor_called` storage field to `true` at the end of the function
+            // storage.initialized.write(true);
+            function_body.statements.push(sway::Statement::from(sway::Expression::from(sway::FunctionCall {
+                function: sway::Expression::from(sway::MemberAccess {
+                    expression: sway::Expression::from(sway::MemberAccess {
+                        expression: sway::Expression::Identifier("storage".into()),
+                        member: constructor_called_variable_name.clone(),
+                    }),
+                    member: "write".into(),
+                }),
+                generic_parameters: None,
+                parameters: vec![
+                    sway::Expression::from(sway::Literal::Bool(true)),
+                ],
+            })));
+
+            translated_definition.get_contract_impl().items.insert(0, sway::ImplItem::Function(function));
+            constructor_function = translated_definition.get_contract_impl().items.iter_mut()
+                .find(|i| {
+                    let sway::ImplItem::Function(f) = i else { return false };
+                    f.name == "constructor"
+                })
+                .map(|i| {
+                    let sway::ImplItem::Function(f) = i else { unreachable!() };
+                    f
+                });
+        }
+
+        let constructor_function = constructor_function.unwrap();
+
+        if constructor_function.body.is_none() {
+            constructor_function.body = Some(sway::Block::default());
+        }
+
+        let constructor_body = constructor_function.body.as_mut().unwrap();
+
+        let mut statement_index = 0;
+
+        // Skip past the initial constructor requirements
+        for (i, statement) in constructor_body.statements.iter().enumerate() {
+            let sway::Statement::Expression(sway::Expression::FunctionCall(function_call)) = statement else {
+                statement_index = i;
+                break;
+            };
+
+            let sway::Expression::Identifier(function_name) = &function_call.function else {
+                statement_index = i;
+                break;
+            };
+
+            if function_name != "require" {
+                statement_index = i;
+                break;
+            }
+        }
+
+        // Add the deferred initializations to the constructor body
+        for statement in assignment_statements.into_iter().rev() {
+            constructor_body.statements.insert(statement_index, statement);
+        }
+    }
+
     // Look for toplevel functions that are never called, move their implementation to the abi wrapper function if it exists
     if !matches!(translated_definition.kind.as_ref(), Some(solidity::ContractTy::Abstract(_))) {
         let function_names = translated_definition.functions.iter().map(|f| f.name.clone()).collect::<Vec<_>>();
@@ -312,7 +472,6 @@ pub fn translate_contract_definition(
         }
     }
     
-
     project.translated_definitions.push(translated_definition);
     
     Ok(())

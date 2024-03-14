@@ -1162,7 +1162,7 @@ pub fn translate_member_access_expression(
                     sway::TypeName::Undefined => panic!("Undefined type name"),
 
                     sway::TypeName::Identifier { name, .. } => match (name.as_str(), member) {
-                        ("Vec" | "Bytes", "length") => return Ok(sway::Expression::from(sway::FunctionCall {
+                        ("StorageVec" | "Vec" | "Bytes", "length") => return Ok(sway::Expression::from(sway::FunctionCall {
                             function: sway::Expression::from(sway::MemberAccess {
                                 expression: sway::Expression::Identifier(variable.new_name.clone()),
                                 member: "len".into(),

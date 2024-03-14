@@ -1,6 +1,5 @@
 use super::{
-    create_value_expression, translate_expression, translate_type_name, TranslatedDefinition,
-    TranslatedVariable, TranslationScope,
+    create_value_expression, translate_expression, translate_type_name, DeferredInitialization, TranslatedDefinition, TranslatedVariable, TranslationScope
 };
 use crate::{project::Project, sway, Error};
 use convert_case::Case;
@@ -75,25 +74,64 @@ pub fn translate_state_variable(
         }
     }
 
+    //
+    // TODO: we need to defer initialization of storage variables that can't have an initial value (i.e: StorageString, StorageVec, etc)
+    //
+
+    // Translate the variable's initial value
+    let value_scope = Rc::new(RefCell::new(TranslationScope {
+        parent: Some(translated_definition.toplevel_scope.clone()),
+        ..Default::default()
+    }));
+
+    let value = match &variable_type_name {
+        sway::TypeName::Identifier { name, generic_parameters } => match (name.as_str(), generic_parameters.as_ref()) {
+            // Create deferred initializations for types that can't be initialized with a value
+            ("StorageString", None) | ("StorageVec", Some(_)) => {
+                if let Some(x) = variable_definition.initializer.as_ref() {
+                    let value = translate_expression(project, translated_definition, value_scope.clone(), x)?;
+
+                    translated_definition.deferred_initializations.push(DeferredInitialization {
+                        name: new_name.clone(),
+                        is_storage,
+                        is_constant,
+                        is_configurable,
+                        value,
+                    });
+                }
+
+                sway::Expression::from(sway::Constructor {
+                    type_name: sway::TypeName::Identifier {
+                        name: name.clone(),
+                        generic_parameters: None,
+                    },
+                    fields: vec![],
+                })
+            }
+
+            _ => if let Some(x) = variable_definition.initializer.as_ref() {
+                let value = translate_expression(project, translated_definition, value_scope.clone(), x)?;
+                create_value_expression(translated_definition, value_scope.clone(), &variable_type_name, Some(&value))
+            } else {
+                create_value_expression(translated_definition, value_scope.clone(), &variable_type_name, None)
+            },
+        }
+
+        _ => if let Some(x) = variable_definition.initializer.as_ref() {
+            let value = translate_expression(project, translated_definition, value_scope.clone(), x)?;
+            create_value_expression(translated_definition, value_scope.clone(), &variable_type_name, Some(&value))
+        } else {
+            create_value_expression(translated_definition, value_scope.clone(), &variable_type_name, None)
+        },
+    };
+
     // Handle constant variable definitions
     if is_constant {
-        let value = if let Some(x) = variable_definition.initializer.as_ref() {
-            let scope = Rc::new(RefCell::new(TranslationScope {
-                parent: Some(translated_definition.toplevel_scope.clone()),
-                ..Default::default()
-            }));
-
-            let x = translate_expression(project, translated_definition, scope.clone(), x)?;
-            Some(create_value_expression(translated_definition, scope.clone(), &variable_type_name, Some(&x)))
-        } else {
-            None
-        };
-
         translated_definition.constants.push(sway::Constant {
             is_public,
             name: new_name.clone(),
             type_name: variable_type_name.clone(),
-            value,
+            value: Some(value),
         });
     }
     // Handle immutable variable definitions
@@ -101,23 +139,6 @@ pub fn translate_state_variable(
         //
         // TODO: we need to check if the value is supplied to the constructor and remove it from there
         //
-
-        let value = if let Some(x) = variable_definition.initializer.as_ref() {
-            let scope = Rc::new(RefCell::new(TranslationScope {
-                parent: Some(translated_definition.toplevel_scope.clone()),
-                ..Default::default()
-            }));
-
-            let x = translate_expression(project, translated_definition, scope.clone(), x)?;
-            create_value_expression(translated_definition, scope.clone(), &variable_type_name, Some(&x))
-        } else {
-            let scope = Rc::new(RefCell::new(TranslationScope {
-                parent: Some(translated_definition.toplevel_scope.clone()),
-                ..Default::default()
-            }));
-
-            create_value_expression(translated_definition, scope.clone(), &variable_type_name, None)
-        };
 
         translated_definition.get_configurable().fields.push(sway::ConfigurableField {
             name: new_name.clone(), 
@@ -127,23 +148,6 @@ pub fn translate_state_variable(
     }
     // Handle regular state variable definitions
     else {
-        let value = if let Some(x) = variable_definition.initializer.as_ref() {
-            let scope = Rc::new(RefCell::new(TranslationScope {
-                parent: Some(translated_definition.toplevel_scope.clone()),
-                ..Default::default()
-            }));
-
-            let x = translate_expression(project, translated_definition, scope.clone(), x)?;
-            create_value_expression(translated_definition, scope.clone(), &variable_type_name, Some(&x))
-        } else {
-            let scope = Rc::new(RefCell::new(TranslationScope {
-                parent: Some(translated_definition.toplevel_scope.clone()),
-                ..Default::default()
-            }));
-
-            create_value_expression(translated_definition, scope.clone(), &variable_type_name, None)
-        };
-
         translated_definition.get_storage().fields.push(sway::StorageField {
             name: new_name.clone(),
             type_name: variable_type_name.clone(),
