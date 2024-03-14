@@ -280,7 +280,7 @@ pub fn translate_type_name(
                     }));
 
                     match translate_expression(project, translated_definition, scope.clone(), length.as_ref()) {
-                        Ok(sway::Expression::Literal(sway::Literal::DecInt(length) | sway::Literal::HexInt(length))) => length as usize,
+                        Ok(sway::Expression::Literal(sway::Literal::DecInt(length) | sway::Literal::HexInt(length))) => length.try_into().unwrap(),
                         Ok(_) => panic!("Invalid array length expression: {length:#?}"),
                         Err(e) => panic!("Failed to translate array length expression: {e}"),
                     }

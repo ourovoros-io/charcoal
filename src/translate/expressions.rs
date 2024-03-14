@@ -1,6 +1,8 @@
 use super::{translate_type_name, TranslatedDefinition, TranslatedVariable, TranslationScope};
 use crate::{project::Project, sway, translate::resolve_import, Error};
 use convert_case::Case;
+use num_bigint::BigUint;
+use num_traits::{Num, One, Zero};
 use solang_parser::{helpers::CodeLocation, pt as solidity};
 use std::{cell::RefCell, rc::Rc};
 
@@ -58,7 +60,7 @@ pub fn create_value_expression(
             }
 
             "I8" | "I16" | "I32" | "I64" | "I128" | "I256" => match value.as_ref() {
-                None => sway::Expression::Literal(sway::Literal::DecInt(0)),
+                None => sway::Expression::Literal(sway::Literal::DecInt(BigUint::zero())),
                 
                 Some(value) if matches!(value, sway::Expression::Literal(sway::Literal::DecInt(_) | sway::Literal::HexInt(_))) => (*value).clone(),
                 
@@ -88,7 +90,7 @@ pub fn create_value_expression(
             }
 
             "u8" | "u16" | "u32" | "u64" | "u256" => match value.as_ref() {
-                None => sway::Expression::Literal(sway::Literal::DecInt(0)),
+                None => sway::Expression::Literal(sway::Literal::DecInt(BigUint::zero())),
                 
                 Some(value) if matches!(value, sway::Expression::Literal(sway::Literal::DecInt(_) | sway::Literal::HexInt(_))) => (*value).clone(),
                 
@@ -246,7 +248,7 @@ pub fn create_value_expression(
                 }
 
                 sway::Expression::Array(sway::Array {
-                    elements: s.chars().map(|c| sway::Expression::Literal(sway::Literal::HexInt((c as u8) as u64))).collect(),
+                    elements: s.chars().map(|c| sway::Expression::Literal(sway::Literal::HexInt(BigUint::from(c as u8)))).collect(),
                 })
             }
 
@@ -438,14 +440,14 @@ pub fn translate_literal_expression(
 
         solidity::Expression::HexNumberLiteral(_, value, _) | solidity::Expression::AddressLiteral(_, value) => {
             Ok(sway::Expression::from(sway::Literal::HexInt(
-                u64::from_str_radix(value.trim_start_matches("0x"), 16)
+                BigUint::from_str_radix(value.trim_start_matches("0x"), 16)
                     .map_err(|e| Error::Wrapped(Box::new(e)))?
             )))
         }
 
         solidity::Expression::HexLiteral(hex_literals) => {
             Ok(sway::Expression::from(sway::Literal::HexInt(
-                u64::from_str_radix(
+                BigUint::from_str_radix(
                     hex_literals.iter()
                         .map(|x| x.hex.clone())
                         .collect::<Vec<_>>()
@@ -815,7 +817,7 @@ pub fn translate_member_access_expression(
                 // block.basefee => /*unsupported: block.basefee; using:*/ 0
                 return Ok(sway::Expression::Commented(
                     "unsupported: block.basefee; using:".into(),
-                    Box::new(sway::Expression::from(sway::Literal::DecInt(0))),
+                    Box::new(sway::Expression::from(sway::Literal::DecInt(BigUint::zero()))),
                 ))
             }
 
@@ -823,7 +825,7 @@ pub fn translate_member_access_expression(
                 // block.blobbasefee => /*unsupported: block.blobbasefee; using:*/ 0
                 return Ok(sway::Expression::Commented(
                     "unsupported: block.blobbasefee; using:".into(),
-                    Box::new(sway::Expression::from(sway::Literal::DecInt(0))),
+                    Box::new(sway::Expression::from(sway::Literal::DecInt(BigUint::zero()))),
                 ))
             }
 
@@ -960,7 +962,7 @@ pub fn translate_member_access_expression(
                 // block.difficulty => /*unsupported: block.difficulty; using:*/ 0
                 return Ok(sway::Expression::Commented(
                     "unsupported: block.difficulty; using:".into(),
-                    Box::new(sway::Expression::from(sway::Literal::DecInt(0))),
+                    Box::new(sway::Expression::from(sway::Literal::DecInt(BigUint::zero()))),
                 ))
             }
 
@@ -983,7 +985,7 @@ pub fn translate_member_access_expression(
                 // block.prevrandao => /*unsupported: block.prevrandao; using:*/ 0
                 return Ok(sway::Expression::Commented(
                     "unsupported: block.prevrandao; using:".into(),
-                    Box::new(sway::Expression::from(sway::Literal::DecInt(0))),
+                    Box::new(sway::Expression::from(sway::Literal::DecInt(BigUint::zero()))),
                 ))
             }
 
@@ -1009,8 +1011,8 @@ pub fn translate_member_access_expression(
                     function: sway::Expression::Identifier("std::inputs::input_message_data".into()),
                     generic_parameters: None,
                     parameters: vec![
-                        sway::Expression::from(sway::Literal::DecInt(0)),
-                        sway::Expression::from(sway::Literal::DecInt(0)),
+                        sway::Expression::from(sway::Literal::DecInt(BigUint::zero())),
+                        sway::Expression::from(sway::Literal::DecInt(BigUint::zero())),
                     ],
                 }))
             }
@@ -1037,10 +1039,10 @@ pub fn translate_member_access_expression(
                     "unsupported: msg.sig; using:".into(),
                     Box::new(sway::Expression::from(sway::Array {
                         elements: vec![
-                            sway::Expression::from(sway::Literal::DecInt(0)),
-                            sway::Expression::from(sway::Literal::DecInt(0)),
-                            sway::Expression::from(sway::Literal::DecInt(0)),
-                            sway::Expression::from(sway::Literal::DecInt(0)),
+                            sway::Expression::from(sway::Literal::DecInt(BigUint::zero())),
+                            sway::Expression::from(sway::Literal::DecInt(BigUint::zero())),
+                            sway::Expression::from(sway::Literal::DecInt(BigUint::zero())),
+                            sway::Expression::from(sway::Literal::DecInt(BigUint::zero())),
                         ],
                     })),
                 ))
@@ -1068,7 +1070,7 @@ pub fn translate_member_access_expression(
                     }),
                     generic_parameters: None,
                     parameters: vec![
-                        sway::Expression::from(sway::Literal::DecInt(0)),
+                        sway::Expression::from(sway::Literal::DecInt(BigUint::zero())),
                     ],
                 }))
             }
@@ -1719,7 +1721,7 @@ pub fn translate_function_call_expression(
                                                 }),
                                                 generic_parameters: None,
                                                 parameters: vec![
-                                                    sway::Expression::from(sway::Literal::DecInt(*byte_count as u64)),
+                                                    sway::Expression::from(sway::Literal::DecInt(BigUint::from(*byte_count))),
                                                 ],
                                             }),
                                         }),
@@ -1914,7 +1916,7 @@ pub fn translate_function_call_expression(
                         }),
                         generic_parameters: None,
                         parameters: vec![
-                            sway::Expression::from(sway::Literal::DecInt(0)),
+                            sway::Expression::from(sway::Literal::DecInt(BigUint::zero())),
                         ],
                     }))
                 }
@@ -2006,7 +2008,7 @@ pub fn translate_function_call_expression(
                     
                     Ok(sway::Expression::Commented(
                         "unsupported: ripemd160(); using:".into(),
-                        Box::new(sway::Expression::from(sway::Literal::DecInt(0))),
+                        Box::new(sway::Expression::from(sway::Literal::DecInt(BigUint::zero()))),
                     ))
                 }
 
@@ -2088,7 +2090,7 @@ pub fn translate_function_call_expression(
                             function: sway::Expression::Identifier("revert".into()),
                             generic_parameters: None,
                             parameters: vec![
-                                sway::Expression::from(sway::Literal::DecInt(0)),
+                                sway::Expression::from(sway::Literal::DecInt(BigUint::zero())),
                             ],
                         }));
                     }
@@ -2109,7 +2111,7 @@ pub fn translate_function_call_expression(
                                 function: sway::Expression::Identifier("revert".into()),
                                 generic_parameters: None,
                                 parameters: vec![
-                                    sway::Expression::from(sway::Literal::DecInt(0)),
+                                    sway::Expression::from(sway::Literal::DecInt(BigUint::zero())),
                                 ],
                             })),
                         ],
@@ -2496,7 +2498,7 @@ pub fn translate_function_call_expression(
                                                 ],
                                             }),
                                             parameters: vec![
-                                                sway::Expression::from(sway::Literal::DecInt(1)),
+                                                sway::Expression::from(sway::Literal::DecInt(BigUint::one())),
                                             ],
                                         }),
                                     })));
@@ -3572,7 +3574,7 @@ pub fn translate_address_call_expression(
                                 function: sway::Expression::Identifier("std::inputs::input_amount".into()),
                                 generic_parameters: None,
                                 parameters: vec![
-                                    sway::Expression::from(sway::Literal::DecInt(0)),
+                                    sway::Expression::from(sway::Literal::DecInt(BigUint::zero())),
                                 ],
                             }))),
                         },
@@ -3584,7 +3586,7 @@ pub fn translate_address_call_expression(
                                         function: sway::Expression::Identifier("std::inputs::input_asset_id".into()),
                                         generic_parameters: None,
                                         parameters: vec![
-                                            sway::Expression::from(sway::Literal::DecInt(0)),
+                                            sway::Expression::from(sway::Literal::DecInt(BigUint::zero())),
                                         ],
                                     }),
                                     member: "unwrap".into(),
@@ -4346,7 +4348,7 @@ pub fn translate_new_expression(
                                 name: "i".into(),
                             }),
                             type_name: None,
-                            value: sway::Expression::from(sway::Literal::DecInt(0)),
+                            value: sway::Expression::from(sway::Literal::DecInt(BigUint::zero())),
                         }),
 
                         // while i < length {
@@ -4371,7 +4373,7 @@ pub fn translate_new_expression(
                                         }),
                                         generic_parameters: None,
                                         parameters: vec![
-                                            sway::Expression::from(sway::Literal::DecInt(0)),
+                                            sway::Expression::from(sway::Literal::DecInt(BigUint::zero())),
                                         ],
                                     })),
 
@@ -4379,7 +4381,7 @@ pub fn translate_new_expression(
                                     sway::Statement::from(sway::Expression::from(sway::BinaryExpression {
                                         operator: "+=".into(),
                                         lhs: sway::Expression::Identifier("i".into()),
-                                        rhs: sway::Expression::from(sway::Literal::DecInt(1)),
+                                        rhs: sway::Expression::from(sway::Literal::DecInt(BigUint::one())),
                                     })),
                                 ],
                                 final_expr: None,
@@ -4434,7 +4436,7 @@ pub fn translate_new_expression(
                                 name: "i".into(),
                             }),
                             type_name: None,
-                            value: sway::Expression::from(sway::Literal::DecInt(0)),
+                            value: sway::Expression::from(sway::Literal::DecInt(BigUint::zero())),
                         }),
 
                         // while i < length {
@@ -4459,7 +4461,7 @@ pub fn translate_new_expression(
                                         }),
                                         generic_parameters: None,
                                         parameters: vec![
-                                            sway::Expression::from(sway::Literal::DecInt(0)),
+                                            sway::Expression::from(sway::Literal::DecInt(BigUint::zero())),
                                         ],
                                     })),
 
@@ -4467,7 +4469,7 @@ pub fn translate_new_expression(
                                     sway::Statement::from(sway::Expression::from(sway::BinaryExpression {
                                         operator: "+=".into(),
                                         lhs: sway::Expression::Identifier("i".into()),
-                                        rhs: sway::Expression::from(sway::Literal::DecInt(1)),
+                                        rhs: sway::Expression::from(sway::Literal::DecInt(BigUint::one())),
                                     })),
                                 ],
                                 final_expr: None,

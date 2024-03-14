@@ -1,6 +1,7 @@
 use super::{translate_type_name, TranslatedDefinition, TranslatedEnum};
 use crate::{project::Project, sway, Error};
 use convert_case::Case;
+use num_bigint::BigUint;
 use solang_parser::pt as solidity;
 
 #[inline]
@@ -36,7 +37,7 @@ pub fn translate_enum_definition(
             is_public: false,
             name: crate::translate_naming_convention(value.as_ref().unwrap().name.as_str(), Case::ScreamingSnake),
             type_name: type_definition.name.clone(),
-            value: Some(sway::Expression::from(sway::Literal::DecInt(i as u64))),
+            value: Some(sway::Expression::from(sway::Literal::DecInt(BigUint::from(i)))),
         }));
     }
 

@@ -5,6 +5,8 @@ use super::{
 };
 use crate::{errors::Error, project::Project, sway};
 use convert_case::Case;
+use num_bigint::BigUint;
+use num_traits::{One, Zero};
 use solang_parser::pt as solidity;
 use std::{cell::RefCell, rc::Rc};
 
@@ -445,7 +447,7 @@ pub fn translate_variable_definition_statement(
                                 name: "i".into(),
                             }),
                             type_name: None,
-                            value: sway::Expression::from(sway::Literal::DecInt(0)),
+                            value: sway::Expression::from(sway::Literal::DecInt(BigUint::zero())),
                         }),
 
                         // while i < length {
@@ -478,7 +480,7 @@ pub fn translate_variable_definition_statement(
                                     sway::Statement::from(sway::Expression::from(sway::BinaryExpression {
                                         operator: "+=".into(),
                                         lhs: sway::Expression::Identifier("i".into()),
-                                        rhs: sway::Expression::from(sway::Literal::DecInt(1)),
+                                        rhs: sway::Expression::from(sway::Literal::DecInt(BigUint::one())),
                                     })),
                                 ],
                                 final_expr: None,
@@ -764,7 +766,7 @@ pub fn translate_revert_statement(
                     function: sway::Expression::Identifier("revert".into()),
                     generic_parameters: None,
                     parameters: vec![
-                        sway::Expression::from(sway::Literal::DecInt(0)),
+                        sway::Expression::from(sway::Literal::DecInt(BigUint::zero())),
                     ],
                 }))
             ],
@@ -777,7 +779,7 @@ pub fn translate_revert_statement(
             function: sway::Expression::Identifier("revert".into()),
             generic_parameters: None,
             parameters: vec![
-                sway::Expression::from(sway::Literal::DecInt(0)),
+                sway::Expression::from(sway::Literal::DecInt(BigUint::zero())),
             ],
         })))
     }
@@ -800,7 +802,7 @@ pub fn translate_revert_statement(
                     function: sway::Expression::Identifier("revert".into()),
                     generic_parameters: None,
                     parameters: vec![
-                        sway::Expression::from(sway::Literal::DecInt(0)),
+                        sway::Expression::from(sway::Literal::DecInt(BigUint::zero())),
                     ],
                 }))
             ],

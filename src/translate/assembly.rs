@@ -1,6 +1,8 @@
 use super::{create_value_expression, TranslatedDefinition, TranslatedVariable, TranslationScope};
 use crate::{errors::Error, project::Project, sway};
 use convert_case::Case;
+use num_bigint::BigUint;
+use num_traits::{Num, Zero};
 use solang_parser::{helpers::CodeLocation, pt as solidity};
 use std::{cell::RefCell, rc::Rc};
 
@@ -136,7 +138,7 @@ pub fn translate_yul_expression(
     match expression {
         solidity::YulExpression::BoolLiteral(_, value, _) => Ok(sway::Expression::from(sway::Literal::Bool(*value))),
         solidity::YulExpression::NumberLiteral(_, value, _, _) => Ok(sway::Expression::from(sway::Literal::DecInt(value.parse().unwrap()))),
-        solidity::YulExpression::HexNumberLiteral(_, value, _) => Ok(sway::Expression::from(sway::Literal::HexInt(u64::from_str_radix(value.trim_start_matches("0x"), 16).unwrap()))),
+        solidity::YulExpression::HexNumberLiteral(_, value, _) => Ok(sway::Expression::from(sway::Literal::HexInt(BigUint::from_str_radix(value.trim_start_matches("0x"), 16).unwrap()))),
         solidity::YulExpression::HexStringLiteral(_, _) => todo!("yul hex string literal expression: {expression:#?}"),
         solidity::YulExpression::StringLiteral(string_literal, _) => Ok(sway::Expression::from(sway::Literal::String(string_literal.string.clone()))),
         
@@ -705,7 +707,7 @@ pub fn translate_yul_expression(
                         function: sway::Expression::Identifier("std::inputs::input_message_data_length".into()),
                         generic_parameters: None,
                         parameters: vec![
-                            sway::Expression::from(sway::Literal::DecInt(0)),
+                            sway::Expression::from(sway::Literal::DecInt(BigUint::zero())),
                         ],
                     }))
                 }
@@ -908,7 +910,7 @@ pub fn translate_yul_expression(
                         }),
                         generic_parameters: None,
                         parameters: vec![
-                            sway::Expression::from(sway::Literal::DecInt(0)),
+                            sway::Expression::from(sway::Literal::DecInt(BigUint::zero())),
                         ],
                     }))
                 }

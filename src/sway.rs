@@ -1,5 +1,7 @@
 use std::fmt::Display;
 
+use num_bigint::BigUint;
+
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 pub trait TabbedDisplay {
@@ -530,8 +532,8 @@ impl TabbedDisplay for Constant {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Literal {
     Bool(bool),
-    DecInt(u64),
-    HexInt(u64),
+    DecInt(BigUint),
+    HexInt(BigUint),
     String(String),
 }
 
