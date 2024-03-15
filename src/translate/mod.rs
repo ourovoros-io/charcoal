@@ -77,6 +77,28 @@ pub struct TranslationScope {
 }
 
 impl TranslationScope {
+    pub fn dump(&self, variables: bool, functions: bool) {
+        if let Some(parent) = self.parent.as_ref() {
+            parent.borrow().dump(variables, functions);
+        }
+        
+        if variables {
+            println!("variables:");
+    
+            for v in self.variables.iter() {
+                println!("{v:#?}");
+            }
+        }
+
+        if functions {
+            println!("functions:");
+    
+            for f in self.functions.iter() {
+                println!("{f:#?}");
+            }
+        }
+    }
+    
     #[inline]
     pub fn generate_unique_variable_name(&self, name: &str) -> String {
         let mut result = name.to_string();

@@ -34,7 +34,6 @@ pub fn translate_state_variable(
     translated_definition: &mut TranslatedDefinition,
     variable_definition: &solidity::VariableDefinition,
 ) -> Result<(), Error> {
-    println!("translating {}", variable_definition.name.as_ref().unwrap().name);
     // Collect information about the variable from its attributes
     let is_public = variable_definition.attrs.iter().any(|x| matches!(x, solidity::VariableAttribute::Visibility(solidity::Visibility::External(_) | solidity::Visibility::Public(_))));
     let is_constant = variable_definition.attrs.iter().any(|x| matches!(x, solidity::VariableAttribute::Constant(_)));

@@ -768,15 +768,6 @@ pub fn translate_function_definition(
     let function = match translated_definition.toplevel_scope.borrow().find_function(|f| f.borrow().new_name == new_name) {
         Some(function) => function,
         None => {
-            fn dump_scope(scope: Rc<RefCell<TranslationScope>>) {
-                if let Some(parent) = scope.borrow().parent.as_ref() {
-                    dump_scope(parent.clone());
-                }
-                for f in scope.borrow().functions.iter() {
-                    println!("{f:#?}");
-                }
-            }
-            dump_scope(translated_definition.toplevel_scope.clone());
             panic!(
                 "{}error: Failed to find function `{}.{new_name}` in scope - {:#?}",
                 match project.loc_to_line_and_column(&translated_definition.path, &function_definition.loc) {
