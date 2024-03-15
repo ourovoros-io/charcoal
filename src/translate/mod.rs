@@ -650,7 +650,7 @@ impl TranslatedDefinition {
     }
 
     pub fn get_expression_type(
-        &self,
+        &mut self,
         scope: Rc<RefCell<TranslationScope>>,
         expression: &sway::Expression,
     ) -> Result<sway::TypeName, Error> {
@@ -1564,6 +1564,14 @@ impl TranslatedDefinition {
     
                                 "to_le_bytes" => Ok(sway::TypeName::Identifier {
                                     name: "Bytes".into(),
+                                    generic_parameters: None,
+                                }),
+
+                                "neg" => Ok(sway::TypeName::Identifier {
+                                    name: {
+                                        self.ensure_use_declared("signed_integers::i64::*");
+                                        "I64".into()
+                                    },
                                     generic_parameters: None,
                                 }),
     

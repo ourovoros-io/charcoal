@@ -7,7 +7,7 @@ use crate::{errors::Error, project::Project, sway};
 use convert_case::Case;
 use num_bigint::BigUint;
 use num_traits::{One, Zero};
-use solang_parser::pt as solidity;
+use solang_parser::{helpers::CodeLocation, pt as solidity};
 use std::{cell::RefCell, rc::Rc};
 
 pub fn translate_block(
@@ -70,7 +70,7 @@ pub fn finalize_block_translation(
         if variable.borrow().mutation_count > 0 {
             let let_statement = match &mut block.statements[statement_index] {
                 sway::Statement::Let(let_statement) => let_statement,
-                statement => panic!("Expected let statement, found: {statement:?}"),
+                statement => panic!("Expected let statement, found: {} - {statement:?}", sway::TabbedDisplayer(statement)),
             };
 
             let mark_let_identifier_mutable = |id: &mut sway::LetIdentifier| {
@@ -162,7 +162,17 @@ pub fn translate_statement(
         solidity::Statement::Break(_) => Ok(sway::Statement::from(sway::Expression::Break)),
         solidity::Statement::Return(_, expression) => translate_return_statement(project, translated_definition, scope.clone(), expression),
         solidity::Statement::Revert(_, error_type, parameters) => translate_revert_statement(project, translated_definition, scope.clone(), error_type, parameters),
-        solidity::Statement::RevertNamedArgs(_, _, _) => todo!("translate revert named args statement: {statement:#?}"),
+        
+        solidity::Statement::RevertNamedArgs(_, _, _) => {
+            todo!(
+                "{}TODO: translate revert named args statement: {statement:#?}",
+                match project.loc_to_line_and_column(&translated_definition.path, &statement.loc()) {
+                    Some((line, col)) => format!("{}:{}:{} - ", translated_definition.path.to_string_lossy(), line, col),
+                    None => format!("{} - ", translated_definition.path.to_string_lossy()),
+                },
+            );
+        }
+
         solidity::Statement::Emit(_, expression) => translate_emit_statement(project, translated_definition, scope.clone(), expression),
         solidity::Statement::Try(_, _, _, _) => todo!("translate try statement: {statement:#?}"),
         solidity::Statement::Error(_) => panic!("Encountered a statement that was not parsed correctly"),
@@ -629,7 +639,7 @@ pub fn translate_for_statement(
         final_expr: None,
     };
 
-    finalize_block_translation(project, inner_scope.clone(), &mut block)?;
+    finalize_block_translation(project, scope.clone(), &mut block)?;
 
     Ok(sway::Statement::from(sway::Expression::from(block)))
 }

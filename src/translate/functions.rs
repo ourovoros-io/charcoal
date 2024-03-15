@@ -56,21 +56,14 @@ pub fn translate_function_declaration(
     translated_definition: &mut TranslatedDefinition,
     function_definition: &solidity::FunctionDefinition,
 ) -> Result<TranslatedFunction, Error> {
-    // Collect information about the function from its type
-    let is_constructor = matches!(function_definition.ty, solidity::FunctionTy::Constructor);
-    let is_fallback = matches!(function_definition.ty, solidity::FunctionTy::Fallback);
-    let is_receive = matches!(function_definition.ty, solidity::FunctionTy::Receive);
-
-    let (old_name, mut new_name) = if is_constructor {
-        (String::new(), "constructor".to_string())
-    } else if is_fallback {
-        (String::new(), "fallback".to_string())
-    } else if is_receive {
-        (String::new(), "receive".to_string())
-    } else {
+    let new_name = function_definition.ty.to_string();
+    
+    let (old_name, mut new_name) = if new_name == "function" || new_name == "modifier" {
         let old_name = function_definition.name.as_ref().unwrap().name.clone();
         let new_name = translate_function_name(project, translated_definition, function_definition);
         (old_name, new_name)
+    } else {
+        (String::new(), new_name)
     };
 
     if let Some(solidity::ContractTy::Abstract(_) | solidity::ContractTy::Library(_)) = &translated_definition.kind {
@@ -772,9 +765,28 @@ pub fn translate_function_definition(
     }
 
     // Get the function from the scope
-    let function = match scope.borrow().find_function(|f| f.borrow().new_name == new_name) {
+    let function = match translated_definition.toplevel_scope.borrow().find_function(|f| f.borrow().new_name == new_name) {
         Some(function) => function,
-        None => panic!("ERROR: Failed to find function `{new_name}` in scope"),
+        None => {
+            fn dump_scope(scope: Rc<RefCell<TranslationScope>>) {
+                if let Some(parent) = scope.borrow().parent.as_ref() {
+                    dump_scope(parent.clone());
+                }
+                for f in scope.borrow().functions.iter() {
+                    println!("{f:#?}");
+                }
+            }
+            dump_scope(translated_definition.toplevel_scope.clone());
+            panic!(
+                "{}error: Failed to find function `{}.{new_name}` in scope - {:#?}",
+                match project.loc_to_line_and_column(&translated_definition.path, &function_definition.loc) {
+                    Some((line, col)) => format!("{}:{}:{} - ", translated_definition.path.to_string_lossy(), line, col),
+                    None => format!("{} - ", translated_definition.path.to_string_lossy()),
+                },
+                translated_definition.name,
+                project.translated_definitions,
+            )
+        }
     };
 
     let function = function.borrow();

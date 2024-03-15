@@ -249,7 +249,8 @@ pub fn translate_contract_definition(
         for f in translated_definition.toplevel_scope.borrow().functions.iter() {
             let mut f = f.borrow_mut();
 
-            if f.old_name == function.old_name && f.parameters == function.parameters && f.return_type == function.return_type {
+            if ((!f.old_name.is_empty() && (f.old_name == function.old_name)) || (f.new_name == function.new_name)) && f.parameters == function.parameters && f.return_type == function.return_type {
+                println!("{f:#?} vs {function:#?}");
                 f.new_name = function.new_name.clone();
                 function_exists = true;
                 break;
@@ -257,6 +258,7 @@ pub fn translate_contract_definition(
         }
 
         if !function_exists {
+            println!("Adding {} to {} scope", function.new_name, translated_definition.name);
             translated_definition.toplevel_scope.borrow_mut().functions.push(Rc::new(RefCell::new(function)));
         }
     }

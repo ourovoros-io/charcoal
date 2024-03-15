@@ -155,13 +155,13 @@ See the [Rust Install](https://www.rust-lang.org/tools/install) page for install
 * Inline Assembly Statements
     - [x] Assignments
     - [x] Variable Declarations
-    - [ ] If Statements
-    - [ ] For Statements
-    - [ ] Switch Statements
+    - [x] If Statements
+    - [x] For Statements
+    - [x] Switch Statements
     - [ ] Leave Statements
-    - [ ] Break Statements
-    - [ ] Continue Statements
-    - [ ] Block Statements
+    - [x] Break Statements
+    - [x] Continue Statements
+    - [x] Block Statements
     - [ ] Function Definitions
     - [x] Function Calls
 * Inline Assembly Expressions

@@ -379,6 +379,17 @@ impl TypeName {
         }
     }
 
+    /// Checks if the type name is a signed integer type
+    pub fn is_int(&self) -> bool {
+        match self {
+            TypeName::Identifier { name, generic_parameters: None } => match name.as_str() {
+                "I8" | "I16" | "I32" | "I64" | "I128" | "I256" => true,
+                _ => false,
+            }
+            _ => false,
+        }
+    }
+
     /// Checks to see if the type name is compatible with another type name
     pub fn is_compatible_with(&self, other: &TypeName) -> bool {
         // HACK: Don't check uint value types
