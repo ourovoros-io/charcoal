@@ -8,7 +8,7 @@ pub fn translate_type_definition(
     translated_definition: &mut TranslatedDefinition,
     type_definition: &solidity::TypeDefinition,
 ) -> Result<(), Error> {
-    let underlying_type = translate_type_name(project, translated_definition, &type_definition.ty, false);
+    let underlying_type = translate_type_name(project, translated_definition, &type_definition.ty, false, false);
 
     translated_definition.type_definitions.push(sway::TypeDefinition {
         is_public: true,

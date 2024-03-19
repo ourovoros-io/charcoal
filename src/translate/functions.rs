@@ -83,7 +83,7 @@ pub fn translate_function_declaration(
         
         let old_name = parameter_identifier.name.clone();
         let new_name = crate::translate_naming_convention(old_name.as_str(), Case::Snake);
-        let type_name = translate_type_name(project, translated_definition, &p.ty, false);
+        let type_name = translate_type_name(project, translated_definition, &p.ty, false, true);
 
         scope.borrow_mut().variables.push(Rc::new(RefCell::new(TranslatedVariable {
             old_name,
@@ -135,7 +135,7 @@ pub fn translate_function_declaration(
     for (_, parameter) in function_definition.params.iter() {
         let old_name = parameter.as_ref().unwrap().name.as_ref().map(|n| n.name.clone()).unwrap_or("_".into());
         let new_name = crate::translate_naming_convention(old_name.as_str(), Case::Snake);
-        let mut type_name = translate_type_name(project, translated_definition, &parameter.as_ref().unwrap().ty, false);
+        let mut type_name = translate_type_name(project, translated_definition, &parameter.as_ref().unwrap().ty, false, true);
 
         // Check if the parameter's type is an ABI
         if let sway::TypeName::Identifier { name, generic_parameters: None } = &type_name {
@@ -166,12 +166,12 @@ pub fn translate_function_declaration(
             None
         } else {
             Some(if function_definition.returns.len() == 1 {
-                let type_name = translate_type_name(project, translated_definition, &function_definition.returns[0].1.as_ref().unwrap().ty, false);
+                let type_name = translate_type_name(project, translated_definition, &function_definition.returns[0].1.as_ref().unwrap().ty, false, true);
                 translate_return_type_name(project, translated_definition, type_name)
             } else {
                 sway::TypeName::Tuple {
                     type_names: function_definition.returns.iter().map(|(_, p)| {
-                        let type_name = translate_type_name(project, translated_definition, &p.as_ref().unwrap().ty, false);
+                        let type_name = translate_type_name(project, translated_definition, &p.as_ref().unwrap().ty, false, true);
                         translate_return_type_name(project, translated_definition, type_name)
                     }).collect(),
                 }
@@ -208,7 +208,7 @@ pub fn translate_modifier_definition(
     for (_, p) in function_definition.params.iter() {
         let old_name = p.as_ref().unwrap().name.as_ref().unwrap().name.clone();
         let new_name = crate::translate_naming_convention(old_name.as_str(), Case::Snake);
-        let type_name = translate_type_name(project, translated_definition, &p.as_ref().unwrap().ty, false);
+        let type_name = translate_type_name(project, translated_definition, &p.as_ref().unwrap().ty, false, true);
 
         modifier.parameters.entries.push(sway::Parameter {
             name: new_name.clone(),
@@ -477,7 +477,7 @@ pub fn translate_function_definition(
     for (_, parameter) in function_definition.params.iter() {
         let old_name = parameter.as_ref().unwrap().name.as_ref().map(|n| n.name.clone()).unwrap_or("_".into());
         let new_name = crate::translate_naming_convention(old_name.as_str(), Case::Snake);
-        let mut type_name = translate_type_name(project, translated_definition, &parameter.as_ref().unwrap().ty, false);
+        let mut type_name = translate_type_name(project, translated_definition, &parameter.as_ref().unwrap().ty, false, true);
 
         // Check if the parameter's type is an ABI and make it an Identity
         if let sway::TypeName::Identifier { name, generic_parameters: None } = &type_name {
@@ -535,12 +535,12 @@ pub fn translate_function_definition(
             None
         } else {
             Some(if function_definition.returns.len() == 1 {
-                let type_name = translate_type_name(project, translated_definition, &function_definition.returns[0].1.as_ref().unwrap().ty, false);
+                let type_name = translate_type_name(project, translated_definition, &function_definition.returns[0].1.as_ref().unwrap().ty, false, true);
                 translate_return_type_name(project, translated_definition, type_name)
             } else {
                 sway::TypeName::Tuple {
                     type_names: function_definition.returns.iter().map(|(_, p)| {
-                        let type_name = translate_type_name(project, translated_definition, &p.as_ref().unwrap().ty, false);
+                        let type_name = translate_type_name(project, translated_definition, &p.as_ref().unwrap().ty, false, true);
                         translate_return_type_name(project, translated_definition, type_name)
                     }).collect(),
                 }
@@ -589,7 +589,7 @@ pub fn translate_function_definition(
     for (_, p) in function_definition.params.iter() {
         let old_name = p.as_ref().unwrap().name.as_ref().map(|n| n.name.clone()).unwrap_or("_".into());
         let new_name = crate::translate_naming_convention(old_name.as_str(), Case::Snake);
-        let mut type_name = translate_type_name(project, translated_definition, &p.as_ref().unwrap().ty, false);
+        let mut type_name = translate_type_name(project, translated_definition, &p.as_ref().unwrap().ty, false, true);
         let mut abi_type_name = None;
 
         // Check if the parameter's type is an ABI
@@ -623,7 +623,7 @@ pub fn translate_function_definition(
         let Some(return_parameter) = return_parameter else { continue };
         let Some(old_name) = return_parameter.name.as_ref().map(|n| n.name.clone()) else { continue };
         let new_name = crate::translate_naming_convention(old_name.as_str(), Case::Snake);
-        let mut type_name = translate_type_name(project, translated_definition, &return_parameter.ty, false);
+        let mut type_name = translate_type_name(project, translated_definition, &return_parameter.ty, false, true);
         let mut abi_type_name = None;
 
         // Check if the parameter's type is an ABI

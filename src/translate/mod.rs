@@ -1638,7 +1638,7 @@ impl TranslatedDefinition {
                                     name: "u64".into(),
                                     generic_parameters: None,
                                 }),
-    
+                                
                                 _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
                             }
     
@@ -1658,7 +1658,7 @@ impl TranslatedDefinition {
                                         }
                                     }
                                 }
-    
+                                
                                 todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression))
                             }
     

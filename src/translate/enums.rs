@@ -59,7 +59,7 @@ pub fn translate_event_definition(
     let events_enum_name = format!("{}Event", translated_definition.name);
 
     let type_name = if event_definition.fields.len() == 1 {
-        match translate_type_name(project, translated_definition, &event_definition.fields[0].ty, false) {
+        match translate_type_name(project, translated_definition, &event_definition.fields[0].ty, false, false) {
             sway::TypeName::Identifier { name, .. } if project.find_definition_with_abi(name.as_str()).is_some() => {
                 sway::TypeName::Identifier {
                     name: "Identity".into(),
@@ -72,7 +72,7 @@ pub fn translate_event_definition(
     } else {
         sway::TypeName::Tuple {
             type_names: event_definition.fields.iter().map(|f| {
-                match translate_type_name(project, translated_definition, &f.ty, false) {
+                match translate_type_name(project, translated_definition, &f.ty, false, false) {
                     sway::TypeName::Identifier { name, .. } if project.find_definition_with_abi(name.as_str()).is_some() => {
                         sway::TypeName::Identifier {
                             name: "Identity".into(),
@@ -133,11 +133,11 @@ pub fn translate_error_definition(
     let errors_enum_name = format!("{}Error", translated_definition.name);
 
     let type_name = if error_definition.fields.len() == 1 {
-        translate_type_name(project, translated_definition, &error_definition.fields[0].ty, false)
+        translate_type_name(project, translated_definition, &error_definition.fields[0].ty, false, false)
     } else {
         sway::TypeName::Tuple {
             type_names: error_definition.fields.iter().map(|f| {
-                translate_type_name(project, translated_definition, &f.ty, false)
+                translate_type_name(project, translated_definition, &f.ty, false, false)
             }).collect(),
         }
     };

@@ -160,6 +160,7 @@ impl Project {
         let mut toplevel_structs = vec![];
         let mut toplevel_events = vec![];
         let mut toplevel_errors = vec![];
+        let mut toplevel_functions = vec![];
         let mut contract_names = vec![];
 
         for source_unit_part in source_unit.0.iter() {
@@ -192,7 +193,9 @@ impl Project {
                     toplevel_errors.push(error_definition.as_ref().clone());
                 }
 
-                solidity::SourceUnitPart::FunctionDefinition(_) => todo!("toplevel function definition"),
+                solidity::SourceUnitPart::FunctionDefinition(function_definition) => {
+                    toplevel_functions.push(function_definition.as_ref().clone());
+                },
                 solidity::SourceUnitPart::VariableDefinition(_) => todo!("toplevel variable definition"),
 
                 solidity::SourceUnitPart::TypeDefinition(type_definition) => {
@@ -280,6 +283,7 @@ impl Project {
                 toplevel_structs.as_slice(),
                 toplevel_events.as_slice(),
                 toplevel_errors.as_slice(),
+                toplevel_functions.as_slice(),
                 contract_names.as_slice(),
                 contract_definition,
             )?;

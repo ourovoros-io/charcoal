@@ -1,5 +1,5 @@
 use super::{
-    create_value_expression, translate_expression, translate_type_name, DeferredInitialization, TranslatedDefinition, TranslatedVariable, TranslationScope
+    create_value_expression, translate_expression, translate_type_name, DeferredInitialization, TranslatedDefinition, TranslatedFunction, TranslatedVariable, TranslationScope
 };
 use crate::{project::Project, sway, Error};
 use convert_case::Case;
@@ -54,7 +54,7 @@ pub fn translate_state_variable(
     };
 
     // Translate the variable's type name
-    let mut variable_type_name = translate_type_name(project, translated_definition, &variable_definition.ty, is_storage);
+    let mut variable_type_name = translate_type_name(project, translated_definition, &variable_definition.ty, is_storage, false);
     let mut abi_type_name = None;
 
     // Check if the variable's type is an ABI
@@ -157,7 +157,7 @@ pub fn translate_state_variable(
     
     // Add the storage variable for function scopes
     translated_definition.toplevel_scope.borrow_mut().variables.push(Rc::new(RefCell::new(TranslatedVariable {
-        old_name,
+        old_name: old_name.clone(),
         new_name: new_name.clone(),
         type_name: variable_type_name.clone(),
         abi_type_name,
@@ -228,6 +228,16 @@ pub fn translate_state_variable(
         // Add the function to the abi
         translated_definition.get_abi().functions.push(sway_function.clone());
     }
+
+    // Add the toplevel function to the scope
+    translated_definition.toplevel_scope.borrow_mut().functions.push(Rc::new(RefCell::new(TranslatedFunction {
+        old_name: old_name.clone(),
+        new_name: new_name.clone(),
+        parameters: sway_function.parameters.clone(),
+        constructor_calls: vec![],
+        modifiers: vec![],
+        return_type: sway_function.return_type.clone(),
+    })));
 
     // Create the body for the toplevel function
     sway_function.body = Some(sway::Block {

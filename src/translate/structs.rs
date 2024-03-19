@@ -18,7 +18,7 @@ pub fn translate_struct_definition(
             sway::StructField {
                 is_public: true,
                 name: crate::translate_naming_convention(f.name.as_ref().unwrap().name.as_str(), Case::Snake), // TODO: keep track of original name
-                type_name: translate_type_name(project, translated_definition, &f.ty, false),
+                type_name: translate_type_name(project, translated_definition, &f.ty, false, false),
             }
         }).collect(),
     };

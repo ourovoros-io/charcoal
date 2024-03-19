@@ -7,7 +7,7 @@ use crate::{errors::Error, project::Project, sway};
 use convert_case::Case;
 use num_bigint::BigUint;
 use num_traits::{One, Zero};
-use solang_parser::{helpers::CodeLocation, pt as solidity};
+use solang_parser::pt as solidity;
 use std::{cell::RefCell, rc::Rc};
 
 pub fn translate_block(
@@ -163,14 +163,8 @@ pub fn translate_statement(
         solidity::Statement::Return(_, expression) => translate_return_statement(project, translated_definition, scope.clone(), expression),
         solidity::Statement::Revert(_, error_type, parameters) => translate_revert_statement(project, translated_definition, scope.clone(), error_type, parameters),
         
-        solidity::Statement::RevertNamedArgs(_, _, _) => {
-            todo!(
-                "{}TODO: translate revert named args statement: {statement:#?}",
-                match project.loc_to_line_and_column(&translated_definition.path, &statement.loc()) {
-                    Some((line, col)) => format!("{}:{}:{} - ", translated_definition.path.to_string_lossy(), line, col),
-                    None => format!("{} - ", translated_definition.path.to_string_lossy()),
-                },
-            );
+        solidity::Statement::RevertNamedArgs(_, path, named_args) => {
+            translate_revert_named_arguments(project, translated_definition, scope.clone(), path, named_args)
         }
 
         solidity::Statement::Emit(_, expression) => translate_emit_statement(project, translated_definition, scope.clone(), expression),
@@ -311,7 +305,7 @@ pub fn translate_expression_statement(
                     variables.push(Rc::new(RefCell::new(TranslatedVariable {
                         old_name: name.name.clone(),
                         new_name: crate::translate_naming_convention(name.name.as_str(), Case::Snake),
-                        type_name: translate_type_name(project, translated_definition, &p.ty, false),
+                        type_name: translate_type_name(project, translated_definition, &p.ty, false, false),
                         ..Default::default()
                     })));
                 }
@@ -341,7 +335,7 @@ pub fn translate_expression_statement(
                         type_names: parameters.iter()
                             .map(|(_, p)| {
                                 if let Some(p) = p.as_ref() {
-                                    translate_type_name(project, translated_definition, &p.ty, false)
+                                    translate_type_name(project, translated_definition, &p.ty, false, false)
                                 } else {
                                     sway::TypeName::Identifier {
                                         name: "_".into(),
@@ -399,7 +393,7 @@ pub fn translate_variable_definition_statement(
 ) -> Result<sway::Statement, Error> {
     let old_name = variable_declaration.name.as_ref().unwrap().name.clone();
     let new_name = crate::translate_naming_convention(old_name.as_str(), Case::Snake);
-    let type_name = translate_type_name(project, translated_definition, &variable_declaration.ty, false);
+    let type_name = translate_type_name(project, translated_definition, &variable_declaration.ty, false, false);
     let mut value = None;
 
     if let Some(solidity::Expression::New(_, new_expression)) = initializer.as_ref() {
@@ -407,7 +401,7 @@ pub fn translate_variable_definition_statement(
             panic!("Unexpected new expression: {} - {new_expression:#?}", new_expression);
         };
 
-        let new_type_name = translate_type_name(project, translated_definition, ty, false);
+        let new_type_name = translate_type_name(project, translated_definition, ty, false, false);
 
         if type_name != new_type_name {
             panic!("Invalid new expression type name: expected `{type_name}`, found `{new_type_name}`");
@@ -880,4 +874,24 @@ pub fn translate_emit_statement(
     }
 
     todo!("translate emit statement")
+}
+
+#[inline]
+pub fn translate_revert_named_arguments(
+    project: &mut Project, 
+    translated_definition: &mut TranslatedDefinition, 
+    scope: Rc<RefCell<TranslationScope>>, 
+    path: &Option<solidity::IdentifierPath>, 
+    named_args: &[solidity::NamedArgument]
+) -> Result<sway::Statement, Error> {
+    // TODO: Keep track of the paramerter names and order them correctly
+    let error_identifier = path.as_ref().unwrap().identifiers.first().unwrap().name.clone();
+    if translated_definition.errors_enums.iter().find(|e| 
+        e.0.variants.iter().any(|v| v.name == error_identifier)
+     ).is_some() {
+        let error_expressions: Vec<_> = named_args.iter().map(|arg| arg.expr.clone()).collect();
+        return translate_revert_statement(project, translated_definition, scope, path, &error_expressions)
+    }
+
+    todo!("translate revert named arguments : {:#?}", path)
 }

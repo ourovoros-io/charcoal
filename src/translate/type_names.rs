@@ -41,6 +41,7 @@ pub fn translate_type_name(
     translated_definition: &mut TranslatedDefinition,
     type_name: &solidity::Expression,
     is_storage: bool,
+    is_parameter: bool,
 ) -> sway::TypeName {
     match type_name {
         solidity::Expression::Type(_, type_expression) => match type_expression {
@@ -197,20 +198,48 @@ pub fn translate_type_name(
                 // Ensure `std::hash::Hash` is imported
                 translated_definition.ensure_use_declared("std::hash::Hash");
         
-                sway::TypeName::Identifier {
-                    name: "StorageMap".into(),
-                    generic_parameters: Some(sway::GenericParameterList {
-                        entries: vec![
-                            sway::GenericParameter {
-                                type_name: translate_type_name(project, translated_definition, key.as_ref(), is_storage),
-                                implements: None,
-                            },
-                            sway::GenericParameter {
-                                type_name: translate_type_name(project, translated_definition, value.as_ref(), is_storage),
-                                implements: None,
-                            },
-                        ],
-                    }),
+                if is_parameter {
+                    sway::TypeName::Identifier {
+                        name: "StorageKey".into(),
+                        generic_parameters: Some(sway::GenericParameterList {
+                            entries: vec![
+                                sway::GenericParameter {
+                                    type_name: sway::TypeName::Identifier {
+                                        name: "StorageMap".into(),
+                                        generic_parameters: Some(sway::GenericParameterList {
+                                            entries: vec![
+                                                sway::GenericParameter {
+                                                    type_name: translate_type_name(project, translated_definition, key.as_ref(), is_storage, is_parameter),
+                                                    implements: None,
+                                                },
+                                                sway::GenericParameter {
+                                                    type_name: translate_type_name(project, translated_definition, value.as_ref(), is_storage, is_parameter),
+                                                    implements: None,
+                                                },
+                                            ],
+                                        }),
+                                    },
+                                    implements: None,
+                                },
+                            ],
+                        }),
+                    }
+                } else {
+                    sway::TypeName::Identifier {
+                        name: "StorageMap".into(),
+                        generic_parameters: Some(sway::GenericParameterList {
+                            entries: vec![
+                                sway::GenericParameter {
+                                    type_name: translate_type_name(project, translated_definition, key.as_ref(), is_storage, is_parameter),
+                                    implements: None,
+                                },
+                                sway::GenericParameter {
+                                    type_name: translate_type_name(project, translated_definition, value.as_ref(), is_storage, is_parameter),
+                                    implements: None,
+                                },
+                            ],
+                        }),
+                    }
                 }
             }
 
@@ -271,7 +300,7 @@ pub fn translate_type_name(
 
         solidity::Expression::ArraySubscript(_, type_name, length) => match length.as_ref() {
             Some(length) => sway::TypeName::Array {
-                type_name: Box::new(translate_type_name(project, translated_definition, type_name, is_storage)),
+                type_name: Box::new(translate_type_name(project, translated_definition, type_name, is_storage, is_parameter)),
                 length: {
                     // Create an empty scope to translate the array length expression
                     let scope = Rc::new(RefCell::new(TranslationScope {
@@ -299,7 +328,7 @@ pub fn translate_type_name(
                 generic_parameters: Some(sway::GenericParameterList {
                     entries: vec![
                         sway::GenericParameter {
-                            type_name: translate_type_name(project, translated_definition, type_name, is_storage),
+                            type_name: translate_type_name(project, translated_definition, type_name, is_storage, is_parameter),
                             implements: None,
                         },
                     ],

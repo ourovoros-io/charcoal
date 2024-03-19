@@ -17,7 +17,7 @@ pub fn translate_using_directive(
     using_directive: &solidity::Using,
 ) -> Result<(), Error> {
     let for_type = using_directive.ty.as_ref()
-        .map(|t| translate_type_name(project, translated_definition, t, false))
+        .map(|t| translate_type_name(project, translated_definition, t, false, false))
         .map_or(Ok(None), |t| Ok(Some(t)))?;
 
     match &using_directive.list {
@@ -103,6 +103,7 @@ pub fn translate_contract_definition(
     toplevel_structs: &[solidity::StructDefinition],
     toplevel_events: &[solidity::EventDefinition],
     toplevel_errors: &[solidity::ErrorDefinition],
+    toplevel_functions: &[solidity::FunctionDefinition],
     contract_names: &[String],
     contract_definition: &solidity::ContractDefinition,
 ) -> Result<(), Error> {
@@ -160,6 +161,42 @@ pub fn translate_contract_definition(
     // Translate toplevel error definitions
     for error_definition in toplevel_errors {
         translate_error_definition(project, &mut translated_definition, error_definition)?;
+    }
+
+
+    // Collect each toplevel function ahead of time for contextual reasons
+    for function_definition in toplevel_functions.iter() {
+
+        let is_modifier = matches!(function_definition.ty, solidity::FunctionTy::Modifier);
+
+        if is_modifier {
+            continue;
+        }
+
+        // Add the toplevel function to the list of toplevel functions for the toplevel scope
+        let function = translate_function_declaration(project, &mut translated_definition, function_definition)?;
+        
+        let mut function_exists = false;
+
+
+        for f in translated_definition.toplevel_scope.borrow().functions.iter() {
+            let mut f = f.borrow_mut();
+
+            if ((!f.old_name.is_empty() && (f.old_name == function.old_name)) || (f.new_name == function.new_name)) && f.parameters == function.parameters && f.return_type == function.return_type {
+                f.new_name = function.new_name.clone();
+                function_exists = true;
+                break;
+            }
+        }
+
+        if !function_exists {
+            translated_definition.toplevel_scope.borrow_mut().functions.push(Rc::new(RefCell::new(function)));
+        }
+    }
+
+    // Translate toplevel function definitions
+    for function_definition in toplevel_functions {
+        translate_function_definition(project, &mut translated_definition, function_definition)?;
     }
 
     // Propagate inherited definitions

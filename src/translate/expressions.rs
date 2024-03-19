@@ -1,5 +1,5 @@
 use super::{translate_type_name, TranslatedDefinition, TranslatedVariable, TranslationScope};
-use crate::{project::Project, sway, translate::resolve_import, Error};
+use crate::{project::Project, sway, translate::resolve_import, translate_naming_convention, Error};
 use convert_case::Case;
 use num_bigint::BigUint;
 use num_traits::{Num, One, Zero};
@@ -709,7 +709,7 @@ pub fn translate_member_access_expression(
                         panic!("Invalid type name expression, expected 1 parameter, found {}: {}", args.len(), expression);
                     }
 
-                    let type_name = translate_type_name(project, translated_definition, &args[0], false);
+                    let type_name = translate_type_name(project, translated_definition, &args[0], false, false);
 
                     match &type_name {
                         sway::TypeName::Identifier { name, .. } => match (name.as_str(), member.name.as_str()) {
@@ -1400,6 +1400,27 @@ pub fn translate_function_call_expression(
                     let value_expression = translate_expression(project, translated_definition, scope.clone(), &arguments[0])?;
                     let value_type_name = translated_definition.get_expression_type(scope.clone(), &value_expression)?;
                     let value_type_name = translated_definition.get_underlying_type(&value_type_name);
+
+                    if value_type_name.is_int() {
+                        match &arguments[0] {
+                            solidity::Expression::Negate(_, expr) => {
+                                match expr.as_ref() {
+                                    solidity::Expression::NumberLiteral(_, value, _, _) => {
+                                        let value = value.parse::<BigUint>().map_err(|e| Error::Wrapped(Box::new(e)))?;
+                                        let max = if *bits == 256 {
+                                            BigUint::from_str_radix("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF", 16).map_err(|e| Error::Wrapped(Box::new(e)))?
+                                        } else {
+                                            (BigUint::one() << *bits) - BigUint::one()
+                                        };
+
+                                        return Ok(sway::Expression::from(sway::Literal::HexInt((max - value) + BigUint::one())));
+                                    }
+                                    _ => {}
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
 
                     let create_uint_try_from_unwrap_expression = |from_bits: usize, to_bits: usize, value: sway::Expression| -> Result<sway::Expression, Error> {
                         if from_bits == to_bits {
@@ -2259,13 +2280,13 @@ pub fn translate_function_call_expression(
                             let parameter_types = match &arguments[1] {
                                 solidity::Expression::List(_, parameter_types) => {
                                     parameter_types.iter()
-                                        .map(|(_, p)| translate_type_name(project, translated_definition, &p.as_ref().unwrap().ty, false))
+                                        .map(|(_, p)| translate_type_name(project, translated_definition, &p.as_ref().unwrap().ty, false, false))
                                         .collect::<Vec<_>>()
                                 }
 
                                 solidity::Expression::Parenthesis(_, expression) if matches!(expression.as_ref(), solidity::Expression::Type(_, _)) => {
                                     vec![
-                                        translate_type_name(project, translated_definition, expression, false),
+                                        translate_type_name(project, translated_definition, expression, false, false),
                                     ]
                                 }
 
@@ -4312,9 +4333,58 @@ pub fn translate_new_expression(
     scope: Rc<RefCell<TranslationScope>>,
     expression: &solidity::Expression,
 ) -> Result<sway::Expression, Error> {
-    let solidity::Expression::FunctionCall(_, expr, args) = expression else {
+    let solidity::Expression::FunctionCall(_, mut expr, args) = expression.clone() else {
         todo!("translate new expression: {expression:#?}")
     };
+
+    let block_fields = match expr.clone().as_ref() {
+        solidity::Expression::FunctionCallBlock(_, function, block) => {
+            expr = function.clone();
+
+            let solidity::Statement::Args(_, block_args) = block.as_ref() else {
+                panic!("Malformed function call block, expected args block, found: {block:#?}");
+            };
+
+            let mut fields = vec![];
+
+            for block_arg in block_args.iter() {
+                let value = translate_expression(project, translated_definition, scope.clone(), &block_arg.expr)?;
+
+                match block_arg.name.name.as_str() {
+                    "value" => fields.push(sway::ConstructorField {
+                        name: "coins".into(),
+                        value,
+                    }),
+
+                    "gas" => fields.push(sway::ConstructorField {
+                        name: "gas".into(),
+                        value,
+                    }),
+
+                    arg => println!(
+                        "{}WARNING: unsupported function call block arg: {arg}",
+                        match project.loc_to_line_and_column(&translated_definition.path, &block_arg.loc()) {
+                            Some((line, col)) => format!("{}:{}:{} - ", translated_definition.path.to_string_lossy(), line, col),
+                            None => format!("{} - ", translated_definition.path.to_string_lossy()),
+                        }
+                    ),
+                }
+            }
+
+            Some(fields)
+        }
+
+        _ => None,
+    };
+
+    loop {
+        let solidity::Expression::Parenthesis(_, expression) = expr.as_ref() else { break };
+        expr = expression.clone();
+    }
+
+    if let solidity::Expression::New(_, expression) = expr.as_ref() {
+        expr = expression.clone();
+    }
 
     let args = args.iter()
         .map(|e| translate_expression(project, translated_definition, scope.clone(), e))
@@ -4323,13 +4393,33 @@ pub fn translate_new_expression(
     match expr.as_ref() {
         solidity::Expression::Variable(solidity::Identifier {name, ..}) => {
             if project.find_definition_with_abi(name).is_some() {
-                panic!(
-                    "{}error: Attempting to create a new contract, which is not supported: {expr} - {expr:#?}",
-                    match project.loc_to_line_and_column(&translated_definition.path, &expr.loc()) {
-                        Some((line, col)) => format!("{}:{}:{} - ", translated_definition.path.to_string_lossy(), line, col),
-                        None => format!("{} - ", translated_definition.path.to_string_lossy()),
-                    }
-                )
+                // new Contract(...) => /*unsupported: new Contract(...); using:*/ abi(Contract, Identity::ContractId(ContractId::from(ZERO_B256)))
+
+                translated_definition.ensure_use_declared("std::constants::ZERO_B256");
+
+                return Ok(sway::Expression::Commented(
+                    format!("unsupported: new {expression}; using:"),
+                    Box::new(sway::Expression::from(sway::FunctionCall {
+                        function: sway::Expression::Identifier("abi".into()),
+                        generic_parameters: None,
+                        parameters: vec![
+                            sway::Expression::Identifier(name.clone()),
+                            sway::Expression::from(sway::FunctionCall {
+                                function: sway::Expression::Identifier("Identity::ContractId".into()),
+                                generic_parameters: None,
+                                parameters: vec![
+                                    sway::Expression::from(sway::FunctionCall {
+                                        function: sway::Expression::Identifier("ContractId::from".into()),
+                                        generic_parameters: None,
+                                        parameters: vec![
+                                            sway::Expression::Identifier("ZERO_B256".into()),
+                                        ],
+                                    }),
+                                ],
+                            }),
+                        ],
+                    }))
+                ));
             }
         }
 
@@ -4344,6 +4434,10 @@ pub fn translate_new_expression(
                 //     }
                 //     v
                 // }
+
+                if !block_fields.is_none() {
+                    panic!("Invalid new array expression: expected no block args, found {block_fields:#?}");
+                }
 
                 if args.len() != 1 {
                     panic!("Invalid new array expression: expected 1 argument, found {}", args.len());
@@ -4433,8 +4527,12 @@ pub fn translate_new_expression(
                 //     String::from(v)
                 // }
 
+                if !block_fields.is_none() {
+                    panic!("Invalid new string expression: expected no block args, found {block_fields:#?}");
+                }
+
                 if args.len() != 1 {
-                    panic!("Invalid new array expression: expected 1 argument, found {}", args.len());
+                    panic!("Invalid new string expression: expected 1 argument, found {}", args.len());
                 }
 
                 let length = &args[0];
@@ -4519,7 +4617,7 @@ pub fn translate_new_expression(
             _ => todo!("translate new {} expression: {expression} {expression:#?}", type_name.to_string())
         }
 
-        _ => todo!("translate new expression: {expression:#?}")
+        _ => todo!("translate new expression: {expr:#?} - {expression:#?}")
     }
 
     let name = match expr.as_ref() {
@@ -4531,11 +4629,20 @@ pub fn translate_new_expression(
         _ => todo!("translate new expression: {expression:#?}")
     };
     
-    Ok(sway::Expression::from(sway::FunctionCall {
-        function: sway::Expression::Identifier(name.clone()),
-        generic_parameters: None,
-        parameters: vec![],
-    }))
+    match block_fields {
+        Some(fields) => Ok(sway::Expression::from(sway::FunctionCallBlock {
+            function: sway::Expression::Identifier(name.clone()),
+            generic_parameters: None,
+            fields,
+            parameters: vec![],
+        })),
+
+        None => Ok(sway::Expression::from(sway::FunctionCall {
+            function: sway::Expression::Identifier(name.clone()),
+            generic_parameters: None,
+            parameters: vec![],
+        })),
+    }
 }
 
 #[inline]
