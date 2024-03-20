@@ -1589,13 +1589,19 @@ impl TranslatedDefinition {
                                     generic_parameters: None,
                                 }),
 
-                                "neg" => Ok(sway::TypeName::Identifier {
-                                    name: {
-                                        self.ensure_use_declared("signed_integers::i64::*");
-                                        "I64".into()
-                                    },
-                                    generic_parameters: None,
-                                }),
+                                "neg" => {
+                                    self.ensure_dependency_declared(
+                                        "signed_integers = { git = \"https://github.com/fuellabs/sway-libs\", branch = \"master\" }"
+                                    );
+                    
+                                    Ok(sway::TypeName::Identifier {
+                                        name: {
+                                            self.ensure_use_declared("signed_integers::i64::*");
+                                            "I64".into()
+                                        },
+                                        generic_parameters: None,
+                                    })
+                                }
     
                                 _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
                             }
