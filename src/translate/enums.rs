@@ -257,7 +257,14 @@ pub fn generate_enum_abi_encode_function(
                 
                 sway::TypeName::StringSlice => sway::Expression::from(sway::FunctionCall {
                     function: sway::Expression::from(sway::MemberAccess {
-                        expression: sway::Expression::Identifier(name.into()),
+                        // HACK: encode string slices as string arrays until they are supported in FuelVM
+                        expression: sway::Expression::from(sway::FunctionCall {
+                            function: sway::Expression::Identifier("__to_str_array".into()),
+                            generic_parameters: None,
+                            parameters: vec![
+                                sway::Expression::Identifier(name.into())
+                            ],
+                        }),
                         member: "abi_encode".into(),
                     }),
                     generic_parameters: None,
