@@ -110,34 +110,36 @@ pub fn translate_state_variable(
                 })
             }
 
-            // Check for Identity storage fields that have an abi cast for their initializer
-            ("Identity", None) => if let Some(x) = variable_definition.initializer.as_ref() {
-                let mut value = translate_expression(project, translated_definition, value_scope.clone(), x)?;
-                
-                if let sway::Expression::Commented(comment, expression) = &value {
-                    if let sway::Expression::FunctionCall(function_call) = expression.as_ref() {
-                        if let sway::Expression::Identifier(identifier) = &function_call.function {
-                            if identifier == "abi" && function_call.parameters.len() == 2 {
-                                value = sway::Expression::Commented(comment.clone(), Box::new(function_call.parameters[1].clone()));
+            // HACK: Check for Identity storage fields that have an abi cast for their initializer
+            ("Identity", None) => {
+                let initializer = variable_definition.initializer.as_ref()
+                    .map(|x| {
+                        let mut value = translate_expression(project, translated_definition, value_scope.clone(), x);
+                        
+                        if let Ok(sway::Expression::Commented(comment, expression)) = &value {
+                            if let sway::Expression::FunctionCall(function_call) = expression.as_ref() {
+                                if let sway::Expression::Identifier(identifier) = &function_call.function {
+                                    if identifier == "abi" && function_call.parameters.len() == 2 {
+                                        value = Ok(sway::Expression::Commented(comment.clone(), Box::new(function_call.parameters[1].clone())));
+                                    }
+                                }
                             }
                         }
-                    }
-                }
 
-                create_value_expression(translated_definition, value_scope.clone(), &variable_type_name, Some(&value))
-            } else {
-                create_value_expression(translated_definition, value_scope.clone(), &variable_type_name, None)
-            },
+                        value
+                    })
+                    .transpose()?;
+                
+                create_value_expression(translated_definition, value_scope.clone(), &variable_type_name, initializer.as_ref())
+            }
 
-            _ => if let Some(x) = variable_definition.initializer.as_ref() {
-                let value = translate_expression(project, translated_definition, value_scope.clone(), x)?;
-                if let sway::Expression::Commented(_, _) = &value {
-                    panic!("Found {variable_type_name} commented initializer: {value:#?}");
-                }
-                create_value_expression(translated_definition, value_scope.clone(), &variable_type_name, Some(&value))
-            } else {
-                create_value_expression(translated_definition, value_scope.clone(), &variable_type_name, None)
-            },
+            _ => {
+                let initializer = variable_definition.initializer.as_ref()
+                    .map(|x| translate_expression(project, translated_definition, value_scope.clone(), x))
+                    .transpose()?;
+
+                create_value_expression(translated_definition, value_scope.clone(), &variable_type_name, initializer.as_ref())
+            }
         }
 
         _ => if let Some(x) = variable_definition.initializer.as_ref() {
