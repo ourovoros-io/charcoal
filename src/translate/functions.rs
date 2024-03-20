@@ -247,16 +247,30 @@ pub fn translate_modifier_definition(
                 modifier.has_underscore = true;
                 
                 if let Some(block) = current_body.as_mut() {
-                    for variable in current_scope.borrow_mut().variables.iter() {
-                        if variable.borrow().is_storage {
-                            if variable.borrow().read_count != 0 {
-                                *has_storage_read = true;
+                    let mut scope = Some(current_scope.clone());
+
+                    while let Some(current_scope) = scope {
+                        for variable in current_scope.borrow_mut().variables.iter() {
+                            if *has_storage_read && *has_storage_write {
+                                break;
                             }
 
-                            if variable.borrow().mutation_count != 0 {
-                                *has_storage_write = true;
+                            if variable.borrow().is_storage {
+                                if variable.borrow().read_count != 0 {
+                                    *has_storage_read = true;
+                                }
+    
+                                if variable.borrow().mutation_count != 0 {
+                                    *has_storage_write = true;
+                                }
                             }
                         }
+
+                        if *has_storage_read && *has_storage_write {
+                            break;
+                        }
+
+                        scope = current_scope.borrow().parent.clone();
                     }
 
                     finalize_block_translation(project, current_scope.clone(), block)?;
