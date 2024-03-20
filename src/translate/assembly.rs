@@ -1,4 +1,7 @@
-use super::{create_value_expression, finalize_block_translation, TranslatedDefinition, TranslatedVariable, TranslationScope};
+use super::{
+    create_value_expression, finalize_block_translation, TranslatedDefinition, TranslatedVariable,
+    TranslationScope,
+};
 use crate::{errors::Error, project::Project, sway};
 use convert_case::Case;
 use num_bigint::BigUint;

@@ -1,5 +1,6 @@
 use super::{
-    create_value_expression, translate_expression, translate_type_name, DeferredInitialization, TranslatedDefinition, TranslatedFunction, TranslatedVariable, TranslationScope
+    create_value_expression, translate_expression, translate_type_name, DeferredInitialization,
+    TranslatedDefinition, TranslatedFunction, TranslatedVariable, TranslationScope,
 };
 use crate::{project::Project, sway, Error};
 use convert_case::Case;

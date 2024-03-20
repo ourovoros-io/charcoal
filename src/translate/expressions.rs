@@ -1,5 +1,5 @@
 use super::{translate_type_name, TranslatedDefinition, TranslatedVariable, TranslationScope};
-use crate::{project::Project, sway, translate::resolve_import, translate_naming_convention, Error};
+use crate::{project::Project, sway, translate::resolve_import, Error};
 use convert_case::Case;
 use num_bigint::BigUint;
 use num_traits::{Num, One, Zero};

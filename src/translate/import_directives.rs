@@ -1,5 +1,5 @@
-use crate::{errors::Error, project::Project};
 use super::TranslatedDefinition;
+use crate::{errors::Error, project::Project};
 use solang_parser::pt as solidity;
 use std::path::{Path, PathBuf};
 

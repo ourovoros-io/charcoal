@@ -1,5 +1,5 @@
-use std::path::PathBuf;
 use solang_parser::diagnostics::Diagnostic;
+use std::path::PathBuf;
 
 #[derive(Debug)]
 pub enum Error {

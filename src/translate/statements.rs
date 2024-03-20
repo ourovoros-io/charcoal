@@ -65,6 +65,7 @@ pub fn finalize_block_translation(
     for variable in scope.borrow().variables.iter() {
         // Only check variables that are declared as statements
         let Some(statement_index) = variable.borrow().statement_index else { continue };
+        println!("{:#?}", variable.borrow());
 
         // If the variable has any mutations, mark it as mutable
         if variable.borrow().mutation_count > 0 {
@@ -546,21 +547,24 @@ pub fn translate_for_statement(
     //     }                    
     // }
 
-    let inner_scope = Rc::new(RefCell::new(TranslationScope {
+    // Create a scope for the block that will contain the for loop logic
+    let scope = Rc::new(RefCell::new(TranslationScope {
         parent: Some(scope.clone()),
         ..Default::default()
     }));
 
+    // Collect statements for the for loop logic block
     let mut statements = vec![];
 
+    // Translate and initialization statement (if any) and add it to the for loop logic block's statements
     if let Some(initialization) = initialization.as_ref() {
         let statement_index = statements.len();
-        let mut statement = translate_statement(project, translated_definition, inner_scope.clone(), initialization.as_ref())?;
+        let mut statement = translate_statement(project, translated_definition, scope.clone(), initialization.as_ref())?;
 
         // Store the statement index of variable declaration statements in their scope entries
         if let sway::Statement::Let(sway::Let { pattern, .. }) = &mut statement {
             let store_let_identifier_statement_index = |id: &mut sway::LetIdentifier| {
-                let Some(variable) = inner_scope.borrow().get_variable_from_new_name(&id.name) else {
+                let Some(variable) = scope.borrow().get_variable_from_new_name(&id.name) else {
                     panic!("error: Variable not found in scope: \"{}\"", id.name);
                 };
                 
@@ -576,15 +580,17 @@ pub fn translate_for_statement(
         statements.push(statement);
     }
 
+    // Translate the condition of the for loop ahead of time (if any)
     let condition = if let Some(condition) = condition.as_ref() {
-        translate_expression(project, translated_definition, inner_scope.clone(), condition.as_ref())?
+        translate_expression(project, translated_definition, scope.clone(), condition.as_ref())?
     } else {
         sway::Expression::from(sway::Literal::Bool(true))
     };
 
+    // Translate the body of the for loop ahead of time (if any)
     let mut body = match body.as_ref() {
         None => sway::Block::default(),
-        Some(body) => match translate_statement(project, translated_definition, inner_scope.clone(), body.as_ref())? {
+        Some(body) => match translate_statement(project, translated_definition, scope.clone(), body.as_ref())? {
             sway::Statement::Expression(sway::Expression::Block(block)) => *block,
             statement => sway::Block {
                 statements: vec![statement],
@@ -593,6 +599,7 @@ pub fn translate_for_statement(
         }
     };
 
+    // Translate the update statement of the for loop ahead of time (if any)
     if let Some(update) = update.as_ref() {
         body.statements.push(sway::Statement::from(
             match update.as_ref() {
@@ -600,7 +607,7 @@ pub fn translate_for_statement(
                 solidity::Expression::PreDecrement(loc, x)
                 | solidity::Expression::PostDecrement(loc, x) => translate_assignment_expression(project, 
                     translated_definition,
-                    inner_scope.clone(),
+                    scope.clone(),
                     "-=",
                     x,
                     &solidity::Expression::NumberLiteral(*loc, "1".into(), "".into(), None),
@@ -610,17 +617,18 @@ pub fn translate_for_statement(
                 solidity::Expression::PreIncrement(loc, x)
                 | solidity::Expression::PostIncrement(loc, x) => translate_assignment_expression(project, 
                     translated_definition,
-                    inner_scope.clone(),
+                    scope.clone(),
                     "+=",
                     x,
                     &solidity::Expression::NumberLiteral(*loc, "1".into(), "".into(), None),
                 )?,
     
-                _ => translate_expression(project, translated_definition, inner_scope.clone(), update.as_ref())?
+                _ => translate_expression(project, translated_definition, scope.clone(), update.as_ref())?
             }
         ));
     }
 
+    // Create and add the while loop to the for loop logic block's statements
     statements.push(
         sway::Statement::from(sway::Expression::from(sway::While {
             condition,
@@ -628,11 +636,13 @@ pub fn translate_for_statement(
         }))
     );
 
+    // Create the for loop logic block using the collected statements
     let mut block = sway::Block {
         statements,
         final_expr: None,
     };
 
+    // Finalize the for loop logic block
     finalize_block_translation(project, scope.clone(), &mut block)?;
 
     Ok(sway::Statement::from(sway::Expression::from(block)))
