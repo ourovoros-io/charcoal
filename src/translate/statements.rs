@@ -65,7 +65,6 @@ pub fn finalize_block_translation(
     for variable in scope.borrow().variables.iter() {
         // Only check variables that are declared as statements
         let Some(statement_index) = variable.borrow().statement_index else { continue };
-        println!("{:#?}", variable.borrow());
 
         // If the variable has any mutations, mark it as mutable
         if variable.borrow().mutation_count > 0 {
@@ -556,7 +555,7 @@ pub fn translate_for_statement(
     // Collect statements for the for loop logic block
     let mut statements = vec![];
 
-    // Translate and initialization statement (if any) and add it to the for loop logic block's statements
+    // Translate the initialization statement (if any) and add it to the for loop logic block's statements
     if let Some(initialization) = initialization.as_ref() {
         let statement_index = statements.len();
         let mut statement = translate_statement(project, translated_definition, scope.clone(), initialization.as_ref())?;
@@ -599,7 +598,7 @@ pub fn translate_for_statement(
         }
     };
 
-    // Translate the update statement of the for loop ahead of time (if any)
+    // Translate the update statement of the for loop (if any) and add it to the end of the for loop's body block
     if let Some(update) = update.as_ref() {
         body.statements.push(sway::Statement::from(
             match update.as_ref() {
@@ -628,13 +627,19 @@ pub fn translate_for_statement(
         ));
     }
 
-    // Create and add the while loop to the for loop logic block's statements
-    statements.push(
-        sway::Statement::from(sway::Expression::from(sway::While {
-            condition,
-            body,
-        }))
-    );
+    // Create the while loop for the for loop logic ahead of time
+    let while_statement = sway::Statement::from(sway::Expression::from(sway::While {
+        condition,
+        body,
+    }));
+
+    // If we don't have any initialization statements, just return the generated while loop
+    if statements.is_empty() {
+        return Ok(while_statement);
+    }
+    
+    // Add the generated while loop to the for loop logic block's statements
+    statements.push(while_statement);
 
     // Create the for loop logic block using the collected statements
     let mut block = sway::Block {

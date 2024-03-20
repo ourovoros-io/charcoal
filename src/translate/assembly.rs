@@ -236,21 +236,24 @@ pub fn translate_yul_for_statement(
     //     }                    
     // }
 
-    let inner_scope = Rc::new(RefCell::new(TranslationScope {
+    // Create a scope for the block that will contain the for loop logic
+    let scope = Rc::new(RefCell::new(TranslationScope {
         parent: Some(scope.clone()),
         ..Default::default()
     }));
 
+    // Collect statements for the for loop logic block
     let mut statements = vec![];
 
+    // Translate the initialization statements and add them to the for loop logic block's statements
     for statement in yul_for.init_block.statements.iter() {
         let statement_index = statements.len();
-        let mut statement = translate_yul_statement(project, translated_definition, inner_scope.clone(), statement)?;
+        let mut statement = translate_yul_statement(project, translated_definition, scope.clone(), statement)?;
 
         // Store the statement index of variable declaration statements in their scope entries
         if let sway::Statement::Let(sway::Let { pattern, .. }) = &mut statement {
             let store_let_identifier_statement_index = |id: &mut sway::LetIdentifier| {
-                let Some(variable) = inner_scope.borrow().get_variable_from_new_name(&id.name) else {
+                let Some(variable) = scope.borrow().get_variable_from_new_name(&id.name) else {
                     panic!("error: Variable not found in scope: \"{}\"", id.name);
                 };
                 
@@ -266,32 +269,40 @@ pub fn translate_yul_for_statement(
         statements.push(statement);
     }
 
-    let condition = translate_yul_expression(project, translated_definition, inner_scope.clone(), &yul_for.condition)?;
+    // Translate the condition of the for loop ahead of time
+    let condition = translate_yul_expression(project, translated_definition, scope.clone(), &yul_for.condition)?;
 
-    let mut body = translate_yul_block(project, translated_definition, inner_scope.clone(), &yul_for.execution_block)?;
+    // Translate the body of the for loop ahead of time
+    let mut body = translate_yul_block(project, translated_definition, scope.clone(), &yul_for.execution_block)?;
 
+    // Translate the statements of the post block of the for loop and add them to the end of for loop's body block
     for statement in yul_for.post_block.statements.iter() {
         body.statements.push(
-            translate_yul_statement(project, translated_definition, inner_scope.clone(), statement)?
+            translate_yul_statement(project, translated_definition, scope.clone(), statement)?
         );
     }
 
+    // Create the while loop for the for loop logic ahead of time
     let while_statement = sway::Statement::from(sway::Expression::from(sway::While {
         condition,
         body,
     }));
 
+    // If we don't have any initialization statements, just return the generated while loop
     if statements.is_empty() {
         return Ok(while_statement);
     }
-
+    
+    // Add the generated while loop to the for loop logic block's statements
     statements.push(while_statement);
 
+    // Create the for loop logic block using the collected statements
     let mut block = sway::Block {
         statements,
         final_expr: None,
     };
 
+    // Finalize the for loop logic block
     finalize_block_translation(project, scope.clone(), &mut block)?;
 
     Ok(sway::Statement::from(sway::Expression::from(block)))
