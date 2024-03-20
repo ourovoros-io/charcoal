@@ -11,12 +11,12 @@ pub fn translate_struct_definition(
 ) -> Result<(), Error> {
     let struct_definition = sway::Struct {
         attributes: None,
-        is_public: true,
+        is_public: false,
         name: struct_definition.name.as_ref().unwrap().name.clone(),
         generic_parameters: None,
         fields: struct_definition.fields.iter().map(|f| {
             sway::StructField {
-                is_public: true,
+                is_public: false,
                 name: crate::translate_naming_convention(f.name.as_ref().unwrap().name.as_str(), Case::Snake), // TODO: keep track of original name
                 type_name: translate_type_name(project, translated_definition, &f.ty, false, false),
             }
