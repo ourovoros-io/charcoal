@@ -83,20 +83,20 @@ fn translate_project() -> Result<(), Error> {
             .map_err(|e| Error::Wrapped(Box::new(e)))?;
     }
 
-    let mut project = Project::default();
-
-    if options.target.is_dir() {
-        project.detect_project_type(options.target.as_path())?;
-    } else if let Some(root_path) = project.find_project_root_folder(options.target.as_path()) {
-        project.detect_project_type(root_path)?;
-    } else {
-        project.project_type = crate::project::ProjectType::Unknown;
-    }
-    
     let source_unit_paths = collect_source_unit_paths(&options.target)
         .map_err(|e| Error::Wrapped(Box::new(e)))?;
     
     for source_unit_path in &source_unit_paths {
+        let mut project = Project::default();
+    
+        if options.target.is_dir() {
+            project.detect_project_type(options.target.as_path())?;
+        } else if let Some(root_path) = project.find_project_root_folder(options.target.as_path()) {
+            project.detect_project_type(root_path)?;
+        } else {
+            project.project_type = crate::project::ProjectType::Unknown;
+        }
+        
         project.translate(options.definition_name.as_ref(), source_unit_path)?;
 
         match options.output_directory.as_ref() {
