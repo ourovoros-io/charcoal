@@ -282,9 +282,7 @@ impl Display for TranslatedDefinition {
         }
 
         for (i, x) in self.enums.iter().enumerate() {
-            if i == 0 && written > 0 {
-                writeln!(f)?;
-            } else if i > 0 {
+            if (i == 0 && written > 0) || i > 0 {
                 writeln!(f)?;
             }
 
@@ -295,9 +293,7 @@ impl Display for TranslatedDefinition {
         }
 
         for (i, x) in self.structs.iter().enumerate() {
-            if i == 0 && written > 0 {
-                writeln!(f)?;
-            } else if i > 0 {
+            if (i == 0 && written > 0) || i > 0 {
                 writeln!(f)?;
             }
 
@@ -306,9 +302,7 @@ impl Display for TranslatedDefinition {
         }
         
         for (i, (events_enum, abi_encode_impl)) in self.events_enums.iter().enumerate() {
-            if i == 0 && written > 0 {
-                writeln!(f)?;
-            } else if i > 0 {
+            if (i == 0 && written > 0) || i > 0 {
                 writeln!(f)?;
             }
 
@@ -319,9 +313,7 @@ impl Display for TranslatedDefinition {
         }
 
         for (i, (errors_enum, abi_encode_impl)) in self.errors_enums.iter().enumerate() {
-            if i == 0 && written > 0 {
-                writeln!(f)?;
-            } else if i > 0 {
+            if (i == 0 && written > 0) || i > 0 {
                 writeln!(f)?;
             }
 
@@ -332,9 +324,7 @@ impl Display for TranslatedDefinition {
         }
         
         for (i, x) in self.abis.iter().enumerate() {
-            if i == 0 && written > 0 {
-                writeln!(f)?;
-            } else if i > 0 {
+            if (i == 0 && written > 0) || i > 0 {
                 writeln!(f)?;
             }
 
@@ -370,23 +360,17 @@ impl Display for TranslatedDefinition {
         }
 
         for (i, x) in self.functions.iter().enumerate() {
-            if i == 0 && written > 0 {
-                writeln!(f)?;
-            } else if i > 0 {
+            if (i == 0 && written > 0) || i > 0 {
                 writeln!(f)?;
             }
-
             writeln!(f, "{}", sway::TabbedDisplayer(x))?;
             written += 1;
         }
         
         for (i, x) in self.impls.iter().enumerate() {
-            if i == 0 && written > 0 {
-                writeln!(f)?;
-            } else if i > 0 {
+            if (i == 0 && written > 0) || i > 0 {
                 writeln!(f)?;
             }
-
             writeln!(f, "{}", sway::TabbedDisplayer(x))?;
             written += 1;
         }
@@ -395,10 +379,10 @@ impl Display for TranslatedDefinition {
     }
 }
 
-impl Into<sway::Module> for TranslatedDefinition {
-    fn into(self) -> sway::Module {
+impl From<TranslatedDefinition> for sway::Module {
+    fn from(val: TranslatedDefinition) -> Self {
         let mut result = sway::Module {
-            kind: match self.kind.as_ref().unwrap() {
+            kind: match val.kind.as_ref().unwrap() {
                 solidity::ContractTy::Abstract(_)
                 | solidity::ContractTy::Contract(_)
                 | solidity::ContractTy::Interface(_) => sway::ModuleKind::Contract,
@@ -408,62 +392,62 @@ impl Into<sway::Module> for TranslatedDefinition {
             items: vec![],
         };
 
-        for x in self.uses.iter() {
+        for x in val.uses.iter() {
             result.items.push(sway::ModuleItem::Use(x.clone()));
         }
 
-        for x in self.constants.iter() {
+        for x in val.constants.iter() {
             result.items.push(sway::ModuleItem::Constant(x.clone()));
         }
 
-        for x in self.type_definitions.iter() {
+        for x in val.type_definitions.iter() {
             result.items.push(sway::ModuleItem::TypeDefinition(x.clone()));
         }
 
-        for x in self.enums.iter() {
+        for x in val.enums.iter() {
             result.items.push(sway::ModuleItem::TypeDefinition(x.type_definition.clone()));
             result.items.push(sway::ModuleItem::Impl(x.variants_impl.clone()));
         }
 
-        for x in self.structs.iter() {
+        for x in val.structs.iter() {
             result.items.push(sway::ModuleItem::Struct(x.clone()));
         }
         
-        for (events_enum, abi_encode_impl) in self.events_enums.iter() {
+        for (events_enum, abi_encode_impl) in val.events_enums.iter() {
             result.items.push(sway::ModuleItem::Enum(events_enum.clone()));
             result.items.push(sway::ModuleItem::Impl(abi_encode_impl.clone()));
         }
 
-        for (errors_enum, abi_encode_impl) in self.errors_enums.iter() {
+        for (errors_enum, abi_encode_impl) in val.errors_enums.iter() {
             result.items.push(sway::ModuleItem::Enum(errors_enum.clone()));
             result.items.push(sway::ModuleItem::Impl(abi_encode_impl.clone()));
         }
         
-        for x in self.abis.iter() {
+        for x in val.abis.iter() {
             result.items.push(sway::ModuleItem::Abi(x.clone()));
         }
         
-        if let Some(x) = self.abi.as_ref() {
+        if let Some(x) = val.abi.as_ref() {
             result.items.push(sway::ModuleItem::Abi(x.clone()));
         }
         
-        if let Some(x) = self.storage.as_ref() {
+        if let Some(x) = val.storage.as_ref() {
             result.items.push(sway::ModuleItem::Storage(x.clone()));
         }
         
-        if let Some(x) = self.configurable.as_ref() {
+        if let Some(x) = val.configurable.as_ref() {
             result.items.push(sway::ModuleItem::Configurable(x.clone()));
         }
 
-        for x in self.functions.iter() {
-            if let Some(0) = self.function_call_counts.get(&x.name) {
+        for x in val.functions.iter() {
+            if let Some(0) = val.function_call_counts.get(&x.name) {
                 continue;
             }
 
             result.items.push(sway::ModuleItem::Function(x.clone()));
         }
         
-        for x in self.impls.iter() {
+        for x in val.impls.iter() {
             result.items.push(sway::ModuleItem::Impl(x.clone()));
         }
 
@@ -1092,7 +1076,7 @@ impl TranslatedDefinition {
                             }
     
                             ("I8", None) => match member_access.member.as_str() {
-                                "neg" => return Ok(sway::TypeName::Identifier {
+                                "neg" => Ok(sway::TypeName::Identifier {
                                     name: "I8".into(),
                                     generic_parameters: None,
                                 }),
@@ -1101,7 +1085,7 @@ impl TranslatedDefinition {
                             }
 
                             ("I16", None) => match member_access.member.as_str() {
-                                "neg" => return Ok(sway::TypeName::Identifier {
+                                "neg" => Ok(sway::TypeName::Identifier {
                                     name: "I16".into(),
                                     generic_parameters: None,
                                 }),
@@ -1110,7 +1094,7 @@ impl TranslatedDefinition {
                             }
 
                             ("I32", None) => match member_access.member.as_str() {
-                                "neg" => return Ok(sway::TypeName::Identifier {
+                                "neg" => Ok(sway::TypeName::Identifier {
                                     name: "I32".into(),
                                     generic_parameters: None,
                                 }),
@@ -1119,7 +1103,7 @@ impl TranslatedDefinition {
                             }
 
                             ("I64", None) => match member_access.member.as_str() {
-                                "neg" => return Ok(sway::TypeName::Identifier {
+                                "neg" => Ok(sway::TypeName::Identifier {
                                     name: "I64".into(),
                                     generic_parameters: None,
                                 }),
@@ -1128,7 +1112,7 @@ impl TranslatedDefinition {
                             }
 
                             ("I128", None) => match member_access.member.as_str() {
-                                "neg" => return Ok(sway::TypeName::Identifier {
+                                "neg" => Ok(sway::TypeName::Identifier {
                                     name: "I128".into(),
                                     generic_parameters: None,
                                 }),
@@ -1137,7 +1121,7 @@ impl TranslatedDefinition {
                             }
 
                             ("I256", None) => match member_access.member.as_str() {
-                                "neg" => return Ok(sway::TypeName::Identifier {
+                                "neg" => Ok(sway::TypeName::Identifier {
                                     name: "I256".into(),
                                     generic_parameters: None,
                                 }),
@@ -1891,8 +1875,8 @@ impl TranslatedDefinition {
                         }
                         
                         _ => {}
-                    }
-
+                    }   
+                
                     // Check to see if container is a struct
                     if let Some(struct_definition) = self.structs.iter().find(|s| s.name == type_name_string) {
                         let Some(field) = struct_definition.fields.iter().find(|f| f.name == member_access.member) else {

@@ -370,10 +370,7 @@ impl TypeName {
     /// Checks if the type name is an unsigned integer type
     pub fn is_uint(&self) -> bool {
         match self {
-            TypeName::Identifier { name, generic_parameters: None } => match name.as_str() {
-                "u8" | "u16" | "u32" | "u64" | "u256" | "U128" | "U256" => true,
-                _ => false,
-            }
+            TypeName::Identifier { name, generic_parameters: None } => matches!(name.as_str(), "u8" | "u16" | "u32" | "u64" | "u256" | "U128" | "U256"),
             _ => false,
         }
     }
@@ -381,10 +378,7 @@ impl TypeName {
     /// Checks if the type name is a signed integer type
     pub fn is_int(&self) -> bool {
         match self {
-            TypeName::Identifier { name, generic_parameters: None } => match name.as_str() {
-                "I8" | "I16" | "I32" | "I64" | "I128" | "I256" => true,
-                _ => false,
-            }
+            TypeName::Identifier { name, generic_parameters: None } => matches!(name.as_str(), "I8" | "I16" | "I32" | "I64" | "I128" | "I256"),
             _ => false,
         }
     }
@@ -1037,6 +1031,7 @@ impl TabbedDisplay for Block {
 pub enum Statement {
     Let(Let),
     Expression(Expression),
+    Commented(String, Option<Box<Statement>>)
     // TODO: finish
 }
 
@@ -1056,6 +1051,15 @@ impl TabbedDisplay for Statement {
                 }
 
                 Ok(())
+            }
+            Statement::Commented(comment, statement) => {
+                match statement.as_ref() {
+                    Some(statement) => {
+                        writeln!(f, "/* {comment} */")?;
+                        statement.tabbed_fmt(depth, f)
+                    },
+                    None => write!(f, "/* {comment} */"),
+                }
             }
         }
     }

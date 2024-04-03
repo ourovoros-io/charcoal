@@ -94,7 +94,7 @@ impl Project {
 
     #[inline]
     pub fn loc_to_line_and_column<P: AsRef<Path>>(&self, path: P, loc: &solidity::Loc) -> Option<(usize, usize)> {
-        let Some(line_ranges) = self.line_ranges.get(path.as_ref()) else { return None };
+        let line_ranges = self.line_ranges.get(path.as_ref())?;
 
         let start = match loc {
             solidity::Loc::Builtin
@@ -292,22 +292,6 @@ impl Project {
         Ok(())
     }
 
-    /// Recursively check to find the root folder of the project and return a [PathBuf]
-    pub fn find_project_root_folder<P: AsRef<Path>>(&self, path: P) -> Option<PathBuf> {
-        let path = path.as_ref();
-
-        if path.join(ProjectType::FOUNDRY_CONFIG_FILE).exists() || path.join(ProjectType::HARDHAT_CONFIG_FILE).exists() 
-        || path.join(ProjectType::BROWNIE_CONFIG_FILE).exists() || path.join(ProjectType::TRUFFLE_CONFIG_FILE).exists() {
-            return Some(path.to_path_buf());
-        }
-
-        if let Some(parent) = path.parent() {
-            return self.find_project_root_folder(parent);
-        }
-
-        None
-    }
-
     /// Get the project type from the [PathBuf] and return a [ProjectType]
     pub fn detect_project_type<P: AsRef<Path>>(&mut self, path: P) -> Result<(), Error> {
         let path = path.as_ref();
@@ -345,7 +329,7 @@ impl Project {
 
     /// Get the project type path from the [ProjectType] and return a [PathBuf]
     pub fn get_project_type_path(&self, source_unit_directory: &Path, filename: String) -> Result<PathBuf, Error> {
-        let project_root_folder = self.find_project_root_folder(source_unit_directory);
+        let project_root_folder = find_project_root_folder(source_unit_directory);
 
         let Some(project_root_folder) = project_root_folder else {
             // If we cant find a project root folder we return the filename as is
@@ -460,6 +444,22 @@ impl Project {
             _ => Ok(HashMap::new())
         }
     }
+}
+
+/// Recursively check to find the root folder of the project and return a [PathBuf]
+pub fn find_project_root_folder<P: AsRef<Path>>(path: P) -> Option<PathBuf> {
+    let path = path.as_ref();
+
+    if path.join(ProjectType::FOUNDRY_CONFIG_FILE).exists() || path.join(ProjectType::HARDHAT_CONFIG_FILE).exists() 
+    || path.join(ProjectType::BROWNIE_CONFIG_FILE).exists() || path.join(ProjectType::TRUFFLE_CONFIG_FILE).exists() {
+        return Some(path.to_path_buf());
+    }
+
+    if let Some(parent) = path.parent() {
+        return find_project_root_folder(parent);
+    }
+
+    None
 }
 
 /// Find a key in a [toml::Table] and return the [toml::Value]

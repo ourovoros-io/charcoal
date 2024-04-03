@@ -96,7 +96,7 @@ pub fn translate_using_directive(
 
     Ok(())
 }
-
+#[allow(clippy::too_many_arguments)]
 #[inline]
 pub fn translate_contract_definition(
     project: &mut Project,
@@ -547,7 +547,7 @@ pub fn propagate_inherited_definitions(
                 _ => panic!("Unsupported import directive: {import_directive:#?}"),
             };
 
-            if filename.string.starts_with('@') {
+            if !filename.string.starts_with('.') {
                 todo!("handle global import paths (i.e: node_modules)")
             }
 
@@ -712,7 +712,7 @@ pub fn propagate_inherited_definitions(
 
                 let contract_impl = translated_definition.get_contract_impl();
 
-                if !contract_impl.items.contains(&inherited_impl_item) {
+                if !contract_impl.items.contains(inherited_impl_item) {
                     contract_impl.items.push(inherited_impl_item.clone());
                 }
             }

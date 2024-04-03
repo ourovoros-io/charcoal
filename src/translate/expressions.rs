@@ -404,7 +404,7 @@ pub fn translate_expression(
         
         solidity::Expression::FunctionCall(_, function, arguments) => translate_function_call_expression(project, translated_definition, scope.clone(), expression, function, None, arguments),
         solidity::Expression::FunctionCallBlock(_, function, block) => translate_function_call_block_expression(project, translated_definition, scope.clone(), function, block),
-        solidity::Expression::NamedFunctionCall(_, function, named_arguments) => translate_function_call_expression(project, translated_definition, scope.clone(), expression, function, Some(&named_arguments), &[]),
+        solidity::Expression::NamedFunctionCall(_, function, named_arguments) => translate_function_call_expression(project, translated_definition, scope.clone(), expression, function, Some(named_arguments), &[]),
         
         solidity::Expression::Not(_, x) => translate_unary_expression(project, translated_definition, scope.clone(), "!", x),
         solidity::Expression::BitwiseNot(_, x) => translate_unary_expression(project, translated_definition, scope.clone(), "!", x),
@@ -1676,14 +1676,10 @@ pub fn translate_function_call_expression(
 
                     match &value_type_name {
                         sway::TypeName::Undefined => panic!("Undefined type name"),
-
-                        sway::TypeName::Identifier { name, .. } => match name.as_str() {
-                            _ => todo!("translate from {value_type_name} to bytes"),
-                        }
-
+                        sway::TypeName::Identifier { .. } => todo!("translate from {value_type_name} to bytes"),
                         sway::TypeName::Array { .. } => todo!("translate from {value_type_name} to bytes"),
                         sway::TypeName::Tuple { .. } => todo!("translate from {value_type_name} to bytes"),
-                        
+    
                         sway::TypeName::StringSlice => {
                             // Ensure `std::bytes::Bytes` is imported
                             translated_definition.ensure_use_declared("std::bytes::Bytes");
@@ -3009,10 +3005,8 @@ pub fn translate_function_call_expression(
                                     // Ensure the ABI is added to the current definition
                                     if let Some(external_definition) = project.find_definition_with_abi(abi_type_name.as_str()) {
                                         if let Some(abi) = external_definition.abi.as_ref() {
-                                            if abi.name == abi_type_name {
-                                                if !translated_definition.abis.iter().any(|a| a.name == abi.name) {
-                                                    translated_definition.abis.push(abi.clone());
-                                                }
+                                            if abi.name == abi_type_name && !translated_definition.abis.iter().any(|a| a.name == abi.name) { 
+                                                translated_definition.abis.push(abi.clone());
                                             }
                                         }
                                     }
@@ -3426,10 +3420,8 @@ pub fn translate_function_call_expression(
                                         // Ensure the ABI is added to the current definition
                                         if let Some(external_definition) = project.find_definition_with_abi(abi_type_name.as_str()) {
                                             if let Some(abi) = external_definition.abi.as_ref() {
-                                                if abi.name == abi_type_name {
-                                                    if !translated_definition.abis.iter().any(|a| a.name == abi.name) {
-                                                        translated_definition.abis.push(abi.clone());
-                                                    }
+                                                if abi.name == abi_type_name && !translated_definition.abis.iter().any(|a| a.name == abi.name) {
+                                                    translated_definition.abis.push(abi.clone());
                                                 }
                                             }
                                         }
@@ -3959,7 +3951,7 @@ pub fn translate_variable_access_expression(
         
             let container_type_name = translated_definition.get_expression_type(scope.clone(), &translated_container)?;
             let container_type_name_string = container_type_name.to_string();
-            let (variable, container) = translate_variable_access_expression(project, translated_definition, scope.clone(), &container)?;
+            let (variable, container) = translate_variable_access_expression(project, translated_definition, scope.clone(), container)?;
         
             // Check if container is a struct
             if let Some(struct_definition) = translated_definition.structs.iter().find(|s| s.name == container_type_name_string) {
@@ -4172,7 +4164,7 @@ pub fn create_assignment_expression(
                         operator: "=".into(),
                         lhs: expression.clone(),
                         rhs: sway::Expression::from(sway::BinaryExpression {
-                            operator: operator.trim_end_matches("=").into(),
+                            operator: operator.trim_end_matches('=').into(),
                             lhs: expression.clone(),
                             rhs: rhs.clone(),
                         }),
@@ -4435,7 +4427,7 @@ pub fn translate_new_expression(
                 //     v
                 // }
 
-                if !block_fields.is_none() {
+                if block_fields.is_some() {
                     panic!("Invalid new array expression: expected no block args, found {block_fields:#?}");
                 }
 
@@ -4527,7 +4519,7 @@ pub fn translate_new_expression(
                 //     String::from(v)
                 // }
 
-                if !block_fields.is_none() {
+                if block_fields.is_some() {
                     panic!("Invalid new string expression: expected no block args, found {block_fields:#?}");
                 }
 

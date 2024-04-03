@@ -1,3 +1,4 @@
+#![allow(clippy::single_match)]
 pub mod errors;
 pub mod project;
 pub mod sway;
@@ -91,7 +92,7 @@ fn translate_project() -> Result<(), Error> {
     
         if options.target.is_dir() {
             project.detect_project_type(options.target.as_path())?;
-        } else if let Some(root_path) = project.find_project_root_folder(options.target.as_path()) {
+        } else if let Some(root_path) = crate::project::find_project_root_folder(options.target.as_path()) {
             project.detect_project_type(root_path)?;
         } else {
             project.project_type = crate::project::ProjectType::Unknown;

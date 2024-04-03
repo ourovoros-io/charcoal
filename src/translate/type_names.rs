@@ -248,10 +248,7 @@ pub fn translate_type_name(
 
         solidity::Expression::Variable(solidity::Identifier { name, .. }) => {
             // Check if type is a type definition
-            if translated_definition.type_definitions.iter().any(|t| match &t.name {
-                sway::TypeName::Identifier { name: type_name, generic_parameters: None } if type_name == name => true,
-                _ => false,
-            }) {
+            if translated_definition.type_definitions.iter().any(|t| matches!(&t.name, sway::TypeName::Identifier { name: type_name, generic_parameters: None } if type_name == name)) {
                 return sway::TypeName::Identifier {
                     name: name.clone(),
                     generic_parameters: None,

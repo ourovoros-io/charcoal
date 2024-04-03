@@ -359,7 +359,7 @@ pub fn translate_yul_expression(
         solidity::YulExpression::BoolLiteral(_, value, _) => Ok(sway::Expression::from(sway::Literal::Bool(*value))),
         solidity::YulExpression::NumberLiteral(_, value, _, _) => Ok(sway::Expression::from(sway::Literal::DecInt(value.parse().unwrap()))),
         solidity::YulExpression::HexNumberLiteral(_, value, _) => Ok(sway::Expression::from(sway::Literal::HexInt(BigUint::from_str_radix(value.trim_start_matches("0x"), 16).unwrap()))),
-        solidity::YulExpression::HexStringLiteral(_, _) => todo!("yul hex string literal expression: {expression:#?}"),
+        solidity::YulExpression::HexStringLiteral(hex_literal, _) => Ok(sway::Expression::from(sway::Literal::HexInt(BigUint::from_str_radix(&hex_literal.to_string(), 16).unwrap()))),
         solidity::YulExpression::StringLiteral(string_literal, _) => Ok(sway::Expression::from(sway::Literal::String(string_literal.string.clone()))),
         solidity::YulExpression::Variable(solidity::Identifier { name, .. }) => translate_yul_variable_expression(project, translated_definition, scope.clone(), expression, name.as_str()),
         solidity::YulExpression::FunctionCall(function_call) => translate_yul_function_call_expression(project, translated_definition, scope.clone(), function_call),
@@ -845,7 +845,7 @@ pub fn translate_yul_function_call_expression(
         "address" => {
             // address() => Identity::from(ContractId::this())
 
-            if parameters.len() != 0 {
+            if !parameters.is_empty() {
                 panic!("Invalid yul address function call, expected 0 parameters, found {}", parameters.len());
             }
 
@@ -870,7 +870,7 @@ pub fn translate_yul_function_call_expression(
         "selfbalance" => {
             // selfbalance() => std::context::this_balance(AssetId::default()).as_u256()
 
-            if parameters.len() != 0 {
+            if !parameters.is_empty() {
                 panic!("Invalid yul balance function call, expected 0 parameters, found {}", parameters.len());
             }
 
@@ -897,7 +897,7 @@ pub fn translate_yul_function_call_expression(
         "caller" => {
             // caller() => msg_sender().unwrap()
 
-            if parameters.len() != 0 {
+            if !parameters.is_empty() {
                 panic!("Invalid yul caller function call, expected 0 parameters, found {}", parameters.len());
             }
 
@@ -918,7 +918,7 @@ pub fn translate_yul_function_call_expression(
         "callvalue" => {
             // callvalue() => std::context::msg_amount()
             
-            if parameters.len() != 0 {
+            if !parameters.is_empty() {
                 panic!("Invalid yul callvalue function call, expected 0 parameters, found {}", parameters.len());
             }
 
@@ -937,7 +937,7 @@ pub fn translate_yul_function_call_expression(
         "calldatasize" => {
             // calldatasize() => std::inputs::input_message_data_length(0)
             
-            if parameters.len() != 0 {
+            if !parameters.is_empty() {
                 panic!("Invalid yul calldatasize function call, expected 0 parameters, found {}", parameters.len());
             }
 
@@ -978,7 +978,7 @@ pub fn translate_yul_function_call_expression(
         "returndatasize" => {
             // returndatasize() => std::registers::return_length()
 
-            if parameters.len() != 0 {
+            if !parameters.is_empty() {
                 panic!("Invalid yul returndatasize function call, expected 0 parameters, found {}", parameters.len());
             }
 
@@ -1085,7 +1085,7 @@ pub fn translate_yul_function_call_expression(
             //    r1: u64
             // }
 
-            if parameters.len() != 0 {
+            if !parameters.is_empty() {
                 panic!("Invalid yul chainid function call, expected 0 parameters, found {}", parameters.len());
             }
 
@@ -1133,7 +1133,7 @@ pub fn translate_yul_function_call_expression(
         "gasprice" => {
             // gasprice() => std::tx::tx_gas_price().unwrap_or(0)
             
-            if parameters.len() != 0 {
+            if !parameters.is_empty() {
                 panic!("Invalid yul gasprice function call, expected 0 parameters, found {}", parameters.len());
             }
 
@@ -1172,7 +1172,7 @@ pub fn translate_yul_function_call_expression(
             //     Identity::from(ContractId::from(ptr.read::<b256>()))
             // }
 
-            if parameters.len() != 0 {
+            if !parameters.is_empty() {
                 panic!("Invalid yul coinbase function call, expected 0 parameters, found {}", parameters.len());
             }
 
@@ -1267,7 +1267,7 @@ pub fn translate_yul_function_call_expression(
         "timestamp" => {
             // timestamp() => std::block::timestamp().as_u256()
             
-            if parameters.len() != 0 {
+            if !parameters.is_empty() {
                 panic!("Invalid yul timestamp function call, expected 0 parameters, found {}", parameters.len());
             }
 
@@ -1288,7 +1288,7 @@ pub fn translate_yul_function_call_expression(
         "number" => {
             // number() => std::block::height()
             
-            if parameters.len() != 0 {
+            if !parameters.is_empty() {
                 panic!("Invalid yul number function call, expected 0 parameters, found {}", parameters.len());
             }
 
