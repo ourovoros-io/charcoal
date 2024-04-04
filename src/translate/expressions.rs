@@ -114,8 +114,25 @@ pub fn create_value_expression(
                 Some(value) if matches!(value, sway::Expression::Literal(sway::Literal::DecInt(_) | sway::Literal::HexInt(_))) => (*value).clone(),
                 
                 Some(sway::Expression::FunctionCall(function_call)) => match &function_call.function {
-                    sway::Expression::Identifier(name) if name == "todo!" => {
-                        value.unwrap().clone()
+                    sway::Expression::Identifier(identifier_name) => match identifier_name.as_str() {
+                        "todo!" => value.unwrap().clone(),
+                        s if s == format!("{name}::max") => value.unwrap().clone(),
+                        s if s == format!("{name}::min") => value.unwrap().clone(),
+                        _ => panic!("Invalid {name} value expression: {value:#?}"),
+                    }
+
+                    sway::Expression::MemberAccess(member_access) => match member_access.member.as_str() {
+                        "pow" => {
+                            let type_name = translated_definition.get_expression_type(scope.clone(), &member_access.expression).unwrap();
+                    
+                            if !type_name.is_uint() {
+                                panic!("Invalid {name} value expression: {value:#?}")
+                            }
+                    
+                            value.unwrap().clone()
+                        }
+                    
+                        _ => panic!("Invalid {name} value expression: {value:#?}"),
                     }
 
                     _ => panic!("Invalid {name} value expression: {value:#?}"),
@@ -1663,7 +1680,20 @@ pub fn translate_function_call_expression(
 
                         sway::TypeName::Array { .. } => todo!("translate from {value_type_name} to bytes{byte_count}"),
                         sway::TypeName::Tuple { .. } => todo!("translate from {value_type_name} to bytes{byte_count}"),
-                        sway::TypeName::StringSlice => todo!("translate from {value_type_name} to bytes{byte_count}"),
+
+                        sway::TypeName::StringSlice => {
+                            match &value_expression {
+                                sway::Expression::Literal(sway::Literal::String(s)) => Ok(
+                                    sway::Expression::from(sway::Literal::HexInt(
+                                        BigUint::from_str_radix(s.trim_start_matches("0x"), 16)
+                                            .map_err(|e| Error::Wrapped(Box::new(e)))?
+                                    ))
+                                ),
+
+                                _ => todo!("translate from {value_type_name} to bytes{byte_count}"),
+                            }
+                        }
+
                         sway::TypeName::StringArray { .. } => todo!("translate from {value_type_name} to bytes{byte_count}"),
                     }
                 }

@@ -843,6 +843,11 @@ impl TranslatedDefinition {
                             name: "b256".into(),
                             generic_parameters: None,
                         }),
+
+                        "std::inputs::input_message_data" => Ok(sway::TypeName::Identifier {
+                            name: "Bytes".into(),
+                            generic_parameters: None,
+                        }),
     
                         "u8::from" | "u8::max" | "u8::min" => Ok(sway::TypeName::Identifier {
                             name: "u8".into(),
@@ -1068,7 +1073,7 @@ impl TranslatedDefinition {
                                     ],
                                 }),
                                 "as_raw_slice" => Ok(sway::TypeName::Identifier {
-                                    name: "RawSlice".into(),
+                                    name: "raw_slice".into(),
                                     generic_parameters: None,
                                 }),
     
@@ -1182,6 +1187,15 @@ impl TranslatedDefinition {
                             ("Result", Some(generic_parameters)) if generic_parameters.entries.len() == 2 => match member_access.member.as_str() {
                                 "unwrap" => Ok(generic_parameters.entries[0].type_name.clone()),
                                 
+                                _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
+                            }
+
+                            ("raw_slice", None) => match member_access.member.as_str() {
+                                "ptr" => Ok(sway::TypeName::Identifier {
+                                    name: "raw_ptr".into(),
+                                    generic_parameters: None,
+                                }),
+
                                 _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
                             }
                             

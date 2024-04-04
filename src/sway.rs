@@ -390,6 +390,24 @@ impl TypeName {
             return true;
         }
 
+        match self {
+            TypeName::Array { type_name: lhs_type_name, length: lhs_length } => match other {
+                TypeName::Array { type_name: rhs_type_name, length: rhs_length } => {
+                    if !lhs_type_name.is_compatible_with(&rhs_type_name) {
+                        return false;
+                    }
+
+                    if *lhs_length == *rhs_length {
+                        return true
+                    }
+                }
+
+                _ => {}
+            }
+
+            _ => {}
+        }
+
         // HACK: Don't check todo! value types
         if let TypeName::Identifier { name, generic_parameters: None } = self {
             if name == "todo!" {
