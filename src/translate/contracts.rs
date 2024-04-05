@@ -625,6 +625,13 @@ pub fn propagate_inherited_definitions(
             }
         }
 
+        // Extend the constants
+        for constant in inherited_definition.constants.iter() {
+            if !translated_definition.constants.contains(constant) {
+                translated_definition.constants.push(constant.clone());
+            }
+        }
+
         // Extend the abi
         if let Some(inherited_abi) = inherited_definition.abi.as_ref() {
             for inherited_function in inherited_abi.functions.iter() {
