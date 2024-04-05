@@ -3079,7 +3079,7 @@ pub fn translate_function_call_expression(
                             }
 
                             // Check to see if the type is located in an external ABI
-                            if let Some(external_definition) = project.find_definition_with_abi(name.as_str()).cloned() {
+                            if let Some(external_definition) = project.find_definition_with_abi(name.as_str()) {
                                 let external_abi = external_definition.abi.as_ref().unwrap();
 
                                 // Check lower case names for regular functions
