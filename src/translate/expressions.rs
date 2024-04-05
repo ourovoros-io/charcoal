@@ -2774,7 +2774,6 @@ pub fn translate_function_call_expression(
                         // Check if function is contained in an external definition
                         if let Some(external_definition) = project.translated_definitions.iter().find(|x| x.name == name).cloned() {
                             let old_name = member.name.clone();
-                            let new_name = crate::translate_naming_convention(format!("{}_{}", container, member.name).as_str(), Case::Snake);
     
                             if let Some(named_arguments) = named_arguments {
                                 let mut named_parameters = vec![];
@@ -2856,15 +2855,15 @@ pub fn translate_function_call_expression(
                             ).is_none() {
                                 // Create the local function definition
                                 let mut local_function_definition = external_function_definition.clone();
-                                local_function_definition.name = new_name.clone();
+                                local_function_definition.name = external_function_declaration.new_name.clone();
                                 
                                 // Add the local function definition to the beginning of the list
                                 translated_definition.functions.insert(0, local_function_definition);
     
                                 // Create the local function declaration for the toplevel scope
                                 let mut local_function_declaration = external_function_declaration.clone();
-                                local_function_declaration.old_name = old_name.clone();
-                                local_function_declaration.new_name = new_name.clone();
+                                local_function_declaration.old_name = external_function_declaration.old_name.clone();
+                                local_function_declaration.new_name = external_function_declaration.new_name.clone();
     
                                 // Add the local function to the beginning of the toplevel scope
                                 translated_definition.toplevel_scope.borrow_mut().functions.insert(0, Rc::new(RefCell::new(local_function_declaration.clone())));    
@@ -2872,14 +2871,14 @@ pub fn translate_function_call_expression(
     
                             // Create the function call
                             let function_call = sway::Expression::from(sway::FunctionCall {
-                                function: sway::Expression::Identifier(new_name.clone()),
+                                function: sway::Expression::Identifier(external_function_declaration.new_name.clone()),
                                 generic_parameters: None,
                                 parameters: arguments.iter()
                                     .map(|a| translate_expression(project, translated_definition, scope.clone(), a))
                                     .collect::<Result<Vec<_>, _>>()?,
                             });
     
-                            *translated_definition.function_call_counts.entry(new_name.clone()).or_insert(0) += 1;
+                            *translated_definition.function_call_counts.entry(external_function_declaration.new_name.clone()).or_insert(0) += 1;
                             
                             return Ok(function_call);
                         }
@@ -2981,7 +2980,8 @@ pub fn translate_function_call_expression(
 
                         _ => {
                             let mut name = name.clone();
-                            let external_function_new_name = crate::translate_naming_convention(member.name.as_str(), Case::Snake);
+                            let new_name_lower = crate::translate_naming_convention(member.name.as_str(), Case::Snake);
+                            let new_name_upper = crate::translate_naming_convention(member.name.as_str(), Case::ScreamingSnake);
 
                             // Check using directives for Identity-specific function
                             for using_directive in translated_definition.using_directives.iter() {
@@ -3079,10 +3079,11 @@ pub fn translate_function_call_expression(
                             }
 
                             // Check to see if the type is located in an external ABI
-                            if let Some(external_definition) = project.find_definition_with_abi(name.as_str()) {
+                            if let Some(external_definition) = project.find_definition_with_abi(name.as_str()).cloned() {
                                 let external_abi = external_definition.abi.as_ref().unwrap();
 
-                                if external_abi.functions.iter().any(|f| f.name == external_function_new_name) {
+                                // Check lower case names for regular functions
+                                if external_abi.functions.iter().any(|f| f.name == new_name_lower) {
                                     // Ensure the ABI is added to the current definition
                                     if !translated_definition.abis.iter().any(|a| a.name == external_abi.name) {
                                         translated_definition.abis.push(external_abi.clone());
@@ -3090,8 +3091,27 @@ pub fn translate_function_call_expression(
                                     
                                     return Ok(sway::Expression::from(sway::FunctionCall {
                                         function: sway::Expression::from(sway::MemberAccess {
-                                            expression: container,
-                                            member: external_function_new_name,
+                                            expression: container.clone(),
+                                            member: new_name_lower.into(),
+                                        }),
+                                        generic_parameters: None,
+                                        parameters: arguments.iter()
+                                            .map(|a| translate_expression(project, translated_definition, scope.clone(), a))
+                                            .collect::<Result<Vec<_>, _>>()?,
+                                    }));
+                                }
+
+                                // Check upper case names for constant getter functions
+                                if external_abi.functions.iter().any(|f| f.name == new_name_upper) {
+                                    // Ensure the ABI is added to the current definition
+                                    if !translated_definition.abis.iter().any(|a| a.name == external_abi.name) {
+                                        translated_definition.abis.push(external_abi.clone());
+                                    }
+                                    
+                                    return Ok(sway::Expression::from(sway::FunctionCall {
+                                        function: sway::Expression::from(sway::MemberAccess {
+                                            expression: container.clone(),
+                                            member: new_name_upper.into(),
                                         }),
                                         generic_parameters: None,
                                         parameters: arguments.iter()
