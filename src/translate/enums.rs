@@ -194,10 +194,17 @@ pub fn generate_enum_abi_encode_function(
     for variant in sway_enum.variants.iter() {
         let mut block = sway::Block::default();
 
-        // "VariantName".abi_encode(buffer);
+        // HACK: encode string slices as string arrays until they are supported in FuelVM
+        // __to_str_array("VariantName").abi_encode(buffer);
         block.statements.push(sway::Statement::from(sway::Expression::from(sway::FunctionCall {
             function: sway::Expression::from(sway::MemberAccess {
-                expression: sway::Expression::from(sway::Literal::String(variant.name.clone())),
+                expression: sway::Expression::from(sway::FunctionCall {
+                    function: sway::Expression::Identifier("__to_str_array".into()),
+                    generic_parameters: None,
+                    parameters: vec![
+                        sway::Expression::from(sway::Literal::String(variant.name.clone()))
+                    ],
+                }),
                 member: "abi_encode".into(),
             }),
             generic_parameters: None,
