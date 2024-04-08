@@ -471,7 +471,21 @@ pub fn translate_variable_definition_statement(
 ) -> Result<sway::Statement, Error> {
     let old_name = variable_declaration.name.as_ref().unwrap().name.clone();
     let new_name = crate::translate_naming_convention(old_name.as_str(), Case::Snake);
-    let type_name = translate_type_name(project, translated_definition, &variable_declaration.ty, false, false);
+    let mut type_name = translate_type_name(project, translated_definition, &variable_declaration.ty, false, false);
+    let mut abi_type_name = None;
+
+    // Check if the parameter's type is an ABI
+    if let sway::TypeName::Identifier { name, generic_parameters: None } = &type_name {
+        if project.find_definition_with_abi(name.as_str()).is_some() {
+            abi_type_name = Some(type_name.clone());
+
+            type_name = sway::TypeName::Identifier {
+                name: "Identity".into(),
+                generic_parameters: None,
+            };
+        }
+    }
+
     let mut value = None;
 
     if let Some(solidity::Expression::New(_, new_expression)) = initializer.as_ref() {
@@ -600,6 +614,7 @@ pub fn translate_variable_definition_statement(
         old_name,
         new_name,
         type_name,
+        abi_type_name,
         ..Default::default()
     })));
 

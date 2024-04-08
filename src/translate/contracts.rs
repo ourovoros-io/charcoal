@@ -590,6 +590,13 @@ pub fn propagate_inherited_definitions(
             }
         }
 
+        // Extend the inherit statements
+        for inherited_inherit in inherited_definition.inherits.iter() {
+            if !translated_definition.inherits.contains(inherited_inherit) {
+                translated_definition.inherits.push(inherited_inherit.clone());
+            }
+        }
+
         // Extend the type definitions
         for inherited_type_definition in inherited_definition.type_definitions.iter() {
             if !translated_definition.type_definitions.contains(inherited_type_definition) {
@@ -608,6 +615,13 @@ pub fn propagate_inherited_definitions(
         for inherited_struct_name in inherited_definition.struct_names.iter() {
             if !translated_definition.struct_names.contains(inherited_struct_name) {
                 translated_definition.struct_names.push(inherited_struct_name.clone());
+            }
+        }
+
+        // Extend the enums
+        for inherited_enum in inherited_definition.enums.iter() {
+            if !translated_definition.enums.contains(inherited_enum) {
+                translated_definition.enums.push(inherited_enum.clone());
             }
         }
 
@@ -676,10 +690,10 @@ pub fn propagate_inherited_definitions(
             }
         }
 
-        // Extend function name mapping
-        for (signature, function_name) in inherited_definition.function_names.iter() {
-            if !translated_definition.function_names.contains_key(signature) {
-                translated_definition.function_names.insert(signature.clone(), function_name.clone());
+        // Extend the functions
+        for inherited_function in inherited_definition.functions.iter() {
+            if !translated_definition.functions.contains(inherited_function) {
+                translated_definition.functions.push(inherited_function.clone());
             }
         }
 
@@ -688,15 +702,16 @@ pub fn propagate_inherited_definitions(
             *translated_definition.function_name_counts.entry(function_name.clone()).or_insert(0) += *count;
         }
 
-        // Extend the functions
-        for inherited_function in inherited_definition.functions.iter() {
-            if !translated_definition.functions.contains(inherited_function) {
-                translated_definition.functions.push(inherited_function.clone());
-
-                if let Some(function_call_count) = inherited_definition.function_call_counts.get(&inherited_function.name) {
-                    *translated_definition.function_call_counts.entry(inherited_function.name.clone()).or_insert(0) += *function_call_count;
-                }
+        // Extend function name mapping
+        for (signature, function_name) in inherited_definition.function_names.iter() {
+            if !translated_definition.function_names.contains_key(signature) {
+                translated_definition.function_names.insert(signature.clone(), function_name.clone());
             }
+        }
+
+        // Extend function call count mapping
+        for (function_call, count) in inherited_definition.function_call_counts.iter() {
+            *translated_definition.function_call_counts.entry(function_call.clone()).or_insert(0) += *count;
         }
 
         // Extend the contract impl block
