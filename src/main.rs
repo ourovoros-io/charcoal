@@ -12,13 +12,18 @@ use structopt::{clap::AppSettings, StructOpt};
 
 #[inline]
 pub fn translate_naming_convention(name: &str, case: Case) -> String {
-    if name == "_" {
-        return "_".into();
-    }
+    let name = if name.chars().all(|c| c == '_') {
+        name.to_string()
+    } else {
+        let prefix = name.chars().take_while(|c| *c == '_').collect::<String>();
+        let postfix = name.chars().rev().take_while(|c| *c == '_').collect::<String>();
+        format!("{prefix}{}{postfix}", name.to_case(case))
+    };
 
-    let prefix = name.chars().take_while(|c| *c == '_').collect::<String>();
-    let postfix = name.chars().rev().take_while(|c| *c == '_').collect::<String>();
-    format!("{prefix}{}{postfix}", name.to_case(case))
+    match name.as_str() {
+        "self" => "this".into(),
+        _ => name,
+    }
 }
 
 #[inline]
