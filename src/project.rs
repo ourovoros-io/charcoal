@@ -6,7 +6,7 @@ use solang_parser::pt as solidity;
 use std::{
     cell::RefCell,
     collections::HashMap,
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
     rc::Rc,
 };
 
@@ -21,6 +21,7 @@ pub enum ProjectType {
         remappings: HashMap<String, String>,
     },
     Truffle,
+    Dapp,
     #[default]
     Unknown,
 }
@@ -30,6 +31,7 @@ impl ProjectType {
     pub const HARDHAT_CONFIG_FILE: &'static str = "hardhat.config.js";
     pub const BROWNIE_CONFIG_FILE: &'static str = "brownie-config.yaml";
     pub const TRUFFLE_CONFIG_FILE: &'static str = "truffle-config.js";
+    pub const DAPP_CONFIG_FILE: &'static str = "Dappfile";
 }
 
 #[derive(Default)]
@@ -226,7 +228,7 @@ impl Project {
                 } else {
                     import_path = source_unit_directory.join(import_path);
                 }
-
+                
                 import_path = crate::get_canonical_path(import_path, false, false)
                     .map_err(|e| Error::Wrapped(Box::new(e))).unwrap();
                 
@@ -295,7 +297,6 @@ impl Project {
     /// Get the project type from the [PathBuf] and return a [ProjectType]
     pub fn detect_project_type<P: AsRef<Path>>(&mut self, path: P) -> Result<(), Error> {
         let path = path.as_ref();
-
         if path.join(ProjectType::FOUNDRY_CONFIG_FILE).exists() {
             self.project_type = ProjectType::Foundry {
                 remappings: HashMap::new(),
@@ -306,24 +307,22 @@ impl Project {
             ))?;
 
             self.project_type = ProjectType::Foundry { remappings };
-        }
-
-        if path.join(ProjectType::HARDHAT_CONFIG_FILE).exists() {
+        } else if path.join(ProjectType::HARDHAT_CONFIG_FILE).exists() {
             self.project_type = ProjectType::Hardhat;
-        }
-
-        if path.join(ProjectType::BROWNIE_CONFIG_FILE).exists() {
+        } else if path.join(ProjectType::BROWNIE_CONFIG_FILE).exists() {
             self.project_type = ProjectType::Brownie { remappings: HashMap::new() };
 
             self.project_type = ProjectType::Brownie { remappings: self.get_remappings(path).map_err(|e| Error::Wrapped(
                 format!("Failed to get remappings for Brownie project: {:#?}", e).into()
             ))? };
+        } else if path.join(ProjectType::TRUFFLE_CONFIG_FILE).exists() {
+            self.project_type = ProjectType::Truffle;
+        } else if path.join(ProjectType::DAPP_CONFIG_FILE).exists() {
+            self.project_type = ProjectType::Dapp;
+        } else {
+            self.project_type = ProjectType::Unknown;
         }
 
-        if path.join(ProjectType::TRUFFLE_CONFIG_FILE).exists() {
-            self.project_type = ProjectType::Truffle;
-        }
-        
         Ok(())
     }
 
@@ -335,7 +334,6 @@ impl Project {
             // If we cant find a project root folder we return the filename as is
             return Ok(PathBuf::from(filename.clone()));
         };
-
         match &self.project_type {
             // Remappings in foundry and brownie are handled using the same pattern
             ProjectType::Foundry { remappings } | ProjectType::Brownie { remappings } => {
@@ -345,7 +343,6 @@ impl Project {
                         return Ok(PathBuf::from(filename.replace(k, project_full_path.to_string_lossy().as_ref())))
                     }
                 }
-
                 Ok(PathBuf::from(filename.clone()))
             }
 
@@ -356,6 +353,26 @@ impl Project {
                 } else {
                     Ok(project_root_folder.join("node_modules").join(filename))
                 }
+            }
+
+            ProjectType::Dapp => {
+                let filename = PathBuf::from(filename.clone());
+                let mut components: Vec<_> = filename.components().collect();
+                
+                if components.len() <= 1 {
+                    panic!("Dapp filename should have more than one component")
+                }
+                match &components[0] {
+                    Component::Normal(_) => {
+                        components.insert(1, Component::Normal("src".as_ref()));
+                        let component = PathBuf::from(components.iter().map(|c| c.as_os_str()).collect::<PathBuf>());
+                        Ok(project_root_folder.join("lib").join(component))
+                    }
+                    _ => {
+                        Ok(project_root_folder.join(filename))
+                    }
+                }
+
             }
 
             // If we find that the project type is unknown we return the filename as is
@@ -451,7 +468,8 @@ pub fn find_project_root_folder<P: AsRef<Path>>(path: P) -> Option<PathBuf> {
     let path = path.as_ref();
 
     if path.join(ProjectType::FOUNDRY_CONFIG_FILE).exists() || path.join(ProjectType::HARDHAT_CONFIG_FILE).exists() 
-    || path.join(ProjectType::BROWNIE_CONFIG_FILE).exists() || path.join(ProjectType::TRUFFLE_CONFIG_FILE).exists() {
+    || path.join(ProjectType::BROWNIE_CONFIG_FILE).exists() || path.join(ProjectType::TRUFFLE_CONFIG_FILE).exists()  
+    || path.join(ProjectType::DAPP_CONFIG_FILE).exists() {
         return Some(path.to_path_buf());
     }
 

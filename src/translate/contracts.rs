@@ -546,12 +546,10 @@ pub fn propagate_inherited_definitions(
 
                 _ => panic!("Unsupported import directive: {import_directive:#?}"),
             };
+            
 
-            if !filename.string.starts_with('.') {
-                todo!("handle global import paths (i.e: node_modules)")
-            }
+            let import_path = project.get_project_type_path(&source_unit_directory, filename.string.clone())?; 
 
-            let import_path = source_unit_directory.join(filename.string.clone());
 
             if !import_path.exists() {
                 return Err(

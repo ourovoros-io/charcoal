@@ -13,4 +13,8 @@ solang-parser = "0.3.3"
 structopt = { version = "0.3", default-features = false }
 toml = "0.8.10"
 serde_yaml = "0.9.32"
-sway-types = "0.51.1"
+sway-types = "0.52.1"
+
+[dev-dependencies]
+colorize = "0.1.0"
+walkdir = "2.5.0"
