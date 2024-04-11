@@ -233,7 +233,7 @@ pub fn translate_yul_for_statement(
     //     while condition {
     //         body;
     //         update;
-    //     }                    
+    //     }
     // }
 
     // Create a scope for the block that will contain the for loop logic

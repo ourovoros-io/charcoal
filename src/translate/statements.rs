@@ -180,25 +180,25 @@ pub fn translate_try_catch_statement(
     expr: &solidity::Expression,
     params_and_body:  &Option<(Vec<(solidity::Loc, Option<solidity::Parameter>)>, Box<solidity::Statement>)>,
     catch_clauses: &[solidity::CatchClause],
-) -> Result<sway::Statement, Error> {    
+) -> Result<sway::Statement, Error> {
     let mut statements = vec![];
     match params_and_body.as_ref() {
         Some((params, body)) =>  {
             if !params.is_empty() {
-                let let_statement = sway::Let { 
+                let let_statement = sway::Let {
                     pattern: if params.len() == 1 {
-                        sway::LetPattern::Identifier(sway::LetIdentifier { 
-                            is_mutable: false, 
+                        sway::LetPattern::Identifier(sway::LetIdentifier {
+                            is_mutable: false,
                             name: translate_naming_convention(params[0].1.as_ref().unwrap().name.as_ref().unwrap().name.as_str(), Case::Snake),
                         })
                     } else {
-                        sway::LetPattern::Tuple(params.iter().map(|(_, p)| sway::LetIdentifier { 
-                            is_mutable: false, 
+                        sway::LetPattern::Tuple(params.iter().map(|(_, p)| sway::LetIdentifier {
+                            is_mutable: false,
                             name: translate_naming_convention(p.as_ref().unwrap().name.as_ref().unwrap().name.as_str(), Case::Snake),
                         }).collect())
                     },
-                    type_name: None, 
-                    value: translate_expression(project, translated_definition, scope.clone(), expr)? 
+                    type_name: None,
+                    value: translate_expression(project, translated_definition, scope.clone(), expr)?
                 };
                 let store_let_identifier = |id: &sway::LetIdentifier, type_name: &sway::TypeName| {
                     
@@ -229,12 +229,12 @@ pub fn translate_try_catch_statement(
             match translate_statement(project, translated_definition, scope.clone(), body)? {
                 sway::Statement::Expression(sway::Expression::Block(block)) => {
                     if block.statements.len() == 1 {
-                        statements.extend(block.statements.clone()) 
+                        statements.extend(block.statements.clone())
                     } else {
                         statements.push(sway::Statement::from(sway::Expression::from(block.as_ref().clone())));
                     }
                 }
-                stmt => statements.push(stmt), 
+                stmt => statements.push(stmt),
             };
             
         },
@@ -245,9 +245,9 @@ pub fn translate_try_catch_statement(
         statements.push(sway::Statement::Commented(format!("unsupported: {cc}"), None));
     }
     
-    Ok(sway::Statement::from(sway::Expression::from(sway::Block { 
-        statements, 
-        final_expr: None 
+    Ok(sway::Statement::from(sway::Expression::from(sway::Block {
+        statements,
+        final_expr: None,
     })))
 }
 
@@ -432,7 +432,8 @@ pub fn translate_expression_statement(
         // Check for standalone pre/post decrement statements
         solidity::Expression::PreDecrement(loc, x)
         | solidity::Expression::PostDecrement(loc, x) => return Ok(sway::Statement::from(
-            translate_assignment_expression(project, 
+            translate_assignment_expression(
+                project,
                 translated_definition,
                 scope,
                 "-=",
@@ -444,7 +445,8 @@ pub fn translate_expression_statement(
         // Check for standalone pre/post increment statements
         solidity::Expression::PreIncrement(loc, x)
         | solidity::Expression::PostIncrement(loc, x) => return Ok(sway::Statement::from(
-            translate_assignment_expression(project, 
+            translate_assignment_expression(
+                project,
                 translated_definition,
                 scope,
                 "+=",
@@ -636,7 +638,7 @@ pub fn translate_for_statement(
     //     while condition {
     //         body;
     //         update;
-    //     }                    
+    //     }
     // }
 
     // Create a scope for the block that will contain the for loop logic
@@ -697,7 +699,8 @@ pub fn translate_for_statement(
             match update.as_ref() {
                 // Check for standalone pre/post decrement statements
                 solidity::Expression::PreDecrement(loc, x)
-                | solidity::Expression::PostDecrement(loc, x) => translate_assignment_expression(project, 
+                | solidity::Expression::PostDecrement(loc, x) => translate_assignment_expression(
+                    project,
                     translated_definition,
                     scope.clone(),
                     "-=",
@@ -707,7 +710,8 @@ pub fn translate_for_statement(
     
                 // Check for standalone pre/post increment statements
                 solidity::Expression::PreIncrement(loc, x)
-                | solidity::Expression::PostIncrement(loc, x) => translate_assignment_expression(project, 
+                | solidity::Expression::PostIncrement(loc, x) => translate_assignment_expression(
+                    project,
                     translated_definition,
                     scope.clone(),
                     "+=",
@@ -982,17 +986,17 @@ pub fn translate_emit_statement(
 
 #[inline]
 pub fn translate_revert_named_arguments(
-    project: &mut Project, 
-    translated_definition: &mut TranslatedDefinition, 
-    scope: Rc<RefCell<TranslationScope>>, 
-    path: &Option<solidity::IdentifierPath>, 
+    project: &mut Project,
+    translated_definition: &mut TranslatedDefinition,
+    scope: Rc<RefCell<TranslationScope>>,
+    path: &Option<solidity::IdentifierPath>,
     named_args: &[solidity::NamedArgument]
 ) -> Result<sway::Statement, Error> {
     // TODO: Keep track of the paramerter names and order them correctly
     let error_identifier = path.as_ref().unwrap().identifiers.first().unwrap().name.clone();
-    if translated_definition.errors_enums.iter().any(|e| 
+    if translated_definition.errors_enums.iter().any(|e|
         e.0.variants.iter().any(|v| v.name == error_identifier)
-     ) {
+    ) {
         let error_expressions: Vec<_> = named_args.iter().map(|arg| arg.expr.clone()).collect();
         return translate_revert_statement(project, translated_definition, scope, path, &error_expressions)
     }

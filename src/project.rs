@@ -224,7 +224,7 @@ impl Project {
                 let mut import_path = PathBuf::from(filename.string.clone());
 
                 if !import_path.to_string_lossy().starts_with('.') {
-                    import_path = self.get_project_type_path(source_unit_directory.as_path(), filename.string.clone())?;
+                    import_path = self.get_project_type_path(source_unit_directory.as_path(), filename.string.as_str())?;
                 } else {
                     import_path = source_unit_directory.join(import_path);
                 }
@@ -327,13 +327,14 @@ impl Project {
     }
 
     /// Get the project type path from the [ProjectType] and return a [PathBuf]
-    pub fn get_project_type_path(&self, source_unit_directory: &Path, filename: String) -> Result<PathBuf, Error> {
+    pub fn get_project_type_path(&self, source_unit_directory: &Path, filename: &str) -> Result<PathBuf, Error> {
         let project_root_folder = find_project_root_folder(source_unit_directory);
 
         let Some(project_root_folder) = project_root_folder else {
             // If we cant find a project root folder we return the filename as is
-            return Ok(PathBuf::from(filename.clone()));
+            return Ok(PathBuf::from(filename));
         };
+
         match &self.project_type {
             // Remappings in foundry and brownie are handled using the same pattern
             ProjectType::Foundry { remappings } | ProjectType::Brownie { remappings } => {
@@ -343,7 +344,8 @@ impl Project {
                         return Ok(PathBuf::from(filename.replace(k, project_full_path.to_string_lossy().as_ref())))
                     }
                 }
-                Ok(PathBuf::from(filename.clone()))
+
+                Ok(PathBuf::from(source_unit_directory.join(filename)))
             }
 
             // Remappings in hardhat and truffle are done using the @ symbol and the node_modules folder
@@ -356,27 +358,28 @@ impl Project {
             }
 
             ProjectType::Dapp => {
-                let filename = PathBuf::from(filename.clone());
+                let filename = PathBuf::from(filename);
                 let mut components: Vec<_> = filename.components().collect();
                 
                 if components.len() <= 1 {
                     panic!("Dapp filename should have more than one component")
                 }
+
                 match &components[0] {
                     Component::Normal(_) => {
                         components.insert(1, Component::Normal("src".as_ref()));
                         let component = PathBuf::from(components.iter().map(|c| c.as_os_str()).collect::<PathBuf>());
                         Ok(project_root_folder.join("lib").join(component))
                     }
+
                     _ => {
                         Ok(project_root_folder.join(filename))
                     }
                 }
-
             }
 
             // If we find that the project type is unknown we return the filename as is
-            ProjectType::Unknown => Ok(PathBuf::from(filename.clone())),
+            ProjectType::Unknown => Ok(PathBuf::from(filename)),
         }
     }
 

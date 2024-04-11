@@ -295,7 +295,7 @@ fn erc_20__approve_2(owner: Identity, spender: Identity, value: u256, emit_event
 
 #[storage(read, write)]
 fn erc_20__spend_allowance(owner: Identity, spender: Identity, value: u256) {
-    let current_allowance = allowance(owner, spender);
+    let current_allowance = erc_20_allowance(owner, spender);
     if current_allowance != u256::max() {
         if current_allowance < value {
             log(IERC20ErrorsError::ERC20InsufficientAllowance((spender, current_allowance, value)));

@@ -1889,7 +1889,7 @@ impl TranslatedDefinition {
                         }
                         
                         _ => {}
-                    }   
+                    }
                 
                     // Check to see if container is a struct
                     if let Some(struct_definition) = self.structs.iter().find(|s| s.name == type_name_string) {

@@ -547,14 +547,15 @@ pub fn propagate_inherited_definitions(
                 _ => panic!("Unsupported import directive: {import_directive:#?}"),
             };
             
-
-            let import_path = project.get_project_type_path(&source_unit_directory, filename.string.clone())?; 
-
-
+            let import_path = project.get_project_type_path(&source_unit_directory, filename.string.as_str())?;
+            
             if !import_path.exists() {
-                return Err(
-                    Error::Wrapped(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, format!("File not found: {}", import_path.to_string_lossy()))))
-                );
+                return Err(Error::Wrapped(Box::new(
+                    std::io::Error::new(
+                        std::io::ErrorKind::NotFound,
+                        format!("File not found: {}", import_path.to_string_lossy()),
+                    )
+                )));
             }
 
             let import_path = crate::get_canonical_path(import_path, false, false)
@@ -727,7 +728,7 @@ pub fn propagate_inherited_definitions(
                         }
 
                         continue;
-                    }    
+                    }
                 }
 
                 let contract_impl = translated_definition.get_contract_impl();

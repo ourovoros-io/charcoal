@@ -178,27 +178,27 @@ fn generate_forc_project<P1: AsRef<Path>, P2: AsRef<Path>>(
 }
 
 /// Recursively search for .sol files in the given directory
-fn collect_source_unit_paths(dir: &Path) -> std::io::Result<Vec<PathBuf>> {
-    if !dir.is_dir() {
-        if dir.extension().unwrap() != "sol" {
+fn collect_source_unit_paths(path: &Path) -> std::io::Result<Vec<PathBuf>> {
+    if !path.is_dir() {
+        if path.extension().unwrap() != "sol" {
             panic!("Only solidity files are supported.");
         }
         
-        if !dir.exists() {
+        if !path.exists() {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::NotFound,
-                format!("File not found: {}", dir.to_string_lossy()),
+                format!("File not found: {}", path.to_string_lossy()),
             ));
         }
 
         return Ok(vec![
-            get_canonical_path(dir, false, false)?,
+            get_canonical_path(path, false, false)?,
         ]);
     }
 
     let mut source_unit_paths = vec![];
 
-    for entry in std::fs::read_dir(dir)? {
+    for entry in std::fs::read_dir(path)? {
         let entry = entry?;
         let path = entry.path();
 

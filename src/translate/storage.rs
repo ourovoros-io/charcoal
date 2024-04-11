@@ -166,7 +166,7 @@ pub fn translate_state_variable(
         //
 
         translated_definition.get_configurable().fields.push(sway::ConfigurableField {
-            name: new_name.clone(), 
+            name: new_name.clone(),
             type_name: variable_type_name.clone(),
             value,
         });
