@@ -11,17 +11,14 @@ pub fn resolve_import(
     let mut source_unit_path = PathBuf::from(source_unit_path);
     let source_unit_directory = source_unit_path.parent().map(PathBuf::from).unwrap();
     
-    println!("pre source_unit_path: {}", source_unit_path.to_string_lossy());
     if !source_unit_path.to_string_lossy().starts_with('.') {
         source_unit_path = project.get_project_type_path(&source_unit_directory, source_unit_path.to_string_lossy().to_string().as_str())?;
     } else {
         source_unit_path = source_unit_directory.join(source_unit_path);
     }
-    println!("post source_unit_path: {}", source_unit_path.to_string_lossy());
     
     source_unit_path = crate::get_canonical_path(source_unit_path, false, false)
         .map_err(|e| Error::Wrapped(Box::new(e))).unwrap();
-    println!("canonical source_unit_path: {}", source_unit_path.to_string_lossy());
     
     if !source_unit_path.exists() {
         return Err(Error::Wrapped(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, source_unit_path.to_string_lossy()))));
