@@ -341,8 +341,8 @@ pub fn generate_enum_abi_encode_function(
                     ..Default::default()
                 },
                 sway::Parameter {
-                    is_ref: true,
-                    is_mut: true,
+                    is_ref: false,
+                    is_mut: false,
                     name: "buffer".into(),
                     type_name: Some(sway::TypeName::Identifier {
                         name: "core::codec::Buffer".into(),
