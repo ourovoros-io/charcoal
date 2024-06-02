@@ -88,8 +88,6 @@ pub fn translate_event_definition(
 
     let (events_enum, _) = {
         if !translated_definition.events_enums.iter().any(|(e, _)| e.name == events_enum_name) {
-            translated_definition.ensure_use_declared("core::codec::AbiEncode");
-
             translated_definition.events_enums.push((
                 sway::Enum {
                     name: events_enum_name.clone(),
@@ -144,8 +142,6 @@ pub fn translate_error_definition(
 
     let (errors_enum, _) = {
         if !translated_definition.errors_enums.iter().any(|(e, _)| e.name == errors_enum_name) {
-            translated_definition.ensure_use_declared("core::codec::AbiEncode");
-
             translated_definition.errors_enums.push((
                 sway::Enum {
                     name: errors_enum_name.clone(),
@@ -194,29 +190,64 @@ pub fn generate_enum_abi_encode_function(
     for variant in sway_enum.variants.iter() {
         let mut block = sway::Block::default();
 
-        // HACK: encode string slices as string arrays until they are supported in FuelVM
-        // __to_str_array("VariantName").abi_encode(buffer);
-        block.statements.push(sway::Statement::from(sway::Expression::from(sway::FunctionCall {
-            function: sway::Expression::from(sway::MemberAccess {
-                expression: sway::Expression::from(sway::FunctionCall {
-                    function: sway::Expression::Identifier("__to_str_array".into()),
-                    generic_parameters: None,
-                    parameters: vec![
-                        sway::Expression::from(sway::Literal::String(variant.name.clone()))
-                    ],
-                }),
-                member: "abi_encode".into(),
-            }),
-            generic_parameters: None,
-            parameters: vec![
-                sway::Expression::Identifier("buffer".into())
-            ],
-        })));
-
         let mut add_encode_statement_to_block = |name: &str, type_name: &sway::TypeName| {
-            block.statements.push(sway::Statement::from(match type_name {
-                sway::TypeName::Identifier { name: type_name, .. } => match type_name.as_str() {
-                    "bool" | "I8" | "I16" | "I32" | "I64" | "I128" | "I256" | "u8" | "u16" | "u32" | "u64" | "u256" | "b256" | "Bytes" | "Vec" => sway::Expression::from(sway::FunctionCall {
+            block.statements.push(sway::Statement::Let(sway::Let {
+                pattern: sway::LetPattern::Identifier(sway::LetIdentifier {
+                    is_mutable: false,
+                    name: "buffer".into(),
+                }),
+                type_name: None,
+                value: match type_name {
+                    sway::TypeName::Identifier { name: type_name, .. } => match type_name.as_str() {
+                        "bool" | "I8" | "I16" | "I32" | "I64" | "I128" | "I256" | "u8" | "u16" | "u32" | "u64" | "u256" | "b256" | "Bytes" | "Vec" => {
+                            sway::Expression::from(sway::FunctionCall {
+                                function: sway::Expression::from(sway::MemberAccess {
+                                    expression: sway::Expression::Identifier(name.into()),
+                                    member: "abi_encode".into(),
+                                }),
+                                generic_parameters: None,
+                                parameters: vec![
+                                    sway::Expression::Identifier("buffer".into()),
+                                ],
+                            })
+                        }
+    
+                        "Identity" => {
+                            let identity_variant_branch = |name: &str| -> sway::MatchBranch {
+                                sway::MatchBranch {
+                                    pattern: sway::Expression::from(sway::FunctionCall {
+                                        function: sway::Expression::Identifier(format!("Identity::{name}")),
+                                        generic_parameters: None,
+                                        parameters: vec![
+                                            sway::Expression::Identifier("x".into()),
+                                        ],
+                                    }),
+                                    value: sway::Expression::from(sway::FunctionCall {
+                                        function: sway::Expression::from(sway::MemberAccess {
+                                            expression: sway::Expression::Identifier("x".into()),
+                                            member: "abi_encode".into(),
+                                        }),
+                                        generic_parameters: None,
+                                        parameters: vec![
+                                            sway::Expression::Identifier("buffer".into())
+                                        ],
+                                    }),
+                                }
+                            };
+    
+                            sway::Expression::from(sway::Match {
+                                expression: sway::Expression::Identifier(name.into()),
+                                branches: vec![
+                                    identity_variant_branch("Address"),
+                                    identity_variant_branch("ContractId"),
+                                ],
+                            })
+                        },
+    
+                        _ => todo!("encode enum member type: {type_name}"),
+                    }
+                    
+                    sway::TypeName::StringSlice => sway::Expression::from(sway::FunctionCall {
                         function: sway::Expression::from(sway::MemberAccess {
                             expression: sway::Expression::Identifier(name.into()),
                             member: "abi_encode".into(),
@@ -226,61 +257,9 @@ pub fn generate_enum_abi_encode_function(
                             sway::Expression::Identifier("buffer".into()),
                         ],
                     }),
-
-                    "Identity" => {
-                        let identity_variant_branch = |name: &str| -> sway::MatchBranch {
-                            sway::MatchBranch {
-                                pattern: sway::Expression::from(sway::FunctionCall {
-                                    function: sway::Expression::Identifier(format!("Identity::{name}")),
-                                    generic_parameters: None,
-                                    parameters: vec![
-                                        sway::Expression::Identifier("x".into()),
-                                    ],
-                                }),
-                                value: sway::Expression::from(sway::FunctionCall {
-                                    function: sway::Expression::from(sway::MemberAccess {
-                                        expression: sway::Expression::Identifier("x".into()),
-                                        member: "abi_encode".into(),
-                                    }),
-                                    generic_parameters: None,
-                                    parameters: vec![
-                                        sway::Expression::Identifier("buffer".into())
-                                    ],
-                                }),
-                            }
-                        };
-
-                        sway::Expression::from(sway::Match {
-                            expression: sway::Expression::Identifier(name.into()),
-                            branches: vec![
-                                identity_variant_branch("Address"),
-                                identity_variant_branch("ContractId"),
-                            ],
-                        })
-                    },
-
-                    _ => todo!("encode enum member type: {type_name}"),
-                }
-                
-                sway::TypeName::StringSlice => sway::Expression::from(sway::FunctionCall {
-                    function: sway::Expression::from(sway::MemberAccess {
-                        // HACK: encode string slices as string arrays until they are supported in FuelVM
-                        expression: sway::Expression::from(sway::FunctionCall {
-                            function: sway::Expression::Identifier("__to_str_array".into()),
-                            generic_parameters: None,
-                            parameters: vec![
-                                sway::Expression::Identifier(name.into())
-                            ],
-                        }),
-                        member: "abi_encode".into(),
-                    }),
-                    generic_parameters: None,
-                    parameters: vec![
-                        sway::Expression::Identifier("buffer".into()),
-                    ],
-                }),
-
-                _ => todo!("ABI encoding for enum parameter type: {type_name}"),
+    
+                    _ => todo!("ABI encoding for enum parameter type: {type_name}"),
+                },
             }));
         };
 
@@ -308,6 +287,13 @@ pub fn generate_enum_abi_encode_function(
             sway::TypeName::StringSlice => add_encode_statement_to_block(&parameter_names[0], &variant.type_name),
 
             type_name => todo!("ABI encoding for enum parameter type: {type_name}"),
+        }
+
+        if block.statements.len() == 1 {
+            let Some(sway::Statement::Let(let_stmt)) = block.statements.pop() else { unreachable!() };
+            block.final_expr = Some(let_stmt.value);
+        } else {
+            block.final_expr = Some(sway::Expression::Identifier("buffer".into()));
         }
 
         match_expr.branches.push(sway::MatchBranch {
@@ -345,18 +331,28 @@ pub fn generate_enum_abi_encode_function(
                     is_mut: false,
                     name: "buffer".into(),
                     type_name: Some(sway::TypeName::Identifier {
-                        name: "core::codec::Buffer".into(),
+                        name: "Buffer".into(),
                         generic_parameters: None,
                     }),
                 },
             ],
         },
-        return_type: None,
+        return_type: Some(sway::TypeName::Identifier {
+            name: "Buffer".into(),
+            generic_parameters: None,
+        }),
         body: Some(sway::Block {
             statements: vec![
-                sway::Statement::from(sway::Expression::from(match_expr)),
+                sway::Statement::Let(sway::Let {
+                    pattern: sway::LetPattern::Identifier(sway::LetIdentifier {
+                        is_mutable: false,
+                        name: "buffer".into(),
+                    }),
+                    type_name: None,
+                    value: sway::Expression::from(match_expr),
+                }),
             ],
-            final_expr: None,
+            final_expr: Some(sway::Expression::Identifier("buffer".into())),
         }),
     }));
 

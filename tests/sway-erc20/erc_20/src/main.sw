@@ -1,7 +1,6 @@
 contract;
 
 use std::bytes::Bytes;
-use core::codec::AbiEncode;
 use std::string::*;
 use std::hash::Hash;
 use std::storage::storage_string::*;
@@ -13,33 +12,34 @@ enum IERC20Event {
 }
 
 impl AbiEncode for IERC20Event {
-    fn abi_encode(self, ref mut buffer: core::codec::Buffer) {
-        match self {
+    fn abi_encode(self, buffer: Buffer) -> Buffer {
+        let buffer = match self {
             IERC20Event::Transfer((a, b, c)) => {
-                "Transfer".abi_encode(buffer);
-                match a {
+                let buffer = match a {
                     Identity::Address(x) => x.abi_encode(buffer),
                     Identity::ContractId(x) => x.abi_encode(buffer),
-                }
-                match b {
+                };
+                let buffer = match b {
                     Identity::Address(x) => x.abi_encode(buffer),
                     Identity::ContractId(x) => x.abi_encode(buffer),
-                }
-                c.abi_encode(buffer);
+                };
+                let buffer = c.abi_encode(buffer);
+                buffer
             },
             IERC20Event::Approval((a, b, c)) => {
-                "Approval".abi_encode(buffer);
-                match a {
+                let buffer = match a {
                     Identity::Address(x) => x.abi_encode(buffer),
                     Identity::ContractId(x) => x.abi_encode(buffer),
-                }
-                match b {
+                };
+                let buffer = match b {
                     Identity::Address(x) => x.abi_encode(buffer),
                     Identity::ContractId(x) => x.abi_encode(buffer),
-                }
-                c.abi_encode(buffer);
+                };
+                let buffer = c.abi_encode(buffer);
+                buffer
             },
-        }
+        };
+        buffer
     }
 }
 
@@ -53,55 +53,52 @@ enum IERC20ErrorsError {
 }
 
 impl AbiEncode for IERC20ErrorsError {
-    fn abi_encode(self, ref mut buffer: core::codec::Buffer) {
-        match self {
+    fn abi_encode(self, buffer: Buffer) -> Buffer {
+        let buffer = match self {
             IERC20ErrorsError::ERC20InsufficientBalance((a, b, c)) => {
-                "ERC20InsufficientBalance".abi_encode(buffer);
-                match a {
+                let buffer = match a {
                     Identity::Address(x) => x.abi_encode(buffer),
                     Identity::ContractId(x) => x.abi_encode(buffer),
-                }
-                b.abi_encode(buffer);
-                c.abi_encode(buffer);
+                };
+                let buffer = b.abi_encode(buffer);
+                let buffer = c.abi_encode(buffer);
+                buffer
             },
             IERC20ErrorsError::ERC20InvalidSender(a) => {
-                "ERC20InvalidSender".abi_encode(buffer);
                 match a {
                     Identity::Address(x) => x.abi_encode(buffer),
                     Identity::ContractId(x) => x.abi_encode(buffer),
                 }
             },
             IERC20ErrorsError::ERC20InvalidReceiver(a) => {
-                "ERC20InvalidReceiver".abi_encode(buffer);
                 match a {
                     Identity::Address(x) => x.abi_encode(buffer),
                     Identity::ContractId(x) => x.abi_encode(buffer),
                 }
             },
             IERC20ErrorsError::ERC20InsufficientAllowance((a, b, c)) => {
-                "ERC20InsufficientAllowance".abi_encode(buffer);
-                match a {
+                let buffer = match a {
                     Identity::Address(x) => x.abi_encode(buffer),
                     Identity::ContractId(x) => x.abi_encode(buffer),
-                }
-                b.abi_encode(buffer);
-                c.abi_encode(buffer);
+                };
+                let buffer = b.abi_encode(buffer);
+                let buffer = c.abi_encode(buffer);
+                buffer
             },
             IERC20ErrorsError::ERC20InvalidApprover(a) => {
-                "ERC20InvalidApprover".abi_encode(buffer);
                 match a {
                     Identity::Address(x) => x.abi_encode(buffer),
                     Identity::ContractId(x) => x.abi_encode(buffer),
                 }
             },
             IERC20ErrorsError::ERC20InvalidSpender(a) => {
-                "ERC20InvalidSpender".abi_encode(buffer);
                 match a {
                     Identity::Address(x) => x.abi_encode(buffer),
                     Identity::ContractId(x) => x.abi_encode(buffer),
                 }
             },
-        }
+        };
+        buffer
     }
 }
 
