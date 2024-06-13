@@ -229,8 +229,8 @@ impl Project {
                     import_path = source_unit_directory.join(import_path);
                 }
                 
-                import_path = crate::get_canonical_path(import_path, false, false)
-                    .map_err(|e| Error::Wrapped(Box::new(e))).unwrap();
+                import_path = crate::get_canonical_path(import_path.clone(), false, false)
+                    .map_err(|e| Error::Wrapped(format!("{}: {}", e, import_path.to_string_lossy()).into()))?;
                 
                 let import_directives = self.import_directives.entry(source_unit_path.into()).or_default();
                 let definition_names = import_directives.entry(import_path).or_default();
