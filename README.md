@@ -1,7 +1,6 @@
+# ![](assets/banner.png)
 
-# charcoal
-
-A Solidity to Sway translator written in Rust. This tool aims to translate contracts written in Solidity into Sway source code.
+Charcoal is a Solidity-to-Sway translator written in Rust. This tool aims to translate contracts written in Solidity into Sway source code.
 
 This is primarily an educational tool, and some generated Sway code may be incorrect or not optimal.
 
