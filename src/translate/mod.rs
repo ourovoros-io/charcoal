@@ -155,43 +155,6 @@ impl TranslationScope {
         None
     }
 
-    #[inline]
-    pub fn find_function_matching_types(
-        &self,
-        old_name: &str,
-        parameters: &[sway::Expression],
-        parameter_types: &[sway::TypeName],
-    ) -> Option<Rc<RefCell<TranslatedFunction>>> {
-        self.find_function(|f| {
-            let f = f.borrow();
-
-            // Ensure the function's old name matches the function call we're translating
-            if f.old_name != old_name {
-                return false;
-            }
-
-            // Ensure the supplied function call args match the function's parameters
-            if parameters.len() != f.parameters.entries.len() {
-                return false;
-            }
-
-            for (i, value_type_name) in parameter_types.iter().enumerate() {
-                let Some(parameter_type_name) = f.parameters.entries[i].type_name.as_ref() else { continue };
-
-                // HACK: Don't check Identity compatibility
-                if parameter_type_name.to_string() == "Identity" {
-                    continue;
-                }
-
-                if !value_type_name.is_compatible_with(parameter_type_name) {
-                    return false;
-                }
-            }
-
-            true
-        })
-    }
-
     /// Atempts to find a translated function using a custom function
     pub fn find_function<F: Copy + FnMut(&&Rc<RefCell<TranslatedFunction>>) -> bool>(&self, f: F) -> Option<Rc<RefCell<TranslatedFunction>>> {
         if let Some(function) = self.functions.iter().find(f) {
