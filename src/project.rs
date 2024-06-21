@@ -167,7 +167,7 @@ impl Project {
 
         for source_unit_part in source_unit.0.iter() {
             match source_unit_part {
-                solidity::SourceUnitPart::PragmaDirective(_) => {
+                solidity::SourceUnitPart::PragmaDirective(_, _, _) => {
                     // NOTE: we don't need to do anything with pragma directives
                 }
 
