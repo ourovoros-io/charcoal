@@ -155,11 +155,16 @@ pub fn create_value_expression(
                 Some(value) => panic!("Invalid {name} value expression: {value:#?}"),
             }
 
-            "Bytes" => sway::Expression::from(sway::FunctionCall {
-                function: sway::Expression::Identifier("Bytes::new".into()),
-                generic_parameters: None,
-                parameters: vec![],
-            }),
+            "Bytes" => {
+                // Ensure `std::bytes::Bytes` is imported
+                translated_definition.ensure_use_declared("std::bytes::Bytes");
+
+                sway::Expression::from(sway::FunctionCall {
+                    function: sway::Expression::Identifier("Bytes::new".into()),
+                    generic_parameters: None,
+                    parameters: vec![],
+                })
+            }
 
             "Identity" => match value {
                 None => sway::Expression::from(sway::FunctionCall {
@@ -949,13 +954,30 @@ pub fn translate_member_access_expression(
             }
 
             ("msg", "data") => {
-                // msg.data => std::inputs::input_message_data(0, 0)
+                // msg.data => std::inputs::input_message_data(0, 0).unwrap_or(Bytes::new())
+
+                // Ensure `std::bytes::Bytes` is imported
+                translated_definition.ensure_use_declared("std::bytes::Bytes");
+
                 return Ok(sway::Expression::from(sway::FunctionCall {
-                    function: sway::Expression::Identifier("std::inputs::input_message_data".into()),
+                    function: sway::Expression::from(sway::MemberAccess {
+                        expression: sway::Expression::from(sway::FunctionCall {
+                            function: sway::Expression::Identifier("std::inputs::input_message_data".into()),
+                            generic_parameters: None,
+                            parameters: vec![
+                                sway::Expression::from(sway::Literal::DecInt(BigUint::zero())),
+                                sway::Expression::from(sway::Literal::DecInt(BigUint::zero())),
+                            ],
+                        }),
+                        member: "unwrap_or".into(),
+                    }),
                     generic_parameters: None,
                     parameters: vec![
-                        sway::Expression::from(sway::Literal::DecInt(BigUint::zero())),
-                        sway::Expression::from(sway::Literal::DecInt(BigUint::zero())),
+                        sway::Expression::from(sway::FunctionCall {
+                            function: sway::Expression::Identifier("Bytes::new".into()),
+                            generic_parameters: None,
+                            parameters: vec![],
+                        }),
                     ],
                 }))
             }
@@ -4829,6 +4851,9 @@ pub fn translate_new_expression(
                     panic!("Invalid new array expression: expected 1 argument, found {}", args.len());
                 }
 
+                // Ensure `std::bytes::Bytes` is imported
+                translated_definition.ensure_use_declared("std::bytes::Bytes");
+
                 let length = &args[0];
 
                 return Ok(sway::Expression::from(sway::Block {
@@ -4920,6 +4945,9 @@ pub fn translate_new_expression(
                 if args.len() != 1 {
                     panic!("Invalid new string expression: expected 1 argument, found {}", args.len());
                 }
+
+                // Ensure `std::bytes::Bytes` is imported
+                translated_definition.ensure_use_declared("std::bytes::Bytes");
 
                 let length = &args[0];
 

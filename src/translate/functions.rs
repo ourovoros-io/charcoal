@@ -462,7 +462,7 @@ pub fn translate_function_definition(
     let new_name_2 = if is_constructor {
         "constructor".to_string()
     } else if is_fallback {
-        "fallback".to_string()
+        "fallback".to_string() // TODO: add fallback attribute
     } else if is_receive {
         "receive".to_string()
     } else {

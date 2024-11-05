@@ -808,8 +808,18 @@ impl TranslatedDefinition {
                         }),
 
                         "std::inputs::input_message_data" => Ok(sway::TypeName::Identifier {
-                            name: "Bytes".into(),
-                            generic_parameters: None,
+                            name: "Option".into(),
+                            generic_parameters: Some(sway::GenericParameterList {
+                                entries: vec![
+                                    sway::GenericParameter {
+                                        type_name: sway::TypeName::Identifier {
+                                            name: "Bytes".into(),
+                                            generic_parameters: None,
+                                        },
+                                        implements: None,
+                                    },
+                                ],
+                            }),
                         }),
     
                         "u8::from" | "u8::max" | "u8::min" => Ok(sway::TypeName::Identifier {

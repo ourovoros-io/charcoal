@@ -224,7 +224,14 @@ pub fn generate_enum_abi_encode_function(
                                     }),
                                     value: sway::Expression::from(sway::FunctionCall {
                                         function: sway::Expression::from(sway::MemberAccess {
-                                            expression: sway::Expression::Identifier("x".into()),
+                                            expression: sway::Expression::from(sway::FunctionCall {
+                                                function: sway::Expression::from(sway::MemberAccess {
+                                                    expression: sway::Expression::Identifier("x".into()),
+                                                    member: "bits".into(),
+                                                }),
+                                                generic_parameters: None,
+                                                parameters: vec![],
+                                            }),
                                             member: "abi_encode".into(),
                                         }),
                                         generic_parameters: None,
