@@ -3997,12 +3997,13 @@ pub fn translate_address_call_expression(
                     registers: vec![
                         sway::AsmRegister {
                             name: "r1".into(),
-                            value: Some(sway::Expression::from(sway::MemberAccess {
-                                expression: sway::Expression::from(sway::MemberAccess {
+                            value: Some(sway::Expression::from(sway::FunctionCall {
+                                function: sway::Expression::from(sway::MemberAccess {
                                     expression: payload.clone(),
-                                    member: "buf".into(),
+                                    member: "ptr".into(),
                                 }),
-                                member: "ptr".into(),
+                                generic_parameters: None,
+                                parameters: vec![],
                             })),
                         },
                         sway::AsmRegister {
