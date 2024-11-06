@@ -1562,12 +1562,12 @@ impl TranslatedDefinition {
 
                                 "neg" => {
                                     self.ensure_dependency_declared(
-                                        "signed_integers = { git = \"https://github.com/fuellabs/sway-libs\", branch = \"master\" }"
+                                        "sway_libs = { git = \"https://github.com/FuelLabs/sway-libs\", tag = \"v0.24.0\" }"
                                     );
                     
                                     Ok(sway::TypeName::Identifier {
                                         name: {
-                                            self.ensure_use_declared("signed_integers::i64::*");
+                                            self.ensure_use_declared("sway_libs::signed_integers::i64::*");
                                             "I64".into()
                                         },
                                         generic_parameters: None,

@@ -77,7 +77,7 @@ pub fn translate_type_name(
 
             solidity::Type::Int(bits) => {
                 translated_definition.ensure_dependency_declared(
-                    "signed_integers = { git = \"https://github.com/fuellabs/sway-libs\", branch = \"master\" }"
+                    "sway_libs = { git = \"https://github.com/FuelLabs/sway-libs\", tag = \"v0.24.0\" }"
                 );
 
                 sway::TypeName::Identifier {
@@ -86,42 +86,42 @@ pub fn translate_type_name(
                             if *bits != 8 {
                                 eprintln!("WARNING: unsupported signed integer type `int{bits}`, using `I8`...");
                             }
-                            translated_definition.ensure_use_declared("signed_integers::i8::*");
+                            translated_definition.ensure_use_declared("sway_libs::signed_integers::i8::*");
                             "I8".into()
                         }
                         9..=16 => {
                             if *bits != 16 {
                                 eprintln!("WARNING: unsupported signed integer type `int{bits}`, using `I16`...");
                             }
-                            translated_definition.ensure_use_declared("signed_integers::i16::*");
+                            translated_definition.ensure_use_declared("sway_libs::signed_integers::i16::*");
                             "I16".into()
                         }
                         17..=32 => {
                             if *bits != 32 {
                                 eprintln!("WARNING: unsupported signed integer type `int{bits}`, using `I32`...");
                             }
-                            translated_definition.ensure_use_declared("signed_integers::i32::*");
+                            translated_definition.ensure_use_declared("sway_libs::signed_integers::i32::*");
                             "I32".into()
                         }
                         33..=64 => {
                             if *bits != 64 {
                                 eprintln!("WARNING: unsupported signed integer type `int{bits}`, using `I64`...");
                             }
-                            translated_definition.ensure_use_declared("signed_integers::i64::*");
+                            translated_definition.ensure_use_declared("sway_libs::signed_integers::i64::*");
                             "I64".into()
                         }
                         65..=128 => {
                             if *bits != 128 {
                                 eprintln!("WARNING: unsupported signed integer type `int{bits}`, using `I128`...");
                             }
-                            translated_definition.ensure_use_declared("signed_integers::i128::*");
+                            translated_definition.ensure_use_declared("sway_libs::signed_integers::i128::*");
                             "I128".into()
                         }
                         129..=256 => {
                             if *bits != 256 {
                                 eprintln!("WARNING: unsupported signed integer type `int{bits}`, using `I256`...");
                             }
-                            translated_definition.ensure_use_declared("signed_integers::i256::*");
+                            translated_definition.ensure_use_declared("sway_libs::signed_integers::i256::*");
                             "I256".into()
                         }
                         _ => panic!("Invalid uint type: {bits}"),
