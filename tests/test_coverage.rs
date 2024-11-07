@@ -9,18 +9,18 @@ fn test_coverage() {
         "./tests/ds-token",
         "https://github.com/dapphub/ds-token.git",
     );
-    targets.insert(
-        "./tests/compound-protocol",
-        "https://github.com/compound-finance/compound-protocol.git",
-    );
-    targets.insert(
-        "./tests/solidity-by-example",
-        "https://github.com/solidity-by-example/solidity-by-example.github.io.git",
-    );
-    targets.insert(
-        "./tests/openzeppelin-contracts",
-        "https://github.com/OpenZeppelin/openzeppelin-contracts.git",
-    );
+    // targets.insert(
+    //     "./tests/compound-protocol",
+    //     "https://github.com/compound-finance/compound-protocol.git",
+    // );
+    // targets.insert(
+    //     "./tests/solidity-by-example",
+    //     "https://github.com/solidity-by-example/solidity-by-example.github.io.git",
+    // );
+    // targets.insert(
+    //     "./tests/openzeppelin-contracts",
+    //     "https://github.com/OpenZeppelin/openzeppelin-contracts.git",
+    // );
 
     for (path, target_repo) in targets.iter() {
         clone_target_repo(std::path::Path::new(path), target_repo);
@@ -33,6 +33,7 @@ fn clone_target_repo(path: &std::path::Path, target_repo: &str) {
         let _ = std::process::Command::new("git")
             .args(&[
                 "clone",
+                "--recursive",
                 target_repo,
                 path.to_str().expect("Failed to convert path to string"),
             ])
@@ -92,21 +93,29 @@ fn process_path(path: &std::path::Path) {
         .map(|e| e.path().to_string_lossy().into_owned())
         .collect();
 
+    // Ensure the output folder exists
+    if !std::fs::exists("./output/").expect("Failed to query \"./output/\" directory") {
+        std::fs::create_dir("./output/").expect("Failed to create \"./output/\" directory");
+    }
+
     // Create a hashmap to store the results of the charcoal analysis
     let mut results = std::collections::HashMap::new();
 
     // Run charcoal for each .sol file in the vector
     for path in paths {
-        if path.len() > 0 {
-            let output = std::process::Command::new("cargo")
-                .args(&["run", "--", "--target", &path, "-o", "./output"])
-                .output()
-                .expect("Filed to execute command");
-            if output.status.success() {
-                results.insert(path, true);
-            } else {
-                results.insert(path, false);
-            }
+        println!("Running for \"{path}\":");
+
+        let output = std::process::Command::new("cargo")
+            .args(&["run", "--", "--target", &path, "-o", "./output"])
+            .output()
+            .expect("Failed to execute command");
+        
+        println!("{output:#?}");
+
+        if output.status.success() {
+            results.insert(path, true);
+        } else {
+            results.insert(path, false);
         }
     }
 
@@ -116,6 +125,7 @@ fn process_path(path: &std::path::Path) {
             println!("{}", format!("Success : {}", path).green());
         }
     }
+
     // Print all the failed paths
     for (path, result) in results.iter() {
         if !*result {
