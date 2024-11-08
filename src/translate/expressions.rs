@@ -4294,12 +4294,98 @@ pub fn translate_binary_expression(
         }
     }
 
+    // authority == DSAuthority(address(0))
+    // storage.authority.read() == Identity::Address(Address::from(ZERO_B256))
+    //
+    // Check if authority was a abi
+    // 
+
+    // Check to see if lhs is state variable 
+    // Check to see if lhs is a identifier 
+    // Get the name of the identifier
+    // Lookup the variable in the scope using the new name of the identifier
+    // Check if the variable abi type name is some
+
+    let lhs = translate_expression(project, translated_definition, scope.clone(), lhs)?;
+    // let rhs =  translate_expression(project, translated_definition, scope.clone(), rhs)?;
+
+
+    let mut new_name = None;
+
+    match &lhs {
+        sway::Expression::FunctionCall(expr) => match &expr.function {
+            sway::Expression::MemberAccess(expr) => {
+                if expr.member == "read" {
+                    match &expr.expression {
+                        sway::Expression::MemberAccess(expr) => {
+                            match &expr.expression {
+                                sway::Expression::Identifier(ident) => {
+                                    if ident == "storage" {
+                                        new_name = Some(expr.member.clone());
+                                    }
+                                },
+                                _ => {},
+                            }
+                        },
+                        _ => {},
+                    }
+                }
+            }, 
+            _ => {},
+        },
+        _ => {},
+    }
+
+    if new_name.is_none() {
+        return Ok(sway::Expression::from(sway::BinaryExpression {
+            operator: operator.into(),
+            lhs,
+            rhs: translate_expression(project, translated_definition, scope.clone(), rhs)?,
+        }))
+    }
+
+    let mut lhs_type_name = None;
+
+    if let Some(v) = scope.borrow().get_variable_from_new_name(new_name.as_ref().unwrap().as_str()) {
+        if let Some (type_name) = v.borrow().abi_type_name.as_ref() {
+            lhs_type_name = Some(type_name.clone());
+        }
+    }
+
+    if let Some(lhs_type_name) = lhs_type_name {
+        match rhs {
+            solidity::Expression::FunctionCall(_, rhs_expr, rhs_exprs) => {
+                match rhs_expr.as_ref() {
+                    solidity::Expression::Variable(solidity::Identifier { name : rhs_name, .. }) => {
+                        if *rhs_name == lhs_type_name.to_string() {
+                            return Ok(sway::Expression::from(sway::BinaryExpression {
+                                operator: operator.into(),
+                                lhs,
+                                rhs: translate_expression(project, translated_definition, scope.clone(), &rhs_exprs[0])?,
+                            }))
+                            
+                        } 
+                    },
+                    _ => {}
+                }
+            },
+            _ => {}
+        }
+    }
+
+    // Check if rhs is a abi cast expression
+    // Check if the type of the abi cast matches the type of the identifier
+    // If so do not cast as abi 
+
+    // Do the same but swap lhs, rhs
+
     Ok(sway::Expression::from(sway::BinaryExpression {
         operator: operator.into(),
-        lhs: translate_expression(project, translated_definition, scope.clone(), lhs)?,
+        lhs,
         rhs: translate_expression(project, translated_definition, scope.clone(), rhs)?,
     }))
 }
+
 
 pub fn translate_variable_access_expression(
     project: &mut Project,

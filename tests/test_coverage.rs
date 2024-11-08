@@ -9,18 +9,18 @@ fn test_coverage() {
         "./tests/ds-token",
         "https://github.com/dapphub/ds-token.git",
     );
-    // targets.insert(
-    //     "./tests/compound-protocol",
-    //     "https://github.com/compound-finance/compound-protocol.git",
-    // );
-    // targets.insert(
-    //     "./tests/solidity-by-example",
-    //     "https://github.com/solidity-by-example/solidity-by-example.github.io.git",
-    // );
-    // targets.insert(
-    //     "./tests/openzeppelin-contracts",
-    //     "https://github.com/OpenZeppelin/openzeppelin-contracts.git",
-    // );
+    targets.insert(
+        "./tests/compound-protocol",
+        "https://github.com/compound-finance/compound-protocol.git",
+    );
+    targets.insert(
+        "./tests/solidity-by-example",
+        "https://github.com/solidity-by-example/solidity-by-example.github.io.git",
+    );
+    targets.insert(
+        "./tests/openzeppelin-contracts",
+        "https://github.com/OpenZeppelin/openzeppelin-contracts.git",
+    );
 
     for (path, target_repo) in targets.iter() {
         clone_target_repo(std::path::Path::new(path), target_repo);
