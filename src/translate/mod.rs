@@ -54,6 +54,7 @@ pub struct TranslatedFunction {
     pub old_name: String,
     pub new_name: String,
     pub parameters: sway::ParameterList,
+    pub attributes: Option<sway::AttributeList>,
     pub constructor_calls: Vec<sway::FunctionCall>,
     pub modifiers: Vec<sway::FunctionCall>,
     pub return_type: Option<sway::TypeName>,
@@ -64,6 +65,7 @@ pub struct TranslatedModifier {
     pub old_name: String,
     pub new_name: String,
     pub parameters: sway::ParameterList,
+    pub attributes: Option<sway::AttributeList>,
     pub has_underscore: bool,
     pub pre_body: Option<sway::Block>,
     pub post_body: Option<sway::Block>,
@@ -212,6 +214,8 @@ pub struct TranslatedDefinition {
     pub function_name_counts: HashMap<String, usize>,
     pub function_names: HashMap<String, String>,
     pub function_call_counts: HashMap<String, usize>,
+    pub functions_called: HashMap<String, Vec<String>>,
+    pub current_functions: Vec<String>,
 
     pub storage_fields_name_counts: HashMap<String, usize>,
     pub storage_fields_names: HashMap<String, String>,
@@ -451,6 +455,8 @@ impl TranslatedDefinition {
             function_name_counts: HashMap::new(),
             function_names: HashMap::new(),
             function_call_counts: HashMap::new(),
+            functions_called: HashMap::new(),
+            current_functions: vec![],
 
             storage_fields_name_counts: HashMap::new(),
             storage_fields_names: HashMap::new(),

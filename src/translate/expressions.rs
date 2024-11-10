@@ -2294,6 +2294,10 @@ pub fn translate_function_call_expression(
                         let function = function.borrow();
                         
                         *translated_definition.function_call_counts.entry(function.new_name.clone()).or_insert(0) += 1;
+                        translated_definition.functions_called
+                            .entry(translated_definition.current_functions.last().cloned().unwrap())
+                            .or_insert_with(|| vec![])
+                            .push(function.new_name.clone());
 
                         return Ok(sway::Expression::from(sway::FunctionCall {
                             function: sway::Expression::Identifier(function.new_name.clone()),
@@ -2724,6 +2728,10 @@ pub fn translate_function_call_expression(
                                 let function = function.borrow();
                                 
                                 *translated_definition.function_call_counts.entry(function.new_name.clone()).or_insert(0) += 1;
+                                translated_definition.functions_called
+                                    .entry(translated_definition.current_functions.last().cloned().unwrap())
+                                    .or_insert_with(|| vec![])
+                                    .push(function.new_name.clone());
 
                                 return Ok(sway::Expression::from(sway::FunctionCall {
                                     function: sway::Expression::Identifier(function.new_name.clone()),
@@ -2837,6 +2845,10 @@ pub fn translate_function_call_expression(
                             let function = function.borrow();
                             
                             *translated_definition.function_call_counts.entry(function.new_name.clone()).or_insert(0) += 1;
+                            translated_definition.functions_called
+                                .entry(translated_definition.current_functions.last().cloned().unwrap())
+                                .or_insert_with(|| vec![])
+                                .push(function.new_name.clone());
 
                             return Ok(sway::Expression::from(sway::FunctionCall {
                                 function: sway::Expression::Identifier(function.new_name.clone()),
@@ -2951,6 +2963,10 @@ pub fn translate_function_call_expression(
                                     let function = function.borrow();
                                     
                                     *translated_definition.function_call_counts.entry(function.new_name.clone()).or_insert(0) += 1;
+                                    translated_definition.functions_called
+                                        .entry(translated_definition.current_functions.last().cloned().unwrap())
+                                        .or_insert_with(|| vec![])
+                                        .push(function.new_name.clone());
         
                                     return Ok(sway::Expression::from(sway::FunctionCall {
                                         function: sway::Expression::Identifier(function.new_name.clone()),
@@ -3167,6 +3183,10 @@ pub fn translate_function_call_expression(
                             });
     
                             *translated_definition.function_call_counts.entry(external_function_declaration.new_name.clone()).or_insert(0) += 1;
+                            translated_definition.functions_called
+                                .entry(translated_definition.current_functions.last().cloned().unwrap())
+                                .or_insert_with(|| vec![])
+                                .push(external_function_declaration.new_name.clone());
                             
                             return Ok(function_call);
                         }
@@ -3302,6 +3322,10 @@ pub fn translate_function_call_expression(
 
                                 if *parameter_type_name == type_name {
                                     *translated_definition.function_call_counts.entry(f.new_name.clone()).or_insert(0) += 1;
+                                    translated_definition.functions_called
+                                        .entry(translated_definition.current_functions.last().cloned().unwrap())
+                                        .or_insert_with(|| vec![])
+                                        .push(f.new_name.clone());
 
                                     return Ok(sway::Expression::from(sway::FunctionCall {
                                         function: sway::Expression::Identifier(f.new_name.clone()),
@@ -3665,6 +3689,10 @@ pub fn translate_function_call_expression(
                                 }
                                 
                                 *translated_definition.function_call_counts.entry(function.new_name.clone()).or_insert(0) += 1;
+                                translated_definition.functions_called
+                                    .entry(translated_definition.current_functions.last().cloned().unwrap())
+                                    .or_insert_with(|| vec![])
+                                    .push(function.new_name.clone());
 
                                 return Ok(sway::Expression::from(sway::FunctionCall {
                                     function: sway::Expression::Identifier(function.new_name.clone()),
@@ -3760,6 +3788,10 @@ pub fn translate_function_call_expression(
                                 }
                                 
                                 *translated_definition.function_call_counts.entry(function.new_name.clone()).or_insert(0) += 1;
+                                translated_definition.functions_called
+                                    .entry(translated_definition.current_functions.last().cloned().unwrap())
+                                    .or_insert_with(|| vec![])
+                                    .push(function.new_name.clone());
 
                                 return Ok(sway::Expression::from(sway::FunctionCall {
                                     function: sway::Expression::Identifier(function.new_name.clone()),

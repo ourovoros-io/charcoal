@@ -168,7 +168,6 @@ pub fn translate_contract_definition(
         translate_error_definition(project, &mut translated_definition, error_definition)?;
     }
 
-
     // Collect each toplevel function ahead of time for contextual reasons
     for function_definition in toplevel_functions.iter() {
 
@@ -490,6 +489,47 @@ pub fn translate_contract_definition(
         // Add the deferred initializations to the constructor body
         for statement in assignment_statements.into_iter().rev() {
             constructor_body.statements.insert(statement_index, statement);
+        }
+    }
+
+    // Expand function attributes to support the attributes of any other functions they call
+    for (calling_name, called_names) in translated_definition.functions_called.iter() {
+        for called_name in called_names.iter() {
+            let called_function = translated_definition.functions.iter().find(|f| f.name == *called_name).cloned().unwrap();
+            let calling_function = translated_definition.functions.iter_mut().find(|f| f.name == *calling_name).unwrap();
+            
+            if let Some(called_attrs) = called_function.attributes.as_ref() {
+                if calling_function.attributes.is_none() {
+                    calling_function.attributes = Some(sway::AttributeList::default());
+                }
+
+                let calling_attrs = calling_function.attributes.as_mut().unwrap();
+
+                for called_attr in called_attrs.attributes.iter() {
+                    if !calling_attrs.attributes.iter().any(|a| a.name == called_attr.name) {
+                        calling_attrs.attributes.push(sway::Attribute {
+                            name: called_attr.name.clone(),
+                            parameters: None,
+                        });
+                    }
+
+                    let calling_attr = calling_attrs.attributes.iter_mut().find(|a| a.name == called_attr.name).unwrap();
+
+                    if let Some(called_params) = called_attr.parameters.as_ref() {
+                        if calling_attr.parameters.is_none() {
+                            calling_attr.parameters = Some(vec![]);
+                        }
+
+                        let calling_params = calling_attr.parameters.as_mut().unwrap();
+                        
+                        for called_param in called_params.iter() {
+                            if !calling_params.contains(called_param) {
+                                calling_params.push(called_param.clone());
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 

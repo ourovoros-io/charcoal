@@ -259,6 +259,16 @@ pub fn translate_state_variable(
         old_name: old_name.clone(),
         new_name: new_name.clone(),
         parameters: sway_function.parameters.clone(),
+        attributes: Some(sway::AttributeList {
+            attributes: vec![
+                sway::Attribute {
+                    name: "storage".into(),
+                    parameters: Some(vec![
+                        "read".into(),
+                    ]),
+                },
+            ],
+        }),
         constructor_calls: vec![],
         modifiers: vec![],
         return_type: sway_function.return_type.clone(),

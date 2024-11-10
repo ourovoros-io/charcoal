@@ -70,6 +70,9 @@ pub fn translate_function_declaration(
         new_name = format!("{}_{}", crate::translate_naming_convention(&translated_definition.name, Case::Snake), new_name);
     }
 
+    // Add the function to the conversion stack
+    translated_definition.current_functions.push(new_name.clone());
+
     // Create a scope for modifier invocation translations
     let scope = Rc::new(RefCell::new(TranslationScope {
         parent: Some(translated_definition.toplevel_scope.clone()),
@@ -158,8 +161,9 @@ pub fn translate_function_declaration(
     // Translate the function
     let translated_function = TranslatedFunction {
         old_name,
-        new_name,
+        new_name: new_name.clone(),
         parameters,
+        attributes: None,
         constructor_calls,
         modifiers,
         return_type: if function_definition.returns.is_empty() {
@@ -179,6 +183,8 @@ pub fn translate_function_declaration(
         },
     };
 
+    assert!(translated_definition.current_functions.pop().unwrap() == new_name);
+
     Ok(translated_function)
 }
 
@@ -191,10 +197,13 @@ pub fn translate_modifier_definition(
     let old_name = function_definition.name.as_ref().unwrap().name.clone();
     let new_name = crate::translate_naming_convention(old_name.as_str(), Case::Snake);
 
+    translated_definition.current_functions.push(new_name.clone());
+
     let mut modifier = TranslatedModifier {
         old_name,
-        new_name,
+        new_name: new_name.clone(),
         parameters: sway::ParameterList::default(),
+        attributes: None,
         has_underscore: false,
         pre_body: None,
         post_body: None,
@@ -431,6 +440,9 @@ pub fn translate_modifier_definition(
     // Add the translated modifier to the translated definition
     translated_definition.modifiers.push(modifier);
 
+    assert!(translated_definition.current_functions.pop().unwrap() == new_name);
+    println!("Functions called by {new_name}: {:#?}", translated_definition.functions_called.get(&new_name));
+
     Ok(())
 }
 
@@ -474,6 +486,8 @@ pub fn translate_function_definition(
     if let Some(solidity::ContractTy::Abstract(_) | solidity::ContractTy::Library(_)) = &translated_definition.kind {
        new_name = format!("{}_{}", crate::translate_naming_convention(&translated_definition.name, Case::Snake), new_name);
     }
+
+    translated_definition.current_functions.push(new_name.clone());
 
     // println!(
     //     "Translating {}.{} {}",
@@ -901,6 +915,9 @@ pub fn translate_function_definition(
             }
         }
     }
+
+    assert!(translated_definition.current_functions.pop().unwrap() == new_name);
+    println!("Functions called by {new_name}: {:#?}", translated_definition.functions_called.get(&new_name));
 
     Ok(())
 }
