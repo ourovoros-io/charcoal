@@ -110,8 +110,6 @@ fn process_path(path: &std::path::Path) {
             .output()
             .expect("Failed to execute command");
         
-        println!("{output:#?}");
-
         if output.status.success() {
             results.insert(path, true);
         } else {
@@ -159,8 +157,6 @@ fn process_path(path: &std::path::Path) {
         .map(|e| e.path().to_string_lossy().into_owned())
         .collect();
 
-    let mut build_results: HashMap<&str, Vec<(String, String)>> = std::collections::HashMap::new();
-
     let mut successful = 0;
     let mut failed = 0;
 
@@ -175,11 +171,9 @@ fn process_path(path: &std::path::Path) {
             .expect("Failed to execute command");
         if output.status.success() {
             println!("{}", format!("Success : {}", output_path.clone()).green());
-            build_results.entry("Success").or_insert(vec![]).push((output_path, String::new()));
             successful += 1;
         } else {
             println!("{}", format!("Failed  : {}", output_path).red());
-            build_results.entry("Failed").or_insert(vec![]).push((output_path, String::from_utf8_lossy(&output.stderr).to_string()));
             failed += 1;
         }
     }
@@ -193,17 +187,6 @@ fn process_path(path: &std::path::Path) {
     println!("{}", "-".repeat(line_length).magenta());
     println!("{}", format!("[Coverage : {:.2}%]", (successful as f32 / (successful + failed) as f32) * 100.0).magenta());
     println!("{}", "-".repeat(line_length).magenta());
-
-    println!("{}", "-".repeat(line_length).cyan());
-    
-    for (k, vs) in &build_results {
-        for v in vs {
-            println!("{}", format!("{} : {} - {}", k, v.0, v.1).cyan());
-        }
-        
-    }
-
-    println!("{}", "-".repeat(line_length).cyan());
 
     println!("{}", "-".repeat(line_length).cyan());
     println!("{}", "[End of charcoal analysis]".cyan());
