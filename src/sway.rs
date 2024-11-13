@@ -554,8 +554,8 @@ impl TabbedDisplay for Constant {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Literal {
     Bool(bool),
-    DecInt(BigUint),
-    HexInt(BigUint),
+    DecInt(BigUint, Option<String>),
+    HexInt(BigUint, Option<String>),
     String(String),
 }
 
@@ -563,8 +563,27 @@ impl TabbedDisplay for Literal {
     fn tabbed_fmt(&self, _depth: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Literal::Bool(x) => write!(f, "{x}"),
-            Literal::DecInt(x) => write!(f, "{x}"),
-            Literal::HexInt(x) => write!(f, "0x{x:X}"),
+            
+            Literal::DecInt(x, suffix) => write!(
+                f,
+                "{x}{}",
+                if let Some(suffix) = suffix.as_ref() {
+                    suffix.as_str()
+                } else {
+                    ""
+                },
+            ),
+
+            Literal::HexInt(x, suffix) => write!(
+                f,
+                "{x}{}",
+                if let Some(suffix) = suffix.as_ref() {
+                    suffix.as_str()
+                } else {
+                    ""
+                },
+            ),
+
             Literal::String(x) => write!(f, "\"{x}\""),
         }
     }

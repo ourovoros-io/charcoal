@@ -635,12 +635,20 @@ impl TranslatedDefinition {
                     name: "bool".into(),
                     generic_parameters: None,
                 }),
-                sway::Literal::DecInt(_) => Ok(sway::TypeName::Identifier {
-                    name: "u64".into(), // TODO: is this ok?
+                sway::Literal::DecInt(_, suffix) => Ok(sway::TypeName::Identifier {
+                    name: if let Some(suffix) = suffix.as_ref() {
+                        suffix.clone()
+                    } else {
+                        "u64".into() // TODO: is this ok?
+                    },
                     generic_parameters: None,
                 }),
-                sway::Literal::HexInt(_) => Ok(sway::TypeName::Identifier {
-                    name: "u64".into(), // TODO: is this ok?
+                sway::Literal::HexInt(_, suffix) => Ok(sway::TypeName::Identifier {
+                    name: if let Some(suffix) = suffix.as_ref() {
+                        suffix.clone()
+                    } else {
+                        "u64".into() // TODO: is this ok?
+                    },
                     generic_parameters: None,
                 }),
                 sway::Literal::String(_) => Ok(sway::TypeName::StringSlice),

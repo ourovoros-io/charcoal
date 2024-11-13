@@ -545,7 +545,7 @@ pub fn translate_variable_definition_statement(
                                 name: "i".into(),
                             }),
                             type_name: None,
-                            value: sway::Expression::from(sway::Literal::DecInt(BigUint::zero())),
+                            value: sway::Expression::from(sway::Literal::DecInt(BigUint::zero(), None)),
                         }),
 
                         // while i < length {
@@ -578,7 +578,7 @@ pub fn translate_variable_definition_statement(
                                     sway::Statement::from(sway::Expression::from(sway::BinaryExpression {
                                         operator: "+=".into(),
                                         lhs: sway::Expression::Identifier("i".into()),
-                                        rhs: sway::Expression::from(sway::Literal::DecInt(BigUint::one())),
+                                        rhs: sway::Expression::from(sway::Literal::DecInt(BigUint::one(), None)),
                                     })),
                                 ],
                                 final_expr: None,
@@ -882,7 +882,7 @@ pub fn translate_revert_statement(
                     function: sway::Expression::Identifier("revert".into()),
                     generic_parameters: None,
                     parameters: vec![
-                        sway::Expression::from(sway::Literal::DecInt(BigUint::zero())),
+                        sway::Expression::from(sway::Literal::DecInt(BigUint::zero(), None)),
                     ],
                 }))
             ],
@@ -895,7 +895,7 @@ pub fn translate_revert_statement(
             function: sway::Expression::Identifier("revert".into()),
             generic_parameters: None,
             parameters: vec![
-                sway::Expression::from(sway::Literal::DecInt(BigUint::zero())),
+                sway::Expression::from(sway::Literal::DecInt(BigUint::zero(), None)),
             ],
         })))
     }
@@ -918,7 +918,7 @@ pub fn translate_revert_statement(
                     function: sway::Expression::Identifier("revert".into()),
                     generic_parameters: None,
                     parameters: vec![
-                        sway::Expression::from(sway::Literal::DecInt(BigUint::zero())),
+                        sway::Expression::from(sway::Literal::DecInt(BigUint::zero(), None)),
                     ],
                 }))
             ],

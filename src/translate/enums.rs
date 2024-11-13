@@ -37,7 +37,7 @@ pub fn translate_enum_definition(
             is_public: false,
             name: crate::translate_naming_convention(value.as_ref().unwrap().name.as_str(), Case::ScreamingSnake),
             type_name: type_definition.name.clone(),
-            value: Some(sway::Expression::from(sway::Literal::DecInt(BigUint::from(i)))),
+            value: Some(sway::Expression::from(sway::Literal::DecInt(BigUint::from(i), None))),
         }));
     }
 

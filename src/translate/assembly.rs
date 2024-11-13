@@ -357,9 +357,9 @@ pub fn translate_yul_expression(
 ) -> Result<sway::Expression, Error> {
     match expression {
         solidity::YulExpression::BoolLiteral(_, value, _) => Ok(sway::Expression::from(sway::Literal::Bool(*value))),
-        solidity::YulExpression::NumberLiteral(_, value, _, _) => Ok(sway::Expression::from(sway::Literal::DecInt(value.parse().unwrap()))),
-        solidity::YulExpression::HexNumberLiteral(_, value, _) => Ok(sway::Expression::from(sway::Literal::HexInt(BigUint::from_str_radix(value.trim_start_matches("0x"), 16).unwrap()))),
-        solidity::YulExpression::HexStringLiteral(hex_literal, _) => Ok(sway::Expression::from(sway::Literal::HexInt(BigUint::from_str_radix(&hex_literal.to_string(), 16).unwrap()))),
+        solidity::YulExpression::NumberLiteral(_, value, _, _) => Ok(sway::Expression::from(sway::Literal::DecInt(value.parse().unwrap(), None))),
+        solidity::YulExpression::HexNumberLiteral(_, value, _) => Ok(sway::Expression::from(sway::Literal::HexInt(BigUint::from_str_radix(value.trim_start_matches("0x"), 16).unwrap(), None))),
+        solidity::YulExpression::HexStringLiteral(hex_literal, _) => Ok(sway::Expression::from(sway::Literal::HexInt(BigUint::from_str_radix(&hex_literal.to_string(), 16).unwrap(), None))),
         solidity::YulExpression::StringLiteral(string_literal, _) => Ok(sway::Expression::from(sway::Literal::String(string_literal.string.clone()))),
         solidity::YulExpression::Variable(solidity::Identifier { name, .. }) => translate_yul_variable_expression(project, translated_definition, scope.clone(), expression, name.as_str()),
         solidity::YulExpression::FunctionCall(function_call) => translate_yul_function_call_expression(project, translated_definition, scope.clone(), function_call),
@@ -945,7 +945,7 @@ pub fn translate_yul_function_call_expression(
                 function: sway::Expression::Identifier("std::inputs::input_message_data_length".into()),
                 generic_parameters: None,
                 parameters: vec![
-                    sway::Expression::from(sway::Literal::DecInt(BigUint::zero())),
+                    sway::Expression::from(sway::Literal::DecInt(BigUint::zero(), None)),
                 ],
             }))
         }
@@ -1148,7 +1148,7 @@ pub fn translate_yul_function_call_expression(
                 }),
                 generic_parameters: None,
                 parameters: vec![
-                    sway::Expression::from(sway::Literal::DecInt(BigUint::zero())),
+                    sway::Expression::from(sway::Literal::DecInt(BigUint::zero(), None)),
                 ],
             }))
         }

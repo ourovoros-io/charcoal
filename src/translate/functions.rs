@@ -441,7 +441,6 @@ pub fn translate_modifier_definition(
     translated_definition.modifiers.push(modifier);
 
     assert!(translated_definition.current_functions.pop().unwrap() == new_name);
-    println!("Functions called by {new_name}: {:#?}", translated_definition.functions_called.get(&new_name));
 
     Ok(())
 }
@@ -917,7 +916,6 @@ pub fn translate_function_definition(
     }
 
     assert!(translated_definition.current_functions.pop().unwrap() == new_name);
-    println!("Functions called by {new_name}: {:#?}", translated_definition.functions_called.get(&new_name));
 
     Ok(())
 }
