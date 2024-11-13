@@ -62,11 +62,15 @@ pub fn create_value_expression(
             "I8" | "I16" | "I32" | "I64" | "I128" | "I256" => {
                 let value = match value.as_ref() {
                     Some(value) => *value,
-                    None => return sway::Expression::from(sway::Literal::DecInt(BigUint::zero(), None)),
+                    None => &sway::Expression::from(sway::Literal::DecInt(BigUint::zero(), Some(format!("u{}", name.trim_start_matches("I").to_string())))),
                 };
 
                 match value {
-                    _ if matches!(value, sway::Expression::Literal(sway::Literal::DecInt(_, _) | sway::Literal::HexInt(_, _))) => (*value).clone(),
+                    _ if matches!(value, sway::Expression::Literal(sway::Literal::DecInt(_, _) | sway::Literal::HexInt(_, _))) => sway::Expression::from(sway::FunctionCall { 
+                        function: sway::Expression::Identifier(format!("{name}::from_uint").into()), 
+                        generic_parameters: None, 
+                        parameters: vec![value.clone()], 
+                    }),
                     
                     sway::Expression::FunctionCall(function_call) => match &function_call.function {
                         sway::Expression::Identifier(name) if name == "todo!" => value.clone(),
@@ -78,7 +82,11 @@ pub fn create_value_expression(
                                 panic!("Invalid {name} value expression: {value:#?} ({value_type_name})")
                             }
         
-                            (*value).clone()
+                            sway::Expression::from(sway::FunctionCall { 
+                                function: sway::Expression::Identifier(format!("{name}::from_uint").into()), 
+                                generic_parameters: None, 
+                                parameters: vec![value.clone()], 
+                            })
                         }
                     }
     
@@ -103,7 +111,11 @@ pub fn create_value_expression(
                             panic!("Invalid {name} value expression: {value:#?}")
                         }
     
-                        (*value).clone()
+                        sway::Expression::from(sway::FunctionCall { 
+                            function: sway::Expression::Identifier(format!("{name}::from_uint").into()), 
+                            generic_parameters: None, 
+                            parameters: vec![value.clone()], 
+                        })
                     }
                 }
             }
@@ -1480,7 +1492,7 @@ pub fn translate_function_call_expression(
                                             (BigUint::one() << *bits) - BigUint::one()
                                         };
 
-                                        return Ok(sway::Expression::from(sway::Literal::HexInt((max - value) + BigUint::one(), None)));
+                                        return Ok(sway::Expression::from(sway::Literal::HexInt((max - value) + BigUint::one(), Some("u256".to_string()))));
                                     }
                                     _ => {}
                                 }
