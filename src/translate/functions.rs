@@ -375,8 +375,13 @@ pub fn translate_modifier_definition(
     // Generate toplevel modifier functions
     match (modifier.pre_body.as_ref(), modifier.post_body.as_ref()) {
         (Some(pre_body), Some(post_body)) => {
+            let functions_called = translated_definition.functions_called.get(&new_name).cloned().unwrap();
+            translated_definition.functions_called.remove(&new_name);
+            
             let modifier_pre_function_name = format!("{}_pre", modifier.new_name);
-
+            
+            translated_definition.functions_called.insert(modifier_pre_function_name.clone(), functions_called.clone());
+        
             translated_definition.functions.push(sway::Function {
                 attributes: create_attributes(has_pre_storage_read, has_pre_storage_write),
                 is_public: false,
@@ -390,6 +395,9 @@ pub fn translate_modifier_definition(
             *translated_definition.function_call_counts.entry(modifier_pre_function_name.clone()).or_insert(0) += 1;
 
             let modifier_post_function_name = format!("{}_post", modifier.new_name);
+
+            translated_definition.functions_called.insert(modifier_post_function_name.clone(), functions_called.clone());
+
 
             translated_definition.functions.push(sway::Function {
                 attributes: create_attributes(has_post_storage_read, has_post_storage_write),
@@ -488,15 +496,15 @@ pub fn translate_function_definition(
 
     translated_definition.current_functions.push(new_name.clone());
 
-    // println!(
-    //     "Translating {}.{} {}",
-    //     translated_definition.name,
-    //     function_definition.name.as_ref().map(|n| n.name.as_str()).unwrap_or_else(|| new_name_2.as_str()),
-    //     match project.loc_to_line_and_column(&translated_definition.path, &function_definition.loc) {
-    //         Some((line, col)) => format!("at {}:{}:{}", translated_definition.path.to_string_lossy(), line, col),
-    //         None => format!("in {}...", translated_definition.path.to_string_lossy()),
-    //     },
-    // );
+    println!(
+        "Translating {}.{} {}",
+        translated_definition.name,
+        function_definition.name.as_ref().map(|n| n.name.as_str()).unwrap_or_else(|| new_name_2.as_str()),
+        match project.loc_to_line_and_column(&translated_definition.path, &function_definition.loc) {
+            Some((line, col)) => format!("at {}:{}:{}", translated_definition.path.to_string_lossy(), line, col),
+            None => format!("in {}...", translated_definition.path.to_string_lossy()),
+        },
+    );
     
     // Translate the functions parameters
     let mut parameters = sway::ParameterList::default();

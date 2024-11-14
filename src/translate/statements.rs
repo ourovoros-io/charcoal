@@ -900,30 +900,55 @@ pub fn translate_revert_statement(
         })))
     }
 
-    if let Some(solidity::Expression::StringLiteral(reason)) = parameters.first().as_ref() {
-        return Ok(sway::Statement::from(sway::Expression::from(sway::Block {
-            statements: vec![
-                // 1. log(reason)
-                sway::Statement::from(sway::Expression::from(sway::FunctionCall {
-                    function: sway::Expression::Identifier("log".into()),
-                    generic_parameters: None,
-                    parameters: vec![
-                        sway::Expression::from(sway::Literal::String(
-                            reason.iter().map(|s| s.string.clone()).collect::<Vec<_>>().join("")
-                        )),
-                    ]
-                })),
-                // 2. revert(0)
-                sway::Statement::from(sway::Expression::from(sway::FunctionCall {
-                    function: sway::Expression::Identifier("revert".into()),
-                    generic_parameters: None,
-                    parameters: vec![
-                        sway::Expression::from(sway::Literal::DecInt(BigUint::zero(), None)),
-                    ],
-                }))
-            ],
-            final_expr: None,
-        })));
+    match parameters.first().as_ref() {
+        Some(solidity::Expression::StringLiteral(reason)) => {
+            return Ok(sway::Statement::from(sway::Expression::from(sway::Block {
+                statements: vec![
+                    // 1. log(reason)
+                    sway::Statement::from(sway::Expression::from(sway::FunctionCall {
+                        function: sway::Expression::Identifier("log".into()),
+                        generic_parameters: None,
+                        parameters: vec![
+                            sway::Expression::from(sway::Literal::String(
+                                reason.iter().map(|s| s.string.clone()).collect::<Vec<_>>().join("")
+                            )),
+                        ]
+                    })),
+                    // 2. revert(0)
+                    sway::Statement::from(sway::Expression::from(sway::FunctionCall {
+                        function: sway::Expression::Identifier("revert".into()),
+                        generic_parameters: None,
+                        parameters: vec![
+                            sway::Expression::from(sway::Literal::DecInt(BigUint::zero(), None)),
+                        ],
+                    }))
+                ],
+                final_expr: None,
+            })));
+        },
+        Some(x) if matches!(x, solidity::Expression::Variable(_)) => {
+            let x_expr = translate_expression(project, translated_definition, scope, x)?;
+            return Ok(sway::Statement::from(sway::Expression::from(sway::Block {
+                statements: vec![
+                    // 1. log(reason)
+                    sway::Statement::from(sway::Expression::from(sway::FunctionCall {
+                        function: sway::Expression::Identifier("log".into()),
+                        generic_parameters: None,
+                        parameters: vec![x_expr]
+                    })),
+                    // 2. revert(0)
+                    sway::Statement::from(sway::Expression::from(sway::FunctionCall {
+                        function: sway::Expression::Identifier("revert".into()),
+                        generic_parameters: None,
+                        parameters: vec![
+                            sway::Expression::from(sway::Literal::DecInt(BigUint::zero(), None)),
+                        ],
+                    }))
+                ],
+                final_expr: None,
+            })));
+        },
+        _ => {},
     }
 
     todo!("translate revert statement")

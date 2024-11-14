@@ -29,6 +29,7 @@ pub enum ProjectType {
 impl ProjectType {
     pub const FOUNDRY_CONFIG_FILE: &'static str = "foundry.toml";
     pub const HARDHAT_CONFIG_FILE: &'static str = "hardhat.config.js";
+    pub const HARDHAT_CONFIG_FILE_TS: &'static str = "hardhat.config.ts";
     pub const BROWNIE_CONFIG_FILE: &'static str = "brownie-config.yaml";
     pub const TRUFFLE_CONFIG_FILE: &'static str = "truffle-config.js";
     pub const DAPP_CONFIG_FILE: &'static str = "Dappfile";
@@ -307,7 +308,7 @@ impl Project {
             ))?;
 
             self.project_type = ProjectType::Foundry { remappings };
-        } else if path.join(ProjectType::HARDHAT_CONFIG_FILE).exists() {
+        } else if path.join(ProjectType::HARDHAT_CONFIG_FILE).exists() || path.join(ProjectType::HARDHAT_CONFIG_FILE_TS).exists() {
             self.project_type = ProjectType::Hardhat;
         } else if path.join(ProjectType::BROWNIE_CONFIG_FILE).exists() {
             self.project_type = ProjectType::Brownie { remappings: HashMap::new() };
@@ -470,7 +471,7 @@ impl Project {
 pub fn find_project_root_folder<P: AsRef<Path>>(path: P) -> Option<PathBuf> {
     let path = path.as_ref();
 
-    if path.join(ProjectType::FOUNDRY_CONFIG_FILE).exists() || path.join(ProjectType::HARDHAT_CONFIG_FILE).exists() 
+    if path.join(ProjectType::FOUNDRY_CONFIG_FILE).exists() || path.join(ProjectType::HARDHAT_CONFIG_FILE).exists() || path.join(ProjectType::HARDHAT_CONFIG_FILE_TS).exists()
     || path.join(ProjectType::BROWNIE_CONFIG_FILE).exists() || path.join(ProjectType::TRUFFLE_CONFIG_FILE).exists()  
     || path.join(ProjectType::DAPP_CONFIG_FILE).exists() {
         return Some(path.to_path_buf());

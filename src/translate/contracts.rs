@@ -587,15 +587,22 @@ pub fn propagate_inherited_definitions(
                 _ => panic!("Unsupported import directive: {import_directive:#?}"),
             };
             
-            let import_path = project.get_project_type_path(&source_unit_directory, filename.string.as_str())?;
+            let mut import_path = project.get_project_type_path(&source_unit_directory, filename.string.as_str())?;
             
             if !import_path.exists() {
-                return Err(Error::Wrapped(Box::new(
-                    std::io::Error::new(
-                        std::io::ErrorKind::NotFound,
-                        format!("File not found: {}", import_path.to_string_lossy()),
-                    )
-                )));
+                import_path = match translated_definition.path.parent() {
+                    Some(path) => path.join(filename.string.as_str()),
+                    None => PathBuf::from(filename.string.as_str())
+                };
+
+                if !import_path.exists() {
+                    return Err(Error::Wrapped(Box::new(
+                        std::io::Error::new(
+                            std::io::ErrorKind::NotFound,
+                            format!("File not found: {}", import_path.to_string_lossy()),
+                        )
+                    )));
+                }
             }
 
             let import_path = crate::get_canonical_path(import_path, false, false)
