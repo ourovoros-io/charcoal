@@ -6,6 +6,91 @@ use num_traits::{Num, One, Zero};
 use solang_parser::{helpers::CodeLocation, pt as solidity};
 use std::{cell::RefCell, rc::Rc};
 
+pub fn evaluate_expression(
+    translated_definition: &mut TranslatedDefinition,
+    scope: Rc<RefCell<TranslationScope>>,
+    type_name: &sway::TypeName,
+    expression: &sway::Expression,
+) -> sway::Expression {
+    match expression {
+        sway::Expression::Literal(_) => expression.clone(),
+        
+        sway::Expression::Identifier(identifier) => {
+            let variable = scope.borrow().find_variable(|v| v.borrow().new_name == *identifier).unwrap();
+            todo!("evaluate identifier: {expression:#?} - {variable:#?}")
+        }
+        
+        sway::Expression::FunctionCall(function_call) => match &function_call.function {
+            sway::Expression::MemberAccess(member_access) => match &member_access.expression {
+                sway::Expression::Literal(
+                    sway::Literal::DecInt(lhs_value, lhs_suffix) |
+                    sway::Literal::HexInt(lhs_value, lhs_suffix)
+                ) => match member_access.member.as_str() {
+                    "pow" => {
+                        let rhs = evaluate_expression(
+                            translated_definition,
+                            scope.clone(),
+                            type_name,
+                            &function_call.parameters[0],
+                        );
+                        
+                        let sway::Expression::Literal(
+                            sway::Literal::DecInt(rhs_value, _) |
+                            sway::Literal::HexInt(rhs_value, _)
+                        ) = rhs else {
+                            todo!("integer pow rhs expression: {rhs:#?}")
+                        };
+
+                        let rhs_value: u32 = rhs_value.to_string().parse().unwrap();
+                        
+                        sway::Expression::Commented(
+                            format!("{}", sway::TabbedDisplayer(expression)),
+                            Box::new(sway::Expression::from(sway::Literal::DecInt(
+                                lhs_value.pow(rhs_value.into()),
+                                if type_name.is_uint() {
+                                    // TODO: we should verify the suffix is valid
+                                    Some(type_name.to_string().to_lowercase())
+                                } else {
+                                    lhs_suffix.clone()
+                                },
+                            ))),
+                        )
+                    }
+
+                    member => todo!("translate {member} member call: {expression:#?}"),
+                }
+
+                expression => todo!("translate member access call: {expression:#?}"),
+            }
+
+            _ => todo!("evaluate function call: {expression:#?}"),
+        }
+
+        sway::Expression::FunctionCallBlock(_) => todo!("evaluate function call block: {expression:#?}"),
+
+        sway::Expression::Block(_)
+        | sway::Expression::Return(_)
+        | sway::Expression::Array(_)
+        | sway::Expression::ArrayAccess(_)
+        | sway::Expression::MemberAccess(_)
+        | sway::Expression::Tuple(_)
+        | sway::Expression::If(_)
+        | sway::Expression::Match(_)
+        | sway::Expression::While(_)
+        | sway::Expression::UnaryExpression(_)
+        | sway::Expression::BinaryExpression(_)
+        | sway::Expression::Constructor(_)
+        | sway::Expression::Continue
+        | sway::Expression::Break
+        | sway::Expression::AsmBlock(_) => create_value_expression(translated_definition, scope, type_name, Some(expression)),
+        
+        sway::Expression::Commented(comment, expression) => sway::Expression::Commented(
+            comment.clone(),
+            Box::new(evaluate_expression(translated_definition, scope, type_name, expression)),
+        ),
+    }
+}
+
 pub fn create_value_expression(
     translated_definition: &mut TranslatedDefinition,
     scope: Rc<RefCell<TranslationScope>>,
@@ -62,15 +147,20 @@ pub fn create_value_expression(
             "I8" | "I16" | "I32" | "I64" | "I128" | "I256" => {
                 let value = match value.as_ref() {
                     Some(value) => *value,
-                    None => &sway::Expression::from(sway::Literal::DecInt(BigUint::zero(), Some(format!("u{}", name.trim_start_matches("I").to_string())))),
+                    None => &sway::Expression::from(sway::Literal::DecInt(
+                        BigUint::zero(),
+                        Some(format!("u{}", name.trim_start_matches("I").to_string())),
+                    )),
                 };
 
                 match value {
-                    _ if matches!(value, sway::Expression::Literal(sway::Literal::DecInt(_, _) | sway::Literal::HexInt(_, _))) => sway::Expression::from(sway::FunctionCall { 
-                        function: sway::Expression::Identifier(format!("{name}::from_uint").into()), 
-                        generic_parameters: None, 
-                        parameters: vec![value.clone()], 
-                    }),
+                    sway::Expression::Literal(sway::Literal::DecInt(_, _) | sway::Literal::HexInt(_, _)) => {
+                        sway::Expression::from(sway::FunctionCall { 
+                            function: sway::Expression::Identifier(format!("{name}::from_uint").into()), 
+                            generic_parameters: None, 
+                            parameters: vec![value.clone()], 
+                        })
+                    }
                     
                     sway::Expression::FunctionCall(function_call) => match &function_call.function {
                         sway::Expression::Identifier(name) if name == "todo!" => value.clone(),

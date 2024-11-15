@@ -1,6 +1,7 @@
 use super::{
-    create_value_expression, translate_expression, translate_type_name, DeferredInitialization,
-    TranslatedDefinition, TranslatedFunction, TranslatedVariable, TranslationScope,
+    create_value_expression, evaluate_expression, translate_expression, translate_type_name,
+    DeferredInitialization, TranslatedDefinition, TranslatedFunction, TranslatedVariable,
+    TranslationScope,
 };
 use crate::{project::Project, sway, Error};
 use convert_case::Case;
@@ -152,6 +153,14 @@ pub fn translate_state_variable(
 
     // Handle constant variable definitions
     if is_constant {
+        let scope = Rc::new(RefCell::new(TranslationScope {
+            parent: Some(translated_definition.toplevel_scope.clone()),
+            ..Default::default()
+        }));
+
+        // Evalute the value ahead of time in order to generate an appropriate constant value expression
+        let value = evaluate_expression(translated_definition, scope, &variable_type_name, &value);
+
         translated_definition.constants.push(sway::Constant {
             is_public,
             name: new_name.clone(),

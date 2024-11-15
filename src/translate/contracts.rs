@@ -760,6 +760,17 @@ pub fn propagate_inherited_definitions(
             *translated_definition.function_call_counts.entry(function_call.clone()).or_insert(0) += *count;
         }
 
+        // Extend functions called mapping
+        for (inherited_calling_function, inherited_called_functions) in inherited_definition.functions_called.iter() {
+            let called_functions = translated_definition.functions_called.entry(inherited_calling_function.clone()).or_default();
+
+            for inherited_called_function in inherited_called_functions {
+                if !called_functions.contains(inherited_called_function) {
+                    called_functions.push(inherited_called_function.clone());
+                }
+            }
+        }
+
         // Extend the contract impl block
         if let Some(inherited_impl) = inherited_definition.find_contract_impl() {
             for inherited_impl_item in inherited_impl.items.iter() {

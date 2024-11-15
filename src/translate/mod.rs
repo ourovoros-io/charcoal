@@ -741,32 +741,32 @@ impl TranslatedDefinition {
                             generic_parameters: None,
                         }),
     
-                        "I8::from" | "I8::max" | "I8::min" => Ok(sway::TypeName::Identifier {
+                        "I8::from" | "I8::from_uint" | "I8::max" | "I8::min" => Ok(sway::TypeName::Identifier {
                             name: "I8".into(),
                             generic_parameters: None,
                         }),
     
-                        "I16::from" | "I16::max" | "I16::min" => Ok(sway::TypeName::Identifier {
+                        "I16::from" | "I16::from_uint" | "I16::max" | "I16::min" => Ok(sway::TypeName::Identifier {
                             name: "I16".into(),
                             generic_parameters: None,
                         }),
     
-                        "I32::from" | "I32::max" | "I32::min" => Ok(sway::TypeName::Identifier {
+                        "I32::from" | "I32::from_uint" | "I32::max" | "I32::min" => Ok(sway::TypeName::Identifier {
                             name: "I32".into(),
                             generic_parameters: None,
                         }),
     
-                        "I64::from" | "I64::max" | "I64::min" => Ok(sway::TypeName::Identifier {
+                        "I64::from" | "I64::from_uint" | "I64::max" | "I64::min" => Ok(sway::TypeName::Identifier {
                             name: "I64".into(),
                             generic_parameters: None,
                         }),
     
-                        "I128::from" | "I128::max" | "I128::min" => Ok(sway::TypeName::Identifier {
+                        "I128::from" | "I128::from_uint" | "I128::max" | "I128::min" => Ok(sway::TypeName::Identifier {
                             name: "I128".into(),
                             generic_parameters: None,
                         }),
     
-                        "I256::from" | "I256::max" | "I256::min" => Ok(sway::TypeName::Identifier {
+                        "I256::from" | "I256::from_uint" | "I256::max" | "I256::min" => Ok(sway::TypeName::Identifier {
                             name: "I256".into(),
                             generic_parameters: None,
                         }),
