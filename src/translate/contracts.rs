@@ -692,6 +692,13 @@ pub fn propagate_inherited_definitions(
             }
         }
 
+        // Extend the ABIs
+        for abi in inherited_definition.abis.iter() {
+            if !translated_definition.abis.contains(abi) {
+                translated_definition.abis.push(abi.clone());
+            }
+        }
+
         // Extend the abi
         if let Some(inherited_abi) = inherited_definition.abi.as_ref() {
             for inherited_function in inherited_abi.functions.iter() {

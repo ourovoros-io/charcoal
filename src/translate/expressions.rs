@@ -17,6 +17,23 @@ pub fn evaluate_expression(
         
         sway::Expression::Identifier(identifier) => {
             let variable = scope.borrow().find_variable(|v| v.borrow().new_name == *identifier).unwrap();
+
+            if variable.borrow().is_constant {
+                if let Some(constant) = translated_definition.constants.iter().find(|c| c.name == variable.borrow().new_name) {
+                    assert!(type_name.is_compatible_with(&constant.type_name));
+                    return constant.value.as_ref().unwrap().clone();
+                }
+            }
+            
+            if variable.borrow().is_configurable {
+                if let Some(configurable) = translated_definition.configurable.as_ref() {
+                    if let Some(field) = configurable.fields.iter().find(|f| f.name == variable.borrow().new_name) {
+                        assert!(type_name.is_compatible_with(&field.type_name));
+                        return field.value.clone();
+                    }
+                }
+            }
+
             todo!("evaluate identifier: {expression:#?} - {variable:#?}")
         }
         
