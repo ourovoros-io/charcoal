@@ -83,6 +83,17 @@ pub fn translate_using_directive(
                         0
                     }
                 );
+
+                // Add the functions called from the library definition to the current definition
+                for (lib_calling_fn, lib_called_fns) in library_definition.functions_called.iter() {
+                    let called_functions = translated_definition.functions_called.entry(lib_calling_fn.clone()).or_default();
+
+                    for lib_called_fn in lib_called_fns.iter() {
+                        if !called_functions.contains(lib_called_fn) {
+                            called_functions.push(lib_called_fn.clone());
+                        }
+                    }
+                }
             }
 
             // Add the using directive to the current definition
@@ -96,6 +107,7 @@ pub fn translate_using_directive(
 
     Ok(())
 }
+
 #[allow(clippy::too_many_arguments)]
 #[inline]
 pub fn translate_contract_definition(
@@ -495,8 +507,10 @@ pub fn translate_contract_definition(
     // Expand function attributes to support the attributes of any other functions they call
     for (calling_name, called_names) in translated_definition.functions_called.iter() {
         for called_name in called_names.iter() {
-            let called_function = translated_definition.functions.iter().find(|f| f.name == *called_name).cloned().unwrap();
-            let calling_function = translated_definition.functions.iter_mut().find(|f| f.name == *calling_name).unwrap();
+            // HACK: if we can't find the function, skip for now...
+            // TODO: look into why some functions are showing up here
+            let Some(called_function) = translated_definition.functions.iter().find(|f| f.name == *called_name).cloned() else { continue };
+            let Some(calling_function) = translated_definition.functions.iter_mut().find(|f| f.name == *calling_name) else { continue };
             
             if let Some(called_attrs) = called_function.attributes.as_ref() {
                 if calling_function.attributes.is_none() {

@@ -375,6 +375,48 @@ pub fn translate_yul_variable_expression(
     expression: &solidity::YulExpression,
     name: &str,
 ) -> Result<sway::Expression, Error> {
+    // Check for built-in variables
+    match name {
+        "caller" => {
+            // caller => msg_sender().unwrap()
+            return Ok(sway::Expression::from(sway::FunctionCall {
+                function: sway::Expression::from(sway::MemberAccess {
+                    expression: sway::Expression::from(sway::FunctionCall {
+                        function: sway::Expression::Identifier("msg_sender".into()),
+                        generic_parameters: None,
+                        parameters: vec![],
+                    }),
+                    member: "unwrap".into(),
+                }),
+                generic_parameters: None,
+                parameters: vec![],
+            }));
+        }
+        
+        "msize" => {
+            // TODO: msize => ???
+            return Ok(sway::Expression::create_todo(Some(expression.to_string())))
+        }
+
+        "now" => {
+            // now => std::block::timestamp().as_u256()
+            return Ok(sway::Expression::from(sway::FunctionCall {
+                function: sway::Expression::from(sway::MemberAccess {
+                    expression: sway::Expression::from(sway::FunctionCall {
+                        function: sway::Expression::Identifier("std::block::timestamp".into()),
+                        generic_parameters: None,
+                        parameters: vec![],
+                    }),
+                    member: "as_u256".into(),
+                }),
+                generic_parameters: None,
+                parameters: vec![],
+            }));
+        }
+        
+        _ => {}
+    }
+
     let Some(variable) = scope.borrow().get_variable_from_old_name(name) else {
         panic!(
             "{}error: Variable not found in scope: \"{name}\"",
@@ -835,6 +877,27 @@ pub fn translate_yul_function_call_expression(
         "msize" => {
             // TODO: msize() => ???
             Ok(sway::Expression::create_todo(Some(function_call.to_string())))
+        }
+
+        "now" => {
+            // now() => std::block::timestamp().as_u256()
+
+            if !parameters.is_empty() {
+                panic!("Invalid yul now function call, expected 0 parameters, found {}", parameters.len());
+            }
+
+            return Ok(sway::Expression::from(sway::FunctionCall {
+                function: sway::Expression::from(sway::MemberAccess {
+                    expression: sway::Expression::from(sway::FunctionCall {
+                        function: sway::Expression::Identifier("std::block::timestamp".into()),
+                        generic_parameters: None,
+                        parameters: vec![],
+                    }),
+                    member: "as_u256".into(),
+                }),
+                generic_parameters: None,
+                parameters: vec![],
+            }));
         }
 
         "gas" => {

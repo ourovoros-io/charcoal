@@ -1167,6 +1167,7 @@ impl TranslatedDefinition {
     
                             ("Option", Some(generic_parameters)) if generic_parameters.entries.len() == 1 => match member_access.member.as_str() {
                                 "unwrap" => Ok(generic_parameters.entries[0].type_name.clone()),
+                                "unwrap_or" => Ok(generic_parameters.entries[0].type_name.clone()),
                                 
                                 _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
                             }

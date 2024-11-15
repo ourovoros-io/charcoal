@@ -375,12 +375,14 @@ pub fn translate_modifier_definition(
     // Generate toplevel modifier functions
     match (modifier.pre_body.as_ref(), modifier.post_body.as_ref()) {
         (Some(pre_body), Some(post_body)) => {
-            let functions_called = translated_definition.functions_called.get(&new_name).cloned().unwrap();
+            let functions_called = translated_definition.functions_called.get(&new_name).cloned();
             translated_definition.functions_called.remove(&new_name);
             
             let modifier_pre_function_name = format!("{}_pre", modifier.new_name);
             
-            translated_definition.functions_called.insert(modifier_pre_function_name.clone(), functions_called.clone());
+            if let Some(functions_called) = functions_called.as_ref() {
+                translated_definition.functions_called.insert(modifier_pre_function_name.clone(), functions_called.clone());
+            }
         
             translated_definition.functions.push(sway::Function {
                 attributes: create_attributes(has_pre_storage_read, has_pre_storage_write),
@@ -396,8 +398,9 @@ pub fn translate_modifier_definition(
 
             let modifier_post_function_name = format!("{}_post", modifier.new_name);
 
-            translated_definition.functions_called.insert(modifier_post_function_name.clone(), functions_called.clone());
-
+            if let Some(functions_called) = functions_called.as_ref() {
+                translated_definition.functions_called.insert(modifier_post_function_name.clone(), functions_called.clone());
+            }
 
             translated_definition.functions.push(sway::Function {
                 attributes: create_attributes(has_post_storage_read, has_post_storage_write),

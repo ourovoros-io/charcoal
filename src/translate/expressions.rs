@@ -38,6 +38,31 @@ pub fn evaluate_expression(
         }
         
         sway::Expression::FunctionCall(function_call) => match &function_call.function {
+            sway::Expression::Identifier(identifier) => match identifier.as_str() {
+                "todo!" => expression.clone(),
+
+                "keccak256" | "std::hash::keccak256" if function_call.parameters.len() == 1 => match &function_call.parameters[0] {
+                    sway::Expression::Literal(sway::Literal::String(s)) => {
+                        use sha3::Digest;
+
+                        let mut hasher = sha3::Keccak256::new();
+                        hasher.update(s.as_bytes());
+
+                        return sway::Expression::Commented(
+                            format!("{}", sway::TabbedDisplayer(expression)),
+                            Box::new(sway::Expression::from(sway::Literal::HexInt(
+                                BigUint::from_str_radix(hex::encode(hasher.finalize()).as_str(), 16).unwrap(),
+                                Some("u256".into()),
+                            ))),
+                        );
+                    }
+
+                    _ => todo!("evaluate function call: {expression:#?}"),
+                }
+
+                _ => todo!("evaluate function call: {expression:#?}"),
+            }
+
             sway::Expression::MemberAccess(member_access) => match &member_access.expression {
                 sway::Expression::Literal(
                     sway::Literal::DecInt(lhs_value, lhs_suffix) |
@@ -675,6 +700,31 @@ pub fn translate_variable_expression(
     // Variable expressions should only ever be encountered for reading the value.
     // Writes are handled when translating assignment expressions.
     //
+
+    let solidity::Expression::Variable(variable) = expression else {
+        panic!("this should only be used with variable expressions")
+    };
+
+    // Check for built-in variables
+    match variable.name.as_str() {
+        "now" => {
+            // now => std::block::timestamp().as_u256()
+            return Ok(sway::Expression::from(sway::FunctionCall {
+                function: sway::Expression::from(sway::MemberAccess {
+                    expression: sway::Expression::from(sway::FunctionCall {
+                        function: sway::Expression::Identifier("std::block::timestamp".into()),
+                        generic_parameters: None,
+                        parameters: vec![],
+                    }),
+                    member: "as_u256".into(),
+                }),
+                generic_parameters: None,
+                parameters: vec![],
+            }));
+        }
+
+        _ => {}
+    }
 
     let (variable, expression) = translate_variable_access_expression(project, translated_definition, scope.clone(), expression)?;
     let mut variable = variable.borrow_mut();

@@ -254,7 +254,7 @@ pub fn generate_enum_abi_encode_function(
                         _ => todo!("encode enum member type: {type_name}"),
                     }
                     
-                    sway::TypeName::StringSlice => sway::Expression::from(sway::FunctionCall {
+                    sway::TypeName::Array { .. } | sway::TypeName::StringSlice => sway::Expression::from(sway::FunctionCall {
                         function: sway::Expression::from(sway::MemberAccess {
                             expression: sway::Expression::Identifier(name.into()),
                             member: "abi_encode".into(),
