@@ -4978,12 +4978,8 @@ pub fn create_assignment_expression(
         }))
     } else {
         match &variable.type_name {
-            sway::TypeName::Identifier { name, .. } if name == "Vec" => {
-                let sway::Expression::ArrayAccess(array_access) = expression else {
-                    panic!("Expected array access expression, found {expression:#?}");
-                };
-
-                Ok(sway::Expression::from(sway::FunctionCall {
+            sway::TypeName::Identifier { name, .. } if name == "Vec" => match &expression {
+                sway::Expression::ArrayAccess(array_access) => Ok(sway::Expression::from(sway::FunctionCall {
                     function: sway::Expression::from(sway::MemberAccess {
                         expression: array_access.expression.clone(),
                         member: "set".into(),
@@ -5023,7 +5019,72 @@ pub fn create_assignment_expression(
                             }
                         }
                     ],
-                }))
+                })),
+
+                &sway::Expression::MemberAccess(member_access) => match &member_access.expression {
+                    sway::Expression::ArrayAccess(array_access) => {
+                        // x[i].member = value => {
+                        //     let mut x = expr.get(i).unwrap();
+                        //     x.member = value;
+                        //     expr.set(i, a);
+                        // }
+
+                        Ok(sway::Expression::from(sway::Block {
+                            statements: vec![
+                                // let mut x = expr.get(i).unwrap();
+                                sway::Statement::from(sway::Let {
+                                    pattern: sway::LetPattern::from(sway::LetIdentifier {
+                                        is_mutable: true,
+                                        name: "x".into(),
+                                    }),
+                                    type_name: None,
+                                    value: sway::Expression::from(sway::FunctionCall {
+                                        function: sway::Expression::from(sway::MemberAccess {
+                                            expression: sway::Expression::from(sway::FunctionCall {
+                                                function: sway::Expression::from(sway::MemberAccess {
+                                                    expression: array_access.expression.clone(),
+                                                    member: "get".into(),
+                                                }),
+                                                generic_parameters: None,
+                                                parameters: vec![
+                                                    array_access.index.clone(),
+                                                ],
+                                            }),
+                                            member: "unwrap".into(),
+                                        }),
+                                        generic_parameters: None,
+                                        parameters: vec![],
+                                    }),
+                                }),
+                                // x.member = value;
+                                sway::Statement::from(sway::Expression::from(sway::BinaryExpression {
+                                    operator: "=".into(),
+                                    lhs: sway::Expression::from(sway::MemberAccess {
+                                        expression: sway::Expression::Identifier("x".into()),
+                                        member: member_access.member.clone(),
+                                    }),
+                                    rhs: rhs.clone(),
+                                })),
+                                // expr.set(i, a);
+                                sway::Statement::from(sway::Expression::from(sway::FunctionCall {
+                                    function: sway::Expression::from(sway::MemberAccess {
+                                        expression: array_access.expression.clone(),
+                                        member: "set".into(),
+                                    }),
+                                    generic_parameters: None,
+                                    parameters: vec![
+                                        sway::Expression::Identifier("x".into()),
+                                    ],
+                                })),
+                            ],
+                            final_expr: None,
+                        }))
+                    }
+
+                    _ => todo!("translation assignment expression: {}", sway::TabbedDisplayer(expression)),
+                }
+                
+                _ => todo!("translation assignment expression: {}", sway::TabbedDisplayer(expression)),
             }
 
             _ => match operator {
