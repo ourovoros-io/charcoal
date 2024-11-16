@@ -383,6 +383,14 @@ impl TypeName {
         }
     }
 
+    /// Checks if the type name is `Identity`
+    pub fn is_identity(&self) -> bool {
+        match self {
+            TypeName::Identifier { name, generic_parameters: None } => name == "Identity",
+            _ => false,
+        }
+    }
+
     /// Checks to see if the type name is compatible with another type name
     pub fn is_compatible_with(&self, other: &TypeName) -> bool {
         // HACK: Don't check uint value types

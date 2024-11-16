@@ -70,6 +70,16 @@ pub fn translate_function_declaration(
         new_name = format!("{}_{}", crate::translate_naming_convention(&translated_definition.name, Case::Snake), new_name);
     }
 
+    // println!(
+    //     "Translating {}.{} {}",
+    //     translated_definition.name,
+    //     function_definition.name.as_ref().map(|n| n.name.as_str()).unwrap_or_else(|| new_name.as_str()),
+    //     match project.loc_to_line_and_column(&translated_definition.path, &function_definition.loc) {
+    //         Some((line, col)) => format!("at {}:{}:{}", translated_definition.path.to_string_lossy(), line, col),
+    //         None => format!("in {}...", translated_definition.path.to_string_lossy()),
+    //     },
+    // );
+    
     // Add the function to the conversion stack
     translated_definition.current_functions.push(new_name.clone());
 
@@ -314,7 +324,7 @@ pub fn translate_modifier_definition(
         // If the sway statement is a variable declaration, keep track of its statement index
         if let Some(sway::Statement::Let(sway_variable)) = block.statements.last() {
             let store_variable_statement_index = |id: &sway::LetIdentifier| {
-                let scope = scope.borrow_mut();
+                let scope = current_scope.borrow_mut();
                 let scope_entry = scope.variables.iter().rev().find(|v| v.borrow().new_name == id.name).unwrap();
                 scope_entry.borrow_mut().statement_index = Some(statement_index);
             };

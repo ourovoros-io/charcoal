@@ -635,19 +635,49 @@ impl TranslatedDefinition {
                     name: "bool".into(),
                     generic_parameters: None,
                 }),
-                sway::Literal::DecInt(_, suffix) => Ok(sway::TypeName::Identifier {
+                sway::Literal::DecInt(value, suffix) => Ok(sway::TypeName::Identifier {
                     name: if let Some(suffix) = suffix.as_ref() {
                         suffix.clone()
                     } else {
-                        "u64".into() // TODO: is this ok?
+                        let mut bits = value.bits();
+                        let remainder = bits % 8;
+
+                        if remainder != 0 {
+                            bits = bits + 8 - remainder;
+                        }
+
+                        if bits < 64 {
+                            bits = 64;
+                        } else if bits > 64 && bits < 256 {
+                            bits = 256;
+                        } else if bits > 256 {
+                            panic!("integer has too many bits: {bits}")
+                        }
+
+                        format!("u{}", bits)
                     },
                     generic_parameters: None,
                 }),
-                sway::Literal::HexInt(_, suffix) => Ok(sway::TypeName::Identifier {
+                sway::Literal::HexInt(value, suffix) => Ok(sway::TypeName::Identifier {
                     name: if let Some(suffix) = suffix.as_ref() {
                         suffix.clone()
                     } else {
-                        "u64".into() // TODO: is this ok?
+                        let mut bits = value.bits();
+                        let remainder = bits % 8;
+
+                        if remainder != 0 {
+                            bits = bits + 8 - remainder;
+                        }
+
+                        if bits < 64 {
+                            bits = 64;
+                        } else if bits > 64 && bits < 256 {
+                            bits = 256;
+                        } else if bits > 256 {
+                            panic!("integer has too many bits: {bits}")
+                        }
+
+                        format!("u{}", bits)
                     },
                     generic_parameters: None,
                 }),

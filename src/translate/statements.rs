@@ -951,7 +951,20 @@ pub fn translate_revert_statement(
         _ => {},
     }
 
-    todo!("translate revert statement")
+    Ok(sway::Statement::from(sway::Expression::create_todo(Some(format!(
+        "revert({}{}{})",
+        if let Some(error_type) = error_type.as_ref() {
+            error_type.to_string()
+        } else {
+            String::new()
+        },
+        if error_type.is_some() && !parameters.is_empty() {
+            ", "
+        } else {
+            ""
+        },
+        parameters.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(", "),
+    )))))
 }
 
 #[inline]
