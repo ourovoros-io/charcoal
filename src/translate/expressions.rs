@@ -4909,6 +4909,7 @@ pub fn translate_conditional_operator_expression(
 pub fn create_assignment_expression(
     _project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
+    scope: Rc<RefCell<TranslationScope>>,
     operator: &str,
     expression: &sway::Expression,
     variable: Rc<RefCell<TranslatedVariable>>,
@@ -5021,7 +5022,7 @@ pub fn create_assignment_expression(
                     ],
                 })),
 
-                &sway::Expression::MemberAccess(member_access) => match &member_access.expression {
+                sway::Expression::MemberAccess(member_access) => match &member_access.expression {
                     sway::Expression::ArrayAccess(array_access) => {
                         // x[i].member = value => {
                         //     let mut x = expr.get(i).unwrap();
@@ -5029,13 +5030,16 @@ pub fn create_assignment_expression(
                         //     expr.set(i, a);
                         // }
 
+                        // Generate a unique name for our variable
+                        let variable_name = scope.borrow_mut().generate_unique_variable_name("x");
+
                         Ok(sway::Expression::from(sway::Block {
                             statements: vec![
                                 // let mut x = expr.get(i).unwrap();
                                 sway::Statement::from(sway::Let {
                                     pattern: sway::LetPattern::from(sway::LetIdentifier {
                                         is_mutable: true,
-                                        name: "x".into(),
+                                        name: variable_name.clone(),
                                     }),
                                     type_name: None,
                                     value: sway::Expression::from(sway::FunctionCall {
@@ -5060,7 +5064,7 @@ pub fn create_assignment_expression(
                                 sway::Statement::from(sway::Expression::from(sway::BinaryExpression {
                                     operator: "=".into(),
                                     lhs: sway::Expression::from(sway::MemberAccess {
-                                        expression: sway::Expression::Identifier("x".into()),
+                                        expression: sway::Expression::Identifier(variable_name.clone()),
                                         member: member_access.member.clone(),
                                     }),
                                     rhs: rhs.clone(),
@@ -5073,7 +5077,7 @@ pub fn create_assignment_expression(
                                     }),
                                     generic_parameters: None,
                                     parameters: vec![
-                                        sway::Expression::Identifier("x".into()),
+                                        sway::Expression::Identifier(variable_name.clone()),
                                     ],
                                 })),
                             ],
@@ -5135,7 +5139,7 @@ pub fn translate_assignment_expression(
     
     let (variable, expression) = translate_variable_access_expression(project, translated_definition, scope.clone(), lhs)?;
 
-    create_assignment_expression(project, translated_definition, operator, &expression, variable, &rhs, &rhs_type_name)
+    create_assignment_expression(project, translated_definition, scope.clone(), operator, &expression, variable, &rhs, &rhs_type_name)
 }
 
 #[inline]
@@ -5590,5 +5594,5 @@ pub fn translate_delete_expression(
     let type_name = variable.borrow().type_name.clone();
     
     let value = create_value_expression(translated_definition, scope.clone(), &type_name, None);
-    create_assignment_expression(project, translated_definition, "=", &expr, variable, &value, &type_name)
+    create_assignment_expression(project, translated_definition, scope.clone(), "=", &expr, variable, &value, &type_name)
 }

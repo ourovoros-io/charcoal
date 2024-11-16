@@ -374,15 +374,20 @@ pub fn translate_contract_definition(
                     }
                 }
 
-                _ => assignment_statements.push(sway::Statement::from(create_assignment_expression(
-                    project,
-                    &mut translated_definition,
-                    "=",
-                    &lhs,
-                    variable,
-                    &deferred_initialization.value,
-                    &value_type_name,
-                )?)),
+                _ => {
+                    let scope = translated_definition.toplevel_scope.clone();
+                    
+                    assignment_statements.push(sway::Statement::from(create_assignment_expression(
+                        project,
+                        &mut translated_definition,
+                        scope,
+                        "=",
+                        &lhs,
+                        variable,
+                        &deferred_initialization.value,
+                        &value_type_name,
+                    )?));
+                }
             }
         }
         
