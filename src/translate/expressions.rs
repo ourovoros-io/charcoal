@@ -144,8 +144,8 @@ pub fn create_value_expression(
     match type_name {
         sway::TypeName::Undefined => panic!("Undefined type name"),
         
-        sway::TypeName::Identifier { name, .. } => match name.as_str() {
-            "bool" => match value {
+        sway::TypeName::Identifier { name, generic_parameters } => match (name.as_str(), generic_parameters.as_ref()) {
+            ("bool", None) => match value {
                 None => sway::Expression::Literal(sway::Literal::Bool(false)),
                 Some(sway::Expression::Literal(sway::Literal::Bool(value))) => sway::Expression::Literal(sway::Literal::Bool(*value)),
                 
@@ -162,7 +162,7 @@ pub fn create_value_expression(
                 Some(value) => panic!("Invalid bool value expression: {value:#?}"),
             }
 
-            "b256" => match value {
+            ("b256", None) => match value {
                 None => {
                     // Ensure `std::constants::ZERO_B256` is imported
                     translated_definition.ensure_use_declared("std::constants::ZERO_B256");
@@ -188,7 +188,7 @@ pub fn create_value_expression(
                 }
             }
 
-            "I8" | "I16" | "I32" | "I64" | "I128" | "I256" => {
+            ("I8" | "I16" | "I32" | "I64" | "I128" | "I256", None) => {
                 let value = match value.as_ref() {
                     Some(value) => *value,
                     None => &sway::Expression::from(sway::Literal::DecInt(
@@ -254,7 +254,7 @@ pub fn create_value_expression(
                 }
             }
 
-            "u8" | "u16" | "u32" | "u64" | "u256" => match value.as_ref() {
+            ("u8" | "u16" | "u32" | "u64" | "u256", None) => match value.as_ref() {
                 None => sway::Expression::Literal(sway::Literal::DecInt(BigUint::zero(), None)),
                 
                 Some(value) if matches!(value, sway::Expression::Literal(sway::Literal::DecInt(_, _) | sway::Literal::HexInt(_, _))) => (*value).clone(),
@@ -301,7 +301,21 @@ pub fn create_value_expression(
                 Some(value) => panic!("Invalid {name} value expression: {value:#?}"),
             }
 
-            "Bytes" => {
+            ("raw_ptr", None) => {
+                // Ensure `std::alloc::alloc_bytes` is imported
+                translated_definition.ensure_dependency_declared("std::alloc::alloc_bytes");
+
+                // alloc_bytes(0)
+                sway::Expression::from(sway::FunctionCall {
+                    function: sway::Expression::Identifier("alloc_bytes".into()),
+                    generic_parameters: None,
+                    parameters: vec![
+                        sway::Expression::from(sway::Literal::DecInt(0u8.into(), None)),
+                    ],
+                })
+            }
+
+            ("Bytes", None) => {
                 // Ensure `std::bytes::Bytes` is imported
                 translated_definition.ensure_use_declared("std::bytes::Bytes");
 
@@ -312,7 +326,7 @@ pub fn create_value_expression(
                 })
             }
 
-            "Identity" => match value {
+            ("Identity", None) => match value {
                 None => sway::Expression::from(sway::FunctionCall {
                     function: sway::Expression::Identifier("Identity::Address".into()),
                     generic_parameters: None,
@@ -335,7 +349,7 @@ pub fn create_value_expression(
                 Some(value) => value.clone(),
             }
 
-            "StorageMap" => match value {
+            ("StorageMap", Some(_)) => match value {
                 None => sway::Expression::from(sway::Constructor {
                     type_name: sway::TypeName::Identifier {
                         name: "StorageMap".into(),
@@ -347,7 +361,7 @@ pub fn create_value_expression(
                 Some(value) => panic!("Invalid StorageMap value expression: {value:#?}"),
             }
 
-            "StorageString" => match value {
+            ("StorageString", Some(_)) => match value {
                 None => sway::Expression::from(sway::Constructor {
                     type_name: sway::TypeName::Identifier {
                         name: "StorageString".into(),
@@ -359,7 +373,7 @@ pub fn create_value_expression(
                 Some(value) => panic!("Invalid StorageString value expression: {value:#?}"),
             }
 
-            "StorageVec" => match value {
+            ("StorageVec", Some(_)) => match value {
                 None => sway::Expression::from(sway::Constructor {
                     type_name: sway::TypeName::Identifier {
                         name: "StorageVec".into(),
@@ -371,13 +385,13 @@ pub fn create_value_expression(
                 Some(value) => panic!("Invalid StorageVec value expression: {value:#?}"),
             }
 
-            "Vec" => sway::Expression::from(sway::FunctionCall {
+            ("Vec", Some(_)) => sway::Expression::from(sway::FunctionCall {
                 function: sway::Expression::Identifier("Vec::new".into()),
                 generic_parameters: None,
                 parameters: vec![],
             }),
 
-            name => {
+            (name, _) => {
                 // Check to see if the type is a type definition
                 if translated_definition.type_definitions.iter().any(|s| {
                     let sway::TypeName::Identifier { name: type_name, generic_parameters: None } = &s.name else { return false };
@@ -550,6 +564,14 @@ pub fn translate_expression(
     scope: Rc<RefCell<TranslationScope>>,
     expression: &solidity::Expression,
 ) -> Result<sway::Expression, Error> {
+    // println!(
+    //     "Translating expression: {expression}; from {}",
+    //     match project.loc_to_line_and_column(&translated_definition.path, &expression.loc()) {
+    //         Some((line, col)) => format!("{}:{}:{} - ", translated_definition.path.to_string_lossy(), line, col),
+    //         None => format!("{} - ", translated_definition.path.to_string_lossy()),
+    //     },
+    // );
+
     match expression {
         solidity::Expression::BoolLiteral(_, _)
         | solidity::Expression::NumberLiteral(_, _, _, _)
@@ -571,14 +593,17 @@ pub fn translate_expression(
         solidity::Expression::MemberAccess(_, container, member) => translate_member_access_expression(project, translated_definition, scope.clone(), expression, container, member),
         
         solidity::Expression::FunctionCall(_, function, arguments) => {
-            // println!("function call: {} - {:#?}", expression, expression);
-            translate_function_call_expression(project, translated_definition, scope.clone(), expression, function, None, arguments)
+            let result = translate_function_call_expression(project, translated_definition, scope.clone(), expression, function, None, arguments)?;
+            // println!("Translated function call from {} to {}", expression, sway::TabbedDisplayer(&result));
+            Ok(result)
         }
 
         solidity::Expression::FunctionCallBlock(_, function, block) => translate_function_call_block_expression(project, translated_definition, scope.clone(), function, block),
+        
         solidity::Expression::NamedFunctionCall(_, function, named_arguments) => {
-            // println!("named function call: {} - {:#?}", expression, expression);
-            translate_function_call_expression(project, translated_definition, scope.clone(), expression, function, Some(named_arguments), &[])
+            let result = translate_function_call_expression(project, translated_definition, scope.clone(), expression, function, Some(named_arguments), &[])?;
+            // println!("Translated named function call from {} to {}", expression, sway::TabbedDisplayer(&result));
+            Ok(result)
         }
         
         solidity::Expression::Not(_, x) => translate_unary_expression(project, translated_definition, scope.clone(), "!", x),
@@ -1512,6 +1537,14 @@ pub fn translate_function_call_expression(
     if named_arguments.is_some() && !arguments.is_empty() {
         panic!("Invalid call to translate_function_call_expression: named_arguments is Some(_) and arguments is not empty");
     }
+
+    // println!(
+    //     "Translating function call: {expression}; from {}",
+    //     match project.loc_to_line_and_column(&translated_definition.path, &expression.loc()) {
+    //         Some((line, col)) => format!("{}:{}:{} - ", translated_definition.path.to_string_lossy(), line, col),
+    //         None => format!("{} - ", translated_definition.path.to_string_lossy()),
+    //     },
+    // );
 
     match function {
         solidity::Expression::Type(_, ty) => {
@@ -3573,6 +3606,12 @@ pub fn translate_function_call_expression(
             let mut container = translate_expression(project, translated_definition, scope.clone(), container)?;
             let type_name = translated_definition.get_expression_type(scope.clone(), &container)?;
 
+            // println!(
+            //     "type of {} is {}",
+            //     sway::TabbedDisplayer(&container),
+            //     sway::TabbedDisplayer(&type_name),
+            // );
+
             match &type_name {
                 sway::TypeName::Undefined => panic!("Undefined type name"),
                 
@@ -4174,9 +4213,12 @@ pub fn translate_function_call_expression(
                                     .entry(translated_definition.current_functions.last().cloned().unwrap())
                                     .or_insert_with(|| vec![])
                                     .push(function.new_name.clone());
-
+                                
                                 return Ok(sway::Expression::from(sway::FunctionCall {
-                                    function: sway::Expression::Identifier(function.new_name.clone()),
+                                    function: sway::Expression::from(sway::MemberAccess {
+                                        expression: container,
+                                        member: function.new_name.clone(),
+                                    }),
                                     generic_parameters: None,
                                     parameters,
                                 }));
@@ -4916,8 +4958,10 @@ pub fn create_assignment_expression(
     rhs: &sway::Expression,
     rhs_type_name: &sway::TypeName,
 ) -> Result<sway::Expression, Error> {
-    let mut variable = variable.borrow_mut();
+    // Generate a unique name for our variable
+    let variable_name = scope.borrow_mut().generate_unique_variable_name("x");
 
+    let mut variable = variable.borrow_mut();
     variable.mutation_count += 1;
 
     if variable.is_storage {
@@ -5030,9 +5074,6 @@ pub fn create_assignment_expression(
                         //     expr.set(i, a);
                         // }
 
-                        // Generate a unique name for our variable
-                        let variable_name = scope.borrow_mut().generate_unique_variable_name("x");
-
                         Ok(sway::Expression::from(sway::Block {
                             statements: vec![
                                 // let mut x = expr.get(i).unwrap();
@@ -5130,9 +5171,23 @@ pub fn translate_assignment_expression(
     lhs: &solidity::Expression,
     rhs: &solidity::Expression,
 ) -> Result<sway::Expression, Error> {
+    // println!(
+    //     "Translating assignment expression: {lhs} {operator} {rhs}; from {}",
+    //     match project.loc_to_line_and_column(&translated_definition.path, &lhs.loc()) {
+    //         Some((line, col)) => format!("{}:{}:{} - ", translated_definition.path.to_string_lossy(), line, col),
+    //         None => format!("{} - ", translated_definition.path.to_string_lossy()),
+    //     },
+    // );
+
     let rhs = match operator {
-        "=" => translate_pre_or_post_operator_value_expression(project, translated_definition, scope.clone(), rhs)?,
-        _ => translate_expression(project, translated_definition, scope.clone(), rhs)?,
+        "=" => {
+            // println!("taking translate_pre_or_post_operator_value_expression path...");
+            translate_pre_or_post_operator_value_expression(project, translated_definition, scope.clone(), rhs)?
+        }
+        _ => {
+            // println!("taking translate_expression path...");
+            translate_expression(project, translated_definition, scope.clone(), rhs)?
+        }
     };
 
     let rhs_type_name = translated_definition.get_expression_type(scope.clone(), &rhs)?;
@@ -5154,7 +5209,20 @@ pub fn translate_pre_or_post_operator_value_expression(
         solidity::Expression::PreDecrement(loc, x) => translate_pre_operator_expression(project, translated_definition, scope.clone(), loc, x, "-="),
         solidity::Expression::PostIncrement(loc, x) => translate_post_operator_expression(project, translated_definition, scope.clone(), loc, x, "+="),
         solidity::Expression::PostDecrement(loc, x) => translate_post_operator_expression(project, translated_definition, scope.clone(), loc, x, "-="),
-        _ => translate_expression(project, translated_definition, scope.clone(), expression),
+        
+        _ => {
+            // println!(
+            //     "Translating pre- or post-operator value expression: {expression}; from {}",
+            //     match project.loc_to_line_and_column(&translated_definition.path, &expression.loc()) {
+            //         Some((line, col)) => format!("{}:{}:{} - ", translated_definition.path.to_string_lossy(), line, col),
+            //         None => format!("{} - ", translated_definition.path.to_string_lossy()),
+            //     },
+            // );
+
+            let result = translate_expression(project, translated_definition, scope.clone(), expression)?;
+            // println!("Translated pre- or post-operator value expression: {}", sway::TabbedDisplayer(&result));
+            Ok(result)
+        }
     }
 }
 

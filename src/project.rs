@@ -10,9 +10,9 @@ use std::{
     rc::Rc,
 };
 
-/// Represents the type of project as [ProjectType] default is [ProjectType::Unknown]
+/// Represents the type of project as [ProjectKind] default is [ProjectKind::Unknown]
 #[derive(Clone, Debug, Default)]
-pub enum ProjectType {
+pub enum ProjectKind {
     Foundry {
         remappings: HashMap<String, String>,
     },
@@ -26,7 +26,7 @@ pub enum ProjectType {
     Unknown,
 }
 
-impl ProjectType {
+impl ProjectKind {
     pub const FOUNDRY_CONFIG_FILE: &'static str = "foundry.toml";
     pub const HARDHAT_CONFIG_FILE: &'static str = "hardhat.config.js";
     pub const HARDHAT_CONFIG_FILE_TS: &'static str = "hardhat.config.ts";
@@ -37,11 +37,11 @@ impl ProjectType {
 
 #[derive(Default)]
 pub struct Project {
+    pub kind: ProjectKind,
     pub line_ranges: HashMap<PathBuf, Vec<(usize, usize)>>,
     pub solidity_source_units: Rc<RefCell<HashMap<PathBuf, solidity::SourceUnit>>>,
     pub translated_definitions: Vec<TranslatedDefinition>,
     pub import_directives: HashMap<PathBuf, HashMap<PathBuf, Option<Vec<String>>>>,
-    pub project_type: ProjectType,
 }
 
 impl Project {
@@ -295,11 +295,11 @@ impl Project {
         Ok(())
     }
 
-    /// Get the project type from the [PathBuf] and return a [ProjectType]
+    /// Get the project type from the [PathBuf] and return a [ProjectKind]
     pub fn detect_project_type<P: AsRef<Path>>(&mut self, path: P) -> Result<(), Error> {
         let path = path.as_ref();
-        if path.join(ProjectType::FOUNDRY_CONFIG_FILE).exists() {
-            self.project_type = ProjectType::Foundry {
+        if path.join(ProjectKind::FOUNDRY_CONFIG_FILE).exists() {
+            self.kind = ProjectKind::Foundry {
                 remappings: HashMap::new(),
             };
 
@@ -307,27 +307,27 @@ impl Project {
                 format!("Failed to get remappings for Foundry project: {:#?}", e).into()
             ))?;
 
-            self.project_type = ProjectType::Foundry { remappings };
-        } else if path.join(ProjectType::HARDHAT_CONFIG_FILE).exists() || path.join(ProjectType::HARDHAT_CONFIG_FILE_TS).exists() {
-            self.project_type = ProjectType::Hardhat;
-        } else if path.join(ProjectType::BROWNIE_CONFIG_FILE).exists() {
-            self.project_type = ProjectType::Brownie { remappings: HashMap::new() };
+            self.kind = ProjectKind::Foundry { remappings };
+        } else if path.join(ProjectKind::HARDHAT_CONFIG_FILE).exists() || path.join(ProjectKind::HARDHAT_CONFIG_FILE_TS).exists() {
+            self.kind = ProjectKind::Hardhat;
+        } else if path.join(ProjectKind::BROWNIE_CONFIG_FILE).exists() {
+            self.kind = ProjectKind::Brownie { remappings: HashMap::new() };
 
-            self.project_type = ProjectType::Brownie { remappings: self.get_remappings(path).map_err(|e| Error::Wrapped(
+            self.kind = ProjectKind::Brownie { remappings: self.get_remappings(path).map_err(|e| Error::Wrapped(
                 format!("Failed to get remappings for Brownie project: {:#?}", e).into()
             ))? };
-        } else if path.join(ProjectType::TRUFFLE_CONFIG_FILE).exists() {
-            self.project_type = ProjectType::Truffle;
-        } else if path.join(ProjectType::DAPP_CONFIG_FILE).exists() {
-            self.project_type = ProjectType::Dapp;
+        } else if path.join(ProjectKind::TRUFFLE_CONFIG_FILE).exists() {
+            self.kind = ProjectKind::Truffle;
+        } else if path.join(ProjectKind::DAPP_CONFIG_FILE).exists() {
+            self.kind = ProjectKind::Dapp;
         } else {
-            self.project_type = ProjectType::Unknown;
+            self.kind = ProjectKind::Unknown;
         }
 
         Ok(())
     }
 
-    /// Get the project type path from the [ProjectType] and return a [PathBuf]
+    /// Get the project type path from the [ProjectKind] and return a [PathBuf]
     pub fn get_project_type_path(&self, source_unit_directory: &Path, filename: &str) -> Result<PathBuf, Error> {
         let project_root_folder = find_project_root_folder(source_unit_directory);
 
@@ -336,9 +336,9 @@ impl Project {
             return Ok(PathBuf::from(filename));
         };
 
-        match &self.project_type {
+        match &self.kind {
             // Remappings in foundry and brownie are handled using the same pattern
-            ProjectType::Foundry { remappings } | ProjectType::Brownie { remappings } => {
+            ProjectKind::Foundry { remappings } | ProjectKind::Brownie { remappings } => {
                 for (k, v) in remappings {
                     if filename.starts_with(k) {
                         let project_full_path = project_root_folder.join(v);
@@ -350,7 +350,7 @@ impl Project {
             }
 
             // Remappings in hardhat and truffle are done using the @ symbol and the node_modules folder
-            ProjectType::Hardhat | ProjectType::Truffle => {
+            ProjectKind::Hardhat | ProjectKind::Truffle => {
                 if filename.starts_with('.') {
                     Ok(project_root_folder.join(filename))
                 } else {
@@ -358,7 +358,7 @@ impl Project {
                 }
             }
 
-            ProjectType::Dapp => {
+            ProjectKind::Dapp => {
                 let filename = PathBuf::from(filename);
                 let mut components: Vec<_> = filename.components().collect();
                 
@@ -380,14 +380,14 @@ impl Project {
             }
 
             // If we find that the project type is unknown we return the filename as is
-            ProjectType::Unknown => Ok(PathBuf::from(filename)),
+            ProjectKind::Unknown => Ok(PathBuf::from(filename)),
         }
     }
 
     /// Get the re mappings from the re mappings file on the root folder of the project represented by the [PathBuf]
     fn get_remappings(&self, root_folder_path: &Path) -> Result<HashMap<String, String>, Error> {
-        match &self.project_type {
-            ProjectType::Foundry { .. } => {
+        match &self.kind {
+            ProjectKind::Foundry { .. } => {
                 let remappings_filename = "remappings.txt";
                 
                 let lines: Vec<String> = if root_folder_path.join(remappings_filename).exists() {
@@ -398,7 +398,7 @@ impl Project {
                     remappings_content.lines().map(str::to_string).collect()
                 } else {
                     // Get foundry toml file from the root of the project folder
-                    let remappings_from_toml_str = std::fs::read_to_string(root_folder_path.join(ProjectType::FOUNDRY_CONFIG_FILE))
+                    let remappings_from_toml_str = std::fs::read_to_string(root_folder_path.join(ProjectKind::FOUNDRY_CONFIG_FILE))
                         .map_err(|e| Error::Wrapped(e.into()))?;
         
                     let remappings_from_toml: toml::Value = toml::from_str(&remappings_from_toml_str)
@@ -427,8 +427,8 @@ impl Project {
                 Ok(remappings)
             }
 
-            ProjectType::Brownie { .. } => {
-                let remappings_from_yaml_str = std::fs::read_to_string(root_folder_path.join(ProjectType::BROWNIE_CONFIG_FILE))
+            ProjectKind::Brownie { .. } => {
+                let remappings_from_yaml_str = std::fs::read_to_string(root_folder_path.join(ProjectKind::BROWNIE_CONFIG_FILE))
                     .map_err(|e| Error::Wrapped(e.into()))?;
 
                 let remappings_from_yaml: serde_yaml::Value = serde_yaml::from_str(&remappings_from_yaml_str)
@@ -471,9 +471,9 @@ impl Project {
 pub fn find_project_root_folder<P: AsRef<Path>>(path: P) -> Option<PathBuf> {
     let path = path.as_ref();
 
-    if path.join(ProjectType::FOUNDRY_CONFIG_FILE).exists() || path.join(ProjectType::HARDHAT_CONFIG_FILE).exists() || path.join(ProjectType::HARDHAT_CONFIG_FILE_TS).exists()
-    || path.join(ProjectType::BROWNIE_CONFIG_FILE).exists() || path.join(ProjectType::TRUFFLE_CONFIG_FILE).exists()  
-    || path.join(ProjectType::DAPP_CONFIG_FILE).exists() {
+    if path.join(ProjectKind::FOUNDRY_CONFIG_FILE).exists() || path.join(ProjectKind::HARDHAT_CONFIG_FILE).exists() || path.join(ProjectKind::HARDHAT_CONFIG_FILE_TS).exists()
+    || path.join(ProjectKind::BROWNIE_CONFIG_FILE).exists() || path.join(ProjectKind::TRUFFLE_CONFIG_FILE).exists()  
+    || path.join(ProjectKind::DAPP_CONFIG_FILE).exists() {
         return Some(path.to_path_buf());
     }
 

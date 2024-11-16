@@ -6,7 +6,7 @@ pub mod translate;
 
 use convert_case::{Case, Casing};
 use errors::Error;
-use project::Project;
+use project::{Project, ProjectKind};
 use std::path::{Path, PathBuf};
 use structopt::{clap::AppSettings, StructOpt};
 
@@ -89,24 +89,26 @@ fn translate_project() -> Result<(), Error> {
             .map_err(|e| Error::Wrapped(Box::new(e)))?;
     }
 
-    let source_unit_paths = collect_source_unit_paths(&options.target)
+    let mut project = Project::default();
+    
+    if options.target.is_dir() {
+        project.detect_project_type(options.target.as_path())?;
+    } else if let Some(root_path) = project::find_project_root_folder(options.target.as_path()) {
+        project.detect_project_type(root_path)?;
+    } else {
+        project.kind = ProjectKind::Unknown;
+    }
+    
+    let source_unit_paths = collect_source_unit_paths(&options.target, &project.kind)
         .map_err(|e| Error::Wrapped(Box::new(e)))?;
     
     for source_unit_path in &source_unit_paths {
-        let mut project = Project::default();
-    
-        if options.target.is_dir() {
-            project.detect_project_type(options.target.as_path())?;
-        } else if let Some(root_path) = crate::project::find_project_root_folder(options.target.as_path()) {
-            project.detect_project_type(root_path)?;
-        } else {
-            project.project_type = crate::project::ProjectType::Unknown;
-        }
-        
         project.translate(options.definition_name.as_ref(), source_unit_path)?;
 
         match options.output_directory.as_ref() {
-            Some(output_directory) => generate_forc_project(&mut project, output_directory, options.definition_name.as_ref(), source_unit_path)?,
+            Some(output_directory) => {
+                generate_forc_project(&mut project, output_directory, options.definition_name.as_ref(), source_unit_path)?;
+            }
 
             None => {
                 for translated_definition in project.collect_translated_definitions(options.definition_name.as_ref(), source_unit_path) {
@@ -178,7 +180,19 @@ fn generate_forc_project<P1: AsRef<Path>, P2: AsRef<Path>>(
 }
 
 /// Recursively search for .sol files in the given directory
-fn collect_source_unit_paths(path: &Path) -> std::io::Result<Vec<PathBuf>> {
+fn collect_source_unit_paths(
+    path: &Path,
+    project_kind: &ProjectKind,
+) -> std::io::Result<Vec<PathBuf>> {
+    let mut source_unit_paths = vec![];
+
+    if let ProjectKind::Hardhat | ProjectKind::Truffle = project_kind {
+        // Skip the node_modules folder. Only translate things that are imported explicitly.
+        if path.to_string_lossy().replace("\\", "/").contains("/node_modules/") {
+            return Ok(vec![]);
+        }
+    }
+
     if !path.is_dir() {
         if path.extension().unwrap() != "sol" {
             panic!("Only solidity files are supported.");
@@ -191,25 +205,21 @@ fn collect_source_unit_paths(path: &Path) -> std::io::Result<Vec<PathBuf>> {
             ));
         }
 
-        return Ok(vec![
-            get_canonical_path(path, false, false)?,
-        ]);
-    }
-
-    let mut source_unit_paths = vec![];
-
-    for entry in std::fs::read_dir(path)? {
-        let entry = entry?;
-        let path = entry.path();
-
-        if path.is_dir() {
-            source_unit_paths.extend(collect_source_unit_paths(&path)?);
-            continue;
-        }
-        
-        if let Some(extension) = path.extension() {
-            if extension == "sol" {
-                source_unit_paths.push(get_canonical_path(path, false, false)?);
+        source_unit_paths.push(get_canonical_path(path, false, false)?);
+    } else {
+        for entry in std::fs::read_dir(path)? {
+            let entry = entry?;
+            let path = entry.path();
+    
+            if path.is_dir() {
+                source_unit_paths.extend(collect_source_unit_paths(&path, project_kind)?);
+                continue;
+            }
+            
+            if let Some(extension) = path.extension() {
+                if extension == "sol" {
+                    source_unit_paths.push(get_canonical_path(path, false, false)?);
+                }
             }
         }
     }

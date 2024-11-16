@@ -1019,9 +1019,16 @@ impl TranslatedDefinition {
                                 if f.new_name != new_name {
                                     return false;
                                 }
+
+                                // println!("found function \"{new_name}\"");
                                 
                                 // Ensure the supplied function call args match the function's parameters
                                 if parameters.len() != f.parameters.entries.len() {
+                                    // println!(
+                                    //     "parameter count mismatch: expected {}, got {}; skipping...",
+                                    //     f.parameters.entries.len(),
+                                    //     parameters.len(),
+                                    // );
                                     return false;
                                 }
     
@@ -1029,6 +1036,11 @@ impl TranslatedDefinition {
                                     let Some(parameter_type_name) = f.parameters.entries[i].type_name.as_ref() else { continue };
     
                                     if !value_type_name.is_compatible_with(parameter_type_name) {
+                                        // println!(
+                                        //     "incompatible parameter type: expected {}, got {}; skipping...",
+                                        //     sway::TabbedDisplayer(parameter_type_name),
+                                        //     sway::TabbedDisplayer(value_type_name),
+                                        // );
                                         return false;
                                     }
                                 }

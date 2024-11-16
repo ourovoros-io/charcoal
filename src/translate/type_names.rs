@@ -1,6 +1,6 @@
 use super::{translate_expression, TranslatedDefinition, TranslationScope};
 use crate::{project::Project, sway};
-use solang_parser::pt as solidity;
+use solang_parser::{helpers::CodeLocation, pt as solidity};
 use std::{cell::RefCell, rc::Rc};
 
 #[inline]
@@ -243,7 +243,20 @@ pub fn translate_type_name(
                 }
             }
 
-            solidity::Type::Function { .. } => todo!("function types"),
+            solidity::Type::Function { .. } => {
+                eprintln!(
+                    "WARNING: function pointer types are not supported, using `raw_ptr` for `{type_name}` @ {}",
+                    match project.loc_to_line_and_column(&translated_definition.path, &type_name.loc()) {
+                        Some((line, col)) => format!("{}:{}:{}", translated_definition.path.to_string_lossy(), line, col),
+                        None => format!("{} - ", translated_definition.path.to_string_lossy()),
+                    },
+                );
+                
+                sway::TypeName::Identifier {
+                    name: "raw_ptr".into(),
+                    generic_parameters: None,
+                }
+            }
         }
 
         solidity::Expression::Variable(solidity::Identifier { name, .. }) => {
