@@ -1388,6 +1388,17 @@ pub fn translate_member_access_expression(
 
         solidity::Expression::MemberAccess(_, container1, member1) => match container1.as_ref() {
             solidity::Expression::Variable(solidity::Identifier { name, .. }) => {
+                // Check to see if expression is an explicit contract function selector
+                if let Some(external_definition) = project.find_definition_with_abi(name) {
+                    if member.name == "selector" {
+                        let external_scope = external_definition.toplevel_scope.borrow();
+
+                        if external_scope.find_function(|f| f.borrow().old_name == member1.name).is_some() {
+                            return Ok(sway::Expression::create_todo(Some(expression.to_string())));
+                        }
+                    }
+                }
+
                 // Check to see if container is an external definition
                 if let Some(external_definition) = project.translated_definitions.iter().find(|d| d.name == *name) {
                     // Check to see if member is an enum
@@ -2464,49 +2475,96 @@ pub fn translate_function_call_expression(
                     }
 
                     // Check to see if the expression is an ABI type
-                    if let Some(external_definition) = project.find_definition_with_abi(old_name) {
-                        if parameters.len() == 1 {
+                    if parameters.len() == 1 {
+                        if let Some(external_definition) = project.find_definition_with_abi(old_name) {
                             match translated_definition.get_expression_type(scope.clone(), &parameters[0])? {
-                                sway::TypeName::Identifier { name, generic_parameters: None } if name == "Identity" => {
-                                    // Ensure the ABI is added to the current definition
-                                    if !translated_definition.abis.iter().any(|a| a.name == old_name) {
-                                        translated_definition.abis.push(external_definition.abi.as_ref().unwrap().clone());
-                                    }
-                    
-                                    return Ok(sway::Expression::from(sway::FunctionCall {
-                                        function: sway::Expression::Identifier("abi".into()),
-                                        generic_parameters: None,
-                                        parameters: vec![
-                                            sway::Expression::Identifier(old_name.into()),
-    
-                                            // x.as_contract_id().unwrap().into()
-                                            sway::Expression::from(sway::FunctionCall {
-                                                function: sway::Expression::from(sway::MemberAccess {
-                                                    expression: sway::Expression::from(sway::FunctionCall {
-                                                        function: sway::Expression::from(sway::MemberAccess {
-                                                            expression: sway::Expression::from(sway::FunctionCall {
-                                                                function: sway::Expression::from(sway::MemberAccess {
-                                                                    expression: parameters[0].clone(),
-                                                                    member: "as_contract_id".into(),
+                                sway::TypeName::Identifier { name, generic_parameters } => match (name.as_str(), generic_parameters.as_ref()) {
+                                    ("Identity", None) => {
+                                        // Ensure the ABI is added to the current definition
+                                        if !translated_definition.abis.iter().any(|a| a.name == old_name) {
+                                            translated_definition.abis.push(external_definition.abi.as_ref().unwrap().clone());
+                                        }
+                                        
+                                        return Ok(sway::Expression::from(sway::FunctionCall {
+                                            function: sway::Expression::Identifier("abi".into()),
+                                            generic_parameters: None,
+                                            parameters: vec![
+                                                sway::Expression::Identifier(old_name.into()),
+        
+                                                // x.as_contract_id().unwrap().into()
+                                                sway::Expression::from(sway::FunctionCall {
+                                                    function: sway::Expression::from(sway::MemberAccess {
+                                                        expression: sway::Expression::from(sway::FunctionCall {
+                                                            function: sway::Expression::from(sway::MemberAccess {
+                                                                expression: sway::Expression::from(sway::FunctionCall {
+                                                                    function: sway::Expression::from(sway::MemberAccess {
+                                                                        expression: parameters[0].clone(),
+                                                                        member: "as_contract_id".into(),
+                                                                    }),
+                                                                    generic_parameters: None,
+                                                                    parameters: vec![],
                                                                 }),
-                                                                generic_parameters: None,
-                                                                parameters: vec![],
+                                                                member: "unwrap".into(),
                                                             }),
-                                                            member: "unwrap".into(),
+                                                            generic_parameters: None,
+                                                            parameters: vec![],
                                                         }),
-                                                        generic_parameters: None,
-                                                        parameters: vec![],
+                                                        member: "into".into(),
                                                     }),
-                                                    member: "into".into(),
+                                                    generic_parameters: None,
+                                                    parameters: vec![],
                                                 }),
-                                                generic_parameters: None,
-                                                parameters: vec![],
-                                            }),
-                                        ],
-                                    }));
+                                            ],
+                                        }));
+                                    }
+
+                                    ("u256" | "b256", None) => {
+                                        // Thing(x) => abi(Thing, Identity::from(ContractId::from(x)))
+
+                                        // Ensure the ABI is added to the current definition
+                                        if !translated_definition.abis.iter().any(|a| a.name == old_name) {
+                                            translated_definition.abis.push(external_definition.abi.as_ref().unwrap().clone());
+                                        }
+
+                                        // abi(Thing, Identity::from(ContractId::from(x)))
+                                        return Ok(sway::Expression::from(sway::FunctionCall {
+                                            function: sway::Expression::Identifier("abi".into()),
+                                            generic_parameters: None,
+                                            parameters: vec![
+                                                sway::Expression::Identifier(old_name.into()),
+
+                                                // Identity::from(ContractId::from(x))
+                                                sway::Expression::from(sway::FunctionCall {
+                                                    function: sway::Expression::Identifier("Identity::from".into()),
+                                                    generic_parameters: None,
+                                                    parameters: vec![
+                                                        // ContractId::from(x)
+                                                        sway::Expression::from(sway::FunctionCall {
+                                                            function: sway::Expression::Identifier("ContractId::from".into()),
+                                                            generic_parameters: None,
+                                                            parameters: vec![
+                                                                parameters[0].clone(),
+                                                            ],
+                                                        }),
+                                                    ],
+                                                }),
+                                            ],
+                                        }));
+                                    }
+
+                                    (name, _) if name == old_name => {
+                                        println!("Parameter type matches ABI type: {}", sway::TabbedDisplayer(&parameters[0]));
+                                        // TODO
+                                    }
+
+                                    (name, _) => {
+                                        println!("Parameter {} has type {}", sway::TabbedDisplayer(&parameters[0]), name);
+                                    }
                                 }
 
-                                _ => {}
+                                type_name => {
+                                    println!("Parameter has type {}", sway::TabbedDisplayer(&type_name));
+                                }
                             }
                         }
                     }
