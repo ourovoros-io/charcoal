@@ -575,7 +575,11 @@ impl TabbedDisplay for Literal {
             Literal::DecInt(x, suffix) => write!(
                 f,
                 "{}{}",
-                if suffix == &Some("u256".to_string()) { format!("0x{x:X}") } else { format!("{}", x) },
+                if suffix.as_ref().map(|s| s == "u256" || s == "b256").unwrap_or(false) {
+                    format!("0x{x:064X}")
+                } else {
+                    format!("{}", x)
+                },
                 if let Some(suffix) = suffix.as_ref() {
                     suffix.as_str()
                 } else {

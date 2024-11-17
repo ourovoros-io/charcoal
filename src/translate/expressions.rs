@@ -1567,14 +1567,36 @@ pub fn translate_function_call_expression(
                                     generic_parameters: None,
                                     parameters: vec![
                                         sway::Expression::from(match &arguments[0] {
-                                            solidity::Expression::HexNumberLiteral(_, value, _) => sway::Literal::HexInt(
-                                                BigUint::from_str_radix(value.as_str().trim_start_matches("0x"), 16).unwrap(),
-                                                Some("b256".into()),
-                                            ),
-                                            solidity::Expression::NumberLiteral(_, value, _, _) => sway::Literal::DecInt(
-                                                value.parse().unwrap(),
-                                                Some("b256".into()),
-                                            ),
+                                            solidity::Expression::HexNumberLiteral(_, value, _) => {
+                                                let value = BigUint::from_str_radix(value.as_str().trim_start_matches("0x"), 16).unwrap();
+
+                                                if value.is_zero() {
+                                                    // Ensure `std::constants::ZERO_B256` is imported
+                                                    translated_definition.ensure_use_declared("std::constants::ZERO_B256");
+                                
+                                                    sway::Expression::Identifier("ZERO_B256".into())
+                                                } else {
+                                                    sway::Expression::from(
+                                                        sway::Literal::HexInt(value, Some("b256".into()))
+                                                    )
+                                                }
+                                            }
+
+                                            solidity::Expression::NumberLiteral(_, value, _, _) => {
+                                                let value: BigUint = value.parse().unwrap();
+
+                                                if value.is_zero() {
+                                                    // Ensure `std::constants::ZERO_B256` is imported
+                                                    translated_definition.ensure_use_declared("std::constants::ZERO_B256");
+                                
+                                                    sway::Expression::Identifier("ZERO_B256".into())
+                                                } else {
+                                                    sway::Expression::from(
+                                                        sway::Literal::DecInt(value, Some("b256".into()))
+                                                    )
+                                                }
+                                            }
+
                                             _ => unreachable!(),
                                         }),
                                     ],
