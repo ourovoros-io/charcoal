@@ -1522,17 +1522,19 @@ pub fn translate_member_access_expression(
                     generic_parameters: None,
                     parameters: vec![],
                 })),
-
                 _ => {}
             }
-
             _ => {}
         }
-
         _ => {}
     }
 
-    todo!("translate {container_type_name_string} member access expression: {expression} - {expression:#?}")
+    
+    
+    todo!("{}translate {container_type_name_string} member access expression: {expression} - {expression:#?}", match project.loc_to_line_and_column(&translated_definition.path, &expression.loc()) {
+        Some((line, col)) => format!("{}:{}:{} - ", translated_definition.path.to_string_lossy(), line, col),
+        None => format!("{} - ", translated_definition.path.to_string_lossy()),
+    },)
 }
 
 #[inline]
@@ -2732,6 +2734,24 @@ pub fn translate_function_call_expression(
                         }));
                     }
 
+                    // If we couldn't find the function in scope, we wanna check if this is a struct constructor
+                    if let Some(struct_definition) = translated_definition.structs.iter().find(|s| s.name == old_name).cloned() {
+                        return Ok(sway::Expression::from(sway::Constructor {
+                            type_name: sway::TypeName::Identifier {
+                                name: struct_definition.name.clone(),
+                                generic_parameters: None,
+                            },
+
+                            fields: struct_definition.fields.iter()
+                                .zip(parameters.iter())
+                                .map(|(field, value)| sway::ConstructorField {
+                                    name: field.name.clone(),
+                                    value: value.clone(),
+                                })
+                                .collect(),
+                        }));
+                    }
+
                     panic!(
                         "{}error: Failed to find function `{old_name}({})` in scope",
                         match project.loc_to_line_and_column(&translated_definition.path, &function.loc()) {
@@ -3647,14 +3667,86 @@ pub fn translate_function_call_expression(
                                 translated_definition.functions.insert(0, local_function_definition);
     
                                 // Create the local function declaration for the toplevel scope
-                                let mut local_function_declaration = external_function_declaration.clone();
-                                local_function_declaration.old_name = external_function_declaration.old_name.clone();
-                                local_function_declaration.new_name = external_function_declaration.new_name.clone();
+                                let local_function_declaration = external_function_declaration.clone();
     
                                 // Add the local function to the beginning of the toplevel scope
                                 translated_definition.toplevel_scope.borrow_mut().functions.insert(0, Rc::new(RefCell::new(local_function_declaration.clone())));
                             }
-    
+
+                            // TODO : Check the return type of the function 
+                            // If the return type is user define type struct or enum 
+                            // then we need to add to the current translated definition
+                            // if we have not already
+                            if let Some(return_type) = external_function_definition.return_type.as_ref() {   
+                                fn check_type_name(project: &Project, translated_definition: &mut TranslatedDefinition, type_name: &sway::TypeName) {
+                                    match type_name {
+                                        sway::TypeName::Undefined => {},
+                                        sway::TypeName::Identifier { name, generic_parameters } => {
+                                            if let Some(generic_parameters) = generic_parameters.as_ref() {
+                                                for entry in generic_parameters.entries.iter() {
+                                                    check_type_name(project, translated_definition, &entry.type_name);
+                                                }
+                                            }
+
+                                            'lookup: for external_definition in project.translated_definitions.iter() {
+                                                for type_definition in external_definition.type_definitions.iter() {
+                                                    if type_definition.name.is_compatible_with(type_name) {
+                                                        if !translated_definition.type_definitions.contains(type_definition) {
+                                                            translated_definition.type_definitions.push(type_definition.clone());
+                                                            break 'lookup;
+                                                        }
+                                                    }
+                                                }
+
+                                                for enum_definition in external_definition.enums.iter() {
+                                                    if enum_definition.type_definition.name.is_compatible_with(type_name) {
+                                                        if !translated_definition.enums.contains(enum_definition) {
+                                                            translated_definition.enums.push(enum_definition.clone());
+                                                            break 'lookup;
+                                                        }
+                                                    }
+                                                }
+
+                                                for struct_definition in external_definition.structs.iter() {
+                                                    if struct_definition.name != *name {
+                                                        continue;
+                                                    }
+
+                                                    match (struct_definition.generic_parameters.as_ref(), generic_parameters.as_ref()) {
+                                                        (Some(struct_generic_parameters), Some(generic_parameters)) => {
+                                                            if struct_generic_parameters.entries.len() != generic_parameters.entries.len() {
+                                                                continue;
+                                                            }
+
+                                                            if !translated_definition.structs.contains(struct_definition) {
+                                                                translated_definition.structs.push(struct_definition.clone());
+                                                                break 'lookup;
+                                                            }
+                                                        },
+                                                        (None, None) => {},
+                                                        _ => continue,
+                                                    }
+
+                                                    if !translated_definition.structs.contains(struct_definition) {
+                                                        translated_definition.structs.push(struct_definition.clone());
+                                                        break 'lookup;
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        sway::TypeName::Array { type_name, .. } => {
+                                            check_type_name(project, translated_definition, type_name);
+                                        },
+                                        sway::TypeName::Tuple { type_names } => {
+                                            type_names.iter().for_each(|type_name| check_type_name(project, translated_definition, type_name));
+                                        },
+                                        sway::TypeName::StringSlice => {},
+                                        sway::TypeName::StringArray { .. } => {},
+                                    }
+                                }
+                                check_type_name(project, translated_definition, return_type);
+                            }
+
                             // Create the function call
                             let function_call = sway::Expression::from(sway::FunctionCall {
                                 function: sway::Expression::Identifier(external_function_declaration.new_name.clone()),

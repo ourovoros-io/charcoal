@@ -296,7 +296,13 @@ pub fn translate_modifier_definition(
                 }
 
                 current_body = &mut modifier.post_body;
-                current_scope = Rc::new(RefCell::new(scope.borrow().clone()));
+                let mut new_scope = current_scope.borrow().clone();
+                
+                for v in new_scope.variables.iter_mut() {
+                    v.borrow_mut().statement_index = None;
+                }
+
+                current_scope = Rc::new(RefCell::new(new_scope));
 
                 has_storage_read = &mut has_post_storage_read;
                 has_storage_write = &mut has_post_storage_write;
