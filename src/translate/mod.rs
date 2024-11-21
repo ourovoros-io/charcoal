@@ -1110,7 +1110,7 @@ impl TranslatedDefinition {
                             }
     
                             ("I8", None) => match member_access.member.as_str() {
-                                "neg" => Ok(sway::TypeName::Identifier {
+                                "wrapping_neg" => Ok(sway::TypeName::Identifier {
                                     name: "I8".into(),
                                     generic_parameters: None,
                                 }),
@@ -1119,7 +1119,7 @@ impl TranslatedDefinition {
                             }
 
                             ("I16", None) => match member_access.member.as_str() {
-                                "neg" => Ok(sway::TypeName::Identifier {
+                                "wrapping_neg" => Ok(sway::TypeName::Identifier {
                                     name: "I16".into(),
                                     generic_parameters: None,
                                 }),
@@ -1128,7 +1128,7 @@ impl TranslatedDefinition {
                             }
 
                             ("I32", None) => match member_access.member.as_str() {
-                                "neg" => Ok(sway::TypeName::Identifier {
+                                "wrapping_neg" => Ok(sway::TypeName::Identifier {
                                     name: "I32".into(),
                                     generic_parameters: None,
                                 }),
@@ -1137,7 +1137,7 @@ impl TranslatedDefinition {
                             }
 
                             ("I64", None) => match member_access.member.as_str() {
-                                "neg" => Ok(sway::TypeName::Identifier {
+                                "wrapping_neg" => Ok(sway::TypeName::Identifier {
                                     name: "I64".into(),
                                     generic_parameters: None,
                                 }),
@@ -1146,7 +1146,7 @@ impl TranslatedDefinition {
                             }
 
                             ("I128", None) => match member_access.member.as_str() {
-                                "neg" => Ok(sway::TypeName::Identifier {
+                                "wrapping_neg" => Ok(sway::TypeName::Identifier {
                                     name: "I128".into(),
                                     generic_parameters: None,
                                 }),
@@ -1155,7 +1155,7 @@ impl TranslatedDefinition {
                             }
 
                             ("I256", None) => match member_access.member.as_str() {
-                                "neg" => Ok(sway::TypeName::Identifier {
+                                "wrapping_neg" => Ok(sway::TypeName::Identifier {
                                     name: "I256".into(),
                                     generic_parameters: None,
                                 }),
@@ -1617,7 +1617,7 @@ impl TranslatedDefinition {
                                     generic_parameters: None,
                                 }),
 
-                                "neg" => {
+                                "wrapping_neg" => {
                                     self.ensure_dependency_declared(
                                         "sway_libs = { git = \"https://github.com/FuelLabs/sway-libs\", tag = \"v0.24.0\" }"
                                     );

@@ -62,6 +62,15 @@ pub fn evaluate_expression(
                     _ => todo!("evaluate function call: {expression:#?}"),
                 }
 
+                "I8::from_uint"
+                | "I16::from_uint"
+                | "I32::from_uint"
+                | "I64::from_uint"
+                | "I128::from_uint"
+                | "I256::from_uint" => {
+                    evaluate_expression(translated_definition, scope, type_name, &function_call.parameters[0])
+                }
+
                 _ => todo!("evaluate function call: {expression:#?}"),
             }
 
@@ -70,7 +79,17 @@ pub fn evaluate_expression(
                     sway::Literal::DecInt(lhs_value, lhs_suffix) |
                     sway::Literal::HexInt(lhs_value, lhs_suffix)
                 ) => match member_access.member.as_str() {
-                    "pow" => {
+                    "wrapping_neg" if function_call.parameters.is_empty() => {
+                        //
+                        // TODO: This won't compile currently...
+                        //       We should probably calculate the underlying unsigned value
+                        //       but for now we're just gonna emit code that fails to compile :shrug:
+                        //
+                        
+                        expression.clone()
+                    }
+
+                    "pow" if function_call.parameters.len() == 1 => {
                         let rhs = evaluate_expression(
                             translated_definition,
                             scope.clone(),
@@ -104,7 +123,10 @@ pub fn evaluate_expression(
                     member => todo!("translate {member} member call: {expression:#?}"),
                 }
 
-                expression => todo!("translate member access call: {expression:#?}"),
+                _ => {
+                    // todo!("evaluate member access call: {expression:#?}")
+                    expression.clone()
+                }
             }
 
             _ => todo!("evaluate function call: {expression:#?}"),
@@ -1847,9 +1869,27 @@ pub fn translate_function_call_expression(
                             
                             // Direct signed-to-unsigned conversion
                             ("I8", 8) | ("I16", 16) | ("I32", 32) | ("I64", 64) | ("I128", 128) | ("I256", 256) => {
-                                Ok(sway::Expression::from(sway::MemberAccess {
-                                    expression: value_expression,
-                                    member: "underlying".into(),
+                                Ok(sway::Expression::from(sway::FunctionCall {
+                                    function: sway::Expression::from(sway::MemberAccess {
+                                        expression: value_expression,
+                                        member: "underlying".into(),
+                                    }),
+                                    generic_parameters: None,
+                                    parameters: vec![],
+                                }))
+                            }
+
+                            // Indirect signed-to-unsigned conversion
+                            // NOTE: this isn't converting between bits correctly
+                            //       we'll have to fix this eventually...
+                            ("I8", _) | ("I16", _) | ("I32", _) | ("I64", _) | ("I128", _) | ("I256", _) => {
+                                Ok(sway::Expression::from(sway::FunctionCall {
+                                    function: sway::Expression::from(sway::MemberAccess {
+                                        expression: value_expression,
+                                        member: "underlying".into(),
+                                    }),
+                                    generic_parameters: None,
+                                    parameters: vec![],
                                 }))
                             }
 
@@ -1951,7 +1991,13 @@ pub fn translate_function_call_expression(
 
                             ("todo!", _) => Ok(value_expression),
 
-                            _ => panic!("translate from {value_type_name} to u{bits}: {value_expression:#?}"),
+                            _ => panic!(
+                                "{}translate from {value_type_name} to u{bits}: {value_expression:#?}",
+                                match project.loc_to_line_and_column(&translated_definition.path, &arguments[0].loc()) {
+                                    Some((line, col)) => format!("{}:{}:{} - ", translated_definition.path.to_string_lossy(), line, col),
+                                    None => format!("{} - ", translated_definition.path.to_string_lossy()),
+                                },
+                            ),
                         }
 
                         _ => todo!("translate {value_type_name} type cast: {} - {expression:#?}", expression),
@@ -4816,7 +4862,7 @@ pub fn translate_unary_expression(
                 ("I8" | "I16" | "I32" | "I64" | "I128" | "I256", None) => return Ok(sway::Expression::from(sway::FunctionCall {
                     function: sway::Expression::from(sway::MemberAccess {
                         expression,
-                        member: "neg".into(),
+                        member: "wrapping_neg".into(),
                     }),
                     generic_parameters: None,
                     parameters: vec![],
@@ -4828,7 +4874,7 @@ pub fn translate_unary_expression(
                         return Ok(sway::Expression::from(sway::FunctionCall {
                             function: sway::Expression::from(sway::MemberAccess {
                                 expression,
-                                member: "neg".into(),
+                                member: "wrapping_neg".into(),
                             }),
                             generic_parameters: None,
                             parameters: vec![],

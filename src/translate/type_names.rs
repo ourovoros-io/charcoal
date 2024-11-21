@@ -397,12 +397,30 @@ pub fn translate_type_name(
                     return type_name;
                 }
 
-                todo!("member access type name expression: {type_name:#?}")
+                todo!(
+                    "{} - member access type name expression: {type_name}",
+                    match project.loc_to_line_and_column(&translated_definition.path, &type_name.loc()) {
+                        Some((line, col)) => format!("{}:{}:{}", translated_definition.path.to_string_lossy(), line, col),
+                        None => format!("{}", translated_definition.path.to_string_lossy()),
+                    },
+                )
             }
 
-            _ => todo!("member access type name expression: {type_name:#?}")
+            _ => todo!(
+                "{} - member access type name expression: {type_name}",
+                match project.loc_to_line_and_column(&translated_definition.path, &type_name.loc()) {
+                    Some((line, col)) => format!("{}:{}:{}", translated_definition.path.to_string_lossy(), line, col),
+                    None => format!("{}", translated_definition.path.to_string_lossy()),
+                },
+            )
         }
 
-        _ => unimplemented!("type name expression: {type_name:#?}"),
+        _ => unimplemented!(
+            "{} - type name expression: {type_name}",
+            match project.loc_to_line_and_column(&translated_definition.path, &type_name.loc()) {
+                Some((line, col)) => format!("{}:{}:{}", translated_definition.path.to_string_lossy(), line, col),
+                None => format!("{}", translated_definition.path.to_string_lossy()),
+            },
+        ),
     }
 }
