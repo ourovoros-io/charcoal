@@ -13,7 +13,24 @@ pub fn evaluate_expression(
     expression: &sway::Expression,
 ) -> sway::Expression {
     match expression {
-        sway::Expression::Literal(_) => expression.clone(),
+        sway::Expression::Literal(literal) => match literal {
+            sway::Literal::DecInt(value, _) | sway::Literal::HexInt(value, _) => match type_name {
+                sway::TypeName::Identifier { name, generic_parameters } => match (name.as_str(), generic_parameters.as_ref()) {
+                    ("b256", None) if value.is_zero() => {
+                        // Ensure `std::constants::ZERO_B256` is imported
+                        translated_definition.ensure_use_declared("std::constants::ZERO_B256");
+
+                        sway::Expression::Identifier("ZERO_B256".into())
+                    }
+
+                    _ => expression.clone(),
+                }
+
+                _ => expression.clone(),
+            }
+
+            _ => expression.clone(),
+        }
         
         sway::Expression::Identifier(identifier) => {
             let variable = scope.borrow().find_variable(|v| v.borrow().new_name == *identifier).unwrap();
@@ -50,12 +67,20 @@ pub fn evaluate_expression(
                         let mut hasher = sha3::Keccak256::new();
                         hasher.update(s.as_bytes());
 
+                        let value = BigUint::from_str_radix(hex::encode(hasher.finalize()).as_str(), 16).unwrap();
+
                         return sway::Expression::Commented(
                             format!("{}", sway::TabbedDisplayer(expression)),
-                            Box::new(sway::Expression::from(sway::Literal::HexInt(
-                                BigUint::from_str_radix(hex::encode(hasher.finalize()).as_str(), 16).unwrap(),
-                                Some("u256".into()),
-                            ))),
+                            Box::new(
+                                if value.is_zero() {
+                                    // Ensure `std::constants::ZERO_B256` is imported
+                                    translated_definition.ensure_use_declared("std::constants::ZERO_B256");
+
+                                    sway::Expression::Identifier("ZERO_B256".into())
+                                } else {
+                                    sway::Expression::from(sway::Literal::HexInt(value, None))
+                                }
+                            ),
                         );
                     }
 
@@ -854,14 +879,34 @@ pub fn translate_array_subscript_expression(
     variable.read_count += 1;
 
     if variable.is_storage {
-        Ok(sway::Expression::from(sway::FunctionCall {
-            function: sway::Expression::from(sway::MemberAccess {
-                expression,
-                member: "read".into(),
-            }),
-            generic_parameters: None,
-            parameters: vec![],
-        }))
+        match &variable.type_name {
+            sway::TypeName::Identifier { name, .. } if name == "StorageVec" => Ok(
+                sway::Expression::from(sway::FunctionCall {
+                    function: sway::Expression::from(sway::MemberAccess {
+                        expression: sway::Expression::from(sway::FunctionCall {
+                            function: sway::Expression::from(sway::MemberAccess {
+                                expression,
+                                member: "unwrap".into(),
+                            }),
+                            generic_parameters: None,
+                            parameters: vec![],
+                        }),
+                        member: "read".into(),
+                    }),
+                    generic_parameters: None,
+                    parameters: vec![],
+                })
+            ),
+            
+            _ => Ok(sway::Expression::from(sway::FunctionCall {
+                function: sway::Expression::from(sway::MemberAccess {
+                    expression,
+                    member: "read".into(),
+                }),
+                generic_parameters: None,
+                parameters: vec![],
+            }))
+        }
     } else {
         match &variable.type_name {
             sway::TypeName::Identifier { name, .. } if name == "Vec" => {
@@ -3518,6 +3563,10 @@ pub fn translate_function_call_expression(
                                 }
 
                                 if valid {
+                                    if !translated_definition.structs.contains(&struct_definition) {
+                                        translated_definition.structs.push(struct_definition.clone());
+                                    }
+
                                     return Ok(sway::Expression::from(sway::Constructor {
                                         type_name: sway::TypeName::Identifier {
                                             name: struct_definition.name.clone(),
@@ -5064,6 +5113,23 @@ pub fn translate_variable_access_expression(
             Ok((
                 variable,
                 if is_storage {
+                    // sway::Expression::from(sway::FunctionCall {
+                    //     function: sway::Expression::from(sway::MemberAccess {
+                    //         expression: sway::Expression::from(sway::FunctionCall {
+                    //             function: sway::Expression::from(sway::MemberAccess {
+                    //                 expression,
+                    //                 member: "get".into(),
+                    //             }),
+                    //             generic_parameters: None,
+                    //             parameters: vec![
+                    //                 index.clone(),
+                    //             ],
+                    //         }),
+                    //         member: "unwrap".into(),
+                    //     }),
+                    //     generic_parameters: None,
+                    //     parameters: vec![],
+                    // })
                     sway::Expression::from(sway::FunctionCall {
                         function: sway::Expression::from(sway::MemberAccess {
                             expression,
@@ -5183,6 +5249,21 @@ pub fn create_assignment_expression(
     variable.mutation_count += 1;
 
     if variable.is_storage {
+        let expression = match &variable.type_name {
+            sway::TypeName::Identifier { name, .. } if name == "StorageVec" => {
+                sway::Expression::from(sway::FunctionCall {
+                    function: sway::Expression::from(sway::MemberAccess {
+                        expression: expression.clone(),
+                        member: "unwrap".into(),
+                    }),
+                    generic_parameters: None,
+                    parameters: vec![]
+                })
+            }
+
+            _ => expression.clone(),
+        };
+        
         Ok(sway::Expression::from(sway::FunctionCall {
             function: sway::Expression::from(sway::MemberAccess {
                 expression: expression.clone(),

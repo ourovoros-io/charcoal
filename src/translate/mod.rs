@@ -1115,11 +1115,21 @@ impl TranslatedDefinition {
                                     generic_parameters: None,
                                 }),
 
+                                "underlying" => Ok(sway::TypeName::Identifier {
+                                    name: "I8".into(),
+                                    generic_parameters: None,
+                                }),
+
                                 _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
                             }
 
                             ("I16", None) => match member_access.member.as_str() {
                                 "wrapping_neg" => Ok(sway::TypeName::Identifier {
+                                    name: "I16".into(),
+                                    generic_parameters: None,
+                                }),
+
+                                "underlying" => Ok(sway::TypeName::Identifier {
                                     name: "I16".into(),
                                     generic_parameters: None,
                                 }),
@@ -1133,11 +1143,21 @@ impl TranslatedDefinition {
                                     generic_parameters: None,
                                 }),
 
+                                "underlying" => Ok(sway::TypeName::Identifier {
+                                    name: "I32".into(),
+                                    generic_parameters: None,
+                                }),
+
                                 _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
                             }
 
                             ("I64", None) => match member_access.member.as_str() {
                                 "wrapping_neg" => Ok(sway::TypeName::Identifier {
+                                    name: "I64".into(),
+                                    generic_parameters: None,
+                                }),
+
+                                "underlying" => Ok(sway::TypeName::Identifier {
                                     name: "I64".into(),
                                     generic_parameters: None,
                                 }),
@@ -1151,11 +1171,21 @@ impl TranslatedDefinition {
                                     generic_parameters: None,
                                 }),
 
+                                "underlying" => Ok(sway::TypeName::Identifier {
+                                    name: "I128".into(),
+                                    generic_parameters: None,
+                                }),
+
                                 _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
                             }
 
                             ("I256", None) => match member_access.member.as_str() {
                                 "wrapping_neg" => Ok(sway::TypeName::Identifier {
+                                    name: "I256".into(),
+                                    generic_parameters: None,
+                                }),
+
+                                "underlying" => Ok(sway::TypeName::Identifier {
                                     name: "I256".into(),
                                     generic_parameters: None,
                                 }),
@@ -1488,7 +1518,7 @@ impl TranslatedDefinition {
                                             _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
                                         }
     
-                                        _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
+                                        (name, _) => todo!("get type of {name}::{} function call expression: {} - {expression:#?}", member_access.member, sway::TabbedDisplayer(expression)),
                                     }
     
                                     _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
