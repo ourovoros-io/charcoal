@@ -380,7 +380,11 @@ impl Project {
             }
 
             // If we find that the project type is unknown we return the filename as is
-            ProjectKind::Unknown => Ok(PathBuf::from(filename)),
+            ProjectKind::Unknown => {
+                println!("Charcoal was unable to detect the project type.");
+                println!("Please make sure you are targeting the root folder of the project (do not target the contracts folder itself).");    
+                Ok(PathBuf::from(filename))
+            },
         }
     }
 
