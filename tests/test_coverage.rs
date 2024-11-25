@@ -1,4 +1,6 @@
 use colorize::AnsiColor;
+use rayon::iter::IntoParallelRefIterator;
+use rayon::iter::ParallelIterator;
 
 #[test]
 fn test_coverage() {
@@ -20,10 +22,20 @@ fn test_coverage() {
         "https://github.com/OpenZeppelin/openzeppelin-contracts.git",
     );
 
-    for (path, target_repo) in targets.iter() {
+    targets.insert("./tests/custom-tests", "");
+
+    targets.insert("./tests/uniswap/v2-core", "https://github.com/Uniswap/v2-core.git");
+    targets.insert("./tests/uniswap/v3-core", "https://github.com/Uniswap/v3-core.git");
+    targets.insert("./tests/uniswap/v4-core", "https://github.com/Uniswap/v4-core.git");
+
+    targets.insert("./tests/uniswap/v2-periphery", "https://github.com/Uniswap/v2-periphery.git");
+    targets.insert("./tests/uniswap/v3-periphery", "https://github.com/Uniswap/v3-periphery.git");
+    targets.insert("./tests/uniswap/v4-periphery", "https://github.com/Uniswap/v4-periphery.git");
+
+    targets.par_iter().for_each(|(path, target_repo)| {
         clone_target_repo(std::path::Path::new(path), target_repo);
         process_path(std::path::Path::new(path));
-    }
+    });
 }
 
 fn clone_target_repo(path: &std::path::Path, target_repo: &str) {
@@ -97,23 +109,24 @@ fn process_path(path: &std::path::Path) {
     }
 
     // Create a hashmap to store the results of the charcoal analysis
-    let mut results = std::collections::HashMap::new();
+    let results: std::sync::Mutex<std::collections::HashMap<String, bool>> = std::sync::Mutex::new(std::collections::HashMap::new());
 
-    // Run charcoal for each .sol file in the vector
-    for path in paths {
-        println!("Running for \"{path}\":");
-
+    // Run charcoal for each .sol file in the vector in parallel
+    paths.par_iter().for_each(|path| {
         let output = std::process::Command::new("cargo")
             .args(&["run", "--", "--target", &path, "-o", "./output"])
             .output()
             .expect("Failed to execute command");
         
+        let mut results = results.lock().unwrap();
         if output.status.success() {
-            results.insert(path, true);
+            results.insert(path.clone(), true);
         } else {
-            results.insert(path, false);
+            results.insert(path.clone(), false);
         }
-    }
+    });
+
+    let results = results.lock().unwrap();
 
     // Print all the successful paths
     for (path, result) in results.iter() {
@@ -155,11 +168,10 @@ fn process_path(path: &std::path::Path) {
         .map(|e| e.path().to_string_lossy().into_owned())
         .collect();
 
-    let mut successful = 0;
-    let mut failed = 0;
+    let results: std::sync::Mutex<(usize, usize)> = std::sync::Mutex::new((0, 0));
 
-    // Run in every folder in the output folder the command `forc build`
-    for output_path in output_paths {
+    // Run in every folder in the output folder the command `forc build` in parallel
+    output_paths.par_iter().for_each(|output_path| {
         let output = std::process::Command::new("forc")
             .arg("build")
             .stdout(std::process::Stdio::piped())
@@ -167,14 +179,17 @@ fn process_path(path: &std::path::Path) {
             .current_dir(output_path.clone())
             .output()
             .expect("Failed to execute command");
+        let mut results = results.lock().unwrap();
         if output.status.success() {
             println!("{}", format!("Success : {}", output_path.clone()).green());
-            successful += 1;
+            results.0 += 1;
         } else {
             println!("{}", format!("Failed  : {}", output_path).red());
-            failed += 1;
+            results.1 += 1;
         }
-    }
+    });
+
+    let (successful, failed) = *results.lock().unwrap();
 
     println!("{}", "-".repeat(line_length).magenta());
     println!("{}", "[Forc Build Results]".magenta());
@@ -185,9 +200,4 @@ fn process_path(path: &std::path::Path) {
     println!("{}", "-".repeat(line_length).magenta());
     println!("{}", format!("[Coverage : {:.2}%]", (successful as f32 / (successful + failed) as f32) * 100.0).magenta());
     println!("{}", "-".repeat(line_length).magenta());
-
-    println!("{}", "-".repeat(line_length).cyan());
-    println!("{}", "[End of charcoal analysis]".cyan());
-    println!("{}", "-".repeat(line_length).cyan());
-
 }
