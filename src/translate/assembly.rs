@@ -418,6 +418,10 @@ pub fn translate_yul_variable_expression(
     }
 
     let Some(variable) = scope.borrow().get_variable_from_old_name(name) else {
+        match name {
+            "chainid" => return Ok(sway::Expression::from(sway::Literal::DecInt(BigUint::zero(), None))),
+            _ => {}
+        }
         panic!(
             "{}error: Variable not found in scope: \"{name}\"",
             match project.loc_to_line_and_column(&translated_definition.path, &expression.loc()) {
