@@ -392,6 +392,38 @@ pub fn translate_yul_variable_expression(
                 parameters: vec![],
             }));
         }
+
+        "chainid" => {
+            // chainid => asm(r1) {
+            //    gm r1 i4;
+            //    r1: u64
+            // }
+
+            return Ok(sway::Expression::from(sway::AsmBlock {
+                registers: vec![
+                    sway::AsmRegister {
+                        name: "r1".into(),
+                        value: None,
+                    },
+                ],
+                instructions: vec![
+                    sway::AsmInstruction {
+                        op_code: "gm".into(),
+                        args: vec![
+                            "r1".into(),
+                            "i4".into(),
+                        ],
+                    }
+                ],
+                final_expression: Some(sway::AsmFinalExpression {
+                    register: "r1".into(),
+                    type_name: Some(sway::TypeName::Identifier {
+                        name: "u64".into(),
+                        generic_parameters: None,
+                    }),
+                }),
+            }))
+        }
         
         "msize" => {
             // TODO: msize => ???
@@ -413,15 +445,11 @@ pub fn translate_yul_variable_expression(
                 parameters: vec![],
             }));
         }
-        
+
         _ => {}
     }
 
     let Some(variable) = scope.borrow().get_variable_from_old_name(name) else {
-        match name {
-            "chainid" => return Ok(sway::Expression::from(sway::Literal::DecInt(BigUint::zero(), None))),
-            _ => {}
-        }
         panic!(
             "{}error: Variable not found in scope: \"{name}\"",
             match project.loc_to_line_and_column(&translated_definition.path, &expression.loc()) {
