@@ -67,7 +67,6 @@ fn test_uniswap_v3_periphery() {
     run_test(path, repo);
 }
 
-
 #[test]
 fn test_uniswap_v4_core() {
     let path = std::path::Path::new("./tests/uniswap/v4-core");
@@ -82,13 +81,11 @@ fn test_uniswap_v4_periphery() {
     run_test(path, repo);
 }
 
-
 fn run_test(path: &std::path::Path, target_repo: &str) {
     clone_repo(path, target_repo);
     translate(path);
     build(path.components().last().unwrap().as_os_str().to_str().unwrap());
 }
-
 
 fn clone_repo(path: &std::path::Path, target_repo: &str) {
     if !path.exists() {

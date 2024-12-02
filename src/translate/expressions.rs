@@ -509,7 +509,7 @@ pub fn create_value_expression(
                             })
                         }
 
-                        _ => panic!("Invalid {type_name} array value expression: {value:#?}"),
+                        _ => sway::Expression::create_todo(Some(format!("{}", sway::TabbedDisplayer(value)))),
                     }
 
                     _ => panic!("Invalid {type_name} array value expression: {value:#?}"),
@@ -3865,10 +3865,7 @@ pub fn translate_function_call_expression(
                 _ => {}
             }
 
-            let (variable, container_access) = match translate_variable_access_expression(project, translated_definition, scope.clone(), container) {
-                Ok((variable, expression)) => (Some(variable), Some(expression)),
-                Err(_) => (None, None),
-            };
+            let solidity_container = container;
 
             let mut container = translate_expression(project, translated_definition, scope.clone(), container)?;
             let type_name = translated_definition.get_expression_type(scope.clone(), &container)?;
@@ -4024,6 +4021,11 @@ pub fn translate_function_call_expression(
                             }
                         }
 
+                        let (variable, _) = match translate_variable_access_expression(project, translated_definition, scope.clone(), &solidity_container) {
+                            Ok((variable, expression)) => (Some(variable), Some(expression)),
+                            Err(_) => (None, None),
+                        };
+
                         // Check if expression is a variable that had an ABI type
                         if let Some(variable) = variable.as_ref() {
                             let variable = variable.borrow();
@@ -4133,6 +4135,11 @@ pub fn translate_function_call_expression(
                     
                     ("StorageVec", Some(_)) => match member.name.as_str() {
                         "push" => {
+                            let (variable, container_access) = match translate_variable_access_expression(project, translated_definition, scope.clone(), &solidity_container) {
+                                Ok((variable, expression)) => (Some(variable), Some(expression)),
+                                Err(_) => (None, None),
+                            };
+                            
                             let (Some(variable), Some(container_access)) = (variable, container_access) else {
                                 panic!("StorageVec is not a variable");
                             };
@@ -4156,6 +4163,11 @@ pub fn translate_function_call_expression(
                         }
 
                         "pop" => {
+                            let (variable, container_access) = match translate_variable_access_expression(project, translated_definition, scope.clone(), &solidity_container) {
+                                Ok((variable, expression)) => (Some(variable), Some(expression)),
+                                Err(_) => (None, None),
+                            };
+
                             let (Some(variable), Some(container_access)) = (variable, container_access) else {
                                 panic!("StorageVec is not a variable");
                             };
@@ -4175,6 +4187,11 @@ pub fn translate_function_call_expression(
                         }
 
                         "remove" => {
+                            let (variable, container_access) = match translate_variable_access_expression(project, translated_definition, scope.clone(), &solidity_container) {
+                                Ok((variable, expression)) => (Some(variable), Some(expression)),
+                                Err(_) => (None, None),
+                            };
+
                             let (Some(variable), Some(container_access)) = (variable, container_access) else {
                                 panic!("StorageVec is not a variable");
                             };
@@ -4197,11 +4214,16 @@ pub fn translate_function_call_expression(
                             }))
                         }
 
-                        _ => todo!("translate StorageVec member function call `{member}`: {} - {container:#?} - {:#?}", sway::TabbedDisplayer(&container), variable.unwrap().borrow())
+                        _ => todo!("translate StorageVec member function call `{member}`: {} - {container:#?}", sway::TabbedDisplayer(&container))
                     }
 
                     ("Vec", Some(_)) => match member.name.as_str() {
                         "push" => {
+                            let (variable, container_access) = match translate_variable_access_expression(project, translated_definition, scope.clone(), &solidity_container) {
+                                Ok((variable, expression)) => (Some(variable), Some(expression)),
+                                Err(_) => (None, None),
+                            };
+
                             let (Some(_), Some(container_access)) = (variable, container_access) else {
                                 panic!("Vec is not a variable");
                             };
@@ -4221,6 +4243,11 @@ pub fn translate_function_call_expression(
                         }
 
                         "pop" => {
+                            let (variable, container_access) = match translate_variable_access_expression(project, translated_definition, scope.clone(), &solidity_container) {
+                                Ok((variable, expression)) => (Some(variable), Some(expression)),
+                                Err(_) => (None, None),
+                            };
+
                             let (Some(_), Some(container_access)) = (variable, container_access) else {
                                 panic!("Vec is not a variable");
                             };
@@ -4236,6 +4263,11 @@ pub fn translate_function_call_expression(
                         }
 
                         "remove" => {
+                            let (variable, container_access) = match translate_variable_access_expression(project, translated_definition, scope.clone(), &solidity_container) {
+                                Ok((variable, expression)) => (Some(variable), Some(expression)),
+                                Err(_) => (None, None),
+                            };
+
                             let (Some(_), Some(container_access)) = (variable, container_access) else {
                                 panic!("Vec is not a variable");
                             };
@@ -4254,7 +4286,7 @@ pub fn translate_function_call_expression(
                             }))
                         }
 
-                        _ => todo!("translate Vec member function call `{member}`: {} - {container:#?} - {:#?}", sway::TabbedDisplayer(&container), variable.unwrap().borrow())
+                        _ => todo!("translate Vec member function call `{member}`: {} - {container:#?}", sway::TabbedDisplayer(&container))
                     }
 
                     _ => {
@@ -5244,7 +5276,7 @@ pub fn create_assignment_expression(
 ) -> Result<sway::Expression, Error> {
     // Generate a unique name for our variable
     let variable_name = scope.borrow_mut().generate_unique_variable_name("x");
-
+    
     let mut variable = variable.borrow_mut();
     variable.mutation_count += 1;
 
@@ -5477,7 +5509,7 @@ pub fn translate_assignment_expression(
     //         None => format!("{} - ", translated_definition.path.to_string_lossy()),
     //     },
     // );
-
+    
     let rhs = match operator {
         "=" => {
             // println!("taking translate_pre_or_post_operator_value_expression path...");
@@ -5488,7 +5520,7 @@ pub fn translate_assignment_expression(
             translate_expression(project, translated_definition, scope.clone(), rhs)?
         }
     };
-
+    
     let rhs_type_name = translated_definition.get_expression_type(scope.clone(), &rhs)?;
     
     let (variable, expression) = translate_variable_access_expression(project, translated_definition, scope.clone(), lhs)?;

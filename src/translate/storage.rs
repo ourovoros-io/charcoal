@@ -158,7 +158,7 @@ pub fn translate_state_variable(
             ..Default::default()
         }));
 
-        // Evalute the value ahead of time in order to generate an appropriate constant value expression
+        // Evaluate the value ahead of time in order to generate an appropriate constant value expression
         let value = evaluate_expression(translated_definition, scope, &variable_type_name, &value);
 
         translated_definition.constants.push(sway::Constant {
