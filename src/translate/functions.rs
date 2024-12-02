@@ -527,9 +527,10 @@ pub fn translate_function_definition(
     
     // Translate the functions parameters
     let mut parameters = sway::ParameterList::default();
+    let mut parameter_names = 'a'..='z';
 
     for (_, parameter) in function_definition.params.iter() {
-        let old_name = parameter.as_ref().unwrap().name.as_ref().map(|n| n.name.clone()).unwrap_or("_".into());
+        let old_name = parameter.as_ref().unwrap().name.as_ref().map(|n| n.name.clone()).unwrap_or(parameter_names.next().unwrap().to_string());
         let new_name = crate::translate_naming_convention(old_name.as_str(), Case::Snake);
         let mut type_name = translate_type_name(project, translated_definition, &parameter.as_ref().unwrap().ty, false, true);
 
