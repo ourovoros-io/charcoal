@@ -890,14 +890,14 @@ impl TranslatedDefinition {
                             name: "u16".into(),
                             generic_parameters: None,
                         }),
-    
-                        "u32::try_from" => Ok(sway::TypeName::Identifier {
+
+                        "u16::try_from" => Ok(sway::TypeName::Identifier {
                             name: "Option".into(),
                             generic_parameters: Some(sway::GenericParameterList {
                                 entries: vec![
                                     sway::GenericParameter {
                                         type_name: sway::TypeName::Identifier {
-                                            name: "u32".into(),
+                                            name: "u16".into(),
                                             generic_parameters: None,
                                         },
                                         implements: None,
@@ -911,13 +911,13 @@ impl TranslatedDefinition {
                             generic_parameters: None,
                         }),
     
-                        "u16::try_from" => Ok(sway::TypeName::Identifier {
+                        "u32::try_from" => Ok(sway::TypeName::Identifier {
                             name: "Option".into(),
                             generic_parameters: Some(sway::GenericParameterList {
                                 entries: vec![
                                     sway::GenericParameter {
                                         type_name: sway::TypeName::Identifier {
-                                            name: "u16".into(),
+                                            name: "u32".into(),
                                             generic_parameters: None,
                                         },
                                         implements: None,
