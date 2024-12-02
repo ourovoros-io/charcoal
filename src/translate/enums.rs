@@ -302,6 +302,24 @@ pub fn generate_enum_abi_encode_function(
         } else {
             block.final_expr = Some(sway::Expression::Identifier("buffer".into()));
         }
+        
+        block.statements.insert(0, sway::Statement::from(sway::Let { 
+            pattern: sway::LetPattern::Identifier(sway::LetIdentifier { 
+                is_mutable: false,
+                name: "buffer".into()
+            }),
+            type_name: None,
+            value: sway::Expression::from(sway::FunctionCall {
+                function: sway::Expression::from(sway::MemberAccess {
+                    expression: sway::Expression::from(sway::Literal::String(variant.name.clone())),
+                    member: "abi_encode".into(),
+                }),
+                generic_parameters: None,
+                parameters: vec![
+                    sway::Expression::Identifier("buffer".into()),
+                ],
+            }),
+        }));
 
         match_expr.branches.push(sway::MatchBranch {
             pattern: sway::Expression::Identifier(format!(
