@@ -83,6 +83,26 @@ fn test_uniswap_v4_periphery() {
 
 fn run_test(path: &std::path::Path, target_repo: &str) {
     clone_repo(path, target_repo);
+    let package_json_path = std::path::PathBuf::from(format!("{}/package.json", path.to_string_lossy()));
+    let yarn_paths: Vec<_> = walkdir::WalkDir::new(path)
+        .into_iter()
+        .filter_map(Result::ok)
+        .filter(|e| e.file_type().is_file())
+        .filter(|e| e.path().file_name().map(|f| f == "yarn.lock").unwrap_or(false)).collect();
+    
+    if !yarn_paths.is_empty() {
+        let output = std::process::Command::new("yarn")
+            .current_dir(path)
+            .output()
+            .expect("Failed to execute yarn command");
+    } else if package_json_path.exists() {
+        let output = std::process::Command::new("npm")
+            .arg("install")
+            .current_dir(path)
+            .output()
+            .expect("Failed to execute npm command");
+    }
+    
     translate(path);
     build(path.components().last().unwrap().as_os_str().to_str().unwrap());
 }
