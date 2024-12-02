@@ -4949,6 +4949,33 @@ pub fn translate_unary_expression(
                     parameters: vec![],
                 })),
 
+                ("u8" | "u16" | "u32" | "u64" | "u256", None) => { 
+                    let bits: usize = name.trim_start_matches('u').parse().unwrap();
+                    translated_definition.ensure_use_declared(format!("sway_libs::signed_integers::i{bits}::*").as_str());
+
+                    return Ok(sway::Expression::from(sway::FunctionCall {
+                        function: sway::Expression::from(sway::MemberAccess {
+                            expression: sway::Expression::from(sway::FunctionCall {
+                                function: sway::Expression::from(sway::MemberAccess {
+                                    expression: sway::Expression::from(sway::FunctionCall {
+                                        function: sway::Expression::Identifier(format!("I{bits}::from_uint")),
+                                        generic_parameters: None,
+                                        parameters: vec![
+                                            expression.clone()
+                                        ],
+                                    }),
+                                    member: "wrapping_neg".into(),
+                                }),
+                                generic_parameters: None,
+                                parameters: vec![],
+                            }),
+                            member: "underlying".into(),
+                        }),
+                        generic_parameters: None,
+                        parameters: vec![],
+                    }))
+                },
+
                 _ => {
                     // HACK: allow literals to be negated
                     if let sway::Expression::Literal(sway::Literal::DecInt(_, _) | sway::Literal::HexInt(_, _)) = &expression {
