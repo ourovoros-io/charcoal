@@ -83,6 +83,7 @@ fn test_uniswap_v4_periphery() {
 
 fn run_test(path: &std::path::Path, target_repo: &str) {
     clone_repo(path, target_repo);
+    
     let package_json_path = std::path::PathBuf::from(format!("{}/package.json", path.to_string_lossy()));
     let yarn_paths: Vec<_> = walkdir::WalkDir::new(path)
         .into_iter()
@@ -90,24 +91,34 @@ fn run_test(path: &std::path::Path, target_repo: &str) {
         .filter(|e| e.file_type().is_file())
         .filter(|e| e.path().file_name().map(|f| f == "yarn.lock").unwrap_or(false)).collect();
     
+    println!("{}", "-".repeat(LINE_LENGTH).cyan());
+    println!("{}", "[Installing dependencies]".cyan());
+    println!("{}", "-".repeat(LINE_LENGTH).cyan());
+    
     if !yarn_paths.is_empty() {
-        let output = std::process::Command::new("yarn")
+        let _ = std::process::Command::new("yarn")
             .current_dir(path)
             .output()
             .expect("Failed to execute yarn command");
     } else if package_json_path.exists() {
-        let output = std::process::Command::new("npm")
+        let _ = std::process::Command::new("npm")
             .arg("install")
             .current_dir(path)
             .output()
             .expect("Failed to execute npm command");
     }
-    
+
+    println!("{}", "-".repeat(LINE_LENGTH).cyan());
     translate(path);
+
     build(path.components().last().unwrap().as_os_str().to_str().unwrap());
 }
 
 fn clone_repo(path: &std::path::Path, target_repo: &str) {
+    println!("{}", "-".repeat(LINE_LENGTH).cyan());
+    println!("{}", format!("Cloning repository: {}", target_repo).cyan());
+    println!("{}", "-".repeat(LINE_LENGTH).cyan());
+    
     if !path.exists() {
         let _ = std::process::Command::new("git")
             .args(&[
@@ -119,6 +130,7 @@ fn clone_repo(path: &std::path::Path, target_repo: &str) {
             .output()
             .expect("Failed to execute git clone command");
     } else {
+        println!("{}", "-".repeat(LINE_LENGTH).yellow());
         println!(
             "{}",
             format!(
@@ -127,6 +139,7 @@ fn clone_repo(path: &std::path::Path, target_repo: &str) {
             )
             .yellow()
         );
+        println!("{}", "-".repeat(LINE_LENGTH).yellow());
     }
 
     // Check if the path contains the ds-token directory
@@ -153,13 +166,10 @@ fn clone_repo(path: &std::path::Path, target_repo: &str) {
 }
 
 fn translate(path: &std::path::Path)  {
-    println!("{}", "-".repeat(LINE_LENGTH).cyan());
     println!(
         "{}",
-        format!("[Running charcoal analysis on: {:?}]", path).cyan()
+        format!("[Translating: {:?}]", path).cyan()
     );
-    println!("{}", "-".repeat(LINE_LENGTH).cyan());
-
     let name = path.components().last().unwrap().as_os_str().to_str().unwrap();
 
     let output_folder = &format!("./output/{name}");
@@ -187,10 +197,13 @@ fn translate(path: &std::path::Path)  {
 
     // Run charcoal for each .sol file in the vector in parallel
     paths.par_iter().for_each(|path| {
+        println!("{}", format!("Translating {}", path).cyan());
+        
+        
         let output = std::process::Command::new("cargo")
-            .args(&["run", "--", "--target", &path, "-o", output_folder])
-            .output()
-            .expect("Failed to execute command");
+        .args(&["run", "--", "--target", &path, "-o", output_folder])
+        .output()
+        .expect("Failed to execute command");
         
         let mut results = results.lock().unwrap();
         if output.status.success() {
@@ -220,6 +233,7 @@ fn translate(path: &std::path::Path)  {
     let total = results.len();
     let passed = results.values().filter(|&&v| v).count();
     let coverage = (passed as f32 / total as f32) * 100.0;
+    
     println!("{}", "-".repeat(LINE_LENGTH).magenta());
     println!("{}", "[Charcoal Analysis Results]".magenta());
     println!("{}", "-".repeat(LINE_LENGTH).magenta());
@@ -232,6 +246,9 @@ fn translate(path: &std::path::Path)  {
 }
 
 fn build(name: &str) {
+    println!("{}", "-".repeat(LINE_LENGTH).cyan());
+    println!("{}", format!("[Running forc build on: {}]", name).cyan());
+    println!("{}", "-".repeat(LINE_LENGTH).cyan());
     let out_folder = &format!("./output/{name}");
 
     let out_folder = std::path::Path::new(out_folder);
@@ -255,6 +272,8 @@ fn build(name: &str) {
 
     // Run in every folder in the output folder the command `forc build` in parallel
     output_paths.par_iter().for_each(|output_path| {
+        println!("{}", format!("Building : {}", output_path).cyan());
+        
         let output = std::process::Command::new("forc")
             .arg("build")
             .stdout(std::process::Stdio::piped())
@@ -290,6 +309,7 @@ fn build(name: &str) {
     let total = results.len();
     let passed = results.values().filter(|&&v| v).count();
     let coverage = (passed as f32 / total as f32) * 100.0;
+    
     println!("{}", "-".repeat(LINE_LENGTH).magenta());
     println!("{}", "[Forc Build Results]".magenta());
     println!("{}", "-".repeat(LINE_LENGTH).magenta());
