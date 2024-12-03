@@ -60,6 +60,14 @@ pub fn evaluate_expression(
 
                 "abi" => sway::Expression::create_todo(Some(format!("{}", sway::TabbedDisplayer(expression)))),
 
+                "Address::from" => {
+                    sway::Expression::from(sway::FunctionCall { 
+                        function: function_call.function.clone(), 
+                        generic_parameters: function_call.generic_parameters.clone(), 
+                        parameters: function_call.parameters.iter().map(|p| evaluate_expression(translated_definition, scope.clone(), type_name, p)).collect() 
+                    })
+                }
+
                 "keccak256" | "std::hash::keccak256" if function_call.parameters.len() == 1 => match &function_call.parameters[0] {
                     sway::Expression::Literal(sway::Literal::String(s)) => {
                         use sha3::Digest;
@@ -95,6 +103,16 @@ pub fn evaluate_expression(
                 | "I256::from_uint" => {
                     evaluate_expression(translated_definition, scope, type_name, &function_call.parameters[0])
                 }
+
+                "Identity::Address" | "Identity::ContractId" => {
+                    sway::Expression::from(sway::FunctionCall { 
+                        function: function_call.function.clone(), 
+                        generic_parameters: function_call.generic_parameters.clone(), 
+                        parameters: function_call.parameters.iter().map(|p| evaluate_expression(translated_definition, scope.clone(), type_name, p)).collect() 
+                    })
+                }
+
+
 
                 _ => todo!("evaluate function call: {expression:#?}"),
             }
@@ -1807,9 +1825,26 @@ pub fn translate_function_call_expression(
                             ("I128", 8 | 16 | 32 | 64 | 128 | 256) => create_int_try_from_unwrap_expression(128, bits as usize, value_expression),
                             ("I256", 8 | 16 | 32 | 64 | 128 | 256) => create_int_try_from_unwrap_expression(256, bits as usize, value_expression),
                             
+                            ("u64", 256) => {
+                                Ok(sway::Expression::from(sway::FunctionCall {
+                                    function: sway::Expression::Identifier("I256::from_uint".into()),
+                                    generic_parameters: None,
+                                    parameters: vec![
+                                        sway::Expression::from(sway::FunctionCall { 
+                                            function: sway::Expression::from(sway::MemberAccess { 
+                                                expression: value_expression, 
+                                                member: "as_u256".into() 
+                                            }), 
+                                            generic_parameters: None, 
+                                            parameters: vec![], 
+                                        })
+                                    ],
+                                }))
+                            }
+
                             ("u256", 256) => {
                                 Ok(sway::Expression::from(sway::FunctionCall {
-                                    function: sway::Expression::Identifier("I256::from".into()),
+                                    function: sway::Expression::Identifier("I256::from_uint".into()),
                                     generic_parameters: None,
                                     parameters: vec![
                                         value_expression,
@@ -4542,6 +4577,161 @@ pub fn translate_function_call_expression(
             }
         }
 
+        solidity::Expression::FunctionCall(_, function, args) => {
+            // timelock.executeTransaction.value(proposal.values[i])
+            match function.as_ref() {
+                solidity::Expression::MemberAccess(_, container, member) => {
+                    // timelock.executeTransaction
+                    // .value
+                    
+                    let mut coins = None;
+                    let mut gas = None;
+
+                    match member.name.as_str() {
+                        "value" if args.len() == 1 => coins = Some(translate_expression(project, translated_definition, scope.clone(), &args[0])?),
+                        "gas" if args.len() == 1 => gas = Some(translate_expression(project, translated_definition, scope.clone(), &args[0])?),
+                        _ => todo!("translate member function call: {member}"),
+                    };
+
+                    match container.as_ref() {
+                        solidity::Expression::MemberAccess(_, container, member) => {
+                            let variable = translate_variable_access_expression(project, translated_definition, scope.clone(), container).ok().map(|(v, _)| v);
+                            let mut container = translate_expression(project, translated_definition, scope.clone(), container)?;
+                            let type_name = translated_definition.get_expression_type(scope.clone(), &container)?;
+            
+                            match type_name {
+                                sway::TypeName::Undefined => panic!("Undefined type name"),
+                                
+                                sway::TypeName::Identifier { name, .. } => match name.as_str() {
+                                    "Identity" => match member.name.as_str() {
+                                        "call" => {
+                                            if arguments.len() != 1 {
+                                                panic!("Malformed `address.call` call, expected 1 argument, found {}", arguments.len());
+                                            }
+            
+                                            let payload = translate_expression(project, translated_definition, scope.clone(), &arguments[0])?;
+                                            translate_address_call_expression(project, translated_definition, scope.clone(), payload, coins, None, gas)
+                                        }
+            
+                                        _ => {
+                                            let mut name = name.clone();
+                                            let external_function_new_name = crate::translate_naming_convention(member.name.as_str(), Case::Snake);
+                
+                                            // Check if expression is a variable that had an ABI type
+                                            if let Some(variable) = variable.as_ref() {
+                                                let variable = variable.borrow();
+                
+                                                if let Some(abi_type_name) = variable.abi_type_name.as_ref() {
+                                                    let abi_type_name = abi_type_name.to_string();
+                
+                                                    // Ensure the ABI is added to the current definition
+                                                    if let Some(external_definition) = project.find_definition_with_abi(abi_type_name.as_str()) {
+                                                        if let Some(abi) = external_definition.abi.as_ref() {
+                                                            if abi.name == abi_type_name && !translated_definition.abis.iter().any(|a| a.name == abi.name) {
+                                                                translated_definition.abis.push(abi.clone());
+                                                            }
+                                                        }
+                                                    }
+                                    
+                                                    // Turn the expression into an ABI cast
+                                                    container = sway::Expression::from(sway::FunctionCall {
+                                                        function: sway::Expression::Identifier("abi".into()),
+                                                        generic_parameters: None,
+                                                        parameters: vec![
+                                                            sway::Expression::Identifier(abi_type_name.clone()),
+                
+                                                            // x.as_contract_id().unwrap().into()
+                                                            sway::Expression::from(sway::FunctionCall {
+                                                                function: sway::Expression::from(sway::MemberAccess {
+                                                                    expression: sway::Expression::from(sway::FunctionCall {
+                                                                        function: sway::Expression::from(sway::MemberAccess {
+                                                                            expression: sway::Expression::from(sway::FunctionCall {
+                                                                                function: sway::Expression::from(sway::MemberAccess {
+                                                                                    expression: container,
+                                                                                    member: "as_contract_id".into(),
+                                                                                }),
+                                                                                generic_parameters: None,
+                                                                                parameters: vec![],
+                                                                            }),
+                                                                            member: "unwrap".into(),
+                                                                        }),
+                                                                        generic_parameters: None,
+                                                                        parameters: vec![],
+                                                                    }),
+                                                                    member: "into".into(),
+                                                                }),
+                                                                generic_parameters: None,
+                                                                parameters: vec![],
+                                                            }),
+                                                        ],
+                                                    });
+                
+                                                    name = abi_type_name.to_string();
+                                                }
+                                            }
+                    
+                                            // Check to see if the type is located in an external ABI
+                                            if let Some(external_definition) = project.find_definition_with_abi(name.as_str()) {
+                                                let external_abi = external_definition.abi.as_ref().unwrap();
+            
+                                                if external_abi.functions.iter().any(|f| f.name == external_function_new_name) {
+                                                    // Ensure the ABI is added to the current definition
+                                                    if !translated_definition.abis.iter().any(|a| a.name == external_abi.name) {
+                                                        translated_definition.abis.push(external_abi.clone());
+                                                    }
+                                                    
+                                                    let mut fields = vec![];
+            
+                                                    if let Some(coins) = coins {
+                                                        fields.push(sway::ConstructorField {
+                                                            name: "coins".into(),
+                                                            value: coins,
+                                                        });
+                                                    }
+                                                    
+                                                    if let Some(gas) = gas {
+                                                        fields.push(sway::ConstructorField {
+                                                            name: "gas".into(),
+                                                            value: gas,
+                                                        });
+                                                    }
+            
+                                                    return Ok(sway::Expression::from(sway::FunctionCallBlock {
+                                                        function: sway::Expression::from(sway::MemberAccess {
+                                                            expression: container,
+                                                            member: external_function_new_name,
+                                                        }),
+                                                        generic_parameters: None,
+                                                        fields,
+                                                        parameters: arguments.iter()
+                                                            .map(|a| translate_expression(project, translated_definition, scope.clone(), a))
+                                                            .collect::<Result<Vec<_>, _>>()?,
+                                                    }));
+                                                }
+                                            }
+            
+                                            todo!("translate Identity member function call block `{member}` : {} - {container:#?}", sway::TabbedDisplayer(&container))
+                                        }
+                                    }
+            
+                                    _ => todo!("translate {name} member function call block: {} - {container:#?}", sway::TabbedDisplayer(&container))
+                                }
+            
+                                sway::TypeName::Array { .. } => todo!(),
+                                sway::TypeName::Tuple { .. } => todo!(),
+                                sway::TypeName::StringSlice => todo!(),
+                                sway::TypeName::StringArray { .. } => todo!(),
+                            }
+                        }
+            
+                        _ => todo!("translate member function call: {member}")
+                    }
+                }
+                _ => todo!("translate function call: {function}")
+            }
+        }
+
+        // timelock.executeTransaction{value : proposal.values[i]}
         solidity::Expression::FunctionCallBlock(_, function, block) => match function.as_ref() {
             solidity::Expression::MemberAccess(_, container, member) => {
                 let variable = translate_variable_access_expression(project, translated_definition, scope.clone(), container).ok().map(|(v, _)| v);
