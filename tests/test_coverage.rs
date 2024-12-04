@@ -91,32 +91,44 @@ fn run_test(path: &std::path::Path, target_repo: &str) {
         .filter(|e| e.file_type().is_file())
         .filter(|e| e.path().file_name().map(|f| f == "yarn.lock").unwrap_or(false)).collect();
     
-    println!("{}", "-".repeat(LINE_LENGTH).cyan());
-    println!("{}", "[Installing dependencies]".cyan());
-    println!("{}", "-".repeat(LINE_LENGTH).cyan());
+    println!("{}", "-".repeat(LINE_LENGTH).red());
+    println!("{}", "[Installing dependencies]".red());
+    println!("{}", "-".repeat(LINE_LENGTH).red());
     
-    if !yarn_paths.is_empty() {
-        let _ = std::process::Command::new("yarn")
-            .current_dir(path)
-            .output()
-            .expect("Failed to execute yarn command");
-    } else if package_json_path.exists() {
-        let _ = std::process::Command::new("npm")
-            .arg("install")
-            .current_dir(path)
-            .output()
-            .expect("Failed to execute npm command");
+    let node_modules_folder = std::path::PathBuf::from(format!("{}/node_modules", path.to_string_lossy()));
+    
+    if node_modules_folder.exists() {
+        println!("{}", "-".repeat(LINE_LENGTH).yellow());
+        println!("{}", "The dependencies are already installed, skipping the dependencies installation process".yellow());
+        println!("{}", "-".repeat(LINE_LENGTH).yellow());
+    } else {
+        if !yarn_paths.is_empty() {
+            let _ = std::process::Command::new("yarn")
+                .current_dir(path)
+                .output()
+                .expect("Failed to execute yarn command");
+        } else if package_json_path.exists() {
+            let _ = std::process::Command::new("npm")
+                .arg("install")
+                .current_dir(path)
+                .output()
+                .expect("Failed to execute npm command");
+        }
+        println!("{}", "-".repeat(LINE_LENGTH).green());
+        println!("{}", "Dependencies installed successfully".green());
+        println!("{}", "-".repeat(LINE_LENGTH).green());
     }
 
-    println!("{}", "-".repeat(LINE_LENGTH).cyan());
-    translate(path);
+    let translate_results = translate(path);
 
-    build(path.components().last().unwrap().as_os_str().to_str().unwrap());
+    let build_results = build(path.components().last().unwrap().as_os_str().to_str().unwrap());
+    print_results(translate_results, "[Charcoal Analysis Results]");
+    print_results(build_results, "[Forc Build Results]");
 }
 
 fn clone_repo(path: &std::path::Path, target_repo: &str) {
     println!("{}", "-".repeat(LINE_LENGTH).cyan());
-    println!("{}", format!("Cloning repository: {}", target_repo).cyan());
+    println!("{}", format!("Cloning Repository      -> {}", target_repo).cyan());
     println!("{}", "-".repeat(LINE_LENGTH).cyan());
     
     if !path.exists() {
@@ -165,11 +177,10 @@ fn clone_repo(path: &std::path::Path, target_repo: &str) {
     }
 }
 
-fn translate(path: &std::path::Path)  {
-    println!(
-        "{}",
-        format!("[Translating: {:?}]", path).cyan()
-    );
+fn translate(path: &std::path::Path) -> (usize, usize, f32) {
+    println!("{}", "-".repeat(LINE_LENGTH).cyan());
+    println!("{}", format!("[Running Charcoal On    -> {}]", path.display()).cyan());
+    println!("{}", "-".repeat(LINE_LENGTH).cyan());
     let name = path.components().last().unwrap().as_os_str().to_str().unwrap();
 
     let output_folder = &format!("./output/{name}");
@@ -197,7 +208,7 @@ fn translate(path: &std::path::Path)  {
 
     // Run charcoal for each .sol file in the vector in parallel
     paths.par_iter().for_each(|path| {
-        println!("{}", format!("Translating {}", path).cyan());
+        println!("{}", format!("Translating : {}", path).cyan());
         
         
         let output = std::process::Command::new("cargo")
@@ -218,14 +229,14 @@ fn translate(path: &std::path::Path)  {
     // Print all the successful paths
     for (path, result) in results.iter() {
         if *result {
-            println!("{}", format!("Success : {}", path).green());
+            println!("{}", format!("Success     : {}", path).green());
         }
     }
 
     // Print all the failed paths
     for (path, result) in results.iter() {
         if !*result {
-            println!("{}", format!("Failed  : {}", path).red());
+            println!("{}", format!("Failed      : {}", path).red());
         }
     }
 
@@ -234,20 +245,12 @@ fn translate(path: &std::path::Path)  {
     let passed = results.values().filter(|&&v| v).count();
     let coverage = (passed as f32 / total as f32) * 100.0;
     
-    println!("{}", "-".repeat(LINE_LENGTH).magenta());
-    println!("{}", "[Charcoal Analysis Results]".magenta());
-    println!("{}", "-".repeat(LINE_LENGTH).magenta());
-    println!("{}", format!("[Total    : {}]", total).blue());
-    println!("{}", format!("[Passed   : {}]", passed).green());
-    println!("{}", format!("[Failed   : {}]", total - passed).red());
-    println!("{}", "-".repeat(LINE_LENGTH).magenta());
-    println!("{}", format!("[Coverage : {:.2}%]", coverage).magenta());
-    println!("{}", "-".repeat(LINE_LENGTH).magenta());
+    (total, passed, coverage)
 }
 
-fn build(name: &str) {
+fn build(name: &str) -> (usize, usize, f32) {
     println!("{}", "-".repeat(LINE_LENGTH).cyan());
-    println!("{}", format!("[Running forc build on: {}]", name).cyan());
+    println!("{}", format!("[Running Forc Build On  -> {}]", name).cyan());
     println!("{}", "-".repeat(LINE_LENGTH).cyan());
     let out_folder = &format!("./output/{name}");
 
@@ -272,7 +275,7 @@ fn build(name: &str) {
 
     // Run in every folder in the output folder the command `forc build` in parallel
     output_paths.par_iter().for_each(|output_path| {
-        println!("{}", format!("Building : {}", output_path).cyan());
+        println!("{}", format!("Building    : {}", output_path).cyan());
         
         let output = std::process::Command::new("forc")
             .arg("build")
@@ -294,14 +297,14 @@ fn build(name: &str) {
     // Print all the successful paths
     for (path, result) in results.iter() {
         if *result {
-            println!("{}", format!("Success : {}", path).green());
+            println!("{}", format!("Success     : {}", path).green());
         }
     }
 
     // Print all the failed paths
     for (path, result) in results.iter() {
         if !*result {
-            println!("{}", format!("Failed  : {}", path).red());
+            println!("{}", format!("Failed      : {}", path).red());
         }
     }
 
@@ -310,13 +313,17 @@ fn build(name: &str) {
     let passed = results.values().filter(|&&v| v).count();
     let coverage = (passed as f32 / total as f32) * 100.0;
     
+    (total, passed, coverage)
+}
+
+fn print_results(results: (usize, usize, f32), title: &str) {
     println!("{}", "-".repeat(LINE_LENGTH).magenta());
-    println!("{}", "[Forc Build Results]".magenta());
+    println!("{}", format!("[{}]", title).magenta());
     println!("{}", "-".repeat(LINE_LENGTH).magenta());
-    println!("{}", format!("[Total    : {}]", total).blue());
-    println!("{}", format!("[Passed   : {}]", passed).green());
-    println!("{}", format!("[Failed   : {}]", total - passed).red());
+    println!("{}", format!("[Total      : {}]", results.0).blue());
+    println!("{}", format!("[Passed     : {}]", results.1).green());
+    println!("{}", format!("[Failed     : {}]", results.0 - results.1).red());
     println!("{}", "-".repeat(LINE_LENGTH).magenta());
-    println!("{}", format!("[Coverage : {:.2}%]", coverage).magenta());
+    println!("{}", format!("[Coverage   : {:.2}%]", results.2).magenta());
     println!("{}", "-".repeat(LINE_LENGTH).magenta());
 }
