@@ -1525,6 +1525,16 @@ impl TranslatedDefinition {
                                 }
                             }
     
+                            ("StorageMap", Some(generic_parameters)) if generic_parameters.entries.len() == 2 => match member_access.member.as_str() {
+                                "get" if parameters.len() == 1 => Ok(sway::TypeName::Identifier { 
+                                    name: "StorageKey".to_string(), 
+                                    generic_parameters: Some(sway::GenericParameterList { 
+                                        entries : vec![generic_parameters.entries[1].clone()] 
+                                    }),
+                                }),
+                                _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression))
+                            }
+
                             ("String", None) => match member_access.member.as_str() {
                                 "len" => Ok(sway::TypeName::Identifier {
                                     name: "u64".into(),

@@ -22,6 +22,23 @@ pub fn translate_struct_definition(
             }
         }).collect(),
     };
+    for field in struct_definition.fields.iter() {
+        match &field.type_name {
+            sway::TypeName::Identifier{ name, .. } => {
+                if !translated_definition.structs.iter().any(|s| s.name == *name) {
+                    for external_definition in project.translated_definitions.iter() {
+                        for s in external_definition.structs.iter() {
+                            if s.name == *name {
+                                translated_definition.structs.push(s.clone());
+                            }
+                        }
+                    }                        
+                }
+            },
+            
+            _ => {}
+        }
+    }
 
     translated_definition.structs.push(struct_definition);
 

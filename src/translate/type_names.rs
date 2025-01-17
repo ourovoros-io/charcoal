@@ -391,6 +391,24 @@ pub fn translate_type_name(
                             translated_definition.struct_names.push(translated_struct.name.clone());
                         }
 
+                        for field in translated_struct.fields.iter() {
+                            match &field.type_name {
+                                sway::TypeName::Identifier{ name, .. } => {
+                                    if !translated_definition.structs.iter().any(|s| s.name == *name) {
+                                        for external_definition in project.translated_definitions.iter() {
+                                            for s in external_definition.structs.iter() {
+                                                if s.name == *name {
+                                                    translated_definition.structs.push(s.clone());
+                                                }
+                                            }
+                                        }                        
+                                    }
+                                },
+                                
+                                _ => {}
+                            }
+                        }
+
                         translated_definition.structs.push(translated_struct);
                     }
 

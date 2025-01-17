@@ -826,6 +826,10 @@ pub fn translate_variable_expression(
     }
 
     let (variable, expression) = translate_variable_access_expression(project, translated_definition, scope.clone(), expression)?;
+    if variable.is_none() {
+        panic!("Variable not found: {}", sway::TabbedDisplayer(&expression));
+    }
+    let variable = variable.unwrap();
     let mut variable = variable.borrow_mut();
 
     variable.read_count += 1;
@@ -892,6 +896,12 @@ pub fn translate_array_subscript_expression(
     //
 
     let (variable, expression) = translate_variable_access_expression(project, translated_definition, scope.clone(), expression)?;
+    
+    if variable.is_none() {
+        panic!("Variable not found: {}", sway::TabbedDisplayer(&expression));
+    }
+    
+    let variable = variable.unwrap();
     let mut variable = variable.borrow_mut();
 
     variable.read_count += 1;
@@ -1523,9 +1533,10 @@ pub fn translate_member_access_expression(
     }
 
     let container = translate_expression(project, translated_definition, scope.clone(), container)?;
+    
     let container_type_name = translated_definition.get_expression_type(scope.clone(), &container)?;
     let container_type_name_string = container_type_name.to_string();
-    
+
     // Check if container is a struct
     if let Some(struct_definition) = translated_definition.structs.iter().find(|s| s.name == container_type_name_string) {
         let field_name = crate::translate_naming_convention(member.name.as_str(), Case::Snake);
@@ -1614,8 +1625,8 @@ pub fn translate_member_access_expression(
         _ => {}
     }
 
-    
-    
+    println!("Structs : {:#?}", translated_definition.structs);
+
     todo!("{}translate {container_type_name_string} member access expression: {expression} - {expression:#?}", match project.loc_to_line_and_column(&translated_definition.path, &expression.loc()) {
         Some((line, col)) => format!("{}:{}:{} - ", translated_definition.path.to_string_lossy(), line, col),
         None => format!("{} - ", translated_definition.path.to_string_lossy()),
@@ -3599,6 +3610,23 @@ pub fn translate_function_call_expression(
 
                                 if valid {
                                     if !translated_definition.structs.contains(&struct_definition) {
+                                        for field in struct_definition.fields.iter() {
+                                            match &field.type_name {
+                                                sway::TypeName::Identifier{ name, .. } => {
+                                                    if !translated_definition.structs.iter().any(|s| s.name == *name) {
+                                                        for external_definition in project.translated_definitions.iter() {
+                                                            for s in external_definition.structs.iter() {
+                                                                if s.name == *name {
+                                                                    translated_definition.structs.push(s.clone());
+                                                                }
+                                                            }
+                                                        }                        
+                                                    }
+                                                },
+                                                
+                                                _ => {}
+                                            }
+                                        }
                                         translated_definition.structs.push(struct_definition.clone());
                                     }
 
@@ -3849,6 +3877,23 @@ pub fn translate_function_call_expression(
                                                             }
 
                                                             if !translated_definition.structs.contains(struct_definition) {
+                                                                for field in struct_definition.fields.iter() {
+                                                                    match &field.type_name {
+                                                                        sway::TypeName::Identifier{ name, .. } => {
+                                                                            if !translated_definition.structs.iter().any(|s| s.name == *name) {
+                                                                                for external_definition in project.translated_definitions.iter() {
+                                                                                    for s in external_definition.structs.iter() {
+                                                                                        if s.name == *name {
+                                                                                            translated_definition.structs.push(s.clone());
+                                                                                        }
+                                                                                    }
+                                                                                }                        
+                                                                            }
+                                                                        },
+                                                                        
+                                                                        _ => {}
+                                                                    }
+                                                                }
                                                                 translated_definition.structs.push(struct_definition.clone());
                                                                 break 'lookup;
                                                             }
@@ -3858,6 +3903,23 @@ pub fn translate_function_call_expression(
                                                     }
 
                                                     if !translated_definition.structs.contains(struct_definition) {
+                                                        for field in struct_definition.fields.iter() {
+                                                            match &field.type_name {
+                                                                sway::TypeName::Identifier{ name, .. } => {
+                                                                    if !translated_definition.structs.iter().any(|s| s.name == *name) {
+                                                                        for external_definition in project.translated_definitions.iter() {
+                                                                            for s in external_definition.structs.iter() {
+                                                                                if s.name == *name {
+                                                                                    translated_definition.structs.push(s.clone());
+                                                                                }
+                                                                            }
+                                                                        }                        
+                                                                    }
+                                                                },
+                                                                
+                                                                _ => {}
+                                                            }
+                                                        }
                                                         translated_definition.structs.push(struct_definition.clone());
                                                         break 'lookup;
                                                     }
@@ -4063,6 +4125,10 @@ pub fn translate_function_call_expression(
 
                         // Check if expression is a variable that had an ABI type
                         if let Some(variable) = variable.as_ref() {
+                            if variable.is_none() {
+                                panic!("Variable not found: {}", sway::TabbedDisplayer(&expression));
+                            }
+                            let variable = variable.as_ref().unwrap();
                             let variable = variable.borrow();
 
                             if let Some(abi_type_name) = variable.abi_type_name.as_ref() {
@@ -4156,7 +4222,10 @@ pub fn translate_function_call_expression(
                                 }));
                             }
                         }
-
+                        if variable.is_none() {
+                            panic!("Variable not found: {}", sway::TabbedDisplayer(&expression));
+                        }
+                        let variable = variable.unwrap();
                         todo!(
                             "{}translate Identity member function call `{member}`: {} - {container:#?} - {:#?}",
                             match project.loc_to_line_and_column(&translated_definition.path, &function.loc()) {
@@ -4178,7 +4247,13 @@ pub fn translate_function_call_expression(
                             let (Some(variable), Some(container_access)) = (variable, container_access) else {
                                 panic!("StorageVec is not a variable");
                             };
-
+                            
+                            if variable.is_none() {
+                                panic!("Variable not found: {}", sway::TabbedDisplayer(&expression));
+                            }
+                            
+                            let variable = variable.unwrap();
+                           
                             if !variable.borrow().is_storage {
                                 panic!("StorageVec is not in storage");
                             }
@@ -4207,6 +4282,12 @@ pub fn translate_function_call_expression(
                                 panic!("StorageVec is not a variable");
                             };
 
+                            if variable.is_none() {
+                                panic!("Variable not found: {}", sway::TabbedDisplayer(&expression));
+                            }
+                            
+                            let variable = variable.unwrap();
+                            
                             if !variable.borrow().is_storage {
                                 panic!("StorageVec is not in storage");
                             }
@@ -4231,6 +4312,12 @@ pub fn translate_function_call_expression(
                                 panic!("StorageVec is not a variable");
                             };
 
+                            if variable.is_none() {
+                                panic!("Variable not found: {}", sway::TabbedDisplayer(&expression));
+                            }
+
+                            let variable = variable.unwrap();
+                            
                             if !variable.borrow().is_storage {
                                 panic!("StorageVec is not in storage");
                             }
@@ -4619,6 +4706,10 @@ pub fn translate_function_call_expression(
                 
                                             // Check if expression is a variable that had an ABI type
                                             if let Some(variable) = variable.as_ref() {
+                                                if variable.is_none() {
+                                                    panic!("Variable not found: {}", sway::TabbedDisplayer(&expression));
+                                                }
+                                                let variable = variable.as_ref().unwrap();
                                                 let variable = variable.borrow();
                 
                                                 if let Some(abi_type_name) = variable.abi_type_name.as_ref() {
@@ -4773,6 +4864,10 @@ pub fn translate_function_call_expression(
     
                                 // Check if expression is a variable that had an ABI type
                                 if let Some(variable) = variable.as_ref() {
+                                    if variable.is_none() {
+                                        panic!("Variable not found: {}", sway::TabbedDisplayer(&expression));
+                                    }
+                                    let variable = variable.as_ref().unwrap();
                                     let variable = variable.borrow();
     
                                     if let Some(abi_type_name) = variable.abi_type_name.as_ref() {
@@ -5326,7 +5421,7 @@ pub fn translate_variable_access_expression(
     translated_definition: &mut TranslatedDefinition,
     scope: Rc<RefCell<TranslationScope>>,
     expression: &solidity::Expression,
-) -> Result<(Rc<RefCell<TranslatedVariable>>, sway::Expression), Error> {
+) -> Result<(Option<Rc<RefCell<TranslatedVariable>>>, sway::Expression), Error> {
     match expression {
         solidity::Expression::Variable(solidity::Identifier { name, .. }) => {
             let Some(variable) = scope.borrow().get_variable_from_old_name(name) else {
@@ -5346,7 +5441,7 @@ pub fn translate_variable_access_expression(
             let is_storage = variable.borrow().is_storage;
 
             Ok((
-                variable,
+                Some(variable),
                 if is_storage {
                     sway::Expression::from(sway::MemberAccess {
                         expression: sway::Expression::Identifier("storage".into()),
@@ -5361,10 +5456,14 @@ pub fn translate_variable_access_expression(
         solidity::Expression::ArraySubscript(_, expression, Some(index)) => {
             let index = translate_expression(project, translated_definition, scope.clone(), index.as_ref())?;
             let (variable, expression) = translate_variable_access_expression(project, translated_definition, scope.clone(), expression)?;
+            if variable.is_none() {
+                panic!("Variable not found: {}", sway::TabbedDisplayer(&expression));
+            }
+            let variable = variable.unwrap();
             let is_storage = variable.borrow().is_storage;
 
             Ok((
-                variable,
+                Some(variable),
                 if is_storage {
                     // sway::Expression::from(sway::FunctionCall {
                     //     function: sway::Expression::from(sway::MemberAccess {
@@ -5401,11 +5500,72 @@ pub fn translate_variable_access_expression(
         }
         
         solidity::Expression::MemberAccess(_, container, member) => {
+            if let solidity::Expression::Variable(solidity::Identifier { name, .. }) = container.as_ref() {
+                for external_definition in project.translated_definitions.iter() {
+                    
+                    if let Some(solidity::ContractTy::Library(_)) = external_definition.kind.as_ref()  {
+                        if external_definition.name == *name {
+                            let member_name = crate::translate_naming_convention(&member.name, Case::Snake);
+                            let new_name = format!("{}_{}", crate::translate_naming_convention(&external_definition.name, Case::Snake), member_name);
+                            
+                            if translated_definition.toplevel_scope.borrow().find_function(|f| f.borrow().new_name == new_name).is_none() {
+                                // Get the scope entry for the library function
+                                let Some(scope_entry) = external_definition.toplevel_scope.borrow().find_function(|f| f.borrow().new_name == new_name) else {
+                                    panic!("Failed to find function in scope: \"{}\"", new_name);
+                                };
+
+                                // Add the function to the current definition's toplevel scope
+                                if !translated_definition.toplevel_scope.borrow().functions.iter().any(|f| {
+                                    f.borrow().old_name == scope_entry.borrow().old_name
+                                    && f.borrow().parameters == scope_entry.borrow().parameters
+                                    && f.borrow().return_type == scope_entry.borrow().return_type
+                                }) {
+                                    translated_definition.toplevel_scope.borrow_mut().functions.push(Rc::new(RefCell::new(scope_entry.borrow().clone())));
+                                }
+
+                                // Add the function name to the current definition's function name list
+                                *translated_definition.function_name_counts.entry(new_name.clone()).or_insert(0) += 1;
+
+                                let function = external_definition.functions.iter().find(|f| f.name == new_name).unwrap();
+
+                                // Add the function definition to the current definition
+                                if !translated_definition.functions.contains(function) {
+                                    translated_definition.functions.push(function.clone());
+                                }
+
+                                // Add the function call count from the library definition to the current definition
+                                translated_definition.function_call_counts.insert(
+                                    function.name.clone(),
+                                    if let Some(function_call_count) = external_definition.function_call_counts.get(&function.name) {
+                                        *function_call_count
+                                    } else {
+                                        0
+                                    }
+                                );
+
+                                // Add the functions called from the library definition to the current definition
+                                for (lib_calling_fn, lib_called_fns) in external_definition.functions_called.iter() {
+                                    let called_functions = translated_definition.functions_called.entry(lib_calling_fn.clone()).or_default();
+
+                                    for lib_called_fn in lib_called_fns.iter() {
+                                        if !called_functions.contains(lib_called_fn) {
+                                            called_functions.push(lib_called_fn.clone());
+                                        }
+                                    }
+                                }
+                                
+                            }
+                            return Ok((None, sway::Expression::Identifier(new_name)));
+                        }
+                    }
+                }
+            }
+            
             let translated_container = translate_expression(project, translated_definition, scope.clone(), container)?;
         
             let container_type_name = translated_definition.get_expression_type(scope.clone(), &translated_container)?;
             let container_type_name_string = container_type_name.to_string();
-            let (variable, container) = translate_variable_access_expression(project, translated_definition, scope.clone(), container)?;
+            let (variable, _) = translate_variable_access_expression(project, translated_definition, scope.clone(), container)?;
         
             // Check if container is a struct
             if let Some(struct_definition) = translated_definition.structs.iter().find(|s| s.name == container_type_name_string) {
@@ -5415,7 +5575,7 @@ pub fn translate_variable_access_expression(
                     return Ok((
                         variable,
                         sway::Expression::from(sway::MemberAccess {
-                            expression: container,
+                            expression: translated_container,
                             member: field_name,
                         })
                     ))
@@ -5681,6 +5841,14 @@ pub fn create_assignment_expression(
                     _ => todo!("translation assignment expression: {}", sway::TabbedDisplayer(expression)),
                 }
                 
+                sway::Expression::Identifier(ident) if operator == "=" => {
+                    Ok(sway::Expression::from(sway::BinaryExpression {
+                        operator: "=".into(),
+                        lhs: expression.clone(),
+                        rhs: sway::Expression::Identifier(ident.clone())
+                    }))
+                }
+
                 _ => todo!("translation assignment expression: {}", sway::TabbedDisplayer(expression)),
             }
 
@@ -5745,6 +5913,28 @@ pub fn translate_assignment_expression(
     let rhs_type_name = translated_definition.get_expression_type(scope.clone(), &rhs)?;
     
     let (variable, expression) = translate_variable_access_expression(project, translated_definition, scope.clone(), lhs)?;
+    if variable.is_none() {
+        match &expression {
+            sway::Expression::MemberAccess(member_access) => {
+                let x = translated_definition.get_expression_type(scope, &member_access.expression)?;
+                match x {
+                    sway::TypeName::Identifier{ name, .. } => {
+                        if let Some(struct_definition) = translated_definition.structs.iter().find(|s| s.name == name) {
+                            if struct_definition.fields.iter().any(|f| f.name == member_access.member) {
+                               return Ok(expression);
+                            }
+                        }
+                    }
+
+                    _ => {}
+                }
+            }
+
+            _ => {}
+        }
+        panic!("Variable not found: {}", sway::TabbedDisplayer(&expression));
+    }
+    let variable = variable.unwrap();
 
     create_assignment_expression(project, translated_definition, scope.clone(), operator, &expression, variable, &rhs, &rhs_type_name)
 }
@@ -5798,6 +5988,10 @@ pub fn translate_pre_operator_expression(
     );
 
     let (variable, expression) = translate_variable_access_expression(project, translated_definition, scope.clone(), x)?;
+    if variable.is_none() {
+        panic!("Variable not found: {}", sway::TabbedDisplayer(&expression));
+    }
+    let variable = variable.unwrap();
     let mut variable = variable.borrow_mut();
 
     variable.read_count += 1;
@@ -5841,6 +6035,10 @@ pub fn translate_post_operator_expression(
     );
 
     let (variable, expression) = translate_variable_access_expression(project, translated_definition, scope.clone(), x)?;
+    if variable.is_none() {
+        panic!("Variable not found: {}", sway::TabbedDisplayer(&expression));
+    }
+    let variable = variable.unwrap();
     let mut variable = variable.borrow_mut();
 
     variable.read_count += 1;
@@ -6211,6 +6409,10 @@ pub fn translate_delete_expression(
     expression: &solidity::Expression,
 ) -> Result<sway::Expression, Error> {
     let (variable, expr) = translate_variable_access_expression(project, translated_definition, scope.clone(), expression)?;
+    if variable.is_none() {
+        panic!("Variable not found: {}", sway::TabbedDisplayer(&expression));
+    }
+    let variable = variable.unwrap();
     let type_name = variable.borrow().type_name.clone();
     
     let value = create_value_expression(translated_definition, scope.clone(), &type_name, None);

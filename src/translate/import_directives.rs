@@ -24,9 +24,6 @@ pub fn resolve_import(
         return Err(Error::Wrapped(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, source_unit_path.to_string_lossy()))));
     }
 
-    let source_unit_path = crate::get_canonical_path(source_unit_path, false, false)
-        .map_err(|e| Error::Wrapped(Box::new(e)))?;
-
     if let Some(t) = project.translated_definitions.iter().find(|t| t.name == *definition_name && t.path == source_unit_path).cloned() {
         return Ok(Some(t));
     }
@@ -87,16 +84,16 @@ pub fn translate_import_directives(
                     )
                 )));
             }
-
-            let import_path = crate::get_canonical_path(import_path, false, false)
-                .map_err(|e| Error::Wrapped(Box::new(e)))?;
-
+            
             if !project.translated_definitions.iter().any(|t| definition_name.map(|n| *n == t.name).unwrap_or(true) && t.path == import_path) {
+                let mut resolved = None;
                 if let Some(definition_name) = definition_name {
-                    resolve_import(project, definition_name, &import_path)?;
-                } else {
+                    resolved = resolve_import(project, definition_name, &import_path)?;
+                } 
+
+                if resolved.is_none() {
                     project.translate(definition_name, &import_path)?;
-                }
+                }    
             }
 
             Ok(())

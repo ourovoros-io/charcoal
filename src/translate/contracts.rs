@@ -671,8 +671,27 @@ pub fn propagate_inherited_definitions(
 
         // Extend the structs
         for inherited_struct in inherited_definition.structs.iter() {
-            if !translated_definition.structs.contains(inherited_struct) {
-                translated_definition.structs.push(inherited_struct.clone());
+            if translated_definition.structs.contains(inherited_struct) {
+                continue;
+            }
+            translated_definition.structs.push(inherited_struct.clone());
+            
+            for field in inherited_struct.fields.iter() {
+                match &field.type_name {
+                    sway::TypeName::Identifier{ name, .. } => {
+                        if !translated_definition.structs.iter().any(|s| s.name == *name) {
+                            for external_definition in project.translated_definitions.iter() {
+                                for s in external_definition.structs.iter() {
+                                    if s.name == *name {
+                                        translated_definition.structs.push(s.clone());
+                                    }
+                                }
+                            }                        
+                        }
+                    },
+                    
+                    _ => {}
+                }
             }
         }
 
@@ -749,9 +768,11 @@ pub fn propagate_inherited_definitions(
             let storage = translated_definition.get_storage();
 
             for inherited_field in inherited_storage.fields.iter() {
-                if !storage.fields.contains(inherited_field) {
-                    storage.fields.push(inherited_field.clone());
+                if storage.fields.contains(inherited_field) {
+                    continue;
                 }
+                
+                storage.fields.push(inherited_field.clone());
             }
         }
 
