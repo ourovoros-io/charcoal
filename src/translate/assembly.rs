@@ -40,6 +40,11 @@ pub fn translate_yul_block(
 ) -> Result<sway::Block, Error> {
     let mut block = sway::Block::default();
 
+    let scope = Rc::new(RefCell::new(TranslationScope {
+        parent: Some(scope),
+        ..Default::default()
+    }));
+
     // Translate each of the statements in the block
     for statement in yul_block.statements.iter() {
         // Translate the statement

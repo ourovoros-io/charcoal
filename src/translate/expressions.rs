@@ -248,7 +248,23 @@ pub fn create_value_expression(
                             _ => panic!("Invalid {name} value expression: {value:#?}"),
                         }
 
-                        _ => panic!("Invalid {name} value expression: {value:#?}"),
+                        sway::TypeName::StringSlice => match value {
+                            sway::Expression::Literal(sway::Literal::String(s)) => {
+                                if s.len() > 64 {
+                                    panic!("Invalid {name} value expression: {value:#?}");
+                                }
+                                let mut s = s.bytes().collect::<Vec<u8>>();
+                                while s.len() < 64 {
+                                    s.push(0);
+                                }
+
+                                let s = s.iter().map(|b| format!("{b:02X}")).collect::<String>();
+                                sway::Expression::from(sway::Literal::HexInt(BigUint::from_str_radix(&s, 16).unwrap(), None))
+                            }
+                            _ => panic!("Invalid {name} value expression: {value:#?} {value_type_name:#?}"),
+                        }
+
+                        _ => panic!("Invalid {name} value expression: {value:#?} {value_type_name:#?}"),
                     }
                 }
             }
@@ -896,9 +912,9 @@ pub fn translate_array_subscript_expression(
     //
 
     let (variable, expression) = translate_variable_access_expression(project, translated_definition, scope.clone(), expression)?;
-    
+
     if variable.is_none() {
-        panic!("Variable not found: {}", sway::TabbedDisplayer(&expression));
+        return Ok(expression);
     }
     
     let variable = variable.unwrap();
@@ -1735,10 +1751,31 @@ pub fn translate_function_call_expression(
 
                         match value_type_name {
                             // No reason to cast if it's already an Identity
-                            sway::TypeName::Identifier { name, generic_parameters: None } if name == "Identity" => {
-                                Ok(value)
+                            sway::TypeName::Identifier { name, generic_parameters } => match (name.as_str(), generic_parameters.as_ref()) {
+                                ("Identity", None) => Ok(value),
+                                ("u256", None) => Ok(sway::Expression::from(sway::FunctionCall {
+                                    function: sway::Expression::Identifier("Identity::Address".into()),
+                                    generic_parameters: None,
+                                    parameters: vec![
+                                        sway::Expression::from(sway::FunctionCall {
+                                            function: sway::Expression::Identifier("Address::from".into()),
+                                            generic_parameters: None,
+                                            parameters: vec![value],
+                                        }),
+                                    ],
+                                })),
+                                _ => panic!("translate address cast: {expression} - {value:#?}"),
                             }
-                            _ => todo!("translate address cast: {expression:#?}"),
+                            _ => {
+                                panic!(
+                                    "{}translate address cast: {expression} - {value_type_name:#?}",
+                                    match project.loc_to_line_and_column(&translated_definition.path, &arguments[0].loc()) {
+                                        Some((line, col)) => format!("{}:{}:{} - ", translated_definition.path.to_string_lossy(), line, col),
+                                        None => format!("{} - ", translated_definition.path.to_string_lossy()),
+                                    },
+                                );  
+                                // todo!("translate address cast: {expression}")
+                            },
                         }
                     }
                 }
@@ -5200,12 +5237,22 @@ pub fn translate_address_call_expression(
 
 #[inline]
 pub fn translate_function_call_block_expression(
-    _project: &mut Project,
-    _translated_definition: &mut TranslatedDefinition,
-    _scope: Rc<RefCell<TranslationScope>>,
-    _function: &solidity::Expression,
-    _block: &solidity::Statement,
+    project: &mut Project,
+    translated_definition: &mut TranslatedDefinition,
+    scope: Rc<RefCell<TranslationScope>>,
+    function: &solidity::Expression,
+    block: &solidity::Statement,
 ) -> Result<sway::Expression, Error> {
+    if block.is_empty() {
+        return translate_expression(project, translated_definition, scope, function);
+    }
+    // println!(
+    //     "Translating expression: {function}; from {}",
+    //     match project.loc_to_line_and_column(&translated_definition.path, &block.loc()) {
+    //         Some((line, col)) => format!("{}:{}:{} - ", translated_definition.path.to_string_lossy(), line, col),
+    //         None => format!("{} - ", translated_definition.path.to_string_lossy()),
+    //     },
+    // );
     todo!("translate function call block expression")
 }
 
@@ -5457,7 +5504,10 @@ pub fn translate_variable_access_expression(
             let index = translate_expression(project, translated_definition, scope.clone(), index.as_ref())?;
             let (variable, expression) = translate_variable_access_expression(project, translated_definition, scope.clone(), expression)?;
             if variable.is_none() {
-                panic!("Variable not found: {}", sway::TabbedDisplayer(&expression));
+                return Ok((None, sway::Expression::from(sway::ArrayAccess {
+                    expression,
+                    index,
+                })));
             }
             let variable = variable.unwrap();
             let is_storage = variable.borrow().is_storage;
@@ -5589,17 +5639,19 @@ pub fn translate_variable_access_expression(
             let arguments = arguments.iter()
                 .map(|a| translate_expression(project, translated_definition, scope.clone(), a))
                 .collect::<Result<Vec<_>, _>>()?;
-
-            let (variable, expression) = translate_variable_access_expression(project, translated_definition, scope.clone(), function)?;
-
-            Ok((
-                variable,
-                sway::Expression::from(sway::FunctionCall {
-                    function: expression,
-                    generic_parameters: None,
-                    parameters: arguments,
-                })
-            ))
+            match translate_variable_access_expression(project, translated_definition, scope.clone(), function) {   
+                Ok((variable, expression)) => Ok((
+                    variable,
+                    sway::Expression::from(sway::FunctionCall {
+                        function: expression,
+                        generic_parameters: None,
+                        parameters: arguments,
+                    })
+                )),
+                Err(_) => {
+                    Ok((None, translate_expression(project, translated_definition, scope, expression)?))
+                }
+            }
         }
 
         solidity::Expression::Type(_, _) => Err(Error::Wrapped(Box::new(

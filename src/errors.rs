@@ -7,6 +7,7 @@ pub enum Error {
     MissingContractFile,
     LineNotFound(PathBuf, usize),
     SolangDiagnostics(PathBuf, Vec<(usize, usize)>, Vec<Diagnostic>),
+    IneffectualStatement(PathBuf, String),
 }
 
 impl std::fmt::Display for Error {
@@ -52,6 +53,10 @@ impl std::fmt::Display for Error {
                 }
 
                 Ok(())
+            }
+
+            Error::IneffectualStatement(path, statement) =>  {
+                write!(f, "error: Ineffectual statement in file: \"{}\" - {}", path.to_string_lossy(), statement)
             }
         }
     }

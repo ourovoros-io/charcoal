@@ -9,6 +9,7 @@ use num_bigint::BigUint;
 use num_traits::{One, Zero};
 use solang_parser::pt as solidity;
 use std::{cell::RefCell, rc::Rc};
+use solang_parser::helpers::CodeLocation;
 
 pub fn translate_block(
     project: &mut Project,
@@ -21,7 +22,14 @@ pub fn translate_block(
     // Translate each of the statements in the block
     for statement in statements {
         // Translate the statement
-        let sway_statement = translate_statement(project, translated_definition, scope.clone(), statement)?;
+        let sway_statement = match translate_statement(project, translated_definition, scope.clone(), statement) {
+            Ok(statement) => statement,
+            Err(Error::IneffectualStatement(_, statement)) => {
+                println!("WARNING: Skipping ineffectual statement: {}", statement);
+                continue;
+            }
+            Err(error) => return Err(error),
+        };
 
         // Store the index of the sway statement
         let statement_index = block.statements.len();
@@ -68,6 +76,9 @@ pub fn finalize_block_translation(
 
         // If the variable has any mutations, mark it as mutable
         if variable.borrow().mutation_count > 0 {
+            if statement_index >= block.statements.len() {
+                panic!("Variable statement index out of bounds: {} >= {} - {block:#?}", statement_index, block.statements.len());
+            }
             let let_statement = match &mut block.statements[statement_index] {
                 sway::Statement::Let(let_statement) => let_statement,
                 statement => panic!("Expected let statement, found: {} - {statement:?}", sway::TabbedDisplayer(statement)),
@@ -148,6 +159,7 @@ pub fn translate_statement(
     scope: Rc<RefCell<TranslationScope>>,
     statement: &solidity::Statement
 ) -> Result<sway::Statement, Error> {
+    // println!("statement : {:#?}", statement);
     match statement {
         solidity::Statement::Block { statements, .. } => translate_block_statement(project, translated_definition, scope.clone(), statements),
         solidity::Statement::Assembly { dialect, flags, block, .. } => translate_assembly_statement(project, translated_definition, scope.clone(), dialect, flags, block),
@@ -172,6 +184,7 @@ pub fn translate_statement(
         solidity::Statement::Error(_) => panic!("Encountered a statement that was not parsed correctly"),
     }
 }
+
 #[allow(clippy::type_complexity)]
 pub fn translate_try_catch_statement(
     project: &mut Project,
@@ -238,7 +251,7 @@ pub fn translate_try_catch_statement(
             };
             
         },
-        None => todo!(),
+        None => statements.push(sway::Statement::from(translate_expression(project, translated_definition, scope, expr)?)),
     }
     
     for cc in catch_clauses {
@@ -454,6 +467,10 @@ pub fn translate_expression_statement(
                 &solidity::Expression::NumberLiteral(*loc, "1".into(), "".into(), None),
             )?
         )),
+
+        solidity::Expression::Variable(variable) => {
+            return Err(Error::IneffectualStatement(translated_definition.path.clone(), variable.to_string()));
+        }
 
         _ => {}
     }
