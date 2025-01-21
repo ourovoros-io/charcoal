@@ -19,5 +19,8 @@ Cargo.lock
 
 /tests/ds-token
 /tests/openzeppelin-contracts
-/tests/compound-protocol 
+/tests/compound-protocol
+/tests/uniswap
+/tests/gearbox-contracts
+/tests/stork-external
 /output
