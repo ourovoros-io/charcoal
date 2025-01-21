@@ -1873,6 +1873,23 @@ pub fn translate_function_call_expression(
                             ("I128", 8 | 16 | 32 | 64 | 128 | 256) => create_int_try_from_unwrap_expression(128, bits as usize, value_expression),
                             ("I256", 8 | 16 | 32 | 64 | 128 | 256) => create_int_try_from_unwrap_expression(256, bits as usize, value_expression),
                             
+                            ("u8", 32) => {
+                                Ok(sway::Expression::from(sway::FunctionCall {
+                                    function: sway::Expression::Identifier("I32::from_uint".into()),
+                                    generic_parameters: None,
+                                    parameters: vec![
+                                        sway::Expression::from(sway::FunctionCall { 
+                                            function: sway::Expression::from(sway::MemberAccess { 
+                                                expression: value_expression, 
+                                                member: "as_u32".into() 
+                                            }), 
+                                            generic_parameters: None, 
+                                            parameters: vec![], 
+                                        })
+                                    ],
+                                }))
+                            }
+
                             ("u64", 256) => {
                                 Ok(sway::Expression::from(sway::FunctionCall {
                                     function: sway::Expression::Identifier("I256::from_uint".into()),
@@ -5502,6 +5519,13 @@ pub fn translate_variable_access_expression(
 
         solidity::Expression::ArraySubscript(_, expression, Some(index)) => {
             let index = translate_expression(project, translated_definition, scope.clone(), index.as_ref())?;
+            println!(
+                "{}error: Variable not found in scope: \"{expression}\"",
+                match project.loc_to_line_and_column(&translated_definition.path, &expression.loc()) {
+                    Some((line, col)) => format!("{}:{}:{} - ", translated_definition.path.to_string_lossy(), line, col),
+                    None => format!("{} - ", translated_definition.path.to_string_lossy()),
+                }
+            );
             let (variable, expression) = translate_variable_access_expression(project, translated_definition, scope.clone(), expression)?;
             if variable.is_none() {
                 return Ok((None, sway::Expression::from(sway::ArrayAccess {
@@ -5510,28 +5534,12 @@ pub fn translate_variable_access_expression(
                 })));
             }
             let variable = variable.unwrap();
+            let type_name = variable.borrow().type_name.clone();
             let is_storage = variable.borrow().is_storage;
 
             Ok((
                 Some(variable),
                 if is_storage {
-                    // sway::Expression::from(sway::FunctionCall {
-                    //     function: sway::Expression::from(sway::MemberAccess {
-                    //         expression: sway::Expression::from(sway::FunctionCall {
-                    //             function: sway::Expression::from(sway::MemberAccess {
-                    //                 expression,
-                    //                 member: "get".into(),
-                    //             }),
-                    //             generic_parameters: None,
-                    //             parameters: vec![
-                    //                 index.clone(),
-                    //             ],
-                    //         }),
-                    //         member: "unwrap".into(),
-                    //     }),
-                    //     generic_parameters: None,
-                    //     parameters: vec![],
-                    // })
                     sway::Expression::from(sway::FunctionCall {
                         function: sway::Expression::from(sway::MemberAccess {
                             expression,
@@ -5541,10 +5549,41 @@ pub fn translate_variable_access_expression(
                         parameters: vec![index],
                     })
                 } else {
-                    sway::Expression::from(sway::ArrayAccess {
-                        expression,
-                        index,
-                    })
+                    match type_name {
+                        sway::TypeName::Identifier { name, generic_parameters } => {
+                            match (name.as_str(), generic_parameters.as_ref()) {
+                                ("StorageKey", Some(generic_parameters)) => {
+                                    match &generic_parameters.entries[0].type_name {
+                                        sway::TypeName::Identifier { name, generic_parameters } => {
+                                            match (name.as_str(), generic_parameters.as_ref()) {
+                                                ("StorageMap" | "StorageVec", Some(_)) => {
+                                                    sway::Expression::from(sway::FunctionCall {
+                                                        function: sway::Expression::from(sway::MemberAccess {
+                                                            expression,
+                                                            member: "get".into(),
+                                                        }),
+                                                        generic_parameters: None,
+                                                        parameters: vec![index],
+                                                    })
+                                                }
+
+                                                _ => todo!("translate array subscript expression: - {expression:#?}")
+                                            }
+                                        }
+
+                                        _ => todo!("translate array subscript expression: - {expression:#?}")
+                                    }
+                                }
+
+                                _ => todo!("translate array subscript expression: - {expression:#?}")
+                            }
+                        }
+
+                        _ => sway::Expression::from(sway::ArrayAccess {
+                            expression,
+                            index,
+                        })
+                    }
                 }
             ))
         }
@@ -6006,7 +6045,7 @@ pub fn translate_pre_or_post_operator_value_expression(
         
         _ => {
             // println!(
-            //     "Translating pre- or post-operator value expression: {expression}; from {}",
+            //     "Translating pre- or post-operator value expression: {expression}; from {} - {expression:#?}",
             //     match project.loc_to_line_and_column(&translated_definition.path, &expression.loc()) {
             //         Some((line, col)) => format!("{}:{}:{} - ", translated_definition.path.to_string_lossy(), line, col),
             //         None => format!("{} - ", translated_definition.path.to_string_lossy()),
@@ -6425,7 +6464,26 @@ pub fn translate_new_expression(
             _ => todo!("translate new {} expression: {expression} {expression:#?}", type_name.to_string())
         }
 
-        _ => todo!("translate new expression: {expr:#?} - {expression:#?}")
+        solidity::Expression::ArraySubscript(_, _, None) => {
+            assert!(args.len() == 1);
+            return Ok(sway::Expression::from(sway::FunctionCall{ 
+                function: sway::Expression::Identifier("Vec::with_capacity".into()), 
+                generic_parameters: None, 
+                parameters: args 
+            }));
+        }
+
+        _ => {
+            // println!(
+            //     "{}WARNING: unsupported function call block arg: {expr}",
+            //     match project.loc_to_line_and_column(&translated_definition.path, &expr.loc()) {
+            //         Some((line, col)) => format!("{}:{}:{} - ", translated_definition.path.to_string_lossy(), line, col),
+            //         None => format!("{} - ", translated_definition.path.to_string_lossy()),
+            //     }
+            // );
+            
+            todo!("translate new expression: {expr:#?} - {expression:#?}")
+        }
     }
 
     let name = match expr.as_ref() {
@@ -6467,6 +6525,58 @@ pub fn translate_delete_expression(
     let variable = variable.unwrap();
     let type_name = variable.borrow().type_name.clone();
     
+    println!(
+        "Translating expression: {expression}; from {}",
+        match project.loc_to_line_and_column(&translated_definition.path, &expression.loc()) {
+            Some((line, col)) => format!("{}:{}:{} - ", translated_definition.path.to_string_lossy(), line, col),
+            None => format!("{} - ", translated_definition.path.to_string_lossy()),
+        },
+    );
+
+    match expression {
+        solidity::Expression::ArraySubscript(_, expression, index) => {
+            match &type_name {
+                sway::TypeName::Identifier { name, generic_parameters } => {
+                    match (name.as_str(), generic_parameters.as_ref()) {
+                        ("StorageKey", Some(generic_parameters)) => {
+                            match &generic_parameters.entries[0].type_name {
+                                sway::TypeName::Identifier { name, generic_parameters } => {
+                                    match (name.as_str(), generic_parameters.as_ref()) {
+                                        ("StorageMap" | "StorageVec", Some(_)) => {
+                                            let expression = translate_expression(project, translated_definition, scope.clone(), expression)?;
+                                            let index = translate_expression(project, translated_definition, scope, index.as_ref().unwrap())?;
+                                            
+                                            return Ok(sway::Expression::from(sway::FunctionCall {
+                                                function: sway::Expression::from(sway::MemberAccess {
+                                                    expression,
+                                                    member: "remove".into(),
+                                                }),
+                                                generic_parameters: None,
+                                                parameters: vec![index],
+                                            }));
+                                        }
+
+                                        _ => {}
+                                    }
+                                }
+                                
+                                _ => {}
+                            }
+                        }
+
+                        _ => {}
+                    }
+                }
+
+                _ => {}
+            }
+        }
+
+        _ => {}
+    }
+
+    
+
     let value = create_value_expression(translated_definition, scope.clone(), &type_name, None);
     create_assignment_expression(project, translated_definition, scope.clone(), "=", &expr, variable, &value, &type_name)
 }

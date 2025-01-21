@@ -397,6 +397,10 @@ impl TypeName {
         if self.is_uint() && other.is_uint() {
             return true;
         }
+        // HACK: Don't check int value types
+        if self.is_int() && other.is_int() {
+            return true;
+        }
 
         match self {
             TypeName::Array { type_name: lhs_type_name, length: lhs_length } => match other {

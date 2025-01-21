@@ -1006,6 +1006,21 @@ impl TranslatedDefinition {
                             }),
                         }),
     
+                        "Vec::with_capacity" => Ok(sway::TypeName::Identifier {
+                            name: "Vec".into(),
+                            generic_parameters: Some(sway::GenericParameterList {
+                                entries: vec![
+                                    sway::GenericParameter {
+                                        type_name: sway::TypeName::Identifier {
+                                            name: "_".into(),
+                                            generic_parameters: None,
+                                        },
+                                        implements: None,
+                                    },
+                                ],
+                            }),
+                        }),
+
                         new_name => {
                             let parameter_types = parameters.iter()
                                 .map(|p| self.get_expression_type(scope.clone(), p))

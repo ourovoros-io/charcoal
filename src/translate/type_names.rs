@@ -352,8 +352,38 @@ pub fn translate_type_name(
                 let mut translated_enum = None;
                 let mut translated_struct = None;
 
+                if name == &translated_definition.name {
+                    // Check to see if member is an enum
+                    if let Some(external_enum) = translated_definition.enums.iter().find(|e| {
+                        let sway::TypeName::Identifier { name, generic_parameters: None } = &e.type_definition.name else {
+                            panic!("Expected Identifier type name, found {:#?}", e.type_definition.name);
+                        };
+
+                        *name == member.name
+                    }) {
+                        // Import the enum if we haven't already
+                        if !translated_definition.enums.contains(external_enum) {
+                            translated_enum = Some(external_enum.clone());
+                        }
+
+                        result = Some(external_enum.type_definition.name.clone());
+                    }
+                    // Check to see if member is a struct
+                    else if let Some(external_struct) = translated_definition.structs.iter().find(|s| s.name == member.name) {
+                        // Import the struct if we haven't already
+                        if !translated_definition.structs.contains(external_struct) {
+                            translated_struct = Some(external_struct.clone());
+                        }
+
+                        result = Some(sway::TypeName::Identifier {
+                            name: external_struct.name.clone(),
+                            generic_parameters: None,
+                        });
+                    }
+                }
+
                 // Check to see if container is an external definition
-                if let Some(external_definition) = project.translated_definitions.iter().find(|d| d.name == *name) {
+                else if let Some(external_definition) = project.translated_definitions.iter().find(|d| d.name == *name) {
                     // Check to see if member is an enum
                     if let Some(external_enum) = external_definition.enums.iter().find(|e| {
                         let sway::TypeName::Identifier { name, generic_parameters: None } = &e.type_definition.name else {
