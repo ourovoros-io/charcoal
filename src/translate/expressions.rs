@@ -5517,24 +5517,20 @@ pub fn translate_variable_access_expression(
             ))
         }
 
-        solidity::Expression::ArraySubscript(_, expression, Some(index)) => {
+        solidity::Expression::ArraySubscript(_, array_expression, Some(index)) => {
             let index = translate_expression(project, translated_definition, scope.clone(), index.as_ref())?;
-            println!(
-                "{}error: Variable not found in scope: \"{expression}\"",
-                match project.loc_to_line_and_column(&translated_definition.path, &expression.loc()) {
-                    Some((line, col)) => format!("{}:{}:{} - ", translated_definition.path.to_string_lossy(), line, col),
-                    None => format!("{} - ", translated_definition.path.to_string_lossy()),
-                }
-            );
-            let (variable, expression) = translate_variable_access_expression(project, translated_definition, scope.clone(), expression)?;
+            
+            let (variable, expression) = translate_variable_access_expression(project, translated_definition, scope.clone(), array_expression)?;
+
             if variable.is_none() {
                 return Ok((None, sway::Expression::from(sway::ArrayAccess {
                     expression,
                     index,
                 })));
             }
+
             let variable = variable.unwrap();
-            let type_name = variable.borrow().type_name.clone();
+            let type_name = translated_definition.get_expression_type(scope.clone(), &expression)?;
             let is_storage = variable.borrow().is_storage;
 
             Ok((
@@ -5550,33 +5546,45 @@ pub fn translate_variable_access_expression(
                     })
                 } else {
                     match type_name {
-                        sway::TypeName::Identifier { name, generic_parameters } => {
-                            match (name.as_str(), generic_parameters.as_ref()) {
-                                ("StorageKey", Some(generic_parameters)) => {
-                                    match &generic_parameters.entries[0].type_name {
-                                        sway::TypeName::Identifier { name, generic_parameters } => {
-                                            match (name.as_str(), generic_parameters.as_ref()) {
-                                                ("StorageMap" | "StorageVec", Some(_)) => {
-                                                    sway::Expression::from(sway::FunctionCall {
-                                                        function: sway::Expression::from(sway::MemberAccess {
-                                                            expression,
-                                                            member: "get".into(),
-                                                        }),
-                                                        generic_parameters: None,
-                                                        parameters: vec![index],
-                                                    })
-                                                }
-
-                                                _ => todo!("translate array subscript expression: - {expression:#?}")
-                                            }
-                                        }
-
-                                        _ => todo!("translate array subscript expression: - {expression:#?}")
+                        sway::TypeName::Identifier { name, generic_parameters } => match (name.as_str(), generic_parameters.as_ref()) {
+                            ("StorageKey", Some(generic_parameters)) => match &generic_parameters.entries[0].type_name {
+                                sway::TypeName::Identifier { name, generic_parameters } => match (name.as_str(), generic_parameters.as_ref()) {
+                                    ("StorageMap" | "StorageVec", Some(_)) => {
+                                        sway::Expression::from(sway::FunctionCall {
+                                            function: sway::Expression::from(sway::MemberAccess {
+                                                expression,
+                                                member: "get".into(),
+                                            }),
+                                            generic_parameters: None,
+                                            parameters: vec![index],
+                                        })
                                     }
+
+                                    _ => todo!(
+                                        "{}TODO: translate {name} array subscript expression: {array_expression}",
+                                        match project.loc_to_line_and_column(&translated_definition.path, &array_expression.loc()) {
+                                            Some((line, col)) => format!("{}:{}:{} - ", translated_definition.path.to_string_lossy(), line, col),
+                                            None => format!("{} - ", translated_definition.path.to_string_lossy()),
+                                        },
+                                    ),
                                 }
 
-                                _ => todo!("translate array subscript expression: - {expression:#?}")
+                                _ => todo!(
+                                    "{}TODO: translate {name} array subscript expression: {array_expression}",
+                                    match project.loc_to_line_and_column(&translated_definition.path, &array_expression.loc()) {
+                                        Some((line, col)) => format!("{}:{}:{} - ", translated_definition.path.to_string_lossy(), line, col),
+                                        None => format!("{} - ", translated_definition.path.to_string_lossy()),
+                                    },
+                                ),
                             }
+
+                            (name, _) => todo!(
+                                "{}TODO: translate {name} array subscript expression: {array_expression}",
+                                match project.loc_to_line_and_column(&translated_definition.path, &array_expression.loc()) {
+                                    Some((line, col)) => format!("{}:{}:{} - ", translated_definition.path.to_string_lossy(), line, col),
+                                    None => format!("{} - ", translated_definition.path.to_string_lossy()),
+                                },
+                            ),
                         }
 
                         _ => sway::Expression::from(sway::ArrayAccess {
