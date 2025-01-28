@@ -36,10 +36,12 @@ pub fn translate_struct_definition(
                 (name, generic_parameters) => {
                     // HACK: import field types if we haven't already
                     if generic_parameters.is_none() && !translated_definition.structs.iter().any(|s| s.name == *name) {
-                        for external_definition in project.translated_definitions.iter() {
-                            for s in external_definition.structs.iter() {
-                                if s.name == *name {
-                                    translated_definition.structs.push(s.clone());
+                        'lookup: for external_definition in project.translated_definitions.iter() {
+                            // Check if the field type is a struct
+                            for external_struct in external_definition.structs.iter() {
+                                if external_struct.name == *name {
+                                    translated_definition.ensure_struct_included(project, external_struct);
+                                    break 'lookup;
                                 }
                             }
                         }

@@ -9,7 +9,6 @@ use num_bigint::BigUint;
 use num_traits::{One, Zero};
 use solang_parser::pt as solidity;
 use std::{cell::RefCell, rc::Rc};
-use solang_parser::helpers::CodeLocation;
 
 pub fn translate_block(
     project: &mut Project,

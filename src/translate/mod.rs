@@ -12,7 +12,7 @@ mod type_names;
 
 pub use self::{assembly::*, contracts::*, enums::*, expressions::*, functions::*, import_directives::*, statements::*, storage::*, structs::*, type_definitions::*, type_names::*};
 
-use crate::{errors::Error, sway};
+use crate::{errors::Error, project::Project, sway};
 use solang_parser::pt as solidity;
 use std::{
     cell::RefCell,
@@ -463,6 +463,7 @@ impl TranslatedDefinition {
         }
     }
 
+    /// Ensures that the provided dependency is declared in the generated `Forc.toml` file.
     #[inline]
     pub fn ensure_dependency_declared(&mut self, dependency: &str) {
         let dependency = dependency.to_string();
@@ -473,6 +474,7 @@ impl TranslatedDefinition {
         }
     }
 
+    /// Ensures that the provided `use` statement is declared in the translated definition.
     #[inline]
     pub fn ensure_use_declared(&mut self, name: &str) {
         let mut tree: Option<sway::UseTree> = None;
@@ -504,8 +506,41 @@ impl TranslatedDefinition {
         }
     }
 
+    /// Ensures that the provided struct is declared in the translated definition, as well as all of its field types.
     #[inline]
-    pub fn import_enum(&mut self, translated_enum: &TranslatedEnum) {
+    pub fn ensure_struct_included(&mut self, project: &Project, struct_definition: &sway::Struct) {
+        if !self.struct_names.contains(&struct_definition.name) {
+            self.struct_names.push(struct_definition.name.clone());
+        }
+
+        if self.structs.contains(struct_definition) {
+            return;
+        }
+
+        for field in struct_definition.fields.iter() {
+            if let sway::TypeName::Identifier{ name, generic_parameters: None } = &field.type_name {
+                if !self.structs.iter().any(|s| s.name == *name) {
+                    'lookup: for external_definition in project.translated_definitions.iter() {
+                        for external_struct in external_definition.structs.iter() {
+                            if external_struct.name == *name {
+                                self.structs.push(external_struct.clone());
+                                break 'lookup;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        self.structs.push(struct_definition.clone());
+    }
+
+    #[inline]
+    pub fn add_enum(&mut self, translated_enum: &TranslatedEnum) {
+        if self.enums.contains(translated_enum) {
+            return;
+        }
+        
         let sway::TypeName::Identifier { name, generic_parameters: None } = &translated_enum.type_definition.name else {
             panic!("Expected Identifier type name, found {:#?}", translated_enum.type_definition.name);
         };
@@ -562,6 +597,7 @@ impl TranslatedDefinition {
         self.storage.as_mut().unwrap()
     }
 
+    /// Atempts to find the translated definition's `impl` block, if available.
     #[inline]
     pub fn find_contract_impl(&self) -> Option<&sway::Impl> {
         self.impls.iter().find(|i| {
@@ -571,6 +607,7 @@ impl TranslatedDefinition {
         })
     }
 
+    /// Attempts to find the translated definitions `impl` block mutability, if available.
     #[inline]
     pub fn find_contract_impl_mut(&mut self) -> Option<&mut sway::Impl> {
         self.impls.iter_mut().find(|i| {
@@ -601,7 +638,7 @@ impl TranslatedDefinition {
         self.find_contract_impl_mut().unwrap()
     }
 
-    // Gets the base underlying type of the supplied type name
+    /// Gets the base underlying type of the supplied type name
     pub fn get_underlying_type(&self, type_name: &sway::TypeName) -> sway::TypeName {
         // Check to see if the expression's type is a type definition and get the underlying type
         for type_definition in self.type_definitions.iter() {
@@ -624,6 +661,7 @@ impl TranslatedDefinition {
         type_name.clone()
     }
 
+    /// Attempts to get the type of the supplied expression.
     pub fn get_expression_type(
         &mut self,
         scope: Rc<RefCell<TranslationScope>>,

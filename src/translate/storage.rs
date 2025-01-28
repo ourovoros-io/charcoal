@@ -64,31 +64,8 @@ pub fn translate_state_variable(
             match container.as_ref() {
                 solidity::Expression::Variable(name) => {
                     if let Some(external_definition) = project.translated_definitions.iter().find(|d| d.name == name.name) {
-                        if let Some(struct_definition) = external_definition.structs.iter().find(|s| s.name == member.name) {
-                            if !translated_definition.structs.contains(struct_definition) {
-                                for field in struct_definition.fields.iter() {
-                                    match &field.type_name {
-                                        sway::TypeName::Identifier{ name, .. } => {
-                                            if !translated_definition.structs.iter().any(|s| s.name == *name) {
-                                                for external_definition in project.translated_definitions.iter() {
-                                                    for s in external_definition.structs.iter() {
-                                                        if s.name == *name {
-                                                            translated_definition.structs.push(s.clone());
-                                                        }
-                                                    }
-                                                }                        
-                                            }
-                                        },
-                                        
-                                        _ => {}
-                                    }
-                                }
-                                translated_definition.structs.push(struct_definition.clone());
-                            }
-
-                            if !translated_definition.struct_names.contains(&struct_definition.name) {
-                                translated_definition.struct_names.push(struct_definition.name.clone());
-                            }
+                        if let Some(external_struct) = external_definition.structs.iter().find(|s| s.name == member.name) {
+                            translated_definition.ensure_struct_included(project, external_struct);
                         }
                     }
                 }

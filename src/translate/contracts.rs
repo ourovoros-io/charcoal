@@ -671,28 +671,7 @@ pub fn propagate_inherited_definitions(
 
         // Extend the structs
         for inherited_struct in inherited_definition.structs.iter() {
-            if translated_definition.structs.contains(inherited_struct) {
-                continue;
-            }
-            translated_definition.structs.push(inherited_struct.clone());
-            
-            for field in inherited_struct.fields.iter() {
-                match &field.type_name {
-                    sway::TypeName::Identifier{ name, .. } => {
-                        if !translated_definition.structs.iter().any(|s| s.name == *name) {
-                            for external_definition in project.translated_definitions.iter() {
-                                for s in external_definition.structs.iter() {
-                                    if s.name == *name {
-                                        translated_definition.structs.push(s.clone());
-                                    }
-                                }
-                            }                        
-                        }
-                    },
-                    
-                    _ => {}
-                }
-            }
+            translated_definition.ensure_struct_included(project, inherited_struct);
         }
 
         // Extend the struct names
@@ -704,9 +683,7 @@ pub fn propagate_inherited_definitions(
 
         // Extend the enums
         for inherited_enum in inherited_definition.enums.iter() {
-            if !translated_definition.enums.contains(inherited_enum) {
-                translated_definition.enums.push(inherited_enum.clone());
-            }
+            translated_definition.add_enum(inherited_enum);
         }
 
         // Extend the events enum

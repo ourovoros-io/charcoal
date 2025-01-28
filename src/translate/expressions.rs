@@ -1531,11 +1531,7 @@ pub fn translate_member_access_expression(
                             let sway::ImplItem::Constant(c) = i else { return false };
                             c.name == variant_name
                         }) {
-                            // Import the enum if we haven't already
-                            if !translated_definition.enums.contains(external_enum) {
-                                translated_definition.import_enum(external_enum);
-                            }
-    
+                            translated_definition.add_enum(external_enum);
                             return Ok(sway::Expression::Identifier(format!("{enum_name}::{variant_name}")));
                         }
                     }
@@ -3663,26 +3659,7 @@ pub fn translate_function_call_expression(
                                 }
 
                                 if valid {
-                                    if !translated_definition.structs.contains(&struct_definition) {
-                                        for field in struct_definition.fields.iter() {
-                                            match &field.type_name {
-                                                sway::TypeName::Identifier{ name, .. } => {
-                                                    if !translated_definition.structs.iter().any(|s| s.name == *name) {
-                                                        for external_definition in project.translated_definitions.iter() {
-                                                            for s in external_definition.structs.iter() {
-                                                                if s.name == *name {
-                                                                    translated_definition.structs.push(s.clone());
-                                                                }
-                                                            }
-                                                        }                        
-                                                    }
-                                                },
-                                                
-                                                _ => {}
-                                            }
-                                        }
-                                        translated_definition.structs.push(struct_definition.clone());
-                                    }
+                                    translated_definition.ensure_struct_included(project, &struct_definition);
 
                                     return Ok(sway::Expression::from(sway::Constructor {
                                         type_name: sway::TypeName::Identifier {
@@ -3892,7 +3869,8 @@ pub fn translate_function_call_expression(
                             if let Some(return_type) = external_function_definition.return_type.as_ref() {   
                                 fn check_type_name(project: &Project, translated_definition: &mut TranslatedDefinition, type_name: &sway::TypeName) {
                                     match type_name {
-                                        sway::TypeName::Undefined => {},
+                                        sway::TypeName::Undefined => {}
+
                                         sway::TypeName::Identifier { name, generic_parameters } => {
                                             if let Some(generic_parameters) = generic_parameters.as_ref() {
                                                 for entry in generic_parameters.entries.iter() {
@@ -3912,10 +3890,8 @@ pub fn translate_function_call_expression(
 
                                                 for enum_definition in external_definition.enums.iter() {
                                                     if enum_definition.type_definition.name.is_compatible_with(type_name) {
-                                                        if !translated_definition.enums.contains(enum_definition) {
-                                                            translated_definition.enums.push(enum_definition.clone());
-                                                            break 'lookup;
-                                                        }
+                                                        translated_definition.add_enum(enum_definition);
+                                                        break 'lookup;
                                                     }
                                                 }
 
@@ -3929,67 +3905,32 @@ pub fn translate_function_call_expression(
                                                             if struct_generic_parameters.entries.len() != generic_parameters.entries.len() {
                                                                 continue;
                                                             }
+                                                        }
 
-                                                            if !translated_definition.structs.contains(struct_definition) {
-                                                                for field in struct_definition.fields.iter() {
-                                                                    match &field.type_name {
-                                                                        sway::TypeName::Identifier{ name, .. } => {
-                                                                            if !translated_definition.structs.iter().any(|s| s.name == *name) {
-                                                                                for external_definition in project.translated_definitions.iter() {
-                                                                                    for s in external_definition.structs.iter() {
-                                                                                        if s.name == *name {
-                                                                                            translated_definition.structs.push(s.clone());
-                                                                                        }
-                                                                                    }
-                                                                                }                        
-                                                                            }
-                                                                        },
-                                                                        
-                                                                        _ => {}
-                                                                    }
-                                                                }
-                                                                translated_definition.structs.push(struct_definition.clone());
-                                                                break 'lookup;
-                                                            }
-                                                        },
-                                                        (None, None) => {},
+                                                        (None, None) => {}
+
                                                         _ => continue,
                                                     }
 
-                                                    if !translated_definition.structs.contains(struct_definition) {
-                                                        for field in struct_definition.fields.iter() {
-                                                            match &field.type_name {
-                                                                sway::TypeName::Identifier{ name, .. } => {
-                                                                    if !translated_definition.structs.iter().any(|s| s.name == *name) {
-                                                                        for external_definition in project.translated_definitions.iter() {
-                                                                            for s in external_definition.structs.iter() {
-                                                                                if s.name == *name {
-                                                                                    translated_definition.structs.push(s.clone());
-                                                                                }
-                                                                            }
-                                                                        }                        
-                                                                    }
-                                                                },
-                                                                
-                                                                _ => {}
-                                                            }
-                                                        }
-                                                        translated_definition.structs.push(struct_definition.clone());
-                                                        break 'lookup;
-                                                    }
+                                                    translated_definition.ensure_struct_included(project, struct_definition);
+                                                    break 'lookup;
                                                 }
                                             }
-                                        },
+                                        }
+
                                         sway::TypeName::Array { type_name, .. } => {
                                             check_type_name(project, translated_definition, type_name);
-                                        },
+                                        }
+
                                         sway::TypeName::Tuple { type_names } => {
                                             type_names.iter().for_each(|type_name| check_type_name(project, translated_definition, type_name));
-                                        },
-                                        sway::TypeName::StringSlice => {},
-                                        sway::TypeName::StringArray { .. } => {},
+                                        }
+
+                                        sway::TypeName::StringSlice => {}
+                                        sway::TypeName::StringArray { .. } => {}
                                     }
                                 }
+
                                 check_type_name(project, translated_definition, return_type);
                             }
 

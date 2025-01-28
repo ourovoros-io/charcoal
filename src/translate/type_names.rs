@@ -415,31 +415,9 @@ pub fn translate_type_name(
 
                 if let Some(type_name) = result {
                     if let Some(translated_enum) = translated_enum {
-                        translated_definition.import_enum(&translated_enum);
+                        translated_definition.add_enum(&translated_enum);
                     } else if let Some(translated_struct) = translated_struct {
-                        if !translated_definition.struct_names.contains(&translated_struct.name) {
-                            translated_definition.struct_names.push(translated_struct.name.clone());
-                        }
-
-                        for field in translated_struct.fields.iter() {
-                            match &field.type_name {
-                                sway::TypeName::Identifier{ name, .. } => {
-                                    if !translated_definition.structs.iter().any(|s| s.name == *name) {
-                                        for external_definition in project.translated_definitions.iter() {
-                                            for s in external_definition.structs.iter() {
-                                                if s.name == *name {
-                                                    translated_definition.structs.push(s.clone());
-                                                }
-                                            }
-                                        }                        
-                                    }
-                                },
-                                
-                                _ => {}
-                            }
-                        }
-
-                        translated_definition.structs.push(translated_struct);
+                        translated_definition.ensure_struct_included(project, &translated_struct);
                     }
 
                     return type_name;
