@@ -160,6 +160,20 @@ pub fn translate_state_variable(
             }
         }
 
+        sway::TypeName::StringSlice if is_constant || is_configurable => {
+            let initializer = translate_expression(project, translated_definition, value_scope.clone(), &variable_definition.initializer.as_ref().unwrap())?;
+            
+            let sway::Expression::Literal(sway::Literal::String(value)) = initializer else { panic!("Expected a string literal") };
+        
+            variable_type_name = sway::TypeName::StringArray { length: value.len() };
+            
+            sway::Expression::from(sway::FunctionCall { 
+                function: sway::Expression::Identifier("__to_str_array".into()), 
+                generic_parameters: None, 
+                parameters: vec![sway::Expression::from(sway::Literal::String(value))], 
+            })
+        }
+        
         _ => if let Some(x) = variable_definition.initializer.as_ref() {
             let value = translate_expression(project, translated_definition, value_scope.clone(), x)?;
             create_value_expression(translated_definition, value_scope.clone(), &variable_type_name, Some(&value))

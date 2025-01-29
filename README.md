@@ -31,7 +31,6 @@ See the [Rust Install](https://www.rust-lang.org/tools/install) page for install
 >
 > ## Known Issues
 >
-> - Functions that return owned strings may return string constants.
 > - Contracts that contain inheritance may generate incorrect function implementations.
 > - Structures that contain mappings may not be translated correctly.
 > - Pointer types may not be translated correctly.

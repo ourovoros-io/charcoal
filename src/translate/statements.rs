@@ -811,15 +811,80 @@ pub fn translate_return_statement(
     scope: Rc<RefCell<TranslationScope>>,
     expression: &Option<solidity::Expression>,
 ) -> Result<sway::Statement, Error> {
-    Ok(sway::Statement::from(sway::Expression::Return(
-        if let Some(x) = expression.as_ref() {
-            Some(Box::new(
-                translate_expression(project, translated_definition, scope.clone(), x)?
-            ))
-        } else {
-            None
+    let Some(expression) = expression else {
+        return Ok(sway::Statement::from(sway::Expression::Return(None)));
+    };
+
+    let current_function_name = translated_definition.current_functions.last().unwrap();
+    let function = scope.borrow().find_function(|f| f.borrow().new_name == *current_function_name).unwrap(); 
+    
+    let return_type = function.borrow().return_type.clone().unwrap();
+
+    let expression = translate_expression(project, translated_definition, scope.clone(), expression)?;
+
+    fn modify_return_expression(translated_definition: &mut TranslatedDefinition, scope: Rc<RefCell<TranslationScope>>, type_name: &sway::TypeName, expression: &sway::Expression) -> sway::Expression {
+        let value_type = translated_definition.get_expression_type(scope.clone(), &expression).unwrap();
+        
+        match type_name {
+            sway::TypeName::Identifier { name, generic_parameters } => {
+                match (name.as_str(), generic_parameters.as_ref()) {
+                    ("String", None) => {
+                        match value_type {
+                            sway::TypeName::Identifier { name, generic_parameters: None } if name == "String" => {
+                                expression.clone()
+                            }
+    
+                            sway::TypeName::StringSlice => {
+                                // String::from_ascii_str(x)
+                                sway::Expression::from(sway::FunctionCall{ 
+                                    function: sway::Expression::Identifier("String::from_ascii_str".into()), 
+                                    generic_parameters: None, 
+                                    parameters: vec![expression.clone()] 
+                                })
+                            }
+                            
+                            sway::TypeName::StringArray { .. } => {
+                                // String::from_ascii_str(from_str_array(x))
+                                sway::Expression::from(sway::FunctionCall{ 
+                                    function: sway::Expression::Identifier("String::from_ascii_str".into()), 
+                                    generic_parameters: None, 
+                                    parameters: vec![sway::Expression::from(sway::FunctionCall { 
+                                        function: sway::Expression::Identifier("from_str_array".into()), 
+                                        generic_parameters: None, 
+                                        parameters: vec![expression.clone()] 
+                                    })] 
+                                })
+                            }
+    
+                            _ => todo!()
+                        }
+                    }
+    
+                    _ => expression.clone()
+                } 
+            }
+    
+            sway::TypeName::Tuple { type_names } => {
+                match value_type {
+                    sway::TypeName::Tuple { .. } => {
+                        let sway::Expression::Tuple(values) = expression else { unreachable!() };
+                        
+                        sway::Expression::Tuple(type_names.iter().zip(values.iter()).map(|v| {
+                            modify_return_expression(translated_definition, scope.clone(), v.0, v.1)
+                        }).collect())
+                    }
+
+                    _ => todo!()
+                }
+            }
+
+            _ => expression.clone()
         }
-    )))
+    }  
+
+    Ok(sway::Statement::from(sway::Expression::Return(Some(Box::new(
+        modify_return_expression(translated_definition, scope, &return_type, &expression)
+    )))))
 }
 
 #[inline]

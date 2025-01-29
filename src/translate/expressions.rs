@@ -112,7 +112,7 @@ pub fn evaluate_expression(
                     })
                 }
 
-
+                "__to_str_array" => expression.clone(),
 
                 _ => todo!("evaluate function call: {expression:#?}"),
             }
@@ -5324,7 +5324,6 @@ pub fn translate_power_expression(
         ],
     }))
 }
-
 #[inline]
 pub fn translate_binary_expression(
     project: &mut Project,
@@ -5386,40 +5385,108 @@ pub fn translate_binary_expression(
             }
         }
     }
+    
+    if new_name.is_some() {
+        let lhs_type_name = scope.borrow()
+        .get_variable_from_new_name(new_name.as_ref().unwrap().as_str())
+        .and_then(|v| v.borrow().abi_type_name.clone());
 
-    if new_name.is_none() {
-        return Ok(sway::Expression::from(sway::BinaryExpression {
-            operator: operator.into(),
-            lhs,
-            rhs: translate_expression(project, translated_definition, scope.clone(), rhs)?,
-        }))
-    }
-
-    let lhs_type_name = scope.borrow()
-    .get_variable_from_new_name(new_name.as_ref().unwrap().as_str())
-    .and_then(|v| v.borrow().abi_type_name.clone());
-
-    if let Some(lhs_type_name) = lhs_type_name {
-        if let solidity::Expression::FunctionCall(_, rhs_expr, rhs_exprs) = rhs {
-            if let solidity::Expression::Variable(solidity::Identifier { name: rhs_name, .. }) = rhs_expr.as_ref() {
-                if *rhs_name == lhs_type_name.to_string() {
-                    return Ok(sway::Expression::from(sway::BinaryExpression {
-                        operator: operator.into(),
-                        lhs,
-                        rhs: translate_expression(project, translated_definition, scope.clone(), &rhs_exprs[0])?,
-                    }));
+        if let Some(lhs_type_name) = lhs_type_name {
+            if let solidity::Expression::FunctionCall(_, rhs_expr, rhs_exprs) = rhs {
+                if let solidity::Expression::Variable(solidity::Identifier { name: rhs_name, .. }) = rhs_expr.as_ref() {
+                    if *rhs_name == lhs_type_name.to_string() {
+                        return Ok(sway::Expression::from(sway::BinaryExpression {
+                            operator: operator.into(),
+                            lhs,
+                            rhs: translate_expression(project, translated_definition, scope.clone(), &rhs_exprs[0])?,
+                        }));
+                    }
                 }
             }
         }
     }
 
-    Ok(sway::Expression::from(sway::BinaryExpression {
-        operator: operator.into(),
-        lhs,
-        rhs: translate_expression(project, translated_definition, scope.clone(), rhs)?,
-    }))
-}
+    let rhs = translate_expression(project, translated_definition, scope.clone(), rhs)?;
 
+    let lhs_type = translated_definition.get_expression_type(scope.clone(), &lhs)?;
+    let rhs_type = translated_definition.get_expression_type(scope.clone(), &rhs)?;
+
+    Ok(match lhs_type {
+        sway::TypeName::Identifier { name: lhs_name, generic_parameters } => {
+            match (lhs_name.as_str(), generic_parameters.as_ref()) {
+                ("u8" | "u16" | "u32" | "u64" | "u256", None) => {
+                    match rhs_type {
+                        sway::TypeName::Identifier { name: rhs_name, generic_parameters } => {
+                            match (rhs_name.as_str(), generic_parameters.as_ref()) {
+                                ("u8" | "u16" | "u32" | "u64" | "u256", None) => {
+                                    let lhs_bits: usize = lhs_name.trim_start_matches("u").parse().unwrap();
+                                    let rhs_bits: usize = rhs_name.trim_start_matches("u").parse().unwrap();
+                                    if lhs_bits > rhs_bits {
+                                        sway::Expression::from(sway::BinaryExpression{ 
+                                            operator: operator.into(), 
+                                            lhs, 
+                                            rhs: sway::Expression::from(sway::FunctionCall { 
+                                                function: sway::Expression::from(sway::MemberAccess{ 
+                                                    expression: rhs, 
+                                                    member: format!("as_u{lhs_bits}"), 
+                                                }), 
+                                                generic_parameters: None, 
+                                                parameters: vec![] 
+                                            }) 
+                                        })
+                                    } else if lhs_bits < rhs_bits {
+                                        sway::Expression::from(sway::BinaryExpression{ 
+                                            operator: operator.into(), 
+                                            lhs: sway::Expression::from(sway::FunctionCall { 
+                                                function: sway::Expression::from(sway::MemberAccess{ 
+                                                    expression: lhs, 
+                                                    member: format!("as_u{lhs_bits}"), 
+                                                }), 
+                                                generic_parameters: None, 
+                                                parameters: vec![] 
+                                            }),
+                                            rhs, 
+                                        })
+                                    } else {
+                                        sway::Expression::from(sway::BinaryExpression{ 
+                                            operator: operator.into(), 
+                                            lhs,
+                                            rhs, 
+                                        })
+                                    }
+                                }
+            
+                                _ => sway::Expression::from(sway::BinaryExpression{ 
+                                    operator: operator.into(), 
+                                    lhs,
+                                    rhs, 
+                                })
+                            }
+                        }
+            
+                        _ => sway::Expression::from(sway::BinaryExpression{ 
+                                operator: operator.into(), 
+                                lhs,
+                                rhs, 
+                            })
+                    }
+                }
+
+                _ => sway::Expression::from(sway::BinaryExpression{ 
+                        operator: operator.into(), 
+                        lhs,
+                        rhs, 
+                    })
+            }
+        }
+
+        _ => sway::Expression::from(sway::BinaryExpression{ 
+                operator: operator.into(), 
+                lhs,
+                rhs, 
+            })
+    })
+}
 
 pub fn translate_variable_access_expression(
     project: &mut Project,
@@ -5694,10 +5761,24 @@ pub fn create_assignment_expression(
     variable: Rc<RefCell<TranslatedVariable>>,
     rhs: &sway::Expression,
     rhs_type_name: &sway::TypeName,
-) -> Result<sway::Expression, Error> {
+) -> Result<sway::Expression, Error> {    
     // Generate a unique name for our variable
     let variable_name = scope.borrow_mut().generate_unique_variable_name("x");
     
+    let lhs = sway::Expression::from(sway::FunctionCall {
+        function: sway::Expression::from(sway::MemberAccess {
+            expression: expression.clone(),
+            member: "read".into(),
+        }),
+        generic_parameters: None,
+        parameters: vec![],
+    });
+
+    let rhs = rhs.clone();
+    
+    let lhs_type = translated_definition.get_expression_type(scope.clone(), &lhs)?;
+    let rhs_type = translated_definition.get_expression_type(scope.clone(), &rhs)?;
+
     let mut variable = variable.borrow_mut();
     variable.mutation_count += 1;
 
@@ -5755,20 +5836,83 @@ pub fn create_assignment_expression(
                     _ => {
                         variable.read_count += 1;
 
-                        sway::Expression::from(sway::BinaryExpression {
-                            operator: operator.trim_end_matches('=').into(),
+                        let operator = operator.trim_end_matches("=").to_string();
+                        
+                        match lhs_type {
+                            sway::TypeName::Identifier { name: lhs_name, generic_parameters } => {
+                                match (lhs_name.as_str(), generic_parameters.as_ref()) {
+                                    ("u8" | "u16" | "u32" | "u64" | "u256", None) => {
+                                        match rhs_type {
+                                            sway::TypeName::Identifier { name: rhs_name, generic_parameters } => {
+                                                match (rhs_name.as_str(), generic_parameters.as_ref()) {
+                                                    ("u8" | "u16" | "u32" | "u64" | "u256", None) => {
+                                                        let lhs_bits: usize = lhs_name.trim_start_matches("u").parse().unwrap();
+                                                        let rhs_bits: usize = rhs_name.trim_start_matches("u").parse().unwrap();
+                                                        if lhs_bits > rhs_bits {
+                                                            sway::Expression::from(sway::BinaryExpression{ 
+                                                                operator, 
+                                                                lhs, 
+                                                                rhs: sway::Expression::from(sway::FunctionCall { 
+                                                                    function: sway::Expression::from(sway::MemberAccess{ 
+                                                                        expression: rhs, 
+                                                                        member: format!("as_u{lhs_bits}"), 
+                                                                    }), 
+                                                                    generic_parameters: None, 
+                                                                    parameters: vec![] 
+                                                                }) 
+                                                            })
+                                                        } else if lhs_bits < rhs_bits {
+                                                            sway::Expression::from(sway::BinaryExpression{ 
+                                                                operator, 
+                                                                lhs: sway::Expression::from(sway::FunctionCall { 
+                                                                    function: sway::Expression::from(sway::MemberAccess{ 
+                                                                        expression: lhs, 
+                                                                        member: format!("as_u{lhs_bits}"), 
+                                                                    }), 
+                                                                    generic_parameters: None, 
+                                                                    parameters: vec![] 
+                                                                }),
+                                                                rhs, 
+                                                            })
+                                                        } else {
+                                                            sway::Expression::from(sway::BinaryExpression{ 
+                                                                operator, 
+                                                                lhs,
+                                                                rhs, 
+                                                            })
+                                                        }
+                                                    }
+                                
+                                                    _ => sway::Expression::from(sway::BinaryExpression{ 
+                                                        operator, 
+                                                        lhs,
+                                                        rhs, 
+                                                    })
+                                                }
+                                            }
+                                
+                                            _ => sway::Expression::from(sway::BinaryExpression{ 
+                                                    operator, 
+                                                    lhs,
+                                                    rhs, 
+                                                })
+                                        }
+                                    }
 
-                            lhs: sway::Expression::from(sway::FunctionCall {
-                                function: sway::Expression::from(sway::MemberAccess {
-                                    expression: expression.clone(),
-                                    member: "read".into(),
-                                }),
-                                generic_parameters: None,
-                                parameters: vec![],
-                            }),
+                                    _ => sway::Expression::from(sway::BinaryExpression{ 
+                                            operator, 
+                                            lhs,
+                                            rhs, 
+                                        })
+                                }
+                            }
 
-                            rhs: rhs.clone(),
-                        })
+                            _ => sway::Expression::from(sway::BinaryExpression{ 
+                                    operator, 
+                                    lhs,
+                                    rhs, 
+                                })
+                        }
                     }
                 },
             ],
