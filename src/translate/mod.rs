@@ -1291,6 +1291,11 @@ impl TranslatedDefinition {
                             }
     
                             ("Option", Some(generic_parameters)) if generic_parameters.entries.len() == 1 => match member_access.member.as_str() {
+                                "is_none" | "is_some" if parameters.len() == 0 => Ok(sway::TypeName::Identifier {
+                                    name: "bool".into(),
+                                    generic_parameters: None,
+                                }),
+
                                 "unwrap" => Ok(generic_parameters.entries[0].type_name.clone()),
                                 "unwrap_or" => Ok(generic_parameters.entries[0].type_name.clone()),
                                 
