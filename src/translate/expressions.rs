@@ -2005,6 +2005,21 @@ pub fn translate_function_call_expression(
                             return Ok(value);
                         }
 
+                        if from_bits < to_bits {
+                            return Ok(sway::Expression::from(sway::FunctionCall {
+                                function: sway::Expression::Identifier(format!("I{to_bits}::from")),
+                                generic_parameters: None,
+                                parameters: vec![sway::Expression::from(sway::FunctionCall {
+                                    function: sway::Expression::from(sway::MemberAccess {
+                                        expression: value,
+                                        member: "into".into(),
+                                    }),
+                                    generic_parameters: None,
+                                    parameters: vec![],
+                                })],
+                            }))
+                        }
+
                         Ok(sway::Expression::from(sway::FunctionCall {
                             function: sway::Expression::Identifier(format!("I{to_bits}::from")),
                             generic_parameters: None,
@@ -2012,7 +2027,7 @@ pub fn translate_function_call_expression(
                                 sway::Expression::from(sway::FunctionCall {
                                     function: sway::Expression::from(sway::MemberAccess {
                                         expression: sway::Expression::from(sway::FunctionCall {
-                                            function: sway::Expression::Identifier(format!("{}{to_bits}::try_from", if to_bits > 64 { "U" } else { "u" })),
+                                            function: sway::Expression::Identifier(format!("u{to_bits}::try_from")),
                                             generic_parameters: None,
                                             parameters: vec![value],
                                         }),
@@ -2156,10 +2171,21 @@ pub fn translate_function_call_expression(
                             return Ok(value);
                         }
 
+                        if from_bits < to_bits {
+                            return Ok(sway::Expression::from(sway::FunctionCall {
+                                function: sway::Expression::from(sway::MemberAccess {
+                                    expression: value,
+                                    member: "into".into(),
+                                }),
+                                generic_parameters: None,
+                                parameters: vec![],
+                            }))
+                        }
+
                         Ok(sway::Expression::from(sway::FunctionCall {
                             function: sway::Expression::from(sway::MemberAccess {
                                 expression: sway::Expression::from(sway::FunctionCall {
-                                    function: sway::Expression::Identifier(format!("{}{to_bits}::try_from", if to_bits > 64 { "U" } else { "u" })),
+                                    function: sway::Expression::Identifier(format!("u{to_bits}::try_from")),
                                     generic_parameters: None,
                                     parameters: vec![value],
                                 }),
@@ -2199,7 +2225,6 @@ pub fn translate_function_call_expression(
                             if *bits != 256 {
                                 eprintln!("WARNING: unsupported unsigned integer type `uint{bits}`, using `u256`...");
                             }
-                            translated_definition.ensure_use_declared("std::u256::*");
                             256
                         }
                         _ => panic!("Invalid uint type: {expression:#?}"),
@@ -4173,6 +4198,38 @@ pub fn translate_function_call_expression(
             //     sway::TabbedDisplayer(&type_name),
             // );
 
+            let converter = |argument: &sway::Expression, argument_type_name: &sway::TypeName| -> sway::Expression {
+                match argument_type_name {
+                    sway::TypeName::Identifier { name, generic_parameters } => match (name.as_str(), generic_parameters.as_ref()) {
+                        ("u64", None) => argument.clone(),
+                        ("u256", None) => sway::Expression::from(sway::FunctionCall{
+                            function: sway::Expression::from(sway::MemberAccess {
+                                expression: sway::Expression::from(sway::FunctionCall {
+                                    function: sway::Expression::Identifier("u64::try_from".into()),
+                                    generic_parameters: None,
+                                    parameters: vec![argument.clone()],
+                                }),
+                                member: "unwrap".into(),
+                            }),
+                            generic_parameters: None,
+                            parameters: vec![],
+                        }),
+                        ("u8"| "u16" | "u32", None) => sway::Expression::from(sway::FunctionCall{
+                            function: sway::Expression::from(sway::MemberAccess {
+                                expression: argument.clone(),
+                                member: "as_u64".into(),
+                            }),
+                            generic_parameters: None,
+                            parameters: vec![],
+                        }),
+
+                        _ => argument.clone(),
+                    },
+                    
+                    _ => argument.clone(),
+                }
+            };
+
             match &type_name {
                 sway::TypeName::Undefined => panic!("Undefined type name"),
                 
@@ -4197,7 +4254,7 @@ pub fn translate_function_call_expression(
                                                     generic_parameters: None,
                                                     parameters: vec![],
                                                 }),
-                                                argument,
+                                                converter(&argument, &argument_type_name),
                                             ],
                                         }));
                                     }
@@ -4227,7 +4284,7 @@ pub fn translate_function_call_expression(
                                                             generic_parameters: None,
                                                             parameters: vec![],
                                                         }),
-                                                        argument,
+                                                        converter(&argument, &argument_type_name),
                                                     ],
                                                 })),
                                             ],

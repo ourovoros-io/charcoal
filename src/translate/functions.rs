@@ -69,16 +69,6 @@ pub fn translate_function_declaration(
     if let Some(solidity::ContractTy::Abstract(_) | solidity::ContractTy::Library(_)) = &translated_definition.kind {
         new_name = format!("{}_{}", crate::translate_naming_convention(&translated_definition.name, Case::Snake), new_name);
     }
-
-    // println!(
-    //     "Translating {}.{} {}",
-    //     translated_definition.name,
-    //     function_definition.name.as_ref().map(|n| n.name.as_str()).unwrap_or_else(|| new_name.as_str()),
-    //     match project.loc_to_line_and_column(&translated_definition.path, &function_definition.loc) {
-    //         Some((line, col)) => format!("at {}:{}:{}", translated_definition.path.to_string_lossy(), line, col),
-    //         None => format!("in {}...", translated_definition.path.to_string_lossy()),
-    //     },
-    // );
     
     // Add the function to the conversion stack
     translated_definition.current_functions.push(new_name.clone());
@@ -168,12 +158,25 @@ pub fn translate_function_declaration(
         });
     }
 
+    let is_fallback = matches!(function_definition.ty, solidity::FunctionTy::Fallback);
+
     // Translate the function
     let translated_function = TranslatedFunction {
         old_name,
         new_name: new_name.clone(),
         parameters,
-        attributes: None,
+        attributes: if is_fallback {
+            Some(sway::AttributeList {
+                attributes: vec![
+                    sway::Attribute {
+                        name: "fallback".into(),
+                        parameters: None,
+                    },
+                ],
+            })
+        } else {
+            None
+        },
         constructor_calls,
         modifiers,
         return_type: if function_definition.returns.is_empty() {
@@ -500,7 +503,7 @@ pub fn translate_function_definition(
     let new_name_2 = if is_constructor {
         "constructor".to_string()
     } else if is_fallback {
-        "fallback".to_string() // TODO: add fallback attribute
+        "fallback".to_string()
     } else if is_receive {
         "receive".to_string()
     } else {
@@ -577,6 +580,13 @@ pub fn translate_function_definition(
                 });
             }
 
+            if is_fallback {
+                attributes.push(sway::Attribute {
+                    name: "fallback".into(),
+                    parameters: None,
+                });
+            }
+
             Some(sway::AttributeList { attributes })
         },
 
@@ -649,7 +659,12 @@ pub fn translate_function_definition(
 
         // Check if the parameter's type is an ABI
         if let sway::TypeName::Identifier { name, generic_parameters: None } = &type_name {
-            if project.find_definition_with_abi(name.as_str()).is_some() {
+            if let Some(external_definition) = project.find_definition_with_abi(name.as_str()) {
+                for entry in external_definition.uses.iter() {
+                    if !translated_definition.uses.contains(entry) {
+                        translated_definition.uses.push(entry.clone());
+                    }
+                }
                 abi_type_name = Some(type_name.clone());
 
                 type_name = sway::TypeName::Identifier {

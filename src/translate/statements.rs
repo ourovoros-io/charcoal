@@ -611,21 +611,27 @@ pub fn translate_variable_definition_statement(
         }
     }
 
+    let value = if let Some(value) = value {
+        value
+    } else if let Some(x) = initializer.as_ref() {
+        translate_pre_or_post_operator_value_expression(project, translated_definition, scope.clone(), x)?
+    } else {
+        create_value_expression(translated_definition, scope.clone(), &type_name, None)
+    };
+
     let statement = sway::Statement::from(sway::Let {
         pattern: sway::LetPattern::Identifier(sway::LetIdentifier {
             is_mutable: false,
             name: new_name.clone(),
         }),
 
-        type_name: None,
-
-        value: if let Some(value) = value {
-            value
-        } else if let Some(x) = initializer.as_ref() {
-            translate_pre_or_post_operator_value_expression(project, translated_definition, scope.clone(), x)?
-        } else {
-            create_value_expression(translated_definition, scope.clone(), &type_name, None)
+        type_name: if (type_name.is_uint() || type_name.is_int()) && matches!(value, sway::Expression::Literal(_)) {
+            Some(type_name.clone())
+        } else  {
+            None
         },
+
+        value,
     });
 
     scope.borrow_mut().variables.push(Rc::new(RefCell::new(TranslatedVariable {

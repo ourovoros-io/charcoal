@@ -83,7 +83,12 @@ pub fn translate_state_variable(
             project.translate(Some(name), &translated_definition.path).unwrap();
         }
 
-        if project.find_definition_with_abi(name.as_str()).is_some() {
+        if let Some(external_definition) = project.find_definition_with_abi(name.as_str()) {
+            for entry in external_definition.uses.iter() {
+                if !translated_definition.uses.contains(entry) {
+                    translated_definition.uses.push(entry.clone());
+                }
+            }
             abi_type_name = Some(variable_type_name.clone());
 
             variable_type_name = sway::TypeName::Identifier {
@@ -239,19 +244,7 @@ pub fn translate_state_variable(
 
     // Generate parameters and return type for the public getter function
     let mut parameters = vec![];
-    let mut return_type = match variable_type_name {
-        sway::TypeName::StringSlice => {
-            // Ensure `std::string::*` is imported
-            translated_definition.ensure_use_declared("std::string::*");
-    
-            sway::TypeName::Identifier {
-                name: "String".into(),
-                generic_parameters: None,
-            }
-        },
-
-        _ => variable_type_name.clone(),
-    };
+    let mut return_type = super::translate_return_type_name(project, translated_definition, variable_type_name.clone());
 
     if let Some((inner_parameters, inner_return_type)) = variable_type_name.getter_function_parameters_and_return_type() {
         parameters = inner_parameters;

@@ -62,7 +62,7 @@ See the [Rust Install](https://www.rust-lang.org/tools/install) page for install
   - [x] View Functions
   - [x] Pure Functions
   - [ ] ~~Receive Ether Function~~ (NOTE: Unsupported)
-  - [ ] ~~Fallback Function~~ (NOTE: Unsupported)
+  - [x] Fallback Function
   - [x] Function Overloading
   - [x] Function Modifiers
   - [ ] ~~Function Signatures~~ (NOTE: Unsupported)
