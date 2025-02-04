@@ -1,3 +1,5 @@
+use std::{cell::RefCell, rc::Rc};
+
 use super::{translate_type_name, TranslatedDefinition, TranslatedEnum};
 use crate::{project::Project, sway, Error};
 use convert_case::Case;
@@ -87,13 +89,13 @@ pub fn translate_event_definition(
     };
 
     let (events_enum, _) = {
-        if !translated_definition.events_enums.iter().any(|(e, _)| e.name == events_enum_name) {
+        if !translated_definition.events_enums.iter().any(|(e, _)| e.borrow().name == events_enum_name) {
             translated_definition.events_enums.push((
-                sway::Enum {
+                Rc::new(RefCell::new(sway::Enum {
                     name: events_enum_name.clone(),
                     ..Default::default()
-                },
-                sway::Impl {
+                })),
+                Rc::new(RefCell::new(sway::Impl {
                     type_name: sway::TypeName::Identifier {
                         name: "AbiEncode".into(),
                         generic_parameters: None,
@@ -103,11 +105,11 @@ pub fn translate_event_definition(
                         generic_parameters: None,
                     }),
                     ..Default::default()
-                }
+                }))
             ));
         }
 
-        translated_definition.events_enums.iter_mut().find(|(e, _)| e.name == events_enum_name).unwrap()
+        translated_definition.events_enums.iter_mut().find(|(e, _)| e.borrow().name == events_enum_name).unwrap()
     };
 
     let variant = sway::EnumVariant {
@@ -115,8 +117,8 @@ pub fn translate_event_definition(
         type_name,
     };
 
-    if !events_enum.variants.contains(&variant) {
-        events_enum.variants.push(variant);
+    if !events_enum.borrow().variants.contains(&variant) {
+        events_enum.borrow_mut().variants.push(variant);
     }
 
     Ok(())
@@ -141,13 +143,13 @@ pub fn translate_error_definition(
     };
 
     let (errors_enum, _) = {
-        if !translated_definition.errors_enums.iter().any(|(e, _)| e.name == errors_enum_name) {
+        if !translated_definition.errors_enums.iter().any(|(e, _)| e.borrow().name == errors_enum_name) {
             translated_definition.errors_enums.push((
-                sway::Enum {
+                Rc::new(RefCell::new(sway::Enum {
                     name: errors_enum_name.clone(),
                     ..Default::default()
-                },
-                sway::Impl {
+                })),
+                Rc::new(RefCell::new(sway::Impl {
                     type_name: sway::TypeName::Identifier {
                         name: "AbiEncode".into(),
                         generic_parameters: None,
@@ -157,11 +159,11 @@ pub fn translate_error_definition(
                         generic_parameters: None,
                     }),
                     ..Default::default()
-                }
+                }))
             ));
         }
 
-        translated_definition.errors_enums.iter_mut().find(|(e, _)| e.name == errors_enum_name).unwrap()
+        translated_definition.errors_enums.iter_mut().find(|(e, _)| e.borrow().name == errors_enum_name).unwrap()
     };
 
     let variant = sway::EnumVariant {
@@ -169,8 +171,8 @@ pub fn translate_error_definition(
         type_name,
     };
 
-    if !errors_enum.variants.contains(&variant) {
-        errors_enum.variants.push(variant);
+    if !errors_enum.borrow().variants.contains(&variant) {
+        errors_enum.borrow_mut().variants.push(variant);
     }
 
     Ok(())
@@ -179,15 +181,16 @@ pub fn translate_error_definition(
 #[inline]
 pub fn generate_enum_abi_encode_function(
     _project: &mut Project,
-    sway_enum: &sway::Enum,
-    abi_encode_impl: &mut sway::Impl,
+    translated_definition: &mut TranslatedDefinition,
+    sway_enum: Rc<RefCell<sway::Enum>>,
+    abi_encode_impl: Rc<RefCell<sway::Impl>>,
 ) -> Result<(), Error> {
     let mut match_expr = sway::Match {
         expression: sway::Expression::Identifier("self".into()),
         branches: vec![],
     };
 
-    for variant in sway_enum.variants.iter() {
+    for variant in sway_enum.borrow().variants.clone() {
         let mut block = sway::Block::default();
 
         let mut add_encode_statement_to_block = |name: &str, type_name: &sway::TypeName| {
@@ -283,15 +286,27 @@ pub fn generate_enum_abi_encode_function(
         match &variant.type_name {
             sway::TypeName::Undefined => panic!("Undefined type name"),
             
-            sway::TypeName::Identifier { .. } => add_encode_statement_to_block(&parameter_names[0], &variant.type_name),
+            sway::TypeName::Identifier { .. } => {
+                let type_name = translated_definition.get_underlying_type(&variant.type_name);
+                add_encode_statement_to_block(&parameter_names[0], &type_name);
+            }
             
             sway::TypeName::Tuple { type_names } => {
                 for (name, type_name) in parameter_names.iter().zip(type_names) {
-                    add_encode_statement_to_block(name.as_str(), type_name);
+                    let type_name = translated_definition.get_underlying_type(type_name);
+                    add_encode_statement_to_block(name.as_str(), &type_name);
                 }
             }
 
-            sway::TypeName::StringSlice => add_encode_statement_to_block(&parameter_names[0], &variant.type_name),
+            sway::TypeName::StringSlice => {
+                let type_name = translated_definition.get_underlying_type(&variant.type_name);
+                add_encode_statement_to_block(&parameter_names[0], &type_name);
+            }
+
+            sway::TypeName::Array { type_name, .. } => {
+                let type_name = translated_definition.get_underlying_type(type_name.as_ref());
+                add_encode_statement_to_block(&parameter_names[0], &type_name);
+            }
 
             type_name => todo!("ABI encoding for enum parameter type: {type_name}"),
         }
@@ -324,7 +339,7 @@ pub fn generate_enum_abi_encode_function(
         match_expr.branches.push(sway::MatchBranch {
             pattern: sway::Expression::Identifier(format!(
                 "{}::{}{}",
-                sway_enum.name,
+                sway_enum.borrow().name,
                 variant.name,
                 if parameter_count == 0 {
                     String::new()
@@ -339,7 +354,7 @@ pub fn generate_enum_abi_encode_function(
     }
 
     // Add the `abi_encode` function to the `core::codec::AbiEncode` impl
-    abi_encode_impl.items.push(sway::ImplItem::Function(sway::Function {
+    abi_encode_impl.borrow_mut().items.push(sway::ImplItem::Function(sway::Function {
         attributes: None,
         is_public: false,
         name: "abi_encode".into(),

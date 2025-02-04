@@ -168,6 +168,7 @@ pub fn translate_type_name(
             },
 
             solidity::Type::Bytes(length) => match *length {
+                // HACK: bytes32 => b256
                 32 => sway::TypeName::Identifier {
                     name: "b256".into(),
                     generic_parameters: None,
@@ -305,7 +306,14 @@ pub fn translate_type_name(
                 };
             }
 
-            todo!("translate variable type expression: {} - {type_name:#?}", type_name.to_string())
+            todo!(
+                "{} - translate variable type expression: {} - {type_name:#?}",
+                match project.loc_to_line_and_column(&translated_definition.path, &type_name.loc()) {
+                    Some((line, col)) => format!("{}:{}:{}", translated_definition.path.to_string_lossy(), line, col),
+                    None => format!("{}", translated_definition.path.to_string_lossy()),
+                },
+                type_name.to_string(),
+            )
         }
 
         solidity::Expression::ArraySubscript(_, type_name, length) => match length.as_ref() {
@@ -351,39 +359,9 @@ pub fn translate_type_name(
                 let mut result = None;
                 let mut translated_enum = None;
                 let mut translated_struct = None;
+                let mut translated_type = None;
 
-                if name == &translated_definition.name {
-                    // Check to see if member is an enum
-                    if let Some(external_enum) = translated_definition.enums.iter().find(|e| {
-                        let sway::TypeName::Identifier { name, generic_parameters: None } = &e.type_definition.name else {
-                            panic!("Expected Identifier type name, found {:#?}", e.type_definition.name);
-                        };
-
-                        *name == member.name
-                    }) {
-                        // Import the enum if we haven't already
-                        if !translated_definition.enums.contains(external_enum) {
-                            translated_enum = Some(external_enum.clone());
-                        }
-
-                        result = Some(external_enum.type_definition.name.clone());
-                    }
-                    // Check to see if member is a struct
-                    else if let Some(external_struct) = translated_definition.structs.iter().find(|s| s.name == member.name) {
-                        // Import the struct if we haven't already
-                        if !translated_definition.structs.contains(external_struct) {
-                            translated_struct = Some(external_struct.clone());
-                        }
-
-                        result = Some(sway::TypeName::Identifier {
-                            name: external_struct.name.clone(),
-                            generic_parameters: None,
-                        });
-                    }
-                }
-
-                // Check to see if container is an external definition
-                else if let Some(external_definition) = project.translated_definitions.iter().find(|d| d.name == *name) {
+                let mut check_definition = |external_definition: &mut TranslatedDefinition| {
                     // Check to see if member is an enum
                     if let Some(external_enum) = external_definition.enums.iter().find(|e| {
                         let sway::TypeName::Identifier { name, generic_parameters: None } = &e.type_definition.name else {
@@ -392,25 +370,34 @@ pub fn translate_type_name(
 
                         *name == member.name
                     }) {
-                        // Import the enum if we haven't already
-                        if !translated_definition.enums.contains(external_enum) {
-                            translated_enum = Some(external_enum.clone());
-                        }
-
+                        translated_enum = Some(external_enum.clone());
                         result = Some(external_enum.type_definition.name.clone());
                     }
                     // Check to see if member is a struct
                     else if let Some(external_struct) = external_definition.structs.iter().find(|s| s.name == member.name) {
-                        // Import the struct if we haven't already
-                        if !translated_definition.structs.contains(external_struct) {
-                            translated_struct = Some(external_struct.clone());
-                        }
-
+                        translated_struct = Some(external_struct.clone());
                         result = Some(sway::TypeName::Identifier {
                             name: external_struct.name.clone(),
                             generic_parameters: None,
                         });
                     }
+                    // Check to see if member is a user-defined type
+                    else if let Some(external_type) = external_definition.type_definitions.iter().find(|t| match &t.name {
+                        sway::TypeName::Identifier { name, generic_parameters: None } => *name == member.name,
+                        _ => false,
+                    }) {
+                        translated_type = Some(external_type.clone());
+                        result = Some(external_type.name.clone());
+                    }
+                };
+
+                // Check to see if container is referring to the current definition
+                if name == &translated_definition.name {
+                    check_definition(translated_definition);
+                }
+                // Check to see if container is referring to an external definition
+                else if let Some(external_definition) = project.translated_definitions.iter_mut().find(|d| d.name == *name) {
+                    check_definition(external_definition);
                 }
 
                 if let Some(type_name) = result {
@@ -418,6 +405,10 @@ pub fn translate_type_name(
                         translated_definition.add_enum(&translated_enum);
                     } else if let Some(translated_struct) = translated_struct {
                         translated_definition.ensure_struct_included(project, &translated_struct);
+                    } else if let Some(translated_type) = translated_type {
+                        if !translated_definition.type_definitions.contains(&translated_type) {
+                            translated_definition.type_definitions.push(translated_type);
+                        }
                     }
 
                     return type_name;

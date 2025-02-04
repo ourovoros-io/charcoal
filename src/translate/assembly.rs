@@ -402,31 +402,38 @@ pub fn translate_yul_variable_expression(
             // chainid => asm(r1) {
             //    gm r1 i4;
             //    r1: u64
-            // }
+            // }.as_u256()
 
-            return Ok(sway::Expression::from(sway::AsmBlock {
-                registers: vec![
-                    sway::AsmRegister {
-                        name: "r1".into(),
-                        value: None,
-                    },
-                ],
-                instructions: vec![
-                    sway::AsmInstruction {
-                        op_code: "gm".into(),
-                        args: vec![
-                            "r1".into(),
-                            "i4".into(),
+            return Ok(sway::Expression::from(sway::FunctionCall {
+                function: sway::Expression::from(sway::MemberAccess {
+                    expression: sway::Expression::from(sway::AsmBlock {
+                        registers: vec![
+                            sway::AsmRegister {
+                                name: "r1".into(),
+                                value: None,
+                            },
                         ],
-                    }
-                ],
-                final_expression: Some(sway::AsmFinalExpression {
-                    register: "r1".into(),
-                    type_name: Some(sway::TypeName::Identifier {
-                        name: "u64".into(),
-                        generic_parameters: None,
+                        instructions: vec![
+                            sway::AsmInstruction {
+                                op_code: "gm".into(),
+                                args: vec![
+                                    "r1".into(),
+                                    "i4".into(),
+                                ],
+                            }
+                        ],
+                        final_expression: Some(sway::AsmFinalExpression {
+                            register: "r1".into(),
+                            type_name: Some(sway::TypeName::Identifier {
+                                name: "u64".into(),
+                                generic_parameters: None,
+                            }),
+                        }),
                     }),
+                    member: "as_u256".into(),
                 }),
+                generic_parameters: None,
+                parameters: vec![],
             }))
         }
         
@@ -1183,35 +1190,42 @@ pub fn translate_yul_function_call_expression(
             // chainid() => asm(r1) {
             //    gm r1 i4;
             //    r1: u64
-            // }
+            // }.as_u256()
 
             if !parameters.is_empty() {
                 panic!("Invalid yul chainid function call, expected 0 parameters, found {}", parameters.len());
             }
 
-            Ok(sway::Expression::from(sway::AsmBlock {
-                registers: vec![
-                    sway::AsmRegister {
-                        name: "r1".into(),
-                        value: None,
-                    },
-                ],
-                instructions: vec![
-                    sway::AsmInstruction {
-                        op_code: "gm".into(),
-                        args: vec![
-                            "r1".into(),
-                            "i4".into(),
+            Ok(sway::Expression::from(sway::FunctionCall {
+                function: sway::Expression::from(sway::MemberAccess {
+                    expression: sway::Expression::from(sway::AsmBlock {
+                        registers: vec![
+                            sway::AsmRegister {
+                                name: "r1".into(),
+                                value: None,
+                            },
                         ],
-                    }
-                ],
-                final_expression: Some(sway::AsmFinalExpression {
-                    register: "r1".into(),
-                    type_name: Some(sway::TypeName::Identifier {
-                        name: "u64".into(),
-                        generic_parameters: None,
+                        instructions: vec![
+                            sway::AsmInstruction {
+                                op_code: "gm".into(),
+                                args: vec![
+                                    "r1".into(),
+                                    "i4".into(),
+                                ],
+                            }
+                        ],
+                        final_expression: Some(sway::AsmFinalExpression {
+                            register: "r1".into(),
+                            type_name: Some(sway::TypeName::Identifier {
+                                name: "u64".into(),
+                                generic_parameters: None,
+                            }),
+                        }),
                     }),
+                    member: "as_u256".into(),
                 }),
+                generic_parameters: None,
+                parameters: vec![],
             }))
         }
 

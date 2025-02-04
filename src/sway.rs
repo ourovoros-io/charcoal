@@ -391,6 +391,45 @@ impl TypeName {
         }
     }
 
+    pub fn is_string(&self) -> bool {
+        match self {
+            TypeName::Identifier { name, generic_parameters: None } => name == "String",
+            TypeName::StringSlice => true,
+            TypeName::StringArray { .. } => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_u8_array(&self) -> bool {
+        match self {
+            TypeName::Array { type_name, .. } => match type_name.as_ref() {
+                TypeName::Identifier { name, generic_parameters: None } => name == "u8",
+                _ => false,
+            }
+
+            _ => false,
+        }
+    }
+
+    pub fn storage_key_type(&self) -> Option<TypeName> {
+        match self {
+            TypeName::Identifier { name, generic_parameters: Some(generic_parameters) } => {
+                if name == "StorageKey" && generic_parameters.entries.len() == 1 {
+                    Some(generic_parameters.entries[0].type_name.clone())
+                } else {
+                    None
+                }
+            }
+
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn is_storage_key(&self) -> bool {
+        self.storage_key_type().is_some()
+    }
+
     /// Checks to see if the type name is compatible with another type name
     pub fn is_compatible_with(&self, other: &TypeName) -> bool {
         // HACK: Don't check uint value types
@@ -399,6 +438,14 @@ impl TypeName {
         }
         // HACK: Don't check int value types
         if self.is_int() && other.is_int() {
+            return true;
+        }
+        // HACK: Don't check string value types
+        if self.is_string() && other.is_string() {
+            return true;
+        }
+        // HACK: Consider string and byte array compatible (freakin solidity...)
+        if (self.is_string() && other.is_u8_array()) || (self.is_u8_array() && other.is_string()) {
             return true;
         }
 

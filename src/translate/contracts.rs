@@ -28,12 +28,29 @@ pub fn translate_using_directive(
     match &using_directive.list {
         solidity::UsingList::Library(using_library) => {
             let library_name = using_library.identifiers.iter().map(|i| i.name.clone()).collect::<Vec<_>>().join(".");
+            
+            if library_name == translated_definition.name {
+                // Add a self-referential using directive to the current definition
+                translated_definition.using_directives.push(TranslatedUsingDirective {
+                    library_name,
+                    for_type,
+                    functions: vec![],
+                });
+
+                return Ok(());
+            }
 
             // Find the translated library definition
             let Some(library_definition) = project.translated_definitions.iter().find(|d| {
                 d.name == library_name && matches!(d.kind.as_ref().unwrap(), solidity::ContractTy::Library(_))
             }) else {
-                panic!("Failed to find translated library: \"{library_name}\"");
+                panic!(
+                    "Failed to find translated library: \"{library_name}\"; from {}",
+                    match project.loc_to_line_and_column(&translated_definition.path, &using_directive.loc) {
+                        Some((line, col)) => format!("{}:{}:{} - ", translated_definition.path.to_string_lossy(), line, col),
+                        None => format!("{} - ", translated_definition.path.to_string_lossy()),
+                    },
+                )
             };
 
             let mut translated_using_directive = TranslatedUsingDirective {
@@ -45,7 +62,7 @@ pub fn translate_using_directive(
             // Collect all functions that support the `for_type`
             for function in library_definition.functions.iter() {
                 // If we're using the library for a specific type, ensure the first function parameter matches that type
-                if translated_using_directive.for_type != function.parameters.entries.first().and_then(|p| p.type_name.clone()) {
+                if translated_using_directive.for_type.is_some() && translated_using_directive.for_type != function.parameters.entries.first().and_then(|p| p.type_name.clone()) {
                     continue;
                 }
 
@@ -267,15 +284,15 @@ pub fn translate_contract_definition(
     // Create the abi encoding function for the events enum (if any)
     let events_enum_name = format!("{}Event", translated_definition.name);
 
-    if let Some((events_enum, abi_encode_impl)) = translated_definition.events_enums.iter_mut().find(|(e, _)| e.name == events_enum_name) {
-        generate_enum_abi_encode_function(project, events_enum, abi_encode_impl)?;
+    if let Some((events_enum, abi_encode_impl)) = translated_definition.events_enums.iter().find(|(e, _)| e.borrow().name == events_enum_name).cloned() {
+        generate_enum_abi_encode_function(project, &mut translated_definition, events_enum.clone(), abi_encode_impl.clone())?;
     }
 
     // Create the abi encoding function for the errors enum (if any)
     let errors_enum_name = format!("{}Error", translated_definition.name);
 
-    if let Some((errors_enum, abi_encode_impl)) = translated_definition.errors_enums.iter_mut().find(|(e, _)| e.name == errors_enum_name) {
-        generate_enum_abi_encode_function(project, errors_enum, abi_encode_impl)?;
+    if let Some((errors_enum, abi_encode_impl)) = translated_definition.errors_enums.iter().find(|(e, _)| e.borrow().name == errors_enum_name).cloned() {
+        generate_enum_abi_encode_function(project, &mut translated_definition, errors_enum.clone(), abi_encode_impl.clone())?;
     }
 
     // Translate contract state variables

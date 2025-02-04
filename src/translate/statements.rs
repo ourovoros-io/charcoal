@@ -7,7 +7,7 @@ use crate::{errors::Error, project::Project, sway, translate_naming_convention};
 use convert_case::Case;
 use num_bigint::BigUint;
 use num_traits::{One, Zero};
-use solang_parser::pt as solidity;
+use solang_parser::{helpers::CodeLocation, pt as solidity};
 use std::{cell::RefCell, rc::Rc};
 
 pub fn translate_block(
@@ -378,7 +378,10 @@ pub fn translate_expression_statement(
                         operator: "=".into(),
                         lhs: sway::Expression::Tuple(
                             parameters.iter()
-                                .map(|(_, p)| translate_expression(project, translated_definition, scope.clone(), &p.as_ref().unwrap().ty))
+                                .map(|(_, p)| match p.as_ref() {
+                                    Some(p) => translate_expression(project, translated_definition, scope.clone(), &p.ty),
+                                    None => Ok(sway::Expression::Identifier("_".into())),
+                                })
                                 .collect::<Result<Vec<_>, _>>()?
                         ),
                         rhs: translate_expression(project, translated_definition, scope.clone(), rhs)?,
@@ -829,15 +832,17 @@ pub fn translate_return_statement(
     let expression = translate_expression(project, translated_definition, scope.clone(), expression)?;
 
     fn modify_return_expression(translated_definition: &mut TranslatedDefinition, scope: Rc<RefCell<TranslationScope>>, type_name: &sway::TypeName, expression: &sway::Expression) -> sway::Expression {
-        let value_type = translated_definition.get_expression_type(scope.clone(), &expression).unwrap();
+        let value_type = translated_definition.get_expression_type(scope.clone(), expression).unwrap();
         
         match type_name {
             sway::TypeName::Identifier { name, generic_parameters } => {
                 match (name.as_str(), generic_parameters.as_ref()) {
                     ("String", None) => {
                         match value_type {
-                            sway::TypeName::Identifier { name, generic_parameters: None } if name == "String" => {
-                                expression.clone()
+                            sway::TypeName::Identifier { name, generic_parameters } => match (name.as_str(), generic_parameters.as_ref()) {
+                                ("todo!", None) => expression.clone(),
+                                ("String", None) => expression.clone(),
+                                _ => todo!(),
                             }
     
                             sway::TypeName::StringSlice => {
@@ -862,7 +867,7 @@ pub fn translate_return_statement(
                                 })
                             }
     
-                            _ => todo!()
+                            _ => todo!("{}", sway::TabbedDisplayer(&value_type)),
                         }
                     }
     
@@ -873,11 +878,13 @@ pub fn translate_return_statement(
             sway::TypeName::Tuple { type_names } => {
                 match value_type {
                     sway::TypeName::Tuple { .. } => {
-                        let sway::Expression::Tuple(values) = expression else { unreachable!() };
-                        
-                        sway::Expression::Tuple(type_names.iter().zip(values.iter()).map(|v| {
-                            modify_return_expression(translated_definition, scope.clone(), v.0, v.1)
-                        }).collect())
+                        if let sway::Expression::Tuple(values) = expression {
+                            sway::Expression::Tuple(type_names.iter().zip(values.iter()).map(|v| {
+                                modify_return_expression(translated_definition, scope.clone(), v.0, v.1)
+                            }).collect())
+                        } else {
+                            expression.clone()
+                        }
                     }
 
                     _ => todo!()
@@ -889,7 +896,7 @@ pub fn translate_return_statement(
     }  
 
     Ok(sway::Statement::from(sway::Expression::Return(Some(Box::new(
-        modify_return_expression(translated_definition, scope, &return_type, &expression)
+        modify_return_expression(translated_definition, scope.clone(), &return_type, &expression)
     )))))
 }
 
@@ -913,11 +920,11 @@ pub fn translate_revert_statement(
             let external_definition_name = ids_iter.next().unwrap().name.clone();
             let error_variant_name = ids_iter.next().unwrap().name.clone();
             let external_definition = project.translated_definitions.iter_mut().find(|d| d.name == external_definition_name).unwrap();
-            let errors_enum_and_impl = external_definition.errors_enums.iter().find(|(e, _)| e.variants.iter().any(|v| v.name == error_variant_name)).cloned().unwrap();
+            let errors_enum_and_impl = external_definition.errors_enums.iter().find(|(e, _)| e.borrow().variants.iter().any(|v| v.name == error_variant_name)).cloned().unwrap();
             (error_variant_name, errors_enum_and_impl)
         } else {
             let error_variant_name = ids_iter.next().unwrap().name.clone();
-            let errors_enum_and_impl = translated_definition.errors_enums.iter().find(|(e, _)| e.variants.iter().any(|v| v.name == error_variant_name)).cloned().unwrap();
+            let errors_enum_and_impl = translated_definition.errors_enums.iter().find(|(e, _)| e.borrow().variants.iter().any(|v| v.name == error_variant_name)).cloned().unwrap();
             (error_variant_name, errors_enum_and_impl)
         };
 
@@ -938,14 +945,14 @@ pub fn translate_revert_statement(
                         if parameters.is_empty() {
                             sway::Expression::Identifier(format!(
                                 "{}::{}",
-                                errors_enum.name,
+                                errors_enum.borrow().name,
                                 error_variant_name,
                             ))
                         } else {
                             sway::Expression::from(sway::FunctionCall {
                                 function: sway::Expression::Identifier(format!(
                                     "{}::{}",
-                                    errors_enum.name,
+                                    errors_enum.borrow().name,
                                     error_variant_name,
                                 )),
                                 generic_parameters: None,
@@ -1061,38 +1068,105 @@ pub fn translate_emit_statement(
     scope: Rc<RefCell<TranslationScope>>,
     expression: &solidity::Expression,
 ) -> Result<sway::Statement, Error> {
-    
-    if let solidity::Expression::FunctionCall(_, x, parameters) = expression {
-        if let solidity::Expression::Variable(solidity::Identifier { name: event_variant_name, .. }) = x.as_ref() {
-            // Find the events enum containing the variant
-            let Some((events_enum, _)) = translated_definition.events_enums.iter().find(|(e, _)| e.variants.iter().any(|v| v.name == *event_variant_name)) else {
-                panic!("Failed to find event variant \"{event_variant_name}\" in \"{}\": {:#?}", translated_definition.name, translated_definition.events_enums);
+    match expression {
+        solidity::Expression::FunctionCall(_, function, arguments) => {
+            let event_variant_name = match function.as_ref() {
+                solidity::Expression::Variable(solidity::Identifier { name, .. }) => name,
+                
+                solidity::Expression::MemberAccess(_, container, member) => {
+                    let solidity::Expression::Variable(container_id) = container.as_ref() else {
+                        todo!()
+                    };
+
+                    let event_variant_name = crate::translate_naming_convention(&member.name, Case::Pascal);
+
+                    // Check if container is contained in an external definition
+                    if let Some(external_definition) = project.translated_definitions.iter().find(|d| d.name == container_id.name).cloned() {
+                        for events_enum in external_definition.events_enums.iter() {
+                            for variant in events_enum.0.borrow().variants.clone() {
+                                if variant.name == event_variant_name {
+                                    if !translated_definition.events_enums.contains(events_enum) {
+                                        translated_definition.events_enums.push(events_enum.clone());
+                                    }
+
+                                    return Ok(sway::Statement::from(sway::Expression::from(sway::FunctionCall {
+                                        function: sway::Expression::Identifier("log".into()),
+                                        generic_parameters: None,
+                                        parameters: vec![
+                                            if arguments.is_empty() {
+                                                sway::Expression::Identifier(format!(
+                                                    "{}::{}",
+                                                    events_enum.0.borrow().name,
+                                                    event_variant_name,
+                                                ))
+                                            } else {
+                                                sway::Expression::from(sway::FunctionCall {
+                                                    function: sway::Expression::Identifier(format!(
+                                                        "{}::{}",
+                                                        events_enum.0.borrow().name,
+                                                        event_variant_name,
+                                                    )),
+                                                    generic_parameters: None,
+                                                    parameters: vec![
+                                                        if arguments.len() == 1 {
+                                                            translate_expression(project, translated_definition, scope.clone(), &arguments[0])?
+                                                        } else {
+                                                            sway::Expression::Tuple(
+                                                                arguments.iter()
+                                                                    .map(|p| translate_expression(project, translated_definition, scope.clone(), p))
+                                                                    .collect::<Result<Vec<_>, _>>()?
+                                                            )
+                                                        },
+                                                    ]
+                                                })
+                                            },
+                                        ]
+                                    })));
+                                }
+                            }
+                        }
+                    }
+
+                    todo!()
+                }
+
+                _ => todo!()
+            };
+
+            let Some((events_enum, _)) = translated_definition.events_enums.iter().find(|(e, _)| {
+                e.borrow().variants.iter().any(|v| v.name == *event_variant_name)
+            }).cloned() else {
+                panic!(
+                    "Failed to find event variant \"{event_variant_name}\" in \"{}\": {:#?}",
+                    translated_definition.name,
+                    translated_definition.events_enums,
+                )
             };
             
             return Ok(sway::Statement::from(sway::Expression::from(sway::FunctionCall {
                 function: sway::Expression::Identifier("log".into()),
                 generic_parameters: None,
                 parameters: vec![
-                    if parameters.is_empty() {
+                    if arguments.is_empty() {
                         sway::Expression::Identifier(format!(
                             "{}::{}",
-                            events_enum.name,
+                            events_enum.borrow().name,
                             event_variant_name,
                         ))
                     } else {
                         sway::Expression::from(sway::FunctionCall {
                             function: sway::Expression::Identifier(format!(
                                 "{}::{}",
-                                events_enum.name,
+                                events_enum.borrow().name,
                                 event_variant_name,
                             )),
                             generic_parameters: None,
                             parameters: vec![
-                                if parameters.len() == 1 {
-                                    translate_expression(project, translated_definition, scope.clone(), &parameters[0])?
+                                if arguments.len() == 1 {
+                                    translate_expression(project, translated_definition, scope.clone(), &arguments[0])?
                                 } else {
                                     sway::Expression::Tuple(
-                                        parameters.iter()
+                                        arguments.iter()
                                             .map(|p| translate_expression(project, translated_definition, scope.clone(), p))
                                             .collect::<Result<Vec<_>, _>>()?
                                     )
@@ -1101,12 +1175,17 @@ pub fn translate_emit_statement(
                         })
                     },
                 ]
-            })))
+            })));
         }
-    }
-            
 
-    todo!("translate emit statement")
+        _ => panic!(
+            "{}TODO: translate emit statement: {expression} - {expression:#?}",
+            match project.loc_to_line_and_column(&translated_definition.path, &expression.loc()) {
+                Some((line, col)) => format!("{}:{}:{} - ", translated_definition.path.to_string_lossy(), line, col),
+                None => format!("{} - ", translated_definition.path.to_string_lossy()),
+            },
+        ),
+    }
 }
 
 #[inline]
@@ -1120,11 +1199,11 @@ pub fn translate_revert_named_arguments(
     // TODO: Keep track of the paramerter names and order them correctly
     let error_identifier = path.as_ref().unwrap().identifiers.first().unwrap().name.clone();
     if translated_definition.errors_enums.iter().any(|e|
-        e.0.variants.iter().any(|v| v.name == error_identifier)
+        e.0.borrow().variants.iter().any(|v| v.name == error_identifier)
     ) {
         let error_expressions: Vec<_> = named_args.iter().map(|arg| arg.expr.clone()).collect();
         return translate_revert_statement(project, translated_definition, scope, path, &error_expressions)
     }
 
-    todo!("translate revert named arguments : {:#?}", path)
+    todo!("translate revert named arguments: {:#?}", path)
 }
