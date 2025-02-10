@@ -316,6 +316,7 @@ pub fn translate_contract_definition(
             let mut function = sway::Function {
                 attributes: None,
                 is_public: false,
+                old_name: "".into(),
                 name: "constructor".into(),
                 generic_parameters: None,
                 parameters: sway::ParameterList::default(),
@@ -550,7 +551,9 @@ pub fn propagate_inherited_definitions(
 
         // Check to see if the definition was defined in the current file
         if inherited_definition.is_none() {
-            if translated_definition.abis.iter().find(|d| d.name == inherit).is_some() {
+            if let Some(t) = resolve_import(project, &inherit, &translated_definition.path)? {
+                inherited_definition = Some(t);
+            } else if translated_definition.abis.iter().find(|d| d.name == inherit).is_some() {
                 return Ok(());
             }
         }

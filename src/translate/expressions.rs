@@ -2005,6 +2005,63 @@ pub fn translate_function_call_expression(
                                 _ => panic!("translate cast from {value_type_name} to address: {expression} - {value:#?}"),
                             }
 
+                            sway::TypeName::Array { type_name: element_type_name, length } => match element_type_name.as_ref() {
+                                sway::TypeName::Identifier { name, generic_parameters } => match (name.as_str(), generic_parameters.as_ref()) {
+                                    ("u8", None) => {
+                                        translated_definition.ensure_use_declared(format!("std::array_conversions::u256::*").as_str());
+    
+                                        let mut elements = (0..*length).map(|i| {
+                                            sway::Expression::from(sway::ArrayAccess {
+                                                expression: value.clone(),
+                                                index: sway::Expression::from(sway::Literal::DecInt(i.into(), None)),
+                                            })
+                                        }).collect::<Vec<_>>();
+                                        
+                                        if *length < 32 {
+                                            elements.extend((0 .. (32 - *length)).map(|_| {
+                                                sway::Expression::from(sway::Literal::DecInt(BigUint::zero(), None))
+                                            }));
+                                        }
+
+                                        Ok(sway::Expression::from(sway::FunctionCall {
+                                            function: sway::Expression::Identifier("Identity::Address".into()),
+                                            generic_parameters: None,
+                                            parameters: vec![
+                                                sway::Expression::from(sway::FunctionCall {
+                                                    function: sway::Expression::Identifier("Address::from".into()),
+                                                    generic_parameters: None,
+                                                    parameters: vec![
+                                                        sway::Expression::from(sway::FunctionCall {
+                                                            function: sway::Expression::Identifier(format!("u256::from_be_bytes")),
+                                                            generic_parameters: None,
+                                                            parameters: vec![
+                                                                sway::Expression::from(sway::Array { elements }),
+                                                            ],
+                                                        }),
+                                                    ],
+                                                }),
+                                            ],
+                                        }))
+                                    }
+    
+                                    _ => panic!(
+                                        "{}translate cast from {value_type_name} to address: {expression} - {value_type_name:#?}",
+                                        match project.loc_to_line_and_column(&translated_definition.path, &arguments[0].loc()) {
+                                            Some((line, col)) => format!("{}:{}:{} - ", translated_definition.path.to_string_lossy(), line, col),
+                                            None => format!("{} - ", translated_definition.path.to_string_lossy()),
+                                        },
+                                    ),
+                                }
+    
+                                _ => panic!(
+                                    "{}translate cast from {value_type_name} to address: {expression} - {value_type_name:#?}",
+                                    match project.loc_to_line_and_column(&translated_definition.path, &arguments[0].loc()) {
+                                        Some((line, col)) => format!("{}:{}:{} - ", translated_definition.path.to_string_lossy(), line, col),
+                                        None => format!("{} - ", translated_definition.path.to_string_lossy()),
+                                    },
+                                ),
+                            }
+    
                             _ => panic!(
                                 "{}translate cast from {value_type_name} to address: {expression} - {value_type_name:#?}",
                                 match project.loc_to_line_and_column(&translated_definition.path, &arguments[0].loc()) {
@@ -3778,7 +3835,9 @@ pub fn translate_function_call_expression(
                             .collect::<Result<Vec<_>, _>>()?;
 
                         for inherit in translated_definition.inherits.clone() {
-                            let Some(inherited_definition) = project.find_definition_with_abi(&inherit).cloned() else { continue };
+                            let Some(inherited_definition) = project.translated_definitions.iter().find(|d| d.name == inherit).cloned() else {
+                                panic!("Failed to find inherited definition for `{inherit}`");
+                            };
 
                             if let Some(named_arguments) = named_arguments {
                                 let mut named_parameters = vec![];
@@ -3899,7 +3958,13 @@ pub fn translate_function_call_expression(
                             }
                         }
 
-                        todo!("handle super member access function `{member:#?}`")
+                        panic!(
+                            "{}TODO: handle super member access function `{member:#?}`",
+                            match project.loc_to_line_and_column(&translated_definition.path, &member.loc()) {
+                                Some((line, col)) => format!("{}:{}:{} - ", translated_definition.path.to_string_lossy(), line, col),
+                                None => format!("{} - ", translated_definition.path.to_string_lossy()),
+                            },
+                        )
                     }
 
                     "this" => {
@@ -5235,7 +5300,7 @@ pub fn translate_function_call_expression(
                             .map(|a| translate_expression(project, translated_definition, scope.clone(), a))
                             .collect::<Result<Vec<_>, _>>()?;
 
-                        let mut parameter_types = parameters.iter()
+                        let parameter_types = parameters.iter()
                             .map(|p| translated_definition.get_expression_type(scope.clone(), p))
                             .collect::<Result<Vec<_>, _>>()
                             .unwrap();
@@ -5384,53 +5449,17 @@ pub fn translate_function_call_expression(
                         }
 
                         // Check if this is a function from an ABI
-                        if let Some(external_scope) = project.find_definition_with_abi(name).map(|d| d.toplevel_scope.clone()) {
-                            if let Some(named_arguments) = named_arguments {
-                                let mut named_parameters = vec![];
-        
-                                for arg in named_arguments {
-                                    named_parameters.push((
-                                        crate::translate_naming_convention(&arg.name.name, Case::Snake),
-                                        translate_expression(project, translated_definition, scope.clone(), &arg.expr)?
-                                    ));
-                                }
-        
-                                for function in external_scope.borrow().functions.iter() {
-                                    let function = function.borrow();
-        
-                                    if function.old_name != member.name {
-                                        continue;
-                                    }
-        
-                                    if function.parameters.entries.len() != named_parameters.len() {
-                                        continue;
-                                    }
-        
-                                    if function.parameters.entries.iter().all(|p| named_parameters.iter().any(|(name, _)| p.name == *name)) {
-                                        parameters = vec![];
-                                        parameter_types = vec![];
-            
-                                        for parameter in function.parameters.entries.iter() {
-                                            let arg = named_arguments.iter().find(|a| {
-                                                let new_name = crate::translate_naming_convention(&a.name.name, Case::Snake);
-                                                new_name == parameter.name
-                                            }).unwrap();
-            
-                                            let parameter = translate_expression(project, translated_definition, scope.clone(), &arg.expr)?;
-                                            let parameter_type = translated_definition.get_expression_type(scope.clone(), &parameter)?;
-            
-                                            parameters.push(parameter);
-                                            parameter_types.push(parameter_type);
-                                        }
-    
-                                        break;
-                                    }
-                                }
+                        let mut check_abi = |abi: &sway::Abi| -> Result<Option<sway::Expression>, Error> {
+                            if abi.name != *name {
+                                return Ok(None);
                             }
-                            
-                            'function_lookup: for function in external_scope.borrow().functions.iter() {
-                                let function = function.borrow();
 
+                            // TODO: fix this...
+                            if named_arguments.is_some() {
+                                return Ok(None);
+                            }
+
+                            'function_lookup: for function in abi.functions.iter() {
                                 // Ensure the function's old name matches the function call we're translating
                                 if function.old_name != member.name {
                                     continue 'function_lookup;
@@ -5473,7 +5502,7 @@ pub fn translate_function_call_expression(
                                                     parameters[i].clone(),
                                                 ],
                                             });
-                                            continue;
+                                            continue 'value_type_check;
                                         }
                                     }
 
@@ -5481,21 +5510,35 @@ pub fn translate_function_call_expression(
                                         continue 'function_lookup;
                                     }
                                 }
-                                
-                                *translated_definition.function_call_counts.entry(function.new_name.clone()).or_insert(0) += 1;
+
+                                *translated_definition.function_call_counts.entry(function.name.clone()).or_insert(0) += 1;
                                 translated_definition.functions_called
                                     .entry(translated_definition.current_functions.last().cloned().unwrap())
                                     .or_insert_with(|| vec![])
-                                    .push(function.new_name.clone());
+                                    .push(function.name.clone());
                                 
-                                return Ok(sway::Expression::from(sway::FunctionCall {
+                                return Ok(Some(sway::Expression::from(sway::FunctionCall {
                                     function: sway::Expression::from(sway::MemberAccess {
-                                        expression: container,
-                                        member: function.new_name.clone(),
+                                        expression: container.clone(),
+                                        member: function.name.clone(),
                                     }),
                                     generic_parameters: None,
-                                    parameters,
-                                }));
+                                    parameters: parameters.clone(),
+                                })));
+                            }
+
+                            Ok(None)
+                        };
+
+                        if let Some(abi) = translated_definition.abi.as_ref() {
+                            if let Some(result) = check_abi(abi)? {
+                                return Ok(result);
+                            }
+                        }
+
+                        for abi in translated_definition.abis.clone() {
+                            if let Some(result) = check_abi(&abi)? {
+                                return Ok(result);
                             }
                         }
 

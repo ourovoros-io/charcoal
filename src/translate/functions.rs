@@ -58,7 +58,7 @@ pub fn translate_function_declaration(
 ) -> Result<TranslatedFunction, Error> {
     let new_name = function_definition.ty.to_string();
     
-    let (old_name, mut new_name) = if new_name == "function" || new_name == "modifier" {
+    let (old_name, mut new_name) = if matches!(function_definition.ty, solidity::FunctionTy::Function | solidity::FunctionTy::Modifier) {
         let old_name = function_definition.name.as_ref().unwrap().name.clone();
         let new_name = translate_function_name(project, translated_definition, function_definition);
         (old_name, new_name)
@@ -406,6 +406,7 @@ pub fn translate_modifier_definition(
             translated_definition.functions.push(sway::Function {
                 attributes: create_attributes(has_pre_storage_read, has_pre_storage_write),
                 is_public: false,
+                old_name: "".into(), // TODO
                 name: modifier_pre_function_name.clone(),
                 generic_parameters: None,
                 parameters: modifier.parameters.clone(),
@@ -424,6 +425,7 @@ pub fn translate_modifier_definition(
             translated_definition.functions.push(sway::Function {
                 attributes: create_attributes(has_post_storage_read, has_post_storage_write),
                 is_public: false,
+                old_name: "".into(), // TODO
                 name: modifier_post_function_name.clone(),
                 generic_parameters: None,
                 parameters: modifier.parameters.clone(),
@@ -438,6 +440,7 @@ pub fn translate_modifier_definition(
             translated_definition.functions.push(sway::Function {
                 attributes: create_attributes(has_pre_storage_read, has_pre_storage_write),
                 is_public: false,
+                old_name: modifier.old_name.clone(),
                 name: modifier.new_name.clone(),
                 generic_parameters: None,
                 parameters: modifier.parameters.clone(),
@@ -462,6 +465,7 @@ pub fn translate_modifier_definition(
             translated_definition.functions.push(sway::Function {
                 attributes: create_attributes(has_post_storage_read, has_post_storage_write),
                 is_public: false,
+                old_name: modifier.old_name.clone(),
                 name: modifier.new_name.clone(),
                 generic_parameters: None,
                 parameters: modifier.parameters.clone(),
@@ -530,7 +534,12 @@ pub fn translate_function_definition(
         translate_function_name(project, translated_definition, function_definition)
     };
 
-    let mut new_name = new_name_2.clone();
+    let (old_name, mut new_name) = if matches!(function_definition.ty, solidity::FunctionTy::Function | solidity::FunctionTy::Modifier) {
+        let old_name = function_definition.name.as_ref().unwrap().name.clone();
+        (old_name, new_name_2.clone())
+    } else {
+        (String::new(), new_name_2.clone())
+    };
 
     if let Some(solidity::ContractTy::Abstract(_) | solidity::ContractTy::Library(_)) = &translated_definition.kind {
        new_name = format!("{}_{}", crate::translate_naming_convention(&translated_definition.name, Case::Snake), new_name);
@@ -611,6 +620,7 @@ pub fn translate_function_definition(
         },
 
         is_public: false,
+        old_name: old_name.clone(),
         name: new_name.clone(),
         generic_parameters: None,
 

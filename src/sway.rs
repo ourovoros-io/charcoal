@@ -956,6 +956,7 @@ impl TabbedDisplay for ConfigurableField {
 pub struct Function {
     pub attributes: Option<AttributeList>,
     pub is_public: bool,
+    pub old_name: String,
     pub name: String,
     pub generic_parameters: Option<GenericParameterList>,
     pub parameters: ParameterList,
@@ -1823,6 +1824,7 @@ mod tests {
         module.items.push(ModuleItem::Function(Function {
             attributes: None,
             is_public: true,
+            old_name: "test".into(),
             name: "test".into(),
             generic_parameters: None,
             parameters: ParameterList::default(),

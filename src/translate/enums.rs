@@ -357,6 +357,7 @@ pub fn generate_enum_abi_encode_function(
     abi_encode_impl.borrow_mut().items.push(sway::ImplItem::Function(sway::Function {
         attributes: None,
         is_public: false,
+        old_name: "".into(),
         name: "abi_encode".into(),
         generic_parameters: None,
         parameters: sway::ParameterList {

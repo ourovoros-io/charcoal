@@ -268,6 +268,7 @@ pub fn translate_state_variable(
             None
         },
         is_public: false,
+        old_name: old_name.clone(),
         name: new_name.clone(),
         generic_parameters: None,
         parameters: sway::ParameterList {

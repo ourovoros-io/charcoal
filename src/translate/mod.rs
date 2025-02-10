@@ -349,12 +349,12 @@ impl Display for TranslatedDefinition {
 impl From<TranslatedDefinition> for sway::Module {
     fn from(val: TranslatedDefinition) -> Self {
         let mut result = sway::Module {
-            kind: match val.kind.as_ref().unwrap() {
-                solidity::ContractTy::Abstract(_)
-                | solidity::ContractTy::Contract(_)
-                | solidity::ContractTy::Interface(_) => sway::ModuleKind::Contract,
+            kind: match val.kind.as_ref() {
+                Some(solidity::ContractTy::Abstract(_))
+                | Some(solidity::ContractTy::Contract(_))
+                | Some(solidity::ContractTy::Interface(_)) => sway::ModuleKind::Contract,
 
-                solidity::ContractTy::Library(_) => sway::ModuleKind::Library,
+                _ => sway::ModuleKind::Library,
             },
             items: vec![],
         };
@@ -774,6 +774,11 @@ impl TranslatedDefinition {
 
                 match function {
                     sway::Expression::Identifier(name) => match name.as_str() {
+                        "__size_of" => Ok(sway::TypeName::Identifier {
+                            name: "u64".into(),
+                            generic_parameters: None,
+                        }),
+
                         "todo!" => Ok(sway::TypeName::Identifier {
                             name: "todo!".into(),
                             generic_parameters: None,
@@ -866,6 +871,11 @@ impl TranslatedDefinition {
 
                         "raw_slice::from_parts" => Ok(sway::TypeName::Identifier {
                             name: "raw_slice".into(),
+                            generic_parameters: None,
+                        }),
+
+                        "std::alloc::alloc" => Ok(sway::TypeName::Identifier {
+                            name: "raw_ptr".into(),
                             generic_parameters: None,
                         }),
     
