@@ -129,128 +129,29 @@ pub fn translate_using_directive(
 #[inline]
 pub fn translate_contract_definition(
     project: &mut Project,
-    source_unit_path: &Path,
+    translated_definition: &mut TranslatedDefinition,
     import_directives: &[solidity::Import],
-    toplevel_using_directives: &[solidity::Using],
-    toplevel_type_definitions: &[solidity::TypeDefinition],
-    toplevel_enums: &[solidity::EnumDefinition],
-    toplevel_structs: &[solidity::StructDefinition],
-    toplevel_events: &[solidity::EventDefinition],
-    toplevel_errors: &[solidity::ErrorDefinition],
-    toplevel_functions: &[solidity::FunctionDefinition],
-    contract_names: &[String],
     contract_definition: &solidity::ContractDefinition,
 ) -> Result<(), Error> {
-    let definition_name = contract_definition.name.as_ref().unwrap().name.clone();
-    let inherits: Vec<String> = contract_definition.base.iter().map(|b| b.name.identifiers.iter().map(|i| i.name.clone()).collect::<Vec<_>>().join(".")).collect();
-
-    // Create a new translation container
-    let mut translated_definition = TranslatedDefinition {
-        contract_names: contract_names.into(),
-        ..TranslatedDefinition::new(
-            source_unit_path,
-            contract_definition.ty.clone(),
-            definition_name.clone(),
-            inherits.clone()
-        )
-    };
-
-    // Translate import directives
-    translate_import_directives(project, &mut translated_definition, import_directives)?;
-
-    // Translate toplevel using directives
-    for using_directive in toplevel_using_directives {
-        translate_using_directive(project, &mut translated_definition, using_directive)?;
-    }
-
-    // Translate toplevel type definitions
-    for type_definition in toplevel_type_definitions {
-        translate_type_definition(project, &mut translated_definition, type_definition)?;
-    }
-
-    // Translate toplevel enum definitions
-    for enum_definition in toplevel_enums {
-        translate_enum_definition(project, &mut translated_definition, enum_definition)?;
-    }
-
-    // Collect toplevel struct names ahead of time for contextual reasons
-    for struct_definition in toplevel_structs {
-        let struct_name = struct_definition.name.as_ref().unwrap().name.clone();
-
-        if !translated_definition.struct_names.contains(&struct_name) {
-            translated_definition.struct_names.push(struct_name);
-        }
-    }
-
-    // Translate toplevel struct definitions
-    for struct_definition in toplevel_structs {
-        translate_struct_definition(project, &mut translated_definition, struct_definition)?;
-    }
-
-    // Translate toplevel event definitions
-    for event_definition in toplevel_events {
-        translate_event_definition(project, &mut translated_definition, event_definition)?;
-    }
-
-    // Translate toplevel error definitions
-    for error_definition in toplevel_errors {
-        translate_error_definition(project, &mut translated_definition, error_definition)?;
-    }
-
-    // Collect each toplevel function ahead of time for contextual reasons
-    for function_definition in toplevel_functions.iter() {
-
-        let is_modifier = matches!(function_definition.ty, solidity::FunctionTy::Modifier);
-
-        if is_modifier {
-            continue;
-        }
-
-        // Add the toplevel function to the list of toplevel functions for the toplevel scope
-        let function = translate_function_declaration(project, &mut translated_definition, function_definition)?;
-        
-        let mut function_exists = false;
-
-
-        for f in translated_definition.toplevel_scope.borrow().functions.iter() {
-            let mut f = f.borrow_mut();
-
-            if ((!f.old_name.is_empty() && (f.old_name == function.old_name)) || (f.new_name == function.new_name)) && f.parameters == function.parameters && f.return_type == function.return_type {
-                f.new_name = function.new_name.clone();
-                function_exists = true;
-                break;
-            }
-        }
-
-        if !function_exists {
-            translated_definition.toplevel_scope.borrow_mut().functions.push(Rc::new(RefCell::new(function)));
-        }
-    }
-
-    // Translate toplevel function definitions
-    for function_definition in toplevel_functions {
-        translate_function_definition(project, &mut translated_definition, function_definition)?;
-    }
-
     // Propagate inherited definitions
-    propagate_inherited_definitions(project, import_directives, inherits.as_slice(), &mut translated_definition)?;
+    propagate_inherited_definitions(project, import_directives, translated_definition)?;
 
     // Translate contract using directives
     for part in contract_definition.parts.iter() {
         let solidity::ContractPart::Using(using_directive) = part else { continue };
-        translate_using_directive(project, &mut translated_definition, using_directive)?;
+        translate_using_directive(project, translated_definition, using_directive)?;
     }
 
     // Translate contract type definitions
     for part in contract_definition.parts.iter() {
         let solidity::ContractPart::TypeDefinition(type_definition) = part else { continue };
-        translate_type_definition(project, &mut translated_definition, type_definition)?;
+        translate_type_definition(project, translated_definition, type_definition)?;
     }
 
     // Translate contract enum definitions
     for part in contract_definition.parts.iter() {
         let solidity::ContractPart::EnumDefinition(enum_definition) = part else { continue };
-        translate_enum_definition(project, &mut translated_definition, enum_definition)?;
+        translate_enum_definition(project, translated_definition, enum_definition)?;
     }
 
     // Collect contract struct names ahead of time for contextual reasons
@@ -266,39 +167,39 @@ pub fn translate_contract_definition(
     // Translate contract struct definitions
     for part in contract_definition.parts.iter() {
         let solidity::ContractPart::StructDefinition(struct_definition) = part else { continue };
-        translate_struct_definition(project, &mut translated_definition, struct_definition)?;
+        translate_struct_definition(project, translated_definition, struct_definition)?;
     }
 
     // Translate contract event definitions
     for part in contract_definition.parts.iter() {
         let solidity::ContractPart::EventDefinition(event_definition) = part else { continue };
-        translate_event_definition(project, &mut translated_definition, event_definition)?;
+        translate_event_definition(project, translated_definition, event_definition)?;
     }
 
     // Translate contract error definitions
     for part in contract_definition.parts.iter() {
         let solidity::ContractPart::ErrorDefinition(error_definition) = part else { continue };
-        translate_error_definition(project, &mut translated_definition, error_definition)?;
+        translate_error_definition(project, translated_definition, error_definition)?;
     }
 
     // Create the abi encoding function for the events enum (if any)
     let events_enum_name = format!("{}Event", translated_definition.name);
 
     if let Some((events_enum, abi_encode_impl)) = translated_definition.events_enums.iter().find(|(e, _)| e.borrow().name == events_enum_name).cloned() {
-        generate_enum_abi_encode_function(project, &mut translated_definition, events_enum.clone(), abi_encode_impl.clone())?;
+        generate_enum_abi_encode_function(project, translated_definition, events_enum.clone(), abi_encode_impl.clone())?;
     }
 
     // Create the abi encoding function for the errors enum (if any)
     let errors_enum_name = format!("{}Error", translated_definition.name);
 
     if let Some((errors_enum, abi_encode_impl)) = translated_definition.errors_enums.iter().find(|(e, _)| e.borrow().name == errors_enum_name).cloned() {
-        generate_enum_abi_encode_function(project, &mut translated_definition, errors_enum.clone(), abi_encode_impl.clone())?;
+        generate_enum_abi_encode_function(project, translated_definition, errors_enum.clone(), abi_encode_impl.clone())?;
     }
 
     // Translate contract state variables
     for part in contract_definition.parts.iter() {
         let solidity::ContractPart::VariableDefinition(variable_definition) = part else { continue };
-        translate_state_variable(project, &mut translated_definition, variable_definition)?;
+        translate_state_variable(project, translated_definition, variable_definition)?;
     }
     
     // Collect each toplevel function ahead of time for contextual reasons
@@ -312,7 +213,7 @@ pub fn translate_contract_definition(
         }
 
         // Add the toplevel function to the list of toplevel functions for the toplevel scope
-        let function = translate_function_declaration(project, &mut translated_definition, function_definition)?;
+        let function = translate_function_declaration(project, translated_definition, function_definition)?;
         
         let mut function_exists = false;
 
@@ -341,7 +242,7 @@ pub fn translate_contract_definition(
             continue;
         }
         
-        translate_modifier_definition(project, &mut translated_definition, function_definition)?;
+        translate_modifier_definition(project, translated_definition, function_definition)?;
     }
 
     // Translate each function
@@ -354,7 +255,7 @@ pub fn translate_contract_definition(
             continue;
         }
 
-        translate_function_definition(project, &mut translated_definition, function_definition)?;
+        translate_function_definition(project, translated_definition, function_definition)?;
     }
 
     // Propagate deferred initializations into the constructor
@@ -396,7 +297,7 @@ pub fn translate_contract_definition(
                     
                     assignment_statements.push(sway::Statement::from(create_assignment_expression(
                         project,
-                        &mut translated_definition,
+                        translated_definition,
                         scope,
                         "=",
                         &lhs,
@@ -428,7 +329,7 @@ pub fn translate_contract_definition(
             let function_body = function.body.as_mut().unwrap();
     
             let prefix = crate::translate_naming_convention(translated_definition.name.as_str(), Case::Snake);
-            let constructor_called_variable_name =  translate_storage_name(project, &mut translated_definition, format!("{prefix}_constructor_called").as_str());
+            let constructor_called_variable_name =  translate_storage_name(project, translated_definition, format!("{prefix}_constructor_called").as_str());
             
             // Add the `constructor_called` field to the storage block
             translated_definition.get_storage().fields.push(sway::StorageField {
@@ -590,8 +491,6 @@ pub fn translate_contract_definition(
         }
     }
     
-    project.translated_definitions.push(translated_definition);
-    
     Ok(())
 }
 
@@ -599,12 +498,11 @@ pub fn translate_contract_definition(
 pub fn propagate_inherited_definitions(
     project: &mut Project,
     import_directives: &[solidity::Import],
-    inherits: &[String],
     translated_definition: &mut TranslatedDefinition,
 ) -> Result<(), Error> {
     let source_unit_directory = translated_definition.path.parent().map(PathBuf::from).unwrap();
 
-    for inherit in inherits.iter() {
+    for inherit in translated_definition.inherits.clone() {
         let mut inherited_definition = None;
 
         // Find inherited import directive
@@ -644,7 +542,7 @@ pub fn propagate_inherited_definitions(
             let import_path = crate::get_canonical_path(import_path, false, false)
                 .map_err(|e| Error::Wrapped(Box::new(e)))?;
 
-            if let Some(t) = resolve_import(project, inherit, &import_path)? {
+            if let Some(t) = resolve_import(project, &inherit, &import_path)? {
                 inherited_definition = Some(t);
                 break;
             }
@@ -652,8 +550,8 @@ pub fn propagate_inherited_definitions(
 
         // Check to see if the definition was defined in the current file
         if inherited_definition.is_none() {
-            if let Some(t) = resolve_import(project, inherit, &translated_definition.path)? {
-                inherited_definition = Some(t);
+            if translated_definition.abis.iter().find(|d| d.name == inherit).is_some() {
+                return Ok(());
             }
         }
 
@@ -662,8 +560,10 @@ pub fn propagate_inherited_definitions(
         };
 
         // Extend the toplevel scope
-        translated_definition.toplevel_scope.borrow_mut().variables.extend(inherited_definition.toplevel_scope.borrow().variables.clone());
-        translated_definition.toplevel_scope.borrow_mut().functions.extend(inherited_definition.toplevel_scope.borrow().functions.clone());
+        let inherited_variables = inherited_definition.toplevel_scope.borrow().variables.clone();
+        let inherited_functions = inherited_definition.toplevel_scope.borrow().functions.clone();
+        translated_definition.toplevel_scope.borrow_mut().variables.extend(inherited_variables);
+        translated_definition.toplevel_scope.borrow_mut().functions.extend(inherited_functions);
 
         // Extend the use statements
         for inherited_use in inherited_definition.uses.iter() {

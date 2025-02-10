@@ -919,12 +919,17 @@ impl TranslatedDefinition {
                             }),
                         }),
 
+                        "std::registers::return_length" => Ok(sway::TypeName::Identifier {
+                            name: "u64".into(),
+                            generic_parameters: None,
+                        }),
+
                         "String::from_ascii" => Ok(sway::TypeName::Identifier {
                             name: "String".into(),
                             generic_parameters: None,
                         }),
     
-                        "u8::from" | "u8::max" | "u8::min" => Ok(sway::TypeName::Identifier {
+                        "u8::from" | "u8::max" | "u8::min" | "u8::from_be_bytes" | "u8::from_le_bytes" => Ok(sway::TypeName::Identifier {
                             name: "u8".into(),
                             generic_parameters: None,
                         }),
@@ -944,7 +949,7 @@ impl TranslatedDefinition {
                             }),
                         }),
     
-                        "u16::from" | "u16::max" | "u16::min" => Ok(sway::TypeName::Identifier {
+                        "u16::from" | "u16::max" | "u16::min" | "u16::from_be_bytes" | "u16::from_le_bytes" => Ok(sway::TypeName::Identifier {
                             name: "u16".into(),
                             generic_parameters: None,
                         }),
@@ -964,7 +969,7 @@ impl TranslatedDefinition {
                             }),
                         }),
     
-                        "u32::from" | "u32::max" | "u32::min" => Ok(sway::TypeName::Identifier {
+                        "u32::from" | "u32::max" | "u32::min" | "u32::from_be_bytes" | "u32::from_le_bytes" => Ok(sway::TypeName::Identifier {
                             name: "u32".into(),
                             generic_parameters: None,
                         }),
@@ -984,7 +989,7 @@ impl TranslatedDefinition {
                             }),
                         }),
     
-                        "u64::from" | "u64::max" | "u64::min" => Ok(sway::TypeName::Identifier {
+                        "u64::from" | "u64::max" | "u64::min" | "u64::from_be_bytes" | "u64::from_le_bytes" => Ok(sway::TypeName::Identifier {
                             name: "u64".into(),
                             generic_parameters: None,
                         }),
@@ -1004,16 +1009,11 @@ impl TranslatedDefinition {
                             }),
                         }),
     
-                        "u256::from" | "u256::max" | "u256::min" => Ok(sway::TypeName::Identifier {
+                        "u256::from" | "u256::max" | "u256::min" | "u256::from_be_bytes" | "u256::from_le_bytes" => Ok(sway::TypeName::Identifier {
                             name: "u256".into(),
                             generic_parameters: None,
                         }),
 
-                        "u256::from_be_bytes" | "u256::from_le_bytes" => Ok(sway::TypeName::Identifier {
-                            name: "u256".into(),
-                            generic_parameters: None,
-                        }),
-    
                         "u256::try_from" => Ok(sway::TypeName::Identifier {
                             name: "Option".into(),
                             generic_parameters: Some(sway::GenericParameterList {
@@ -1355,7 +1355,12 @@ impl TranslatedDefinition {
                                         generic_parameters: None,
                                     }),
         
-                                    _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
+                                    _ => Err(Error::Wrapped(Box::new(
+                                        std::io::Error::new(
+                                            std::io::ErrorKind::NotFound,
+                                            format!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
+                                        )
+                                    ))),
                                 }
         
                                 ("Option", Some(generic_parameters)) if generic_parameters.entries.len() == 1 => match member_access.member.as_str() {

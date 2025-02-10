@@ -213,7 +213,7 @@ pub fn translate_modifier_definition(
     translated_definition.current_functions.push(new_name.clone());
 
     let mut modifier = TranslatedModifier {
-        old_name,
+        old_name: old_name.clone(),
         new_name: new_name.clone(),
         parameters: sway::ParameterList::default(),
         attributes: None,
@@ -445,6 +445,16 @@ pub fn translate_modifier_definition(
                 body: Some(pre_body.clone()),
             });
 
+            translated_definition.toplevel_scope.borrow_mut().functions.push(Rc::new(RefCell::new(TranslatedFunction {
+                old_name: old_name.clone(),
+                new_name: new_name.clone(),
+                parameters: modifier.parameters.clone(),
+                attributes: create_attributes(has_pre_storage_read, has_pre_storage_write),
+                constructor_calls: vec![],
+                modifiers: vec![],
+                return_type: None,
+            })));
+
             *translated_definition.function_call_counts.entry(modifier.new_name.clone()).or_insert(0) += 1;
         }
 
@@ -458,6 +468,16 @@ pub fn translate_modifier_definition(
                 return_type: None,
                 body: Some(post_body.clone()),
             });
+
+            translated_definition.toplevel_scope.borrow_mut().functions.push(Rc::new(RefCell::new(TranslatedFunction {
+                old_name: old_name.clone(),
+                new_name: new_name.clone(),
+                parameters: modifier.parameters.clone(),
+                attributes: create_attributes(has_pre_storage_read, has_pre_storage_write),
+                constructor_calls: vec![],
+                modifiers: vec![],
+                return_type: None,
+            })));
 
             *translated_definition.function_call_counts.entry(modifier.new_name.clone()).or_insert(0) += 1;
         }

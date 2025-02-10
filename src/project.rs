@@ -1,6 +1,11 @@
 use crate::{
     errors::Error,
-    translate::{translate_contract_definition, TranslatedDefinition},
+    translate::{
+        translate_contract_definition, translate_enum_definition, translate_error_definition,
+        translate_event_definition, translate_function_declaration, translate_function_definition,
+        translate_import_directives, translate_struct_definition, translate_type_definition,
+        translate_using_directive, TranslatedDefinition,
+    },
 };
 use solang_parser::pt as solidity;
 use std::{
@@ -41,7 +46,6 @@ pub struct Project {
     pub line_ranges: HashMap<PathBuf, Vec<(usize, usize)>>,
     pub solidity_source_units: Rc<RefCell<HashMap<PathBuf, solidity::SourceUnit>>>,
     pub translated_definitions: Vec<TranslatedDefinition>,
-    pub import_directives: HashMap<PathBuf, HashMap<PathBuf, Option<Vec<String>>>>,
 }
 
 impl Project {
@@ -143,8 +147,31 @@ impl Project {
         None
     }
 
+    pub fn canonicalize_import_path(&self, source_unit_directory: &Path, path_string: &str) -> Result<PathBuf, Error> {
+        let mut import_path = PathBuf::from(path_string);
+
+        if !import_path.to_string_lossy().starts_with('.') {
+            import_path = self.get_project_type_path(source_unit_directory, path_string)?;
+        } else {
+            import_path = source_unit_directory.join(import_path);
+        }
+        
+        import_path = crate::get_canonical_path(import_path, false, false)
+            .map_err(|e| Error::Wrapped(Box::new(e))).unwrap();
+        
+        if !import_path.exists() {
+            return Err(Error::Wrapped(Box::new(
+                std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!("File not found: {}", import_path.to_string_lossy()),
+                )
+            )));
+        }
+
+        Ok(import_path)
+    }
+
     pub fn translate(&mut self, definition_name: Option<&String>, source_unit_path: &Path) -> Result<(), Error> {
-        let source_unit_directory = source_unit_path.parent().map(PathBuf::from).unwrap();
         let solidity_source_units = self.solidity_source_units.clone();
 
         // Ensure the source unit has been parsed
@@ -164,6 +191,7 @@ impl Project {
         let mut toplevel_events = vec![];
         let mut toplevel_errors = vec![];
         let mut toplevel_functions = vec![];
+        let mut toplevel_variables = vec![];
         let mut contract_names = vec![];
 
         for source_unit_part in source_unit.0.iter() {
@@ -198,8 +226,11 @@ impl Project {
 
                 solidity::SourceUnitPart::FunctionDefinition(function_definition) => {
                     toplevel_functions.push(function_definition.as_ref().clone());
-                },
-                solidity::SourceUnitPart::VariableDefinition(_) => todo!("toplevel variable definition"),
+                }
+
+                solidity::SourceUnitPart::VariableDefinition(variable_definition) => {
+                    toplevel_variables.push(variable_definition.as_ref().clone());
+                }
 
                 solidity::SourceUnitPart::TypeDefinition(type_definition) => {
                     toplevel_type_definitions.push(type_definition.as_ref().clone());
@@ -219,51 +250,91 @@ impl Project {
             }
         }
 
-        // Extend the import directive tree
-        for import_directive in import_directives.iter() {
-            let mut translate_import_directive = |definition_name: Option<&String>, filename: &solidity::StringLiteral| -> Result<(), Error> {
-                let mut import_path = PathBuf::from(filename.string.clone());
+        //
+        // TODO: Build the symbol list by flattening the imported symbols and listing everything in
+        //       the source file (contracts, structs, enums, functions, etc)
+        //
 
-                if !import_path.to_string_lossy().starts_with('.') {
-                    import_path = self.get_project_type_path(source_unit_directory.as_path(), filename.string.as_str())?;
-                } else {
-                    import_path = source_unit_directory.join(import_path);
-                }
-                
-                import_path = crate::get_canonical_path(import_path.clone(), false, false)
-                    .map_err(|e| Error::Wrapped(format!("{}: {}", e, import_path.to_string_lossy()).into()))?;
-                
-                let import_directives = self.import_directives.entry(source_unit_path.into()).or_default();
-                let definition_names = import_directives.entry(import_path).or_default();
+        let mut translated_definition = TranslatedDefinition {
+            path: source_unit_path.into(),
+            ..Default::default()
+        };
 
-                if let Some(definition_name) = definition_name {
-                    if definition_names.is_none() {
-                        *definition_names = Some(vec![]);
-                    }
+        // Translate import directives
+        translate_import_directives(self, &mut translated_definition, import_directives.as_slice())?;
 
-                    let definition_names = definition_names.as_mut().unwrap();
+        // Translate toplevel using directives
+        for using_directive in toplevel_using_directives.iter() {
+            translate_using_directive(self, &mut translated_definition, using_directive)?;
+        }
 
-                    if !definition_names.contains(definition_name) {
-                        definition_names.push(definition_name.clone());
-                    }
-                }
+        // Translate toplevel type definitions
+        for type_definition in toplevel_type_definitions.iter() {
+            translate_type_definition(self, &mut translated_definition, type_definition)?;
+        }
 
-                Ok(())
-            };
+        // Translate toplevel enum definitions
+        for enum_definition in toplevel_enums.iter() {
+            translate_enum_definition(self, &mut translated_definition, enum_definition)?;
+        }
 
-            match import_directive {
-                solidity::Import::Plain(solidity::ImportPath::Filename(filename), _) => {
-                    translate_import_directive(None, filename)?;
-                }
+        // Collect toplevel struct names ahead of time for contextual reasons
+        for struct_definition in toplevel_structs.iter() {
+            let struct_name = struct_definition.name.as_ref().unwrap().name.clone();
 
-                solidity::Import::Rename(solidity::ImportPath::Filename(filename), identifiers, _) => {
-                    for (identifier, _) in identifiers.iter() {
-                        translate_import_directive(Some(&identifier.name), filename)?;
-                    }
-                }
-
-                _ => panic!("Unsupported import directive: {import_directive:#?}"),
+            if !translated_definition.struct_names.contains(&struct_name) {
+                translated_definition.struct_names.push(struct_name);
             }
+        }
+
+        // Translate toplevel struct definitions
+        for struct_definition in toplevel_structs.iter() {
+            translate_struct_definition(self, &mut translated_definition, struct_definition)?;
+        }
+
+        // Translate toplevel event definitions
+        for event_definition in toplevel_events.iter() {
+            translate_event_definition(self, &mut translated_definition, event_definition)?;
+        }
+
+        // Translate toplevel error definitions
+        for error_definition in toplevel_errors.iter() {
+            translate_error_definition(self, &mut translated_definition, error_definition)?;
+        }
+
+        // Collect each toplevel function ahead of time for contextual reasons
+        for function_definition in toplevel_functions.iter() {
+
+            let is_modifier = matches!(function_definition.ty, solidity::FunctionTy::Modifier);
+
+            if is_modifier {
+                continue;
+            }
+
+            // Add the toplevel function to the list of toplevel functions for the toplevel scope
+            let function = translate_function_declaration(self, &mut translated_definition, function_definition)?;
+            
+            let mut function_exists = false;
+
+
+            for f in translated_definition.toplevel_scope.borrow().functions.iter() {
+                let mut f = f.borrow_mut();
+
+                if ((!f.old_name.is_empty() && (f.old_name == function.old_name)) || (f.new_name == function.new_name)) && f.parameters == function.parameters && f.return_type == function.return_type {
+                    f.new_name = function.new_name.clone();
+                    function_exists = true;
+                    break;
+                }
+            }
+
+            if !function_exists {
+                translated_definition.toplevel_scope.borrow_mut().functions.push(Rc::new(RefCell::new(function)));
+            }
+        }
+
+        // Translate toplevel function definitions
+        for function_definition in toplevel_functions.iter() {
+            translate_function_definition(self, &mut translated_definition, function_definition)?;
         }
 
         // Translate any contract definitions in the file
@@ -276,20 +347,33 @@ impl Project {
                 }
             }
 
+            let mut translated_definition = TranslatedDefinition {
+                kind: Some(contract_definition.ty.clone()),
+                name: contract_definition.name.as_ref().unwrap().name.clone(),
+                inherits: contract_definition.base.iter()
+                    .map(|b| {
+                        b.name.identifiers.iter().map(|i| i.name.clone())
+                            .collect::<Vec<_>>()
+                            .join(".")
+                    })
+                    .collect(),
+                contract_names: contract_names.clone(),
+                ..translated_definition.clone()
+            };
+            
             translate_contract_definition(
                 self,
-                source_unit_path,
+                &mut translated_definition,
                 import_directives.as_slice(),
-                toplevel_using_directives.as_slice(),
-                toplevel_type_definitions.as_slice(),
-                toplevel_enums.as_slice(),
-                toplevel_structs.as_slice(),
-                toplevel_events.as_slice(),
-                toplevel_errors.as_slice(),
-                toplevel_functions.as_slice(),
-                contract_names.as_slice(),
                 contract_definition,
             )?;
+
+            self.translated_definitions.push(translated_definition);
+        }
+
+        // HACK: if we don't have any contracts, add a standalone translated definition
+        if contract_names.is_empty() {
+            self.translated_definitions.push(translated_definition);
         }
 
         Ok(())

@@ -383,6 +383,13 @@ impl TypeName {
         }
     }
 
+    pub fn is_b256(&self) -> bool {
+        match self {
+            TypeName::Identifier { name, generic_parameters: None } => name == "b256",
+            _ => false,
+        }
+    }
+
     /// Checks if the type name is `Identity`
     pub fn is_identity(&self) -> bool {
         match self {
@@ -400,15 +407,20 @@ impl TypeName {
         }
     }
 
-    pub fn is_u8_array(&self) -> bool {
+    pub fn u8_array_length(&self) -> Option<usize> {
         match self {
-            TypeName::Array { type_name, .. } => match type_name.as_ref() {
-                TypeName::Identifier { name, generic_parameters: None } => name == "u8",
-                _ => false,
+            TypeName::Array { type_name, length } => match type_name.as_ref() {
+                TypeName::Identifier { name, generic_parameters: None } if name == "u8" => Some(*length),
+                _ => None,
             }
 
-            _ => false,
+            _ => None,
         }
+    }
+
+    #[inline]
+    pub fn is_u8_array(&self) -> bool {
+        self.u8_array_length().is_some()
     }
 
     pub fn storage_key_type(&self) -> Option<TypeName> {
