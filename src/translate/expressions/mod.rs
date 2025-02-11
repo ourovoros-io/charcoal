@@ -717,78 +717,78 @@ pub fn translate_expression(
         | solidity::Expression::HexNumberLiteral(_, _, _)
         | solidity::Expression::AddressLiteral(_, _)
         | solidity::Expression::HexLiteral(_)
-        | solidity::Expression::StringLiteral(_) => super::expressions::literal::translate_literal_expression(project, expression),
+        | solidity::Expression::StringLiteral(_) => literal::translate_literal_expression(project, expression),
         
-        solidity::Expression::Type(_, _) => super::expressions::expression_type::translate_type_expression(project, translated_definition, scope.clone(), expression),
-        solidity::Expression::Variable(_) => super::expressions::variable::translate_variable_expression(project, translated_definition, scope.clone(), expression),
+        solidity::Expression::Type(_, _) => expression_type::translate_type_expression(project, translated_definition, scope.clone(), expression),
+        solidity::Expression::Variable(_) => variable::translate_variable_expression(project, translated_definition, scope.clone(), expression),
         
-        solidity::Expression::ArrayLiteral(_, expressions) => super::expressions::array::translate_array_literal_expression(project, translated_definition, scope.clone(), expressions.as_slice()),
-        solidity::Expression::ArraySubscript(_, _, _) => super::expressions::array::translate_array_subscript_expression(project, translated_definition, scope.clone(), expression),
-        solidity::Expression::ArraySlice(_, _, _, _) => super::expressions::array::translate_array_slice_expression(project, translated_definition, scope.clone(), expression),
-        solidity::Expression::List(_, parameters) => super::expressions::list::translate_list_expression(project, translated_definition, scope.clone(), parameters.as_slice()),
-        solidity::Expression::Parenthesis(_, expression) => super::expressions::parenthesis::translate_parenthesis_expression(project, translated_definition, scope.clone(), expression),
+        solidity::Expression::ArrayLiteral(_, expressions) => array::translate_array_literal_expression(project, translated_definition, scope.clone(), expressions.as_slice()),
+        solidity::Expression::ArraySubscript(_, _, _) => array::translate_array_subscript_expression(project, translated_definition, scope.clone(), expression),
+        solidity::Expression::ArraySlice(_, _, _, _) => array::translate_array_slice_expression(project, translated_definition, scope.clone(), expression),
+        solidity::Expression::List(_, parameters) => list::translate_list_expression(project, translated_definition, scope.clone(), parameters.as_slice()),
+        solidity::Expression::Parenthesis(_, expression) => parenthesis::translate_parenthesis_expression(project, translated_definition, scope.clone(), expression),
         
-        solidity::Expression::MemberAccess(_, container, member) => super::expressions::member_access::translate_member_access_expression(project, translated_definition, scope.clone(), expression, container, member),
+        solidity::Expression::MemberAccess(_, container, member) => member_access::translate_member_access_expression(project, translated_definition, scope.clone(), expression, container, member),
         
         solidity::Expression::FunctionCall(_, function, arguments) => {
-            let result = super::expressions::function_call::translate_function_call_expression(project, translated_definition, scope.clone(), expression, function, None, arguments)?;
+            let result = function_call::translate_function_call_expression(project, translated_definition, scope.clone(), expression, function, None, arguments)?;
             // println!("Translated function call from {} to {}", expression, sway::TabbedDisplayer(&result));
             Ok(result)
         }
 
-        solidity::Expression::FunctionCallBlock(_, function, block) => super::expressions::function_call::translate_function_call_block_expression(project, translated_definition, scope.clone(), function, block),
+        solidity::Expression::FunctionCallBlock(_, function, block) => function_call::translate_function_call_block_expression(project, translated_definition, scope.clone(), function, block),
         
         solidity::Expression::NamedFunctionCall(_, function, named_arguments) => {
-            let result = super::expressions::function_call::translate_function_call_expression(project, translated_definition, scope.clone(), expression, function, Some(named_arguments), &[])?;
+            let result = function_call::translate_function_call_expression(project, translated_definition, scope.clone(), expression, function, Some(named_arguments), &[])?;
             // println!("Translated named function call from {} to {}", expression, sway::TabbedDisplayer(&result));
             Ok(result)
         }
         
-        solidity::Expression::Not(_, x) => super::expressions::binary_unary::translate_unary_expression(project, translated_definition, scope.clone(), "!", x),
-        solidity::Expression::BitwiseNot(_, x) => super::expressions::binary_unary::translate_unary_expression(project, translated_definition, scope.clone(), "!", x),
+        solidity::Expression::Not(_, x) => binary_unary::translate_unary_expression(project, translated_definition, scope.clone(), "!", x),
+        solidity::Expression::BitwiseNot(_, x) => binary_unary::translate_unary_expression(project, translated_definition, scope.clone(), "!", x),
         solidity::Expression::UnaryPlus(_, x) => translate_expression(project, translated_definition, scope.clone(), x),
-        solidity::Expression::Negate(_, x) => super::expressions::binary_unary::translate_unary_expression(project, translated_definition, scope.clone(), "-", x),
+        solidity::Expression::Negate(_, x) => binary_unary::translate_unary_expression(project, translated_definition, scope.clone(), "-", x),
         
-        solidity::Expression::Power(_, lhs, rhs) => super::expressions::power::translate_power_expression(project, translated_definition, scope.clone(), lhs, rhs),
-        solidity::Expression::Multiply(_, lhs, rhs) => super::expressions::binary_unary::translate_binary_expression(project, translated_definition, scope.clone(), "*", lhs, rhs),
-        solidity::Expression::Divide(_, lhs, rhs) => super::expressions::binary_unary::translate_binary_expression(project, translated_definition, scope.clone(), "/", lhs, rhs),
-        solidity::Expression::Modulo(_, lhs, rhs) => super::expressions::binary_unary::translate_binary_expression(project, translated_definition, scope.clone(), "%", lhs, rhs),
-        solidity::Expression::Add(_, lhs, rhs) => super::expressions::binary_unary::translate_binary_expression(project, translated_definition, scope.clone(), "+", lhs, rhs),
-        solidity::Expression::Subtract(_, lhs, rhs) => super::expressions::binary_unary::translate_binary_expression(project, translated_definition, scope.clone(), "-", lhs, rhs),
-        solidity::Expression::ShiftLeft(_, lhs, rhs) => super::expressions::binary_unary::translate_binary_expression(project, translated_definition, scope.clone(), "<<", lhs, rhs),
-        solidity::Expression::ShiftRight(_, lhs, rhs) => super::expressions::binary_unary::translate_binary_expression(project, translated_definition, scope.clone(), ">>", lhs, rhs),
-        solidity::Expression::BitwiseAnd(_, lhs, rhs) => super::expressions::binary_unary::translate_binary_expression(project, translated_definition, scope.clone(), "&", lhs, rhs),
-        solidity::Expression::BitwiseXor(_, lhs, rhs) => super::expressions::binary_unary::translate_binary_expression(project, translated_definition, scope.clone(), "^", lhs, rhs),
-        solidity::Expression::BitwiseOr(_, lhs, rhs) => super::expressions::binary_unary::translate_binary_expression(project, translated_definition, scope.clone(), "|", lhs, rhs),
-        solidity::Expression::Less(_, lhs, rhs) => super::expressions::binary_unary::translate_binary_expression(project, translated_definition, scope.clone(), "<", lhs, rhs),
-        solidity::Expression::More(_, lhs, rhs) => super::expressions::binary_unary::translate_binary_expression(project, translated_definition, scope.clone(), ">", lhs, rhs),
-        solidity::Expression::LessEqual(_, lhs, rhs) => super::expressions::binary_unary::translate_binary_expression(project, translated_definition, scope.clone(), "<=", lhs, rhs),
-        solidity::Expression::MoreEqual(_, lhs, rhs) => super::expressions::binary_unary::translate_binary_expression(project, translated_definition, scope.clone(), ">=", lhs, rhs),
-        solidity::Expression::Equal(_, lhs, rhs) => super::expressions::binary_unary::translate_binary_expression(project, translated_definition, scope.clone(), "==", lhs, rhs),
-        solidity::Expression::NotEqual(_, lhs, rhs) => super::expressions::binary_unary::translate_binary_expression(project, translated_definition, scope.clone(), "!=", lhs, rhs),
-        solidity::Expression::And(_, lhs, rhs) => super::expressions::binary_unary::translate_binary_expression(project, translated_definition, scope.clone(), "&&", lhs, rhs),
-        solidity::Expression::Or(_, lhs, rhs) => super::expressions::binary_unary::translate_binary_expression(project, translated_definition, scope.clone(), "||", lhs, rhs),
+        solidity::Expression::Power(_, lhs, rhs) => power::translate_power_expression(project, translated_definition, scope.clone(), lhs, rhs),
+        solidity::Expression::Multiply(_, lhs, rhs) => binary_unary::translate_binary_expression(project, translated_definition, scope.clone(), "*", lhs, rhs),
+        solidity::Expression::Divide(_, lhs, rhs) => binary_unary::translate_binary_expression(project, translated_definition, scope.clone(), "/", lhs, rhs),
+        solidity::Expression::Modulo(_, lhs, rhs) => binary_unary::translate_binary_expression(project, translated_definition, scope.clone(), "%", lhs, rhs),
+        solidity::Expression::Add(_, lhs, rhs) => binary_unary::translate_binary_expression(project, translated_definition, scope.clone(), "+", lhs, rhs),
+        solidity::Expression::Subtract(_, lhs, rhs) => binary_unary::translate_binary_expression(project, translated_definition, scope.clone(), "-", lhs, rhs),
+        solidity::Expression::ShiftLeft(_, lhs, rhs) => binary_unary::translate_binary_expression(project, translated_definition, scope.clone(), "<<", lhs, rhs),
+        solidity::Expression::ShiftRight(_, lhs, rhs) => binary_unary::translate_binary_expression(project, translated_definition, scope.clone(), ">>", lhs, rhs),
+        solidity::Expression::BitwiseAnd(_, lhs, rhs) => binary_unary::translate_binary_expression(project, translated_definition, scope.clone(), "&", lhs, rhs),
+        solidity::Expression::BitwiseXor(_, lhs, rhs) => binary_unary::translate_binary_expression(project, translated_definition, scope.clone(), "^", lhs, rhs),
+        solidity::Expression::BitwiseOr(_, lhs, rhs) => binary_unary::translate_binary_expression(project, translated_definition, scope.clone(), "|", lhs, rhs),
+        solidity::Expression::Less(_, lhs, rhs) => binary_unary::translate_binary_expression(project, translated_definition, scope.clone(), "<", lhs, rhs),
+        solidity::Expression::More(_, lhs, rhs) => binary_unary::translate_binary_expression(project, translated_definition, scope.clone(), ">", lhs, rhs),
+        solidity::Expression::LessEqual(_, lhs, rhs) => binary_unary::translate_binary_expression(project, translated_definition, scope.clone(), "<=", lhs, rhs),
+        solidity::Expression::MoreEqual(_, lhs, rhs) => binary_unary::translate_binary_expression(project, translated_definition, scope.clone(), ">=", lhs, rhs),
+        solidity::Expression::Equal(_, lhs, rhs) => binary_unary::translate_binary_expression(project, translated_definition, scope.clone(), "==", lhs, rhs),
+        solidity::Expression::NotEqual(_, lhs, rhs) => binary_unary::translate_binary_expression(project, translated_definition, scope.clone(), "!=", lhs, rhs),
+        solidity::Expression::And(_, lhs, rhs) => binary_unary::translate_binary_expression(project, translated_definition, scope.clone(), "&&", lhs, rhs),
+        solidity::Expression::Or(_, lhs, rhs) => binary_unary::translate_binary_expression(project, translated_definition, scope.clone(), "||", lhs, rhs),
         
-        solidity::Expression::ConditionalOperator(_, condition, then_value, else_value) => super::expressions::conditional::translate_conditional_operator_expression(project, translated_definition, scope.clone(), condition, then_value, else_value),
+        solidity::Expression::ConditionalOperator(_, condition, then_value, else_value) => conditional::translate_conditional_operator_expression(project, translated_definition, scope.clone(), condition, then_value, else_value),
         
-        solidity::Expression::Assign(_, lhs, rhs) => super::expressions::assignment::translate_assignment_expression(project, translated_definition, scope.clone(), "=", lhs.as_ref(), rhs.as_ref()),
-        solidity::Expression::AssignOr(_, lhs, rhs) => super::expressions::assignment::translate_assignment_expression(project, translated_definition, scope.clone(), "|=", lhs.as_ref(), rhs.as_ref()),
-        solidity::Expression::AssignAnd(_, lhs, rhs) => super::expressions::assignment::translate_assignment_expression(project, translated_definition, scope.clone(), "&=", lhs.as_ref(), rhs.as_ref()),
-        solidity::Expression::AssignXor(_, lhs, rhs) => super::expressions::assignment::translate_assignment_expression(project, translated_definition, scope.clone(), "^=", lhs.as_ref(), rhs.as_ref()),
-        solidity::Expression::AssignShiftLeft(_, lhs, rhs) => super::expressions::assignment::translate_assignment_expression(project, translated_definition, scope.clone(), "<<=", lhs.as_ref(), rhs.as_ref()),
-        solidity::Expression::AssignShiftRight(_, lhs, rhs) => super::expressions::assignment::translate_assignment_expression(project, translated_definition, scope.clone(), ">>=", lhs.as_ref(), rhs.as_ref()),
-        solidity::Expression::AssignAdd(_, lhs, rhs) => super::expressions::assignment::translate_assignment_expression(project, translated_definition, scope.clone(), "+=", lhs.as_ref(), rhs.as_ref()),
-        solidity::Expression::AssignSubtract(_, lhs, rhs) => super::expressions::assignment::translate_assignment_expression(project, translated_definition, scope.clone(), "-=", lhs.as_ref(), rhs.as_ref()),
-        solidity::Expression::AssignMultiply(_, lhs, rhs) => super::expressions::assignment::translate_assignment_expression(project, translated_definition, scope.clone(), "*=", lhs.as_ref(), rhs.as_ref()),
-        solidity::Expression::AssignDivide(_, lhs, rhs) => super::expressions::assignment::translate_assignment_expression(project, translated_definition, scope.clone(), "/=", lhs.as_ref(), rhs.as_ref()),
-        solidity::Expression::AssignModulo(_, lhs, rhs) => super::expressions::assignment::translate_assignment_expression(project, translated_definition, scope.clone(), "%=", lhs.as_ref(), rhs.as_ref()),
+        solidity::Expression::Assign(_, lhs, rhs) => assignment::translate_assignment_expression(project, translated_definition, scope.clone(), "=", lhs.as_ref(), rhs.as_ref()),
+        solidity::Expression::AssignOr(_, lhs, rhs) => assignment::translate_assignment_expression(project, translated_definition, scope.clone(), "|=", lhs.as_ref(), rhs.as_ref()),
+        solidity::Expression::AssignAnd(_, lhs, rhs) => assignment::translate_assignment_expression(project, translated_definition, scope.clone(), "&=", lhs.as_ref(), rhs.as_ref()),
+        solidity::Expression::AssignXor(_, lhs, rhs) => assignment::translate_assignment_expression(project, translated_definition, scope.clone(), "^=", lhs.as_ref(), rhs.as_ref()),
+        solidity::Expression::AssignShiftLeft(_, lhs, rhs) => assignment::translate_assignment_expression(project, translated_definition, scope.clone(), "<<=", lhs.as_ref(), rhs.as_ref()),
+        solidity::Expression::AssignShiftRight(_, lhs, rhs) => assignment::translate_assignment_expression(project, translated_definition, scope.clone(), ">>=", lhs.as_ref(), rhs.as_ref()),
+        solidity::Expression::AssignAdd(_, lhs, rhs) => assignment::translate_assignment_expression(project, translated_definition, scope.clone(), "+=", lhs.as_ref(), rhs.as_ref()),
+        solidity::Expression::AssignSubtract(_, lhs, rhs) => assignment::translate_assignment_expression(project, translated_definition, scope.clone(), "-=", lhs.as_ref(), rhs.as_ref()),
+        solidity::Expression::AssignMultiply(_, lhs, rhs) => assignment::translate_assignment_expression(project, translated_definition, scope.clone(), "*=", lhs.as_ref(), rhs.as_ref()),
+        solidity::Expression::AssignDivide(_, lhs, rhs) => assignment::translate_assignment_expression(project, translated_definition, scope.clone(), "/=", lhs.as_ref(), rhs.as_ref()),
+        solidity::Expression::AssignModulo(_, lhs, rhs) => assignment::translate_assignment_expression(project, translated_definition, scope.clone(), "%=", lhs.as_ref(), rhs.as_ref()),
         
         solidity::Expression::PreIncrement(_, _)
         | solidity::Expression::PostIncrement(_, _)
         | solidity::Expression::PreDecrement(_, _)
-        | solidity::Expression::PostDecrement(_, _) => super::expressions::pre_post::translate_pre_or_post_operator_value_expression(project, translated_definition, scope.clone(), expression),
+        | solidity::Expression::PostDecrement(_, _) => pre_post::translate_pre_or_post_operator_value_expression(project, translated_definition, scope.clone(), expression),
 
-        solidity::Expression::New(_, expression) => super::expressions::new::translate_new_expression(project, translated_definition, scope.clone(), expression),
-        solidity::Expression::Delete(_, expression) => super::expressions::delete::translate_delete_expression(project, translated_definition, scope.clone(), expression),
+        solidity::Expression::New(_, expression) => new::translate_new_expression(project, translated_definition, scope.clone(), expression),
+        solidity::Expression::Delete(_, expression) => delete::translate_delete_expression(project, translated_definition, scope.clone(), expression),
     }
 }

@@ -1,10 +1,10 @@
 use super::{
-    create_value_expression, finalize_block_translation, translate_block, translate_expression,
+    create_value_expression, translate_expression,
     translate_return_type_name, translate_statement, translate_storage_name, translate_type_name,
     TranslatedDefinition, TranslatedFunction, TranslatedModifier, TranslatedVariable,
     TranslationScope,
 };
-use crate::{project::Project, sway, Error};
+use crate::{project::Project, sway, translate::block::{finalize_block_translation, translate_block}, Error};
 use convert_case::Case;
 use solang_parser::pt as solidity;
 use std::{cell::RefCell, rc::Rc};
