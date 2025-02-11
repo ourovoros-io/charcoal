@@ -93,7 +93,6 @@ pub fn translate_variable_expression(
     }
 }
 
-
 pub fn translate_variable_access_expression(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
@@ -389,7 +388,7 @@ pub fn translate_variable_access_expression(
                 .map(|a| translate_expression(project, translated_definition, scope.clone(), a))
                 .collect::<Result<Vec<_>, _>>()?;
 
-            match translate_variable_access_expression(project, translated_definition, scope.clone(), function) {   
+            match translate_variable_access_expression(project, translated_definition, scope.clone(), function) {
                 Ok((variable, expression)) => Ok((
                     variable,
                     sway::Expression::from(sway::FunctionCall {

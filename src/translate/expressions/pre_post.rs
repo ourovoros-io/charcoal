@@ -81,7 +81,6 @@ pub fn translate_pre_operator_expression(
     }))
 }
 
-
 #[inline]
 pub fn translate_post_operator_expression(
     project: &mut Project,

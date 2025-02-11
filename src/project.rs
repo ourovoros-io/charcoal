@@ -315,8 +315,7 @@ impl Project {
             let function = translate_function_declaration(self, &mut translated_definition, function_definition)?;
             
             let mut function_exists = false;
-
-
+            
             for f in translated_definition.toplevel_scope.borrow().functions.iter() {
                 let mut f = f.borrow_mut();
 
@@ -466,7 +465,7 @@ impl Project {
             // If we find that the project type is unknown we return the filename as is
             ProjectKind::Unknown => {
                 println!("Charcoal was unable to detect the project type.");
-                println!("Please make sure you are targeting the root folder of the project (do not target the contracts folder itself).");    
+                println!("Please make sure you are targeting the root folder of the project (do not target the contracts folder itself).");
                 Ok(PathBuf::from(filename))
             },
         }
@@ -559,8 +558,11 @@ impl Project {
 pub fn find_project_root_folder<P: AsRef<Path>>(path: P) -> Option<PathBuf> {
     let path = path.as_ref();
 
-    if path.join(ProjectKind::FOUNDRY_CONFIG_FILE).exists() || path.join(ProjectKind::HARDHAT_CONFIG_FILE).exists() || path.join(ProjectKind::HARDHAT_CONFIG_FILE_TS).exists()
-    || path.join(ProjectKind::BROWNIE_CONFIG_FILE).exists() || path.join(ProjectKind::TRUFFLE_CONFIG_FILE).exists()  
+    if path.join(ProjectKind::FOUNDRY_CONFIG_FILE).exists()
+    || path.join(ProjectKind::HARDHAT_CONFIG_FILE).exists()
+    || path.join(ProjectKind::HARDHAT_CONFIG_FILE_TS).exists()
+    || path.join(ProjectKind::BROWNIE_CONFIG_FILE).exists()
+    || path.join(ProjectKind::TRUFFLE_CONFIG_FILE).exists()
     || path.join(ProjectKind::DAPP_CONFIG_FILE).exists() {
         return Some(path.to_path_buf());
     }

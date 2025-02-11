@@ -172,10 +172,10 @@ pub fn translate_state_variable(
         
             variable_type_name = sway::TypeName::StringArray { length: value.len() };
             
-            sway::Expression::from(sway::FunctionCall { 
-                function: sway::Expression::Identifier("__to_str_array".into()), 
-                generic_parameters: None, 
-                parameters: vec![sway::Expression::from(sway::Literal::String(value))], 
+            sway::Expression::from(sway::FunctionCall {
+                function: sway::Expression::Identifier("__to_str_array".into()),
+                generic_parameters: None,
+                parameters: vec![sway::Expression::from(sway::Literal::String(value))],
             })
         }
         

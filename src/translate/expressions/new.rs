@@ -306,10 +306,10 @@ pub fn translate_new_expression(
 
         solidity::Expression::ArraySubscript(_, _, None) => {
             assert!(args.len() == 1);
-            return Ok(sway::Expression::from(sway::FunctionCall{ 
-                function: sway::Expression::Identifier("Vec::with_capacity".into()), 
-                generic_parameters: None, 
-                parameters: args 
+            return Ok(sway::Expression::from(sway::FunctionCall{
+                function: sway::Expression::Identifier("Vec::with_capacity".into()),
+                generic_parameters: None,
+                parameters: args,
             }));
         }
 

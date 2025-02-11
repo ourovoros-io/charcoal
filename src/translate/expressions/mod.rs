@@ -20,8 +20,7 @@ pub mod parenthesis;
 pub mod power;
 pub mod pre_post;
 pub mod expression_type;
-pub mod variable;  
-
+pub mod variable;
 
 pub fn evaluate_expression(
     translated_definition: &mut TranslatedDefinition,
@@ -78,10 +77,10 @@ pub fn evaluate_expression(
                 "abi" => sway::Expression::create_todo(Some(format!("{}", sway::TabbedDisplayer(expression)))),
 
                 "Address::from" => {
-                    sway::Expression::from(sway::FunctionCall { 
-                        function: function_call.function.clone(), 
-                        generic_parameters: function_call.generic_parameters.clone(), 
-                        parameters: function_call.parameters.iter().map(|p| evaluate_expression(translated_definition, scope.clone(), type_name, p)).collect() 
+                    sway::Expression::from(sway::FunctionCall {
+                        function: function_call.function.clone(),
+                        generic_parameters: function_call.generic_parameters.clone(),
+                        parameters: function_call.parameters.iter().map(|p| evaluate_expression(translated_definition, scope.clone(), type_name, p)).collect(),
                     })
                 }
 
@@ -127,10 +126,10 @@ pub fn evaluate_expression(
                 }
 
                 "Identity::Address" | "Identity::ContractId" => {
-                    sway::Expression::from(sway::FunctionCall { 
-                        function: function_call.function.clone(), 
-                        generic_parameters: function_call.generic_parameters.clone(), 
-                        parameters: function_call.parameters.iter().map(|p| evaluate_expression(translated_definition, scope.clone(), type_name, p)).collect() 
+                    sway::Expression::from(sway::FunctionCall {
+                        function: function_call.function.clone(),
+                        generic_parameters: function_call.generic_parameters.clone(),
+                        parameters: function_call.parameters.iter().map(|p| evaluate_expression(translated_definition, scope.clone(), type_name, p)).collect(),
                     })
                 }
 
@@ -329,56 +328,56 @@ pub fn create_value_expression(
 
                 match value {
                     sway::Expression::Literal(sway::Literal::DecInt(_, _) | sway::Literal::HexInt(_, _)) => {
-                        sway::Expression::from(sway::FunctionCall { 
-                            function: sway::Expression::Identifier(format!("{name}::from_uint").into()), 
-                            generic_parameters: None, 
-                            parameters: vec![value.clone()], 
+                        sway::Expression::from(sway::FunctionCall {
+                            function: sway::Expression::Identifier(format!("{name}::from_uint").into()),
+                            generic_parameters: None,
+                            parameters: vec![value.clone()],
                         })
                     }
                     
                     sway::Expression::FunctionCall(function_call) => match &function_call.function {
                         sway::Expression::Identifier(name) if name == "todo!" => value.clone(),
-    
+                        
                         _ => {
                             let value_type_name = translated_definition.get_expression_type(scope.clone(), value).unwrap();
-        
+                            
                             if !value_type_name.is_int() {
                                 panic!("Invalid {name} value expression: {value:#?} ({value_type_name})")
                             }
-        
-                            sway::Expression::from(sway::FunctionCall { 
-                                function: sway::Expression::Identifier(format!("{name}::from_uint").into()), 
-                                generic_parameters: None, 
-                                parameters: vec![value.clone()], 
+                            
+                            sway::Expression::from(sway::FunctionCall {
+                                function: sway::Expression::Identifier(format!("{name}::from_uint").into()),
+                                generic_parameters: None,
+                                parameters: vec![value.clone()],
                             })
                         }
                     }
-    
+                    
                     x if matches!(x, sway::Expression::BinaryExpression(_)) => (*x).clone(),
-    
+                    
                     sway::Expression::Identifier(name) => {
                         let Some(variable) = scope.borrow().get_variable_from_new_name(name) else {
                             panic!("error: Variable not found in scope: \"{name}\"");
                         };
-                
+                        
                         if variable.borrow().type_name != *type_name {
                             panic!("Invalid {name} value expression: {value:#?}");
                         }
-    
+                        
                         sway::Expression::Identifier(name.clone())
                     }
                     
                     _ => {
                         let value_type_name = translated_definition.get_expression_type(scope.clone(), value).unwrap();
-    
+                        
                         if value_type_name != *type_name {
                             panic!("Invalid {name} value expression: {value:#?}")
                         }
-    
-                        sway::Expression::from(sway::FunctionCall { 
-                            function: sway::Expression::Identifier(format!("{name}::from_uint").into()), 
-                            generic_parameters: None, 
-                            parameters: vec![value.clone()], 
+                        
+                        sway::Expression::from(sway::FunctionCall {
+                            function: sway::Expression::Identifier(format!("{name}::from_uint").into()),
+                            generic_parameters: None,
+                            parameters: vec![value.clone()],
                         })
                     }
                 }

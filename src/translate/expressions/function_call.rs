@@ -1,67 +1,213 @@
-use std::{cell::RefCell, rc::Rc};
+use super::{translate_expression, variable::translate_variable_access_expression};
+use crate::{
+    errors::Error,
+    project::Project,
+    sway,
+    translate::{
+        address_call::translate_address_call_expression, translate_type_name, TranslatedDefinition,
+        TranslationScope,
+    },
+};
 use convert_case::Case;
 use num_bigint::BigUint;
 use num_traits::{Num, One, Zero};
 use solang_parser::{helpers::CodeLocation, pt as solidity};
-use crate::{errors::Error, project::Project, sway, translate::{address_call::translate_address_call_expression, translate_type_name, TranslatedDefinition, TranslationScope}};
-use super::{translate_expression, variable::translate_variable_access_expression};
+use std::{cell::RefCell, rc::Rc};
 
-pub fn handle_function_named_arguments(
+#[inline]
+pub fn resolve_function_call(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
     scope: Rc<RefCell<TranslationScope>>,
     external_scope: Rc<RefCell<TranslationScope>>,
     function_name: &str,
     named_arguments: Option<&[solidity::NamedArgument]>,
-    parameters: &mut Vec<sway::Expression>,
-    parameter_types: &mut Vec<sway::TypeName>,
-) -> Result<(), Error> {
-    let Some(named_arguments) = named_arguments else {
-        return Ok(());
-    };
-
-    let mut named_parameters = vec![];
-
-    for arg in named_arguments {
-        named_parameters.push((
-            crate::translate_naming_convention(&arg.name.name, Case::Snake),
-            translate_expression(project, translated_definition, scope.clone(), &arg.expr)?
-        ));
+    mut parameters: Vec<sway::Expression>,
+    mut parameter_types: Vec<sway::TypeName>,
+) -> Result<Option<sway::Expression>, Error> {
+    if let Some(named_arguments) = named_arguments {
+        let mut named_parameters = vec![];
+    
+        for arg in named_arguments {
+            named_parameters.push((
+                crate::translate_naming_convention(&arg.name.name, Case::Snake),
+                translate_expression(project, translated_definition, scope.clone(), &arg.expr)?
+            ));
+        }
+    
+        if let Some(function) = external_scope.borrow().find_function(|f| {
+            let f = f.borrow();
+    
+            if f.old_name != function_name {
+                return false;
+            }
+    
+            if f.parameters.entries.len() != named_parameters.len() {
+                return false;
+            }
+    
+            f.parameters.entries.iter().all(|p| named_parameters.iter().any(|(name, _)| p.name == *name))
+        }) {
+            let function = function.borrow();
+    
+            parameters.clear();
+            parameter_types.clear();
+    
+            for parameter in function.parameters.entries.iter() {
+                let arg = named_arguments.iter().find(|a| {
+                    let new_name = crate::translate_naming_convention(&a.name.name, Case::Snake);
+                    new_name == parameter.name
+                }).unwrap();
+    
+                let parameter = translate_expression(project, translated_definition, scope.clone(), &arg.expr)?;
+                let parameter_type = translated_definition.get_expression_type(scope.clone(), &parameter)?;
+    
+                parameters.push(parameter);
+                parameter_types.push(parameter_type);
+            }
+        }
     }
 
-    if let Some(function) = external_scope.borrow().find_function(|f| {
-        let f = f.borrow();
+    let parameters_cell = Rc::new(RefCell::new(parameters));
 
-        if f.old_name != function_name {
+    if let Some(function) = external_scope.borrow().find_function(|function| {
+        let function = function.borrow();
+        let mut parameters = parameters_cell.borrow_mut();
+
+        // Ensure the function's old name matches the function call we're translating
+        if function.old_name != function_name {
             return false;
         }
 
-        if f.parameters.entries.len() != named_parameters.len() {
+        // Ensure the supplied function call args match the function's parameters
+        if parameters.len() != function.parameters.entries.len() {
             return false;
         }
 
-        f.parameters.entries.iter().all(|p| named_parameters.iter().any(|(name, _)| p.name == *name))
+        for (i, value_type_name) in parameter_types.iter().enumerate() {
+            let Some(parameter_type_name) = function.parameters.entries[i].type_name.as_ref() else { continue };
+
+            //
+            // If `parameter_type_name` is `Identity`, but `container` is an abi cast expression,
+            // then we need to de-cast it, so `container` turns into the 2nd parameter of the abi cast,
+            // and `value_type_name` turns into `Identity`.
+            //
+
+            if let sway::TypeName::Identifier { name: parameter_type_name, generic_parameters: None } = parameter_type_name {
+                match parameter_type_name.as_str() {
+                    "Bytes" => match value_type_name {
+                        sway::TypeName::StringSlice => {
+                            // Bytes::from(raw_slice::from_parts::<u8>(s.as_ptr(), s.len()))
+                            parameters[i] = sway::Expression::from(sway::FunctionCall {
+                                function: sway::Expression::Identifier("Bytes::from".into()),
+                                generic_parameters: None,
+                                parameters: vec![
+                                    sway::Expression::from(sway::FunctionCall {
+                                        function: sway::Expression::Identifier("raw_slice::from_parts".into()),
+                                        generic_parameters: Some(sway::GenericParameterList {
+                                            entries: vec![
+                                                sway::GenericParameter {
+                                                    type_name: sway::TypeName::Identifier {
+                                                        name: "u8".into(),
+                                                        generic_parameters: None,
+                                                    },
+                                                    implements: None,
+                                                },
+                                            ],
+                                        }),
+                                        parameters: vec![
+                                            sway::Expression::from(sway::FunctionCall {
+                                                function: sway::Expression::from(sway::MemberAccess {
+                                                    expression: parameters[i].clone(),
+                                                    member: "as_ptr".into(),
+                                                }),
+                                                generic_parameters: None,
+                                                parameters: vec![],
+                                            }),
+                                            sway::Expression::from(sway::FunctionCall {
+                                                function: sway::Expression::from(sway::MemberAccess {
+                                                    expression: parameters[i].clone(),
+                                                    member: "len".into(),
+                                                }),
+                                                generic_parameters: None,
+                                                parameters: vec![],
+                                            }),
+                                        ],
+                                    }),
+                                ],
+                            });
+                            continue;
+                        }
+                        _ => {}
+                    }
+                    
+                    "Identity" => {
+                        if let sway::Expression::FunctionCall(function_call) = parameters[i].clone() {
+                            if let sway::Expression::Identifier(function_name) = &function_call.function {
+                                if function_name == "abi" {
+                                    parameters[i] = function_call.parameters[1].clone();
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+
+                    _ => {}
+                }
+            }
+
+            // HACK: StorageKey<*> -> *
+            if let Some(value_type) = value_type_name.storage_key_type() {
+                if !parameter_type_name.is_storage_key() && parameter_type_name.is_compatible_with(&value_type){
+                    parameters[i] = sway::Expression::from(sway::FunctionCall {
+                        function: sway::Expression::from(sway::MemberAccess {
+                            expression: parameters[i].clone(),
+                            member: "read".into(),
+                        }),
+                        generic_parameters: None,
+                        parameters: vec![],
+                    });
+                    continue;
+                }
+            }
+            
+            // HACK: [u8; 32] -> b256
+            if let Some(32) = value_type_name.u8_array_length() {
+                if parameter_type_name.is_b256() {
+                    parameters[i] = sway::Expression::from(sway::FunctionCall {
+                        function: sway::Expression::Identifier("b256::from_be_bytes".into()),
+                        generic_parameters: None,
+                        parameters: vec![
+                            parameters[i].clone(),
+                        ],
+                    });
+                    continue;
+                }
+            }
+
+            if !value_type_name.is_compatible_with(parameter_type_name) {
+                return false;
+            }
+        }
+
+        true
     }) {
         let function = function.borrow();
+        
+        *translated_definition.function_call_counts.entry(function.new_name.clone()).or_insert(0) += 1;
+        translated_definition.functions_called
+            .entry(translated_definition.current_functions.last().cloned().unwrap())
+            .or_insert_with(|| vec![])
+            .push(function.new_name.clone());
 
-        parameters.clear();
-        parameter_types.clear();
-
-        for parameter in function.parameters.entries.iter() {
-            let arg = named_arguments.iter().find(|a| {
-                let new_name = crate::translate_naming_convention(&a.name.name, Case::Snake);
-                new_name == parameter.name
-            }).unwrap();
-
-            let parameter = translate_expression(project, translated_definition, scope.clone(), &arg.expr)?;
-            let parameter_type = translated_definition.get_expression_type(scope.clone(), &parameter)?;
-
-            parameters.push(parameter);
-            parameter_types.push(parameter_type);
-        }
+        return Ok(Some(sway::Expression::from(sway::FunctionCall {
+            function: sway::Expression::Identifier(function.new_name.clone()),
+            generic_parameters: None,
+            parameters: parameters_cell.borrow().clone(),
+        })));
     }
 
-    Ok(())
+    Ok(None)
 }
 
 #[inline]
@@ -365,13 +511,13 @@ pub fn translate_function_call_expression(
                                     function: sway::Expression::Identifier("I32::from_uint".into()),
                                     generic_parameters: None,
                                     parameters: vec![
-                                        sway::Expression::from(sway::FunctionCall { 
-                                            function: sway::Expression::from(sway::MemberAccess { 
-                                                expression: value_expression, 
-                                                member: "as_u32".into() 
-                                            }), 
-                                            generic_parameters: None, 
-                                            parameters: vec![], 
+                                        sway::Expression::from(sway::FunctionCall {
+                                            function: sway::Expression::from(sway::MemberAccess {
+                                                expression: value_expression,
+                                                member: "as_u32".into(),
+                                            }),
+                                            generic_parameters: None,
+                                            parameters: vec![],
                                         })
                                     ],
                                 }))
@@ -382,13 +528,13 @@ pub fn translate_function_call_expression(
                                     function: sway::Expression::Identifier("I256::from_uint".into()),
                                     generic_parameters: None,
                                     parameters: vec![
-                                        sway::Expression::from(sway::FunctionCall { 
-                                            function: sway::Expression::from(sway::MemberAccess { 
-                                                expression: value_expression, 
-                                                member: "as_u256".into() 
-                                            }), 
-                                            generic_parameters: None, 
-                                            parameters: vec![], 
+                                        sway::Expression::from(sway::FunctionCall {
+                                            function: sway::Expression::from(sway::MemberAccess {
+                                                expression: value_expression,
+                                                member: "as_u256".into(),
+                                            }),
+                                            generic_parameters: None,
+                                            parameters: vec![],
                                         })
                                     ],
                                 }))
@@ -1403,7 +1549,7 @@ pub fn translate_function_call_expression(
                             }));
                         }
                     }
-
+                    
                     // Check to see if the expression is an ABI type
                     if parameters.len() == 1 {
                         if let Some(external_definition) = project.find_definition_with_abi(old_name) {
@@ -1490,169 +1636,20 @@ pub fn translate_function_call_expression(
                         }
                     }
 
-                    handle_function_named_arguments(
+                    // Try to resolve the function call
+                    if let Some(result) = resolve_function_call(
                         project,
                         translated_definition,
                         scope.clone(),
                         scope.clone(),
                         old_name,
                         named_arguments,
-                        &mut parameters,
-                        &mut parameter_types,
-                    )?;
-
-                    // Ensure the function exists in scope
-                    let parameters_cell = Rc::new(RefCell::new(parameters.as_mut_slice()));
-    
-                    if let Some(function) = scope.borrow().find_function(|function| {
-                        let function = function.borrow();
-
-                        let mut parameters = parameters_cell.borrow_mut();
-
-                        // Ensure the function's old name matches the function call we're translating
-                        if function.old_name != old_name {
-                            return false;
-                        }
-
-                        // Ensure the supplied function call args match the function's parameters
-                        if parameters.len() != function.parameters.entries.len() {
-                            return false;
-                        }
-
-                        for (i, value_type_name) in parameter_types.iter().enumerate() {
-                            let Some(parameter_type_name) = function.parameters.entries[i].type_name.as_ref() else { continue };
-
-                            match parameter_type_name {
-                                sway::TypeName::Identifier { name, generic_parameters } => match (name.as_str(), generic_parameters.as_ref()) {
-                                    ("b256", None) => {
-                                        // HACK: convert [u8; 32] to b256
-                                        if let sway::TypeName::Array { length: 32, .. } = value_type_name {
-                                            if value_type_name.is_u8_array() {
-                                                parameters[i] = sway::Expression::from(sway::FunctionCall {
-                                                    function: sway::Expression::Identifier("b256::from_be_bytes".into()),
-                                                    generic_parameters: None,
-                                                    parameters: vec![
-                                                        parameters[i].clone(),
-                                                    ],
-                                                });
-                                                continue;
-                                            }
-                                        }
-                                    }
-
-                                    ("Bytes", None) => match value_type_name {
-                                        sway::TypeName::StringSlice => {
-                                            // Bytes::from(raw_slice::from_parts::<u8>(s.as_ptr(), s.len()))
-                                            parameters[i] = sway::Expression::from(sway::FunctionCall {
-                                                function: sway::Expression::Identifier("Bytes::from".into()),
-                                                generic_parameters: None,
-                                                parameters: vec![
-                                                    sway::Expression::from(sway::FunctionCall {
-                                                        function: sway::Expression::Identifier("raw_slice::from_parts".into()),
-                                                        generic_parameters: Some(sway::GenericParameterList {
-                                                            entries: vec![
-                                                                sway::GenericParameter {
-                                                                    type_name: sway::TypeName::Identifier {
-                                                                        name: "u8".into(),
-                                                                        generic_parameters: None,
-                                                                    },
-                                                                    implements: None,
-                                                                },
-                                                            ],
-                                                        }),
-                                                        parameters: vec![
-                                                            sway::Expression::from(sway::FunctionCall {
-                                                                function: sway::Expression::from(sway::MemberAccess {
-                                                                    expression: parameters[i].clone(),
-                                                                    member: "as_ptr".into(),
-                                                                }),
-                                                                generic_parameters: None,
-                                                                parameters: vec![],
-                                                            }),
-                                                            sway::Expression::from(sway::FunctionCall {
-                                                                function: sway::Expression::from(sway::MemberAccess {
-                                                                    expression: parameters[i].clone(),
-                                                                    member: "len".into(),
-                                                                }),
-                                                                generic_parameters: None,
-                                                                parameters: vec![],
-                                                            }),
-                                                        ],
-                                                    }),
-                                                ],
-                                            });
-                                            continue;
-                                        }
-                                        _ => {}
-                                    }
-                                    
-                                    ("Identity", None) => {
-                                        // HACK:
-                                        // If `parameter_type_name` is `Identity`, but `container` is an abi cast expression,
-                                        // then we need to de-cast it, so `container` turns into the 2nd parameter of the abi cast,
-                                        // and `value_type_name` turns into `Identity`.
-                                        if let sway::Expression::FunctionCall(function_call) = parameters[i].clone() {
-                                            if let sway::Expression::Identifier(function_name) = &function_call.function {
-                                                if function_name == "abi" {
-                                                    parameters[i] = function_call.parameters[1].clone();
-                                                    continue;
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    _ => {}
-                                }
-
-                                _ => {}
-                            }
-
-                            if !value_type_name.is_compatible_with(&parameter_type_name) {
-                                // println!(
-                                //     "incompatible parameter types: {} ({value_type_name:#?}) vs {} ({parameter_type_name:#?}), {:#?}",
-                                //     sway::TabbedDisplayer(value_type_name),
-                                //     sway::TabbedDisplayer(parameter_type_name),
-                                //     parameters,
-                                // );
-                                return false;
-                            }
-                        }
-
-                        true
-                    }) {
-                        let function = function.borrow();
-                        
-                        *translated_definition.function_call_counts.entry(function.new_name.clone()).or_insert(0) += 1;
-                        translated_definition.functions_called
-                            .entry(translated_definition.current_functions.last().cloned().unwrap())
-                            .or_insert_with(|| vec![])
-                            .push(function.new_name.clone());
-
-                        return Ok(sway::Expression::from(sway::FunctionCall {
-                            function: sway::Expression::Identifier(function.new_name.clone()),
-                            generic_parameters: None,
-                            parameters,
-                        }));
+                        parameters.clone(),
+                        parameter_types.clone(),
+                    )? {
+                        return Ok(result);
                     }
 
-                    // If we couldn't find the function in scope, we wanna check if this is a struct constructor
-                    if let Some(struct_definition) = translated_definition.structs.iter().find(|s| s.name == old_name).cloned() {
-                        return Ok(sway::Expression::from(sway::Constructor {
-                            type_name: sway::TypeName::Identifier {
-                                name: struct_definition.name.clone(),
-                                generic_parameters: None,
-                            },
-
-                            fields: struct_definition.fields.iter()
-                                .zip(parameters.iter())
-                                .map(|(field, value)| sway::ConstructorField {
-                                    name: field.name.clone(),
-                                    value: value.clone(),
-                                })
-                                .collect(),
-                        }));
-                    }
-                    
                     panic!(
                         "{}error: Failed to find function `{old_name}({})` in scope: {function}({})",
                         match project.loc_to_line_and_column(&translated_definition.path, &function.loc()) {
@@ -1973,11 +1970,11 @@ pub fn translate_function_call_expression(
                     }
 
                     "super" => {
-                        let mut parameters = arguments.iter()
+                        let parameters = arguments.iter()
                             .map(|a| translate_expression(project, translated_definition, scope.clone(), a))
                             .collect::<Result<Vec<_>, _>>()?;
 
-                        let mut parameter_types = parameters.iter()
+                        let parameter_types = parameters.iter()
                             .map(|p| translated_definition.get_expression_type(scope.clone(), p))
                             .collect::<Result<Vec<_>, _>>()?;
 
@@ -1986,90 +1983,18 @@ pub fn translate_function_call_expression(
                                 panic!("Failed to find inherited definition for `{inherit}`");
                             };
 
-                            handle_function_named_arguments(
+                            // Try to resolve the function call
+                            if let Some(result) = resolve_function_call(
                                 project,
                                 translated_definition,
                                 scope.clone(),
                                 inherited_definition.toplevel_scope.clone(),
                                 member.name.as_str(),
                                 named_arguments,
-                                &mut parameters,
-                                &mut parameter_types,
-                            )?;
-                            
-                            let parameters_cell = Rc::new(RefCell::new(parameters.as_mut_slice()));
-
-                            if let Some(function) = inherited_definition.toplevel_scope.clone().borrow().find_function(|function| {
-                                let function = function.borrow();
-
-                                let mut parameters = parameters_cell.borrow_mut();
-
-                                // Ensure the function's old name matches the function call we're translating
-                                if function.old_name != member.name.as_str() {
-                                    return false;
-                                }
-
-                                // Ensure the supplied function call args match the function's parameters
-                                if parameters.len() != function.parameters.entries.len() {
-                                    return false;
-                                }
-
-                                for (i, value_type_name) in parameter_types.iter().enumerate() {
-                                    let Some(parameter_type_name) = function.parameters.entries[i].type_name.as_ref() else { continue };
-
-                                    //
-                                    // If `parameter_type_name` is `Identity`, but `container` is an abi cast expression,
-                                    // then we need to de-cast it, so `container` turns into the 2nd parameter of the abi cast,
-                                    // and `value_type_name` turns into `Identity`.
-                                    //
-
-                                    if let sway::TypeName::Identifier { name: parameter_type_name, generic_parameters: None } = parameter_type_name {
-                                        if parameter_type_name == "Identity" {
-                                            if let sway::Expression::FunctionCall(function_call) = parameters[i].clone() {
-                                                if let sway::Expression::Identifier(function_name) = &function_call.function {
-                                                    if function_name == "abi" {
-                                                        parameters[i] = function_call.parameters[1].clone();
-                                                        continue;
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                        
-                                    // HACK: [u8; 32] -> b256
-                                    if let Some(32) = value_type_name.u8_array_length() {
-                                        if parameter_type_name.is_b256() {
-                                            parameters[i] = sway::Expression::from(sway::FunctionCall {
-                                                function: sway::Expression::Identifier("b256::from_be_bytes".into()),
-                                                generic_parameters: None,
-                                                parameters: vec![
-                                                    parameters[i].clone(),
-                                                ],
-                                            });
-                                            continue;
-                                        }
-                                    }
-
-                                    if !value_type_name.is_compatible_with(parameter_type_name) {
-                                        return false;
-                                    }
-                                }
-
-                                true
-                            }) {
-                                let function = function.borrow();
-                                
-                                *translated_definition.function_call_counts.entry(function.new_name.clone()).or_insert(0) += 1;
-                                translated_definition.functions_called
-                                    .entry(translated_definition.current_functions.last().cloned().unwrap())
-                                    .or_insert_with(|| vec![])
-                                    .push(function.new_name.clone());
-
-                                return Ok(sway::Expression::from(sway::FunctionCall {
-                                    function: sway::Expression::Identifier(function.new_name.clone()),
-                                    generic_parameters: None,
-                                    parameters,
-                                }));
+                                parameters.clone(),
+                                parameter_types.clone(),
+                            )? {
+                                return Ok(result);
                             }
                         }
 
@@ -2083,98 +2008,25 @@ pub fn translate_function_call_expression(
                     }
 
                     "this" => {
-                        let mut parameters = arguments.iter()
+                        let parameters = arguments.iter()
                             .map(|a| translate_expression(project, translated_definition, scope.clone(), a))
                             .collect::<Result<Vec<_>, _>>()?;
 
-                        let mut parameter_types = parameters.iter()
+                        let parameter_types = parameters.iter()
                             .map(|p| translated_definition.get_expression_type(scope.clone(), p))
                             .collect::<Result<Vec<_>, _>>()?;
                         
-                        handle_function_named_arguments(
+                        if let Some(result) = resolve_function_call(
                             project,
                             translated_definition,
                             scope.clone(),
                             scope.clone(),
                             member.name.as_str(),
                             named_arguments,
-                            &mut parameters,
-                            &mut parameter_types,
-                        )?;
-                        
-                        let parameters_cell = Rc::new(RefCell::new(parameters.as_mut_slice()));
-
-                        if let Some(function) = scope.borrow().find_function(|function| {
-                            let function = function.borrow();
-
-                            let mut parameters = parameters_cell.borrow_mut();
-
-                            // Ensure the function's old name matches the function call we're translating
-                            if function.old_name != member.name {
-                                return false;
-                            }
-
-                            // Ensure the supplied function call args match the function's parameters
-                            if parameters.len() != function.parameters.entries.len() {
-                                return false;
-                            }
-
-                            for (i, value_type_name) in parameter_types.iter().enumerate() {
-                                let Some(parameter_type_name) = function.parameters.entries[i].type_name.as_ref() else { continue };
-
-                                //
-                                // If `parameter_type_name` is `Identity`, but `container` is an abi cast expression,
-                                // then we need to de-cast it, so `container` turns into the 2nd parameter of the abi cast,
-                                // and `value_type_name` turns into `Identity`.
-                                //
-
-                                if let sway::TypeName::Identifier { name: parameter_type_name, generic_parameters: None } = parameter_type_name {
-                                    if parameter_type_name == "Identity" {
-                                        if let sway::Expression::FunctionCall(function_call) = parameters[i].clone() {
-                                            if let sway::Expression::Identifier(function_name) = &function_call.function {
-                                                if function_name == "abi" {
-                                                    parameters[i] = function_call.parameters[1].clone();
-                                                    continue;
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                                
-                                // HACK: [u8; 32] -> b256
-                                if let Some(32) = value_type_name.u8_array_length() {
-                                    if parameter_type_name.is_b256() {
-                                        parameters[i] = sway::Expression::from(sway::FunctionCall {
-                                            function: sway::Expression::Identifier("b256::from_be_bytes".into()),
-                                            generic_parameters: None,
-                                            parameters: vec![
-                                                parameters[i].clone(),
-                                            ],
-                                        });
-                                        continue;
-                                    }
-                                }
-
-                                if !value_type_name.is_compatible_with(parameter_type_name) {
-                                    return false;
-                                }
-                            }
-
-                            true
-                        }) {
-                            let function = function.borrow();
-                            
-                            *translated_definition.function_call_counts.entry(function.new_name.clone()).or_insert(0) += 1;
-                            translated_definition.functions_called
-                                .entry(translated_definition.current_functions.last().cloned().unwrap())
-                                .or_insert_with(|| vec![])
-                                .push(function.new_name.clone());
-
-                            return Ok(sway::Expression::from(sway::FunctionCall {
-                                function: sway::Expression::Identifier(function.new_name.clone()),
-                                generic_parameters: None,
-                                parameters,
-                            }));
+                            parameters,
+                            parameter_types,
+                        )? {
+                            return Ok(result);
                         }
                     }
 
@@ -2191,90 +2043,17 @@ pub fn translate_function_call_expression(
                         // Check for explicit super function calls
                         if translated_definition.inherits.iter().any(|i| i == name) {
                             if let Some(inherited_definition) = project.find_definition_with_abi(name).cloned() {
-                                handle_function_named_arguments(
+                                if let Some(result) = resolve_function_call(
                                     project,
                                     translated_definition,
                                     scope.clone(),
                                     inherited_definition.toplevel_scope.clone(),
                                     member.name.as_str(),
                                     named_arguments,
-                                    &mut parameters,
-                                    &mut parameter_types,
-                                )?;
-                                
-                                let parameters_cell = Rc::new(RefCell::new(parameters.as_mut_slice()));
-
-                                if let Some(function) = inherited_definition.toplevel_scope.borrow().find_function(|function| {
-                                    let function = function.borrow();
-
-                                    let mut parameters = parameters_cell.borrow_mut();
-        
-                                    // Ensure the function's old name matches the function call we're translating
-                                    if function.old_name != member.name {
-                                        return false;
-                                    }
-        
-                                    // Ensure the supplied function call args match the function's parameters
-                                    if parameters.len() != function.parameters.entries.len() {
-                                        return false;
-                                    }
-        
-                                    for (i, value_type_name) in parameter_types.iter().enumerate() {
-                                        let Some(parameter_type_name) = function.parameters.entries[i].type_name.as_ref() else { continue };
-        
-                                        //
-                                        // If `parameter_type_name` is `Identity`, but `container` is an abi cast expression,
-                                        // then we need to de-cast it, so `container` turns into the 2nd parameter of the abi cast,
-                                        // and `value_type_name` turns into `Identity`.
-                                        //
-        
-                                        if let sway::TypeName::Identifier { name: parameter_type_name, generic_parameters: None } = parameter_type_name {
-                                            if parameter_type_name == "Identity" {
-                                                if let sway::Expression::FunctionCall(function_call) = parameters[i].clone() {
-                                                    if let sway::Expression::Identifier(function_name) = &function_call.function {
-                                                        if function_name == "abi" {
-                                                            parameters[i] = function_call.parameters[1].clone();
-                                                            continue;
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                        
-                                        // HACK: [u8; 32] -> b256
-                                        if let Some(32) = value_type_name.u8_array_length() {
-                                            if parameter_type_name.is_b256() {
-                                                parameters[i] = sway::Expression::from(sway::FunctionCall {
-                                                    function: sway::Expression::Identifier("b256::from_be_bytes".into()),
-                                                    generic_parameters: None,
-                                                    parameters: vec![
-                                                        parameters[i].clone(),
-                                                    ],
-                                                });
-                                                continue;
-                                            }
-                                        }
-
-                                        if !value_type_name.is_compatible_with(parameter_type_name) {
-                                            return false;
-                                        }
-                                    }
-        
-                                    true
-                                }) {
-                                    let function = function.borrow();
-                                    
-                                    *translated_definition.function_call_counts.entry(function.new_name.clone()).or_insert(0) += 1;
-                                    translated_definition.functions_called
-                                        .entry(translated_definition.current_functions.last().cloned().unwrap())
-                                        .or_insert_with(|| vec![])
-                                        .push(function.new_name.clone());
-        
-                                    return Ok(sway::Expression::from(sway::FunctionCall {
-                                        function: sway::Expression::Identifier(function.new_name.clone()),
-                                        generic_parameters: None,
-                                        parameters,
-                                    }));
+                                    parameters.clone(),
+                                    parameter_types.clone(),
+                                )? {
+                                    return Ok(result);
                                 }
                             }
                         }
@@ -2347,287 +2126,19 @@ pub fn translate_function_call_expression(
                                 }
                             }
 
-                            handle_function_named_arguments(
+                            // Try to resolve the function call
+                            if let Some(result) = resolve_function_call(
                                 project,
                                 translated_definition,
                                 scope.clone(),
-                                scope.clone(),
+                                external_definition.toplevel_scope.clone(),
                                 old_name.as_str(),
                                 named_arguments,
-                                &mut parameters,
-                                &mut parameter_types,
-                            )?;
-                            
-                            let parameters_cell = Rc::new(RefCell::new(parameters.as_mut_slice()));
-
-                            // Check if the member is a function defined in the toplevel scope
-                            let Some(external_function_declaration) = external_definition.toplevel_scope.borrow().find_function(|function| {
-                                let function = function.borrow();
-
-                                let mut parameters = parameters_cell.borrow_mut();
-
-                                // Ensure the function's old name matches the function call we're translating
-                                if function.old_name != old_name {
-                                    return false;
-                                }
-
-                                // Ensure the supplied function call args match the function's parameters
-                                if parameters.len() != function.parameters.entries.len() {
-                                    return false;
-                                }
-
-                                for (i, value_type_name) in parameter_types.iter().enumerate() {
-                                    let Some(parameter_type_name) = function.parameters.entries[i].type_name.as_ref() else { continue };
-
-                                    //
-                                    // If `parameter_type_name` is `Identity`, but `container` is an abi cast expression,
-                                    // then we need to de-cast it, so `container` turns into the 2nd parameter of the abi cast,
-                                    // and `value_type_name` turns into `Identity`.
-                                    //
-
-                                    if let sway::TypeName::Identifier { name: parameter_type_name, generic_parameters: None } = parameter_type_name {
-                                        if parameter_type_name == "Identity" {
-                                            if let sway::Expression::FunctionCall(function_call) = parameters[i].clone() {
-                                                if let sway::Expression::Identifier(function_name) = &function_call.function {
-                                                    if function_name == "abi" {
-                                                        parameters[i] = function_call.parameters[1].clone();
-                                                        continue;
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    // HACK: StorageKey<u*> -> u*
-                                    if let Some(value_type) = value_type_name.storage_key_type() {
-                                        if !parameter_type_name.is_storage_key() && parameter_type_name.is_compatible_with(&value_type){
-                                            parameters[i] = sway::Expression::from(sway::FunctionCall {
-                                                function: sway::Expression::from(sway::MemberAccess {
-                                                    expression: parameters[i].clone(),
-                                                    member: "read".into(),
-                                                }),
-                                                generic_parameters: None,
-                                                parameters: vec![],
-                                            });
-                                            continue;
-                                        }
-                                    }
-                                    
-                                    // HACK: [u8; 32] -> b256
-                                    if let Some(32) = value_type_name.u8_array_length() {
-                                        if parameter_type_name.is_b256() {
-                                            parameters[i] = sway::Expression::from(sway::FunctionCall {
-                                                function: sway::Expression::Identifier("b256::from_be_bytes".into()),
-                                                generic_parameters: None,
-                                                parameters: vec![
-                                                    parameters[i].clone(),
-                                                ],
-                                            });
-                                            continue;
-                                        }
-                                    }
-
-                                    if !value_type_name.is_compatible_with(parameter_type_name) {
-                                        return false;
-                                    }
-                                }
-
-                                true
-                            }) else {
-                                panic!(
-                                    "{}error: Failed to find function in scope: {name}.{old_name}({})",
-                                    match project.loc_to_line_and_column(&translated_definition.path, &function.loc()) {
-                                        Some((line, col)) => format!("{}:{}:{} - ", translated_definition.path.to_string_lossy(), line, col),
-                                        None => format!("{} - ", translated_definition.path.to_string_lossy()),
-                                    },
-                                    parameter_types.iter().map(|t| t.to_string()).collect::<Vec<_>>().join(", "),
-                                )
-                            };
-    
-                            let external_function_declaration = external_function_declaration.borrow();
-    
-                            // Get the external function definition
-                            let Some(external_function_definition) = external_definition.functions.iter().find(|f| {
-                                f.name == external_function_declaration.new_name
-                                && f.parameters.entries.len() == external_function_declaration.parameters.entries.len()
-                            }) else {
-                                panic!(
-                                    "{}error: Failed to find function in scope: {name}.{old_name}({})",
-                                    match project.loc_to_line_and_column(&translated_definition.path, &container.loc()) {
-                                        Some((line, col)) => format!("{}:{}:{} - ", translated_definition.path.to_string_lossy(), line, col),
-                                        None => format!("{} - ", translated_definition.path.to_string_lossy()),
-                                    },
-                                    parameter_types.iter().map(|t| t.to_string()).collect::<Vec<_>>().join(", "),
-                                );
-                            };
-
-                            let parameters = Rc::new(RefCell::new(parameters.as_mut_slice()));
-    
-                            // Import the function if we haven't already
-                            let functions = translated_definition.toplevel_scope.borrow().functions.clone();
-                            let mut function_found = false;
-                            
-                            'function_lookup: for function in functions.iter() {
-                                let function = function.borrow();
-
-                                let mut parameters = parameters.borrow_mut();
-
-                                // Ensure the function's new name matches the function call we're translating
-                                if function.new_name != external_function_declaration.new_name {
-                                    continue 'function_lookup;
-                                }
-
-                                // Ensure the supplied function call args match the function's parameters
-                                if parameters.len() != function.parameters.entries.len() {
-                                    continue 'function_lookup;
-                                }
-
-                                'value_type_check: for (i, value_type_name) in parameter_types.iter().enumerate() {
-                                    let Some(parameter_type_name) = function.parameters.entries[i].type_name.as_ref() else { continue };
-
-                                    //
-                                    // If `parameter_type_name` is `Identity`, but `container` is an abi cast expression,
-                                    // then we need to de-cast it, so `container` turns into the 2nd parameter of the abi cast,
-                                    // and `value_type_name` turns into `Identity`.
-                                    //
-
-                                    if let sway::TypeName::Identifier { name: parameter_type_name, generic_parameters: None } = parameter_type_name {
-                                        if parameter_type_name == "Identity" {
-                                            if let sway::Expression::FunctionCall(function_call) = parameters[i].clone() {
-                                                if let sway::Expression::Identifier(function_name) = &function_call.function {
-                                                    if function_name == "abi" {
-                                                        parameters[i] = function_call.parameters[1].clone();
-                                                        continue 'value_type_check;
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                
-                                    // HACK: [u8; 32] -> b256
-                                    if let Some(32) = value_type_name.u8_array_length() {
-                                        if parameter_type_name.is_b256() {
-                                            parameters[i] = sway::Expression::from(sway::FunctionCall {
-                                                function: sway::Expression::Identifier("b256::from_be_bytes".into()),
-                                                generic_parameters: None,
-                                                parameters: vec![
-                                                    parameters[i].clone(),
-                                                ],
-                                            });
-                                            continue;
-                                        }
-                                    }
-
-                                    if !value_type_name.is_compatible_with(parameter_type_name) {
-                                        continue 'function_lookup;
-                                    }
-                                }
-
-                                function_found = true;
-                                break;
+                                parameters.clone(),
+                                parameter_types.clone(),
+                            )? {
+                                return Ok(result);
                             }
-
-                            if !function_found {
-                                // Create the local function definition
-                                let mut local_function_definition = external_function_definition.clone();
-                                local_function_definition.name = external_function_declaration.new_name.clone();
-                                
-                                // Add the local function definition to the beginning of the list
-                                translated_definition.functions.insert(0, local_function_definition);
-    
-                                // Create the local function declaration for the toplevel scope
-                                let local_function_declaration = external_function_declaration.clone();
-    
-                                // Add the local function to the beginning of the toplevel scope
-                                translated_definition.toplevel_scope.borrow_mut().functions.insert(0, Rc::new(RefCell::new(local_function_declaration.clone())));
-                            }
-
-                            // TODO : Check the return type of the function 
-                            // If the return type is user-defined type, struct, or enum 
-                            // then we need to add to the current translated definition
-                            // if we have not already
-                            if let Some(return_type) = external_function_definition.return_type.as_ref() {   
-                                fn check_type_name(project: &Project, translated_definition: &mut TranslatedDefinition, type_name: &sway::TypeName) {
-                                    match type_name {
-                                        sway::TypeName::Undefined => {}
-
-                                        sway::TypeName::Identifier { name, generic_parameters } => {
-                                            if let Some(generic_parameters) = generic_parameters.as_ref() {
-                                                for entry in generic_parameters.entries.iter() {
-                                                    check_type_name(project, translated_definition, &entry.type_name);
-                                                }
-                                            }
-
-                                            'lookup: for external_definition in project.translated_definitions.iter() {
-                                                for type_definition in external_definition.type_definitions.iter() {
-                                                    if type_definition.name.is_compatible_with(type_name) {
-                                                        if !translated_definition.type_definitions.contains(type_definition) {
-                                                            translated_definition.type_definitions.push(type_definition.clone());
-                                                            break 'lookup;
-                                                        }
-                                                    }
-                                                }
-
-                                                for enum_definition in external_definition.enums.iter() {
-                                                    if enum_definition.type_definition.name.is_compatible_with(type_name) {
-                                                        translated_definition.add_enum(enum_definition);
-                                                        break 'lookup;
-                                                    }
-                                                }
-
-                                                for struct_definition in external_definition.structs.iter() {
-                                                    if struct_definition.name != *name {
-                                                        continue;
-                                                    }
-
-                                                    match (struct_definition.generic_parameters.as_ref(), generic_parameters.as_ref()) {
-                                                        (Some(struct_generic_parameters), Some(generic_parameters)) => {
-                                                            if struct_generic_parameters.entries.len() != generic_parameters.entries.len() {
-                                                                continue;
-                                                            }
-                                                        }
-
-                                                        (None, None) => {}
-
-                                                        _ => continue,
-                                                    }
-
-                                                    translated_definition.ensure_struct_included(project, struct_definition);
-                                                    break 'lookup;
-                                                }
-                                            }
-                                        }
-
-                                        sway::TypeName::Array { type_name, .. } => {
-                                            check_type_name(project, translated_definition, type_name);
-                                        }
-
-                                        sway::TypeName::Tuple { type_names } => {
-                                            type_names.iter().for_each(|type_name| check_type_name(project, translated_definition, type_name));
-                                        }
-
-                                        sway::TypeName::StringSlice => {}
-                                        sway::TypeName::StringArray { .. } => {}
-                                    }
-                                }
-
-                                check_type_name(project, translated_definition, return_type);
-                            }
-
-                            // Create the function call
-                            let function_call = sway::Expression::from(sway::FunctionCall {
-                                function: sway::Expression::Identifier(external_function_declaration.new_name.clone()),
-                                generic_parameters: None,
-                                parameters: parameters.borrow().iter().map(Clone::clone).collect(),
-                            });
-    
-                            *translated_definition.function_call_counts.entry(external_function_declaration.new_name.clone()).or_insert(0) += 1;
-                            translated_definition.functions_called
-                                .entry(translated_definition.current_functions.last().cloned().unwrap())
-                                .or_insert_with(|| vec![])
-                                .push(external_function_declaration.new_name.clone());
-                            
-                            return Ok(function_call);
                         }
                     
                         // Check if function is contained in the current contract (self-referential: This.func())
@@ -2688,106 +2199,19 @@ pub fn translate_function_call_expression(
                                 }
                             }
 
-                            handle_function_named_arguments(
+                            // Try to resolve the function call
+                            if let Some(result) = resolve_function_call(
                                 project,
                                 translated_definition,
                                 scope.clone(),
-                                scope.clone(),
+                                translated_definition.toplevel_scope.clone(),
                                 old_name.as_str(),
                                 named_arguments,
-                                &mut parameters,
-                                &mut parameter_types,
-                            )?;
-                            
-                            let parameters_cell = Rc::new(RefCell::new(parameters.as_mut_slice()));
-
-                            // Check if the member is a function defined in the toplevel scope
-                            let Some(function_declaration) = translated_definition.toplevel_scope.borrow().find_function(|function| {
-                                let function = function.borrow();
-
-                                let mut parameters = parameters_cell.borrow_mut();
-
-                                // Ensure the function's old name matches the function call we're translating
-                                if function.old_name != old_name {
-                                    return false;
-                                }
-
-                                // Ensure the supplied function call args match the function's parameters
-                                if parameters.len() != function.parameters.entries.len() {
-                                    return false;
-                                }
-
-                                for (i, value_type_name) in parameter_types.iter().enumerate() {
-                                    let Some(parameter_type_name) = function.parameters.entries[i].type_name.as_ref() else { continue };
-
-                                    //
-                                    // If `parameter_type_name` is `Identity`, but `container` is an abi cast expression,
-                                    // then we need to de-cast it, so `container` turns into the 2nd parameter of the abi cast,
-                                    // and `value_type_name` turns into `Identity`.
-                                    //
-
-                                    if let sway::TypeName::Identifier { name: parameter_type_name, generic_parameters: None } = parameter_type_name {
-                                        if parameter_type_name == "Identity" {
-                                            if let sway::Expression::FunctionCall(function_call) = parameters[i].clone() {
-                                                if let sway::Expression::Identifier(function_name) = &function_call.function {
-                                                    if function_name == "abi" {
-                                                        parameters[i] = function_call.parameters[1].clone();
-                                                        continue;
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                
-                                    // HACK: [u8; 32] -> b256
-                                    if let Some(32) = value_type_name.u8_array_length() {
-                                        if parameter_type_name.is_b256() {
-                                            parameters[i] = sway::Expression::from(sway::FunctionCall {
-                                                function: sway::Expression::Identifier("b256::from_be_bytes".into()),
-                                                generic_parameters: None,
-                                                parameters: vec![
-                                                    parameters[i].clone(),
-                                                ],
-                                            });
-                                            continue;
-                                        }
-                                    }
-
-                                    if !value_type_name.is_compatible_with(parameter_type_name) {
-                                        return false;
-                                    }
-                                }
-
-                                true
-                            }) else {
-                                panic!(
-                                    "{}error: Failed to find function in scope: {name}.{old_name}({})",
-                                    match project.loc_to_line_and_column(&translated_definition.path, &function.loc()) {
-                                        Some((line, col)) => format!("{}:{}:{} - ", translated_definition.path.to_string_lossy(), line, col),
-                                        None => format!("{} - ", translated_definition.path.to_string_lossy()),
-                                    },
-                                    parameter_types.iter().map(|t| t.to_string()).collect::<Vec<_>>().join(", "),
-                                )
-                            };
-    
-                            let function_declaration = function_declaration.borrow();
-                            
-                            // Create the function call
-                            let function_call = sway::Expression::from(sway::FunctionCall {
-                                function: sway::Expression::Identifier(function_declaration.new_name.clone()),
-                                generic_parameters: None,
-                                parameters: arguments.iter()
-                                    .map(|a| translate_expression(project, translated_definition, scope.clone(), a))
-                                    .collect::<Result<Vec<_>, _>>()?,
-                            });
-    
-                            *translated_definition.function_call_counts.entry(function_declaration.new_name.clone()).or_insert(0) += 1;
-                            translated_definition.functions_called
-                                .entry(translated_definition.current_functions.last().cloned().unwrap())
-                                .or_insert_with(|| vec![])
-                                .push(function_declaration.new_name.clone());
-                            
-                            return Ok(function_call);
+                                parameters.clone(),
+                                parameter_types.clone(),
+                            )? {
+                                return Ok(result);
+                            }
                         }
                     }
                 }
@@ -3321,85 +2745,17 @@ pub fn translate_function_call_expression(
                                 }
                             };
 
-                            let mut using_parameters = using_parameters.clone();
-                            let mut using_parameter_types = using_parameter_types.clone();
-                            
-                            handle_function_named_arguments(
+                            if let Some(result) = resolve_function_call(
                                 project,
                                 translated_definition,
                                 scope.clone(),
                                 external_scope.clone(),
                                 member.name.as_str(),
                                 named_arguments,
-                                &mut using_parameters,
-                                &mut using_parameter_types,
-                            )?;
-
-                            'function_lookup: for function in external_scope.borrow().functions.iter() {
-                                let function = function.borrow();
-
-                                // Ensure the function's old name matches the function call we're translating
-                                if function.old_name != member.name {
-                                    continue 'function_lookup;
-                                }
-
-                                // Ensure the supplied function call args match the function's parameters
-                                if using_parameters.len() != function.parameters.entries.len() {
-                                    continue 'function_lookup;
-                                }
-    
-                                'value_type_check: for (i, value_type_name) in using_parameter_types.iter().enumerate() {
-                                    let Some(parameter_type_name) = function.parameters.entries[i].type_name.as_ref() else { continue };
-
-                                    //
-                                    // If `parameter_type_name` is `Identity`, but `container` is an abi cast expression,
-                                    // then we need to de-cast it, so `container` turns into the 2nd parameter of the abi cast,
-                                    // and `value_type_name` turns into `Identity`.
-                                    //
-
-                                    if let sway::TypeName::Identifier { name: parameter_type_name, generic_parameters: None } = parameter_type_name {
-                                        if parameter_type_name == "Identity" {
-                                            if let sway::Expression::FunctionCall(function_call) = using_parameters[i].clone() {
-                                                if let sway::Expression::Identifier(function_name) = &function_call.function {
-                                                    if function_name == "abi" {
-                                                        using_parameters[i] = function_call.parameters[1].clone();
-                                                        continue 'value_type_check;
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                
-                                    // HACK: [u8; 32] -> b256
-                                    if let Some(32) = value_type_name.u8_array_length() {
-                                        if parameter_type_name.is_b256() {
-                                            parameters[i] = sway::Expression::from(sway::FunctionCall {
-                                                function: sway::Expression::Identifier("b256::from_be_bytes".into()),
-                                                generic_parameters: None,
-                                                parameters: vec![
-                                                    parameters[i].clone(),
-                                                ],
-                                            });
-                                            continue;
-                                        }
-                                    }
-
-                                    if !value_type_name.is_compatible_with(parameter_type_name) {
-                                        continue 'function_lookup;
-                                    }
-                                }
-                                
-                                *translated_definition.function_call_counts.entry(function.new_name.clone()).or_insert(0) += 1;
-                                translated_definition.functions_called
-                                    .entry(translated_definition.current_functions.last().cloned().unwrap())
-                                    .or_insert_with(|| vec![])
-                                    .push(function.new_name.clone());
-
-                                return Ok(sway::Expression::from(sway::FunctionCall {
-                                    function: sway::Expression::Identifier(function.new_name.clone()),
-                                    generic_parameters: None,
-                                    parameters: using_parameters,
-                                }));
+                                using_parameters.clone(),
+                                using_parameter_types.clone(),
+                            )? {
+                                return Ok(result);
                             }
                         }
 
@@ -3544,85 +2900,18 @@ pub fn translate_function_call_expression(
                             }
                         };
 
-                        let mut parameters = parameters.clone();
-                        let mut parameter_types = parameter_types.clone();
-
-                        handle_function_named_arguments(
+                        // Try to resolve the function call
+                        if let Some(result) = resolve_function_call(
                             project,
                             translated_definition,
                             scope.clone(),
                             external_scope.clone(),
                             member.name.as_str(),
                             named_arguments,
-                            &mut parameters,
-                            &mut parameter_types,
-                        )?;
-
-                        'function_lookup: for function in external_scope.borrow().functions.iter() {
-                            let function = function.borrow();
-
-                            // Ensure the function's old name matches the function call we're translating
-                            if function.old_name != member.name {
-                                continue 'function_lookup;
-                            }
-
-                            // Ensure the supplied function call args match the function's parameters
-                            if parameters.len() != function.parameters.entries.len() {
-                                continue 'function_lookup;
-                            }
-
-                            'value_type_check: for (i, value_type_name) in parameter_types.iter().enumerate() {
-                                let Some(parameter_type_name) = function.parameters.entries[i].type_name.as_ref() else { continue };
-
-                                //
-                                // If `parameter_type_name` is `Identity`, but `container` is an abi cast expression,
-                                // then we need to de-cast it, so `container` turns into the 2nd parameter of the abi cast,
-                                // and `value_type_name` turns into `Identity`.
-                                //
-
-                                if let sway::TypeName::Identifier { name: parameter_type_name, generic_parameters: None } = parameter_type_name {
-                                    if parameter_type_name == "Identity" {
-                                        if let sway::Expression::FunctionCall(function_call) = parameters[i].clone() {
-                                            if let sway::Expression::Identifier(function_name) = &function_call.function {
-                                                if function_name == "abi" {
-                                                    parameters[i] = function_call.parameters[1].clone();
-                                                    continue 'value_type_check;
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-
-                                // HACK: [u8; 32] -> b256
-                                if let Some(32) = value_type_name.u8_array_length() {
-                                    if parameter_type_name.is_b256() {
-                                        parameters[i] = sway::Expression::from(sway::FunctionCall {
-                                            function: sway::Expression::Identifier("b256::from_be_bytes".into()),
-                                            generic_parameters: None,
-                                            parameters: vec![
-                                                parameters[i].clone(),
-                                            ],
-                                        });
-                                        continue 'value_type_check;
-                                    }
-                                }
-
-                                if !value_type_name.is_compatible_with(parameter_type_name) {
-                                    continue 'function_lookup;
-                                }
-                            }
-                            
-                            *translated_definition.function_call_counts.entry(function.new_name.clone()).or_insert(0) += 1;
-                            translated_definition.functions_called
-                                .entry(translated_definition.current_functions.last().cloned().unwrap())
-                                .or_insert_with(|| vec![])
-                                .push(function.new_name.clone());
-
-                            return Ok(sway::Expression::from(sway::FunctionCall {
-                                function: sway::Expression::Identifier(function.new_name.clone()),
-                                generic_parameters: None,
-                                parameters,
-                            }));
+                            parameters.clone(),
+                            parameter_types.clone(),
+                        )? {
+                            return Ok(result);
                         }
                     }
 
@@ -3668,86 +2957,19 @@ pub fn translate_function_call_expression(
                             })
                             .map(|d| d.toplevel_scope.clone())
                         else { continue };
-
-                        let mut parameters = parameters.clone();
-                        let mut parameter_types = parameter_types.clone();
-
-                        handle_function_named_arguments(
+                        
+                        // Try to resolve the function call
+                        if let Some(result) = resolve_function_call(
                             project,
                             translated_definition,
                             scope.clone(),
                             external_scope.clone(),
                             member.name.as_str(),
                             named_arguments,
-                            &mut parameters,
-                            &mut parameter_types,
-                        )?;
-
-                        'function_lookup: for function in external_scope.borrow().functions.iter() {
-                            let function = function.borrow();
-
-                            // Ensure the function's old name matches the function call we're translating
-                            if function.old_name != member.name {
-                                continue 'function_lookup;
-                            }
-
-                            // Ensure the supplied function call args match the function's parameters
-                            if parameters.len() != function.parameters.entries.len() {
-                                continue 'function_lookup;
-                            }
-
-                            'value_type_check: for (i, value_type_name) in parameter_types.iter().enumerate() {
-                                let Some(parameter_type_name) = function.parameters.entries[i].type_name.as_ref() else { continue };
-
-                                //
-                                // If `parameter_type_name` is `Identity`, but `container` is an abi cast expression,
-                                // then we need to de-cast it, so `container` turns into the 2nd parameter of the abi cast,
-                                // and `value_type_name` turns into `Identity`.
-                                //
-
-                                if let sway::TypeName::Identifier { name: parameter_type_name, generic_parameters: None } = parameter_type_name {
-                                    if parameter_type_name == "Identity" {
-                                        if let sway::Expression::FunctionCall(function_call) = parameters[i].clone() {
-                                            if let sway::Expression::Identifier(function_name) = &function_call.function {
-                                                if function_name == "abi" {
-                                                    parameters[i] = function_call.parameters[1].clone();
-                                                    continue 'value_type_check;
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                                
-                                // HACK: [u8; 32] -> b256
-                                if let Some(32) = value_type_name.u8_array_length() {
-                                    if parameter_type_name.is_b256() {
-                                        parameters[i] = sway::Expression::from(sway::FunctionCall {
-                                            function: sway::Expression::Identifier("b256::from_be_bytes".into()),
-                                            generic_parameters: None,
-                                            parameters: vec![
-                                                parameters[i].clone(),
-                                            ],
-                                        });
-                                        continue 'value_type_check;
-                                    }
-                                }
-
-                                if !value_type_name.is_compatible_with(parameter_type_name) {
-                                    continue 'function_lookup;
-                                }
-                            }
-                            
-                            *translated_definition.function_call_counts.entry(function.new_name.clone()).or_insert(0) += 1;
-                            translated_definition.functions_called
-                                .entry(translated_definition.current_functions.last().cloned().unwrap())
-                                .or_insert_with(|| vec![])
-                                .push(function.new_name.clone());
-
-                            return Ok(sway::Expression::from(sway::FunctionCall {
-                                function: sway::Expression::Identifier(function.new_name.clone()),
-                                generic_parameters: None,
-                                parameters,
-                            }));
+                            parameters.clone(),
+                            parameter_types.clone(),
+                        )? {
+                            return Ok(result);
                         }
                     }
 
@@ -4081,7 +3303,6 @@ pub fn translate_function_call_expression(
     }
 }
 
-
 #[inline]
 pub fn translate_function_call_block_expression(
     project: &mut Project,
@@ -4093,12 +3314,12 @@ pub fn translate_function_call_block_expression(
     if block.is_empty() {
         return translate_expression(project, translated_definition, scope, function);
     }
-    // println!(
-    //     "Translating expression: {function}; from {}",
-    //     match project.loc_to_line_and_column(&translated_definition.path, &block.loc()) {
-    //         Some((line, col)) => format!("{}:{}:{} - ", translated_definition.path.to_string_lossy(), line, col),
-    //         None => format!("{} - ", translated_definition.path.to_string_lossy()),
-    //     },
-    // );
-    todo!("translate function call block expression")
+
+    panic!(
+        "{}TODO: Translate function call block expression: `{function}{block}`",
+        match project.loc_to_line_and_column(&translated_definition.path, &function.loc()) {
+            Some((line, col)) => format!("{}:{}:{} - ", translated_definition.path.to_string_lossy(), line, col),
+            None => format!("{} - ", translated_definition.path.to_string_lossy()),
+        },
+    )
 }

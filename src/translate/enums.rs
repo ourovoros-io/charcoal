@@ -318,8 +318,8 @@ pub fn generate_enum_abi_encode_function(
             block.final_expr = Some(sway::Expression::Identifier("buffer".into()));
         }
         
-        block.statements.insert(0, sway::Statement::from(sway::Let { 
-            pattern: sway::LetPattern::Identifier(sway::LetIdentifier { 
+        block.statements.insert(0, sway::Statement::from(sway::Let {
+            pattern: sway::LetPattern::Identifier(sway::LetIdentifier {
                 is_mutable: false,
                 name: "buffer".into()
             }),

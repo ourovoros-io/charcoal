@@ -91,77 +91,73 @@ pub fn translate_binary_expression(
     Ok(match lhs_type {
         sway::TypeName::Identifier { name: lhs_name, generic_parameters } => {
             match (lhs_name.as_str(), generic_parameters.as_ref()) {
-                ("u8" | "u16" | "u32" | "u64" | "u256", None) => {
-                    match rhs_type {
-                        sway::TypeName::Identifier { name: rhs_name, generic_parameters } => {
-                            match (rhs_name.as_str(), generic_parameters.as_ref()) {
-                                ("u8" | "u16" | "u32" | "u64" | "u256", None) => {
-                                    let lhs_bits: usize = lhs_name.trim_start_matches("u").parse().unwrap();
-                                    let rhs_bits: usize = rhs_name.trim_start_matches("u").parse().unwrap();
-                                    if lhs_bits > rhs_bits {
-                                        sway::Expression::from(sway::BinaryExpression{ 
-                                            operator: operator.into(), 
-                                            lhs, 
-                                            rhs: sway::Expression::from(sway::FunctionCall { 
-                                                function: sway::Expression::from(sway::MemberAccess{ 
-                                                    expression: rhs, 
-                                                    member: format!("as_u{lhs_bits}"), 
-                                                }), 
-                                                generic_parameters: None, 
-                                                parameters: vec![] 
-                                            }) 
-                                        })
-                                    } else if lhs_bits < rhs_bits {
-                                        sway::Expression::from(sway::BinaryExpression{ 
-                                            operator: operator.into(), 
-                                            lhs: sway::Expression::from(sway::FunctionCall { 
-                                                function: sway::Expression::from(sway::MemberAccess{ 
-                                                    expression: lhs, 
-                                                    member: format!("as_u{rhs_bits}"), 
-                                                }), 
-                                                generic_parameters: None, 
-                                                parameters: vec![] 
-                                            }),
-                                            rhs, 
-                                        })
-                                    } else {
-                                        sway::Expression::from(sway::BinaryExpression{ 
-                                            operator: operator.into(), 
-                                            lhs,
-                                            rhs, 
-                                        })
-                                    }
-                                }
-            
-                                _ => sway::Expression::from(sway::BinaryExpression{ 
-                                    operator: operator.into(), 
+                ("u8" | "u16" | "u32" | "u64" | "u256", None) => match rhs_type {
+                    sway::TypeName::Identifier { name: rhs_name, generic_parameters } => match (rhs_name.as_str(), generic_parameters.as_ref()) {
+                        ("u8" | "u16" | "u32" | "u64" | "u256", None) => {
+                            let lhs_bits: usize = lhs_name.trim_start_matches("u").parse().unwrap();
+                            let rhs_bits: usize = rhs_name.trim_start_matches("u").parse().unwrap();
+                            if lhs_bits > rhs_bits {
+                                sway::Expression::from(sway::BinaryExpression{
+                                    operator: operator.into(),
                                     lhs,
-                                    rhs, 
+                                    rhs: sway::Expression::from(sway::FunctionCall {
+                                        function: sway::Expression::from(sway::MemberAccess{
+                                            expression: rhs,
+                                            member: format!("as_u{lhs_bits}"),
+                                        }),
+                                        generic_parameters: None,
+                                        parameters: vec![],
+                                    }),
+                                })
+                            } else if lhs_bits < rhs_bits {
+                                sway::Expression::from(sway::BinaryExpression{
+                                    operator: operator.into(),
+                                    lhs: sway::Expression::from(sway::FunctionCall {
+                                        function: sway::Expression::from(sway::MemberAccess{
+                                            expression: lhs,
+                                            member: format!("as_u{rhs_bits}"),
+                                        }),
+                                        generic_parameters: None,
+                                        parameters: vec![],
+                                    }),
+                                    rhs,
+                                })
+                            } else {
+                                sway::Expression::from(sway::BinaryExpression{
+                                    operator: operator.into(),
+                                    lhs,
+                                    rhs,
                                 })
                             }
                         }
-            
-                        _ => sway::Expression::from(sway::BinaryExpression{ 
-                                operator: operator.into(), 
-                                lhs,
-                                rhs, 
-                            })
+                        
+                        _ => sway::Expression::from(sway::BinaryExpression{
+                            operator: operator.into(),
+                            lhs,
+                            rhs,
+                        })
                     }
+                    
+                    _ => sway::Expression::from(sway::BinaryExpression{
+                        operator: operator.into(),
+                        lhs,
+                        rhs,
+                    })
                 }
 
-                _ => sway::Expression::from(sway::BinaryExpression{ 
-                        operator: operator.into(), 
-                        lhs,
-                        rhs, 
-                    })
+                _ => sway::Expression::from(sway::BinaryExpression{
+                    operator: operator.into(),
+                    lhs,
+                    rhs,
+                })
             }
         }
 
-        _ => sway::Expression::from(sway::BinaryExpression{ 
-                operator: operator.into(), 
-                lhs,
-                rhs, 
-            })
+        _ => sway::Expression::from(sway::BinaryExpression{
+            operator: operator.into(),
+            lhs,
+            rhs,
+        })
     })
 }
 
@@ -190,7 +186,7 @@ pub fn translate_unary_expression(
                     parameters: vec![],
                 })),
 
-                ("u8" | "u16" | "u32" | "u64" | "u256", None) => { 
+                ("u8" | "u16" | "u32" | "u64" | "u256", None) => {
                     let bits: usize = name.trim_start_matches('u').parse().unwrap();
                     
                     translated_definition.ensure_dependency_declared(
