@@ -10,7 +10,11 @@ mod structs;
 mod type_definitions;
 mod type_names;
 
-pub use self::{assembly::*, contracts::*, enums::*, expressions::*, functions::*, import_directives::*, statements::*, storage::*, structs::*, type_definitions::*, type_names::*};
+#[allow(ambiguous_glob_reexports)]
+pub use self::{
+    assembly::*, contracts::*, enums::*, expressions::*, functions::*, import_directives::*,
+    statements::*, storage::*, structs::*, type_definitions::*, type_names::*,
+};
 
 use crate::{errors::Error, project::Project, sway};
 use solang_parser::pt as solidity;
@@ -19,7 +23,7 @@ use std::{
     collections::HashMap,
     fmt::Display,
     path::{Path, PathBuf},
-    rc::Rc
+    rc::Rc,
 };
 
 #[derive(Clone, Debug, PartialEq)]

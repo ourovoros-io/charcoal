@@ -6,6 +6,64 @@ use solang_parser::{helpers::CodeLocation, pt as solidity};
 use crate::{errors::Error, project::Project, sway, translate::{address_call::translate_address_call_expression, translate_type_name, TranslatedDefinition, TranslationScope}};
 use super::{translate_expression, variable::translate_variable_access_expression};
 
+pub fn handle_function_named_arguments(
+    project: &mut Project,
+    translated_definition: &mut TranslatedDefinition,
+    scope: Rc<RefCell<TranslationScope>>,
+    external_scope: Rc<RefCell<TranslationScope>>,
+    function_name: &str,
+    named_arguments: Option<&[solidity::NamedArgument]>,
+    parameters: &mut Vec<sway::Expression>,
+    parameter_types: &mut Vec<sway::TypeName>,
+) -> Result<(), Error> {
+    let Some(named_arguments) = named_arguments else {
+        return Ok(());
+    };
+
+    let mut named_parameters = vec![];
+
+    for arg in named_arguments {
+        named_parameters.push((
+            crate::translate_naming_convention(&arg.name.name, Case::Snake),
+            translate_expression(project, translated_definition, scope.clone(), &arg.expr)?
+        ));
+    }
+
+    if let Some(function) = external_scope.borrow().find_function(|f| {
+        let f = f.borrow();
+
+        if f.old_name != function_name {
+            return false;
+        }
+
+        if f.parameters.entries.len() != named_parameters.len() {
+            return false;
+        }
+
+        f.parameters.entries.iter().all(|p| named_parameters.iter().any(|(name, _)| p.name == *name))
+    }) {
+        let function = function.borrow();
+
+        parameters.clear();
+        parameter_types.clear();
+
+        for parameter in function.parameters.entries.iter() {
+            let arg = named_arguments.iter().find(|a| {
+                let new_name = crate::translate_naming_convention(&a.name.name, Case::Snake);
+                new_name == parameter.name
+            }).unwrap();
+
+            let parameter = translate_expression(project, translated_definition, scope.clone(), &arg.expr)?;
+            let parameter_type = translated_definition.get_expression_type(scope.clone(), &parameter)?;
+
+            parameters.push(parameter);
+            parameter_types.push(parameter_type);
+        }
+    }
+
+    Ok(())
+}
+
 #[inline]
 pub fn translate_function_call_expression(
     project: &mut Project,
@@ -1432,48 +1490,16 @@ pub fn translate_function_call_expression(
                         }
                     }
 
-                    if let Some(named_arguments) = named_arguments {
-                        let mut named_parameters = vec![];
-
-                        for arg in named_arguments {
-                            named_parameters.push((
-                                crate::translate_naming_convention(&arg.name.name, Case::Snake),
-                                translate_expression(project, translated_definition, scope.clone(), &arg.expr)?
-                            ));
-                        }
-
-                        if let Some(function) = scope.borrow().find_function(|f| {
-                            let f = f.borrow();
-
-                            if f.old_name != old_name {
-                                return false;
-                            }
-
-                            if f.parameters.entries.len() != named_parameters.len() {
-                                return false;
-                            }
-
-                            f.parameters.entries.iter().all(|p| named_parameters.iter().any(|(name, _)| p.name == *name))
-                        }) {
-                            let function = function.borrow();
-
-                            parameters = vec![];
-                            parameter_types = vec![];
-
-                            for parameter in function.parameters.entries.iter() {
-                                let arg = named_arguments.iter().find(|a| {
-                                    let new_name = crate::translate_naming_convention(&a.name.name, Case::Snake);
-                                    new_name == parameter.name
-                                }).unwrap();
-
-                                let parameter = translate_expression(project, translated_definition, scope.clone(), &arg.expr)?;
-                                let parameter_type = translated_definition.get_expression_type(scope.clone(), &parameter)?;
-
-                                parameters.push(parameter);
-                                parameter_types.push(parameter_type);
-                            }
-                        }
-                    }
+                    handle_function_named_arguments(
+                        project,
+                        translated_definition,
+                        scope.clone(),
+                        scope.clone(),
+                        old_name,
+                        named_arguments,
+                        &mut parameters,
+                        &mut parameter_types,
+                    )?;
 
                     // Ensure the function exists in scope
                     let parameters_cell = Rc::new(RefCell::new(parameters.as_mut_slice()));
@@ -1960,48 +1986,16 @@ pub fn translate_function_call_expression(
                                 panic!("Failed to find inherited definition for `{inherit}`");
                             };
 
-                            if let Some(named_arguments) = named_arguments {
-                                let mut named_parameters = vec![];
-        
-                                for arg in named_arguments {
-                                    named_parameters.push((
-                                        crate::translate_naming_convention(&arg.name.name, Case::Snake),
-                                        translate_expression(project, translated_definition, scope.clone(), &arg.expr)?
-                                    ));
-                                }
-        
-                                if let Some(function) = inherited_definition.toplevel_scope.borrow().find_function(|f| {
-                                    let f = f.borrow();
-        
-                                    if f.old_name != member.name.as_str() {
-                                        return false;
-                                    }
-        
-                                    if f.parameters.entries.len() != named_parameters.len() {
-                                        return false;
-                                    }
-        
-                                    f.parameters.entries.iter().all(|p| named_parameters.iter().any(|(name, _)| p.name == *name))
-                                }) {
-                                    let function = function.borrow();
-        
-                                    parameters = vec![];
-                                    parameter_types = vec![];
-        
-                                    for parameter in function.parameters.entries.iter() {
-                                        let arg = named_arguments.iter().find(|a| {
-                                            let new_name = crate::translate_naming_convention(&a.name.name, Case::Snake);
-                                            new_name == parameter.name
-                                        }).unwrap();
-        
-                                        let parameter = translate_expression(project, translated_definition, scope.clone(), &arg.expr)?;
-                                        let parameter_type = translated_definition.get_expression_type(scope.clone(), &parameter)?;
-        
-                                        parameters.push(parameter);
-                                        parameter_types.push(parameter_type);
-                                    }
-                                }
-                            }
+                            handle_function_named_arguments(
+                                project,
+                                translated_definition,
+                                scope.clone(),
+                                inherited_definition.toplevel_scope.clone(),
+                                member.name.as_str(),
+                                named_arguments,
+                                &mut parameters,
+                                &mut parameter_types,
+                            )?;
                             
                             let parameters_cell = Rc::new(RefCell::new(parameters.as_mut_slice()));
 
@@ -2096,50 +2090,18 @@ pub fn translate_function_call_expression(
                         let mut parameter_types = parameters.iter()
                             .map(|p| translated_definition.get_expression_type(scope.clone(), p))
                             .collect::<Result<Vec<_>, _>>()?;
-                            
-                        if let Some(named_arguments) = named_arguments {
-                            let mut named_parameters = vec![];
-
-                            for arg in named_arguments {
-                                named_parameters.push((
-                                    crate::translate_naming_convention(&arg.name.name, Case::Snake),
-                                    translate_expression(project, translated_definition, scope.clone(), &arg.expr)?
-                                ));
-                            }
-
-                            if let Some(function) = scope.borrow().find_function(|f| {
-                                let f = f.borrow();
-
-                                if f.old_name != member.name {
-                                    return false;
-                                }
-
-                                if f.parameters.entries.len() != named_parameters.len() {
-                                    return false;
-                                }
-
-                                f.parameters.entries.iter().all(|p| named_parameters.iter().any(|(name, _)| p.name == *name))
-                            }) {
-                                let function = function.borrow();
-
-                                parameters = vec![];
-                                parameter_types = vec![];
-
-                                for parameter in function.parameters.entries.iter() {
-                                    let arg = named_arguments.iter().find(|a| {
-                                        let new_name = crate::translate_naming_convention(&a.name.name, Case::Snake);
-                                        new_name == parameter.name
-                                    }).unwrap();
-
-                                    let parameter = translate_expression(project, translated_definition, scope.clone(), &arg.expr)?;
-                                    let parameter_type = translated_definition.get_expression_type(scope.clone(), &parameter)?;
-
-                                    parameters.push(parameter);
-                                    parameter_types.push(parameter_type);
-                                }
-                            }
-                        }
-
+                        
+                        handle_function_named_arguments(
+                            project,
+                            translated_definition,
+                            scope.clone(),
+                            scope.clone(),
+                            member.name.as_str(),
+                            named_arguments,
+                            &mut parameters,
+                            &mut parameter_types,
+                        )?;
+                        
                         let parameters_cell = Rc::new(RefCell::new(parameters.as_mut_slice()));
 
                         if let Some(function) = scope.borrow().find_function(|function| {
@@ -2229,49 +2191,17 @@ pub fn translate_function_call_expression(
                         // Check for explicit super function calls
                         if translated_definition.inherits.iter().any(|i| i == name) {
                             if let Some(inherited_definition) = project.find_definition_with_abi(name).cloned() {
-                                if let Some(named_arguments) = named_arguments {
-                                    let mut named_parameters = vec![];
-            
-                                    for arg in named_arguments {
-                                        named_parameters.push((
-                                            crate::translate_naming_convention(&arg.name.name, Case::Snake),
-                                            translate_expression(project, translated_definition, scope.clone(), &arg.expr)?
-                                        ));
-                                    }
-            
-                                    if let Some(function) = inherited_definition.toplevel_scope.borrow().find_function(|f| {
-                                        let f = f.borrow();
-            
-                                        if f.old_name != member.name.as_str() {
-                                            return false;
-                                        }
-            
-                                        if f.parameters.entries.len() != named_parameters.len() {
-                                            return false;
-                                        }
-            
-                                        f.parameters.entries.iter().all(|p| named_parameters.iter().any(|(name, _)| p.name == *name))
-                                    }) {
-                                        let function = function.borrow();
-            
-                                        parameters = vec![];
-                                        parameter_types = vec![];
-            
-                                        for parameter in function.parameters.entries.iter() {
-                                            let arg = named_arguments.iter().find(|a| {
-                                                let new_name = crate::translate_naming_convention(&a.name.name, Case::Snake);
-                                                new_name == parameter.name
-                                            }).unwrap();
-            
-                                            let parameter = translate_expression(project, translated_definition, scope.clone(), &arg.expr)?;
-                                            let parameter_type = translated_definition.get_expression_type(scope.clone(), &parameter)?;
-            
-                                            parameters.push(parameter);
-                                            parameter_types.push(parameter_type);
-                                        }
-                                    }
-                                }
-
+                                handle_function_named_arguments(
+                                    project,
+                                    translated_definition,
+                                    scope.clone(),
+                                    inherited_definition.toplevel_scope.clone(),
+                                    member.name.as_str(),
+                                    named_arguments,
+                                    &mut parameters,
+                                    &mut parameter_types,
+                                )?;
+                                
                                 let parameters_cell = Rc::new(RefCell::new(parameters.as_mut_slice()));
 
                                 if let Some(function) = inherited_definition.toplevel_scope.borrow().find_function(|function| {
@@ -2417,49 +2347,17 @@ pub fn translate_function_call_expression(
                                 }
                             }
 
-                            if let Some(named_arguments) = named_arguments {
-                                let mut named_parameters = vec![];
-        
-                                for arg in named_arguments {
-                                    named_parameters.push((
-                                        crate::translate_naming_convention(&arg.name.name, Case::Snake),
-                                        translate_expression(project, translated_definition, scope.clone(), &arg.expr)?
-                                    ));
-                                }
-        
-                                if let Some(function) = scope.borrow().find_function(|f| {
-                                    let f = f.borrow();
-        
-                                    if f.old_name != old_name {
-                                        return false;
-                                    }
-        
-                                    if f.parameters.entries.len() != named_parameters.len() {
-                                        return false;
-                                    }
-        
-                                    f.parameters.entries.iter().all(|p| named_parameters.iter().any(|(name, _)| p.name == *name))
-                                }) {
-                                    let function = function.borrow();
-        
-                                    parameters = vec![];
-                                    parameter_types = vec![];
-        
-                                    for parameter in function.parameters.entries.iter() {
-                                        let arg = named_arguments.iter().find(|a| {
-                                            let new_name = crate::translate_naming_convention(&a.name.name, Case::Snake);
-                                            new_name == parameter.name
-                                        }).unwrap();
-        
-                                        let parameter = translate_expression(project, translated_definition, scope.clone(), &arg.expr)?;
-                                        let parameter_type = translated_definition.get_expression_type(scope.clone(), &parameter)?;
-        
-                                        parameters.push(parameter);
-                                        parameter_types.push(parameter_type);
-                                    }
-                                }
-                            }
-        
+                            handle_function_named_arguments(
+                                project,
+                                translated_definition,
+                                scope.clone(),
+                                scope.clone(),
+                                old_name.as_str(),
+                                named_arguments,
+                                &mut parameters,
+                                &mut parameter_types,
+                            )?;
+                            
                             let parameters_cell = Rc::new(RefCell::new(parameters.as_mut_slice()));
 
                             // Check if the member is a function defined in the toplevel scope
@@ -2790,49 +2688,17 @@ pub fn translate_function_call_expression(
                                 }
                             }
 
-                            if let Some(named_arguments) = named_arguments {
-                                let mut named_parameters = vec![];
-        
-                                for arg in named_arguments {
-                                    named_parameters.push((
-                                        crate::translate_naming_convention(&arg.name.name, Case::Snake),
-                                        translate_expression(project, translated_definition, scope.clone(), &arg.expr)?
-                                    ));
-                                }
-        
-                                if let Some(function) = scope.borrow().find_function(|f| {
-                                    let f = f.borrow();
-        
-                                    if f.old_name != old_name {
-                                        return false;
-                                    }
-        
-                                    if f.parameters.entries.len() != named_parameters.len() {
-                                        return false;
-                                    }
-        
-                                    f.parameters.entries.iter().all(|p| named_parameters.iter().any(|(name, _)| p.name == *name))
-                                }) {
-                                    let function = function.borrow();
-        
-                                    parameters = vec![];
-                                    parameter_types = vec![];
-        
-                                    for parameter in function.parameters.entries.iter() {
-                                        let arg = named_arguments.iter().find(|a| {
-                                            let new_name = crate::translate_naming_convention(&a.name.name, Case::Snake);
-                                            new_name == parameter.name
-                                        }).unwrap();
-        
-                                        let parameter = translate_expression(project, translated_definition, scope.clone(), &arg.expr)?;
-                                        let parameter_type = translated_definition.get_expression_type(scope.clone(), &parameter)?;
-        
-                                        parameters.push(parameter);
-                                        parameter_types.push(parameter_type);
-                                    }
-                                }
-                            }
-        
+                            handle_function_named_arguments(
+                                project,
+                                translated_definition,
+                                scope.clone(),
+                                scope.clone(),
+                                old_name.as_str(),
+                                named_arguments,
+                                &mut parameters,
+                                &mut parameter_types,
+                            )?;
+                            
                             let parameters_cell = Rc::new(RefCell::new(parameters.as_mut_slice()));
 
                             // Check if the member is a function defined in the toplevel scope
@@ -3455,52 +3321,20 @@ pub fn translate_function_call_expression(
                                 }
                             };
 
-                            if let Some(named_arguments) = named_arguments {
-                                let mut named_parameters = vec![];
-        
-                                for arg in named_arguments {
-                                    named_parameters.push((
-                                        crate::translate_naming_convention(&arg.name.name, Case::Snake),
-                                        translate_expression(project, translated_definition, scope.clone(), &arg.expr)?
-                                    ));
-                                }
-        
-                                for function in external_scope.borrow().functions.iter() {
-                                    let function = function.borrow();
+                            let mut using_parameters = using_parameters.clone();
+                            let mut using_parameter_types = using_parameter_types.clone();
+                            
+                            handle_function_named_arguments(
+                                project,
+                                translated_definition,
+                                scope.clone(),
+                                external_scope.clone(),
+                                member.name.as_str(),
+                                named_arguments,
+                                &mut using_parameters,
+                                &mut using_parameter_types,
+                            )?;
 
-                                    if function.old_name != member.name {
-                                        continue;
-                                    }
-        
-                                    if function.parameters.entries.len() != named_parameters.len() {
-                                        continue;
-                                    }
-        
-                                    if function.parameters.entries.iter().all(|p| named_parameters.iter().any(|(name, _)| p.name == *name)) {
-                                        using_parameters = vec![];
-                                        using_parameters.insert(0, container.clone());
-    
-                                        using_parameter_types = vec![];
-                                        using_parameter_types.insert(0, translated_definition.get_expression_type(scope.clone(), &container).unwrap());
-            
-                                        for parameter in function.parameters.entries.iter() {
-                                            let arg = named_arguments.iter().find(|a| {
-                                                let new_name = crate::translate_naming_convention(&a.name.name, Case::Snake);
-                                                new_name == parameter.name
-                                            }).unwrap();
-            
-                                            let parameter = translate_expression(project, translated_definition, scope.clone(), &arg.expr)?;
-                                            let parameter_type = translated_definition.get_expression_type(scope.clone(), &parameter)?;
-            
-                                            using_parameters.push(parameter);
-                                            using_parameter_types.push(parameter_type);
-                                        }
-
-                                        break;
-                                    }
-                                }
-                            }
-        
                             'function_lookup: for function in external_scope.borrow().functions.iter() {
                                 let function = function.borrow();
 
@@ -3675,20 +3509,17 @@ pub fn translate_function_call_expression(
                 }
 
                 sway::TypeName::Array { .. } => {
-                    let parameters = arguments.iter()
+                    let mut parameters = arguments.iter()
                         .map(|a| translate_expression(project, translated_definition, scope.clone(), a))
                         .collect::<Result<Vec<_>, _>>()?;
 
-                    let parameter_types = parameters.iter()
+                    let mut parameter_types = parameters.iter()
                         .map(|p| translated_definition.get_expression_type(scope.clone(), p))
                         .collect::<Result<Vec<_>, _>>()
                         .unwrap();
 
-                    let mut using_parameters = parameters.clone();
-                    using_parameters.insert(0, container.clone());
-
-                    let mut using_parameter_types = parameter_types.clone();
-                    using_parameter_types.insert(0, translated_definition.get_expression_type(scope.clone(), &container).unwrap());
+                    parameters.insert(0, container.clone());
+                    parameter_types.insert(0, translated_definition.get_expression_type(scope.clone(), &container).unwrap());
 
                     // Check if this is a function from a using directive
                     for using_directive in translated_definition.using_directives.clone() {
@@ -3713,52 +3544,20 @@ pub fn translate_function_call_expression(
                             }
                         };
 
-                        if let Some(named_arguments) = named_arguments {
-                            let mut named_parameters = vec![];
-    
-                            for arg in named_arguments {
-                                named_parameters.push((
-                                    crate::translate_naming_convention(&arg.name.name, Case::Snake),
-                                    translate_expression(project, translated_definition, scope.clone(), &arg.expr)?
-                                ));
-                            }
-    
-                            for function in external_scope.borrow().functions.iter() {
-                                let function = function.borrow();
+                        let mut parameters = parameters.clone();
+                        let mut parameter_types = parameter_types.clone();
 
-                                if function.old_name != member.name {
-                                    continue;
-                                }
-    
-                                if function.parameters.entries.len() != named_parameters.len() {
-                                    continue;
-                                }
-    
-                                if function.parameters.entries.iter().all(|p| named_parameters.iter().any(|(name, _)| p.name == *name)) {
-                                    using_parameters = vec![];
-                                    using_parameters.insert(0, container.clone());
+                        handle_function_named_arguments(
+                            project,
+                            translated_definition,
+                            scope.clone(),
+                            external_scope.clone(),
+                            member.name.as_str(),
+                            named_arguments,
+                            &mut parameters,
+                            &mut parameter_types,
+                        )?;
 
-                                    using_parameter_types = vec![];
-                                    using_parameter_types.insert(0, translated_definition.get_expression_type(scope.clone(), &container).unwrap());
-        
-                                    for parameter in function.parameters.entries.iter() {
-                                        let arg = named_arguments.iter().find(|a| {
-                                            let new_name = crate::translate_naming_convention(&a.name.name, Case::Snake);
-                                            new_name == parameter.name
-                                        }).unwrap();
-        
-                                        let parameter = translate_expression(project, translated_definition, scope.clone(), &arg.expr)?;
-                                        let parameter_type = translated_definition.get_expression_type(scope.clone(), &parameter)?;
-        
-                                        using_parameters.push(parameter);
-                                        using_parameter_types.push(parameter_type);
-                                    }
-
-                                    break;
-                                }
-                            }
-                        }
-    
                         'function_lookup: for function in external_scope.borrow().functions.iter() {
                             let function = function.borrow();
 
@@ -3768,11 +3567,11 @@ pub fn translate_function_call_expression(
                             }
 
                             // Ensure the supplied function call args match the function's parameters
-                            if using_parameters.len() != function.parameters.entries.len() {
+                            if parameters.len() != function.parameters.entries.len() {
                                 continue 'function_lookup;
                             }
 
-                            'value_type_check: for (i, value_type_name) in using_parameter_types.iter().enumerate() {
+                            'value_type_check: for (i, value_type_name) in parameter_types.iter().enumerate() {
                                 let Some(parameter_type_name) = function.parameters.entries[i].type_name.as_ref() else { continue };
 
                                 //
@@ -3783,10 +3582,10 @@ pub fn translate_function_call_expression(
 
                                 if let sway::TypeName::Identifier { name: parameter_type_name, generic_parameters: None } = parameter_type_name {
                                     if parameter_type_name == "Identity" {
-                                        if let sway::Expression::FunctionCall(function_call) = using_parameters[i].clone() {
+                                        if let sway::Expression::FunctionCall(function_call) = parameters[i].clone() {
                                             if let sway::Expression::Identifier(function_name) = &function_call.function {
                                                 if function_name == "abi" {
-                                                    using_parameters[i] = function_call.parameters[1].clone();
+                                                    parameters[i] = function_call.parameters[1].clone();
                                                     continue 'value_type_check;
                                                 }
                                             }
@@ -3797,11 +3596,11 @@ pub fn translate_function_call_expression(
                                 // HACK: [u8; 32] -> b256
                                 if let Some(32) = value_type_name.u8_array_length() {
                                     if parameter_type_name.is_b256() {
-                                        using_parameters[i] = sway::Expression::from(sway::FunctionCall {
+                                        parameters[i] = sway::Expression::from(sway::FunctionCall {
                                             function: sway::Expression::Identifier("b256::from_be_bytes".into()),
                                             generic_parameters: None,
                                             parameters: vec![
-                                                using_parameters[i].clone(),
+                                                parameters[i].clone(),
                                             ],
                                         });
                                         continue 'value_type_check;
@@ -3822,7 +3621,7 @@ pub fn translate_function_call_expression(
                             return Ok(sway::Expression::from(sway::FunctionCall {
                                 function: sway::Expression::Identifier(function.new_name.clone()),
                                 generic_parameters: None,
-                                parameters: using_parameters,
+                                parameters,
                             }));
                         }
                     }
@@ -3841,20 +3640,17 @@ pub fn translate_function_call_expression(
                 sway::TypeName::Tuple { .. } => todo!("translate tuple member function call: {} - {container:#?}", sway::TabbedDisplayer(&container)),
                 
                 sway::TypeName::StringSlice => {
-                    let parameters = arguments.iter()
+                    let mut parameters = arguments.iter()
                         .map(|a| translate_expression(project, translated_definition, scope.clone(), a))
                         .collect::<Result<Vec<_>, _>>()?;
 
-                    let parameter_types = parameters.iter()
+                    let mut parameter_types = parameters.iter()
                         .map(|p| translated_definition.get_expression_type(scope.clone(), p))
                         .collect::<Result<Vec<_>, _>>()
                         .unwrap();
                     
-                    let mut using_parameters = parameters.clone();
-                    using_parameters.insert(0, container.clone());
-
-                    let mut using_parameter_types = parameter_types.clone();
-                    using_parameter_types.insert(0, translated_definition.get_expression_type(scope.clone(), &container).unwrap());
+                    parameters.insert(0, container.clone());
+                    parameter_types.insert(0, translated_definition.get_expression_type(scope.clone(), &container).unwrap());
 
                     // Check if this is a function from a using directive
                     for using_directive in translated_definition.using_directives.clone() {
@@ -3873,52 +3669,20 @@ pub fn translate_function_call_expression(
                             .map(|d| d.toplevel_scope.clone())
                         else { continue };
 
-                        if let Some(named_arguments) = named_arguments {
-                            let mut named_parameters = vec![];
-    
-                            for arg in named_arguments {
-                                named_parameters.push((
-                                    crate::translate_naming_convention(&arg.name.name, Case::Snake),
-                                    translate_expression(project, translated_definition, scope.clone(), &arg.expr)?
-                                ));
-                            }
-    
-                            for function in external_scope.borrow().functions.iter() {
-                                let function = function.borrow();
+                        let mut parameters = parameters.clone();
+                        let mut parameter_types = parameter_types.clone();
 
-                                if function.old_name != member.name {
-                                    continue;
-                                }
-    
-                                if function.parameters.entries.len() != named_parameters.len() {
-                                    continue;
-                                }
-    
-                                if function.parameters.entries.iter().all(|p| named_parameters.iter().any(|(name, _)| p.name == *name)) {
-                                    using_parameters = vec![];
-                                    using_parameters.insert(0, container.clone());
+                        handle_function_named_arguments(
+                            project,
+                            translated_definition,
+                            scope.clone(),
+                            external_scope.clone(),
+                            member.name.as_str(),
+                            named_arguments,
+                            &mut parameters,
+                            &mut parameter_types,
+                        )?;
 
-                                    using_parameter_types = vec![];
-                                    using_parameter_types.insert(0, translated_definition.get_expression_type(scope.clone(), &container).unwrap());
-        
-                                    for parameter in function.parameters.entries.iter() {
-                                        let arg = named_arguments.iter().find(|a| {
-                                            let new_name = crate::translate_naming_convention(&a.name.name, Case::Snake);
-                                            new_name == parameter.name
-                                        }).unwrap();
-        
-                                        let parameter = translate_expression(project, translated_definition, scope.clone(), &arg.expr)?;
-                                        let parameter_type = translated_definition.get_expression_type(scope.clone(), &parameter)?;
-        
-                                        using_parameters.push(parameter);
-                                        using_parameter_types.push(parameter_type);
-                                    }
-
-                                    break;
-                                }
-                            }
-                        }
-    
                         'function_lookup: for function in external_scope.borrow().functions.iter() {
                             let function = function.borrow();
 
@@ -3928,11 +3692,11 @@ pub fn translate_function_call_expression(
                             }
 
                             // Ensure the supplied function call args match the function's parameters
-                            if using_parameters.len() != function.parameters.entries.len() {
+                            if parameters.len() != function.parameters.entries.len() {
                                 continue 'function_lookup;
                             }
 
-                            'value_type_check: for (i, value_type_name) in using_parameter_types.iter().enumerate() {
+                            'value_type_check: for (i, value_type_name) in parameter_types.iter().enumerate() {
                                 let Some(parameter_type_name) = function.parameters.entries[i].type_name.as_ref() else { continue };
 
                                 //
@@ -3943,10 +3707,10 @@ pub fn translate_function_call_expression(
 
                                 if let sway::TypeName::Identifier { name: parameter_type_name, generic_parameters: None } = parameter_type_name {
                                     if parameter_type_name == "Identity" {
-                                        if let sway::Expression::FunctionCall(function_call) = using_parameters[i].clone() {
+                                        if let sway::Expression::FunctionCall(function_call) = parameters[i].clone() {
                                             if let sway::Expression::Identifier(function_name) = &function_call.function {
                                                 if function_name == "abi" {
-                                                    using_parameters[i] = function_call.parameters[1].clone();
+                                                    parameters[i] = function_call.parameters[1].clone();
                                                     continue 'value_type_check;
                                                 }
                                             }
@@ -3957,11 +3721,11 @@ pub fn translate_function_call_expression(
                                 // HACK: [u8; 32] -> b256
                                 if let Some(32) = value_type_name.u8_array_length() {
                                     if parameter_type_name.is_b256() {
-                                        using_parameters[i] = sway::Expression::from(sway::FunctionCall {
+                                        parameters[i] = sway::Expression::from(sway::FunctionCall {
                                             function: sway::Expression::Identifier("b256::from_be_bytes".into()),
                                             generic_parameters: None,
                                             parameters: vec![
-                                                using_parameters[i].clone(),
+                                                parameters[i].clone(),
                                             ],
                                         });
                                         continue 'value_type_check;
@@ -3982,7 +3746,7 @@ pub fn translate_function_call_expression(
                             return Ok(sway::Expression::from(sway::FunctionCall {
                                 function: sway::Expression::Identifier(function.new_name.clone()),
                                 generic_parameters: None,
-                                parameters: using_parameters,
+                                parameters,
                             }));
                         }
                     }
