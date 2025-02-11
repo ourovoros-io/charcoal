@@ -40,6 +40,12 @@ fn test_custom_tests() {
 }
 
 #[test]
+fn test_code_samples_x() {
+    let path = std::path::Path::new("./tests/code_samples_x");
+    run_test(path, "");
+}
+
+#[test]
 fn test_uniswap_v2_core() {
     let path = std::path::Path::new("./tests/uniswap/v2-core");
     let repo = "https://github.com/Uniswap/v2-core.git";
