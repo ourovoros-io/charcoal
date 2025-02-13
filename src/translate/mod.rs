@@ -199,7 +199,7 @@ pub struct TranslatedDefinition {
     pub inherits: Vec<String>,
     pub using_directives: Vec<TranslatedUsingDirective>,
     pub type_definitions: Vec<sway::TypeDefinition>,
-    pub structs: Vec<sway::Struct>,
+    pub structs: Vec<Rc<RefCell<sway::Struct>>>,
     pub enums: Vec<TranslatedEnum>,
     pub events_enums: Vec<(Rc<RefCell<sway::Enum>>, Rc<RefCell<sway::Impl>>)>,
     pub errors_enums: Vec<(Rc<RefCell<sway::Enum>>, Rc<RefCell<sway::Impl>>)>,
@@ -268,7 +268,7 @@ impl Display for TranslatedDefinition {
                 writeln!(f)?;
             }
 
-            writeln!(f, "{}", sway::TabbedDisplayer(x))?;
+            writeln!(f, "{}", sway::TabbedDisplayer(&*x.borrow()))?;
             written += 1;
         }
         
@@ -381,7 +381,7 @@ impl From<TranslatedDefinition> for sway::Module {
         }
 
         for x in val.structs.iter() {
-            result.items.push(sway::ModuleItem::Struct(x.clone()));
+            result.items.push(sway::ModuleItem::Struct(x.borrow().clone()));
         }
         
         for (events_enum, abi_encode_impl) in val.events_enums.iter() {
@@ -512,21 +512,21 @@ impl TranslatedDefinition {
 
     /// Ensures that the provided struct is declared in the translated definition, as well as all of its field types.
     #[inline]
-    pub fn ensure_struct_included(&mut self, project: &Project, struct_definition: &sway::Struct) {
-        if !self.struct_names.contains(&struct_definition.name) {
-            self.struct_names.push(struct_definition.name.clone());
+    pub fn ensure_struct_included(&mut self, project: &Project, struct_definition: Rc<RefCell<sway::Struct>>) {
+        if !self.struct_names.contains(&struct_definition.borrow().name) {
+            self.struct_names.push(struct_definition.borrow().name.clone());
         }
 
-        if self.structs.contains(struct_definition) {
+        if self.structs.contains(&struct_definition) {
             return;
         }
 
-        for field in struct_definition.fields.iter() {
+        for field in struct_definition.borrow().fields.iter() {
             if let sway::TypeName::Identifier{ name, generic_parameters: None } = &field.type_name {
-                if !self.structs.iter().any(|s| s.name == *name) {
+                if !self.structs.iter().any(|s| s.borrow().name == *name) {
                     'lookup: for external_definition in project.translated_definitions.iter() {
                         for external_struct in external_definition.structs.iter() {
-                            if external_struct.name == *name {
+                            if external_struct.borrow().name == *name {
                                 self.structs.push(external_struct.clone());
                                 break 'lookup;
                             }
@@ -2105,8 +2105,8 @@ impl TranslatedDefinition {
 
                                 _ => {
                                     // Check if container is a struct
-                                    if let Some(struct_definition) = self.structs.iter().find(|s| s.name == *name) {
-                                        if let Some(field) = struct_definition.fields.iter().find(|f| f.name == member_access.member) {
+                                    if let Some(struct_definition) = self.structs.iter().find(|s| s.borrow().name == *name) {
+                                        if let Some(field) = struct_definition.borrow().fields.iter().find(|f| f.name == member_access.member) {
                                             return Ok(field.type_name.clone());
                                         }
                                     }
@@ -2143,7 +2143,9 @@ impl TranslatedDefinition {
                     }
                 
                     // Check to see if container is a struct
-                    if let Some(struct_definition) = self.structs.iter().find(|s| s.name == type_name_string) {
+                    if let Some(struct_definition) = self.structs.iter().find(|s| s.borrow().name == type_name_string) {
+                        let struct_definition = struct_definition.borrow();
+                        
                         let Some(field) = struct_definition.fields.iter().find(|f| f.name == member_access.member) else {
                             panic!("{type_name} does not contain a field named \"{}\" - member access expression: {:#?}", member_access.member, member_access.expression)
                         };

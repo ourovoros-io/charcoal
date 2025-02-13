@@ -2,6 +2,7 @@ use super::{translate_type_name, TranslatedDefinition};
 use crate::{project::Project, sway, Error};
 use convert_case::Case;
 use solang_parser::pt as solidity;
+use std::{cell::RefCell, rc::Rc};
 
 #[inline]
 pub fn translate_struct_definition(
@@ -35,12 +36,12 @@ pub fn translate_struct_definition(
 
                 (name, generic_parameters) => {
                     // HACK: import field types if we haven't already
-                    if generic_parameters.is_none() && !translated_definition.structs.iter().any(|s| s.name == *name) {
+                    if generic_parameters.is_none() && !translated_definition.structs.iter().any(|s| s.borrow().name == *name) {
                         'lookup: for external_definition in project.translated_definitions.iter() {
                             // Check if the field type is a struct
                             for external_struct in external_definition.structs.iter() {
-                                if external_struct.name == *name {
-                                    translated_definition.ensure_struct_included(project, external_struct);
+                                if external_struct.borrow().name == *name {
+                                    translated_definition.ensure_struct_included(project, external_struct.clone());
                                     break 'lookup;
                                 }
                             }
@@ -57,13 +58,13 @@ pub fn translate_struct_definition(
         });
     }
 
-    translated_definition.structs.push(sway::Struct {
+    translated_definition.structs.push(Rc::new(RefCell::new(sway::Struct {
         attributes: None,
         is_public: false,
         name: struct_definition.name.as_ref().unwrap().name.clone(),
         generic_parameters: None,
         fields,
-    });
+    })));
 
     Ok(())
 }

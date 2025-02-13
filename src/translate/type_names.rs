@@ -374,10 +374,10 @@ pub fn translate_type_name(
                         result = Some(external_enum.type_definition.name.clone());
                     }
                     // Check to see if member is a struct
-                    else if let Some(external_struct) = external_definition.structs.iter().find(|s| s.name == member.name) {
+                    else if let Some(external_struct) = external_definition.structs.iter().find(|s| s.borrow().name == member.name) {
                         translated_struct = Some(external_struct.clone());
                         result = Some(sway::TypeName::Identifier {
-                            name: external_struct.name.clone(),
+                            name: external_struct.borrow().name.clone(),
                             generic_parameters: None,
                         });
                     }
@@ -404,7 +404,7 @@ pub fn translate_type_name(
                     if let Some(translated_enum) = translated_enum {
                         translated_definition.add_enum(&translated_enum);
                     } else if let Some(translated_struct) = translated_struct {
-                        translated_definition.ensure_struct_included(project, &translated_struct);
+                        translated_definition.ensure_struct_included(project, translated_struct.clone());
                     } else if let Some(translated_type) = translated_type {
                         if !translated_definition.type_definitions.contains(&translated_type) {
                             translated_definition.type_definitions.push(translated_type);

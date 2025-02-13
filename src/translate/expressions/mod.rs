@@ -550,13 +550,13 @@ pub fn create_value_expression(
                     return sway::Expression::Identifier(format!("{}::{}", name, value.name));
                 }
                 // Check to see if the type is a struct definition
-                else if let Some(struct_definition) = translated_definition.structs.iter().find(|s| s.name == *name).cloned() {
+                else if let Some(struct_definition) = translated_definition.structs.iter().find(|s| s.borrow().name == *name).cloned() {
                     return sway::Expression::from(sway::Constructor {
                         type_name: sway::TypeName::Identifier {
                             name: name.to_string(),
                             generic_parameters: None,
                         },
-                        fields: struct_definition.fields.iter().map(|f| sway::ConstructorField {
+                        fields: struct_definition.borrow().fields.iter().map(|f| sway::ConstructorField {
                             name: f.name.clone(),
                             value: create_value_expression(translated_definition, scope.clone(), &f.type_name, value)
                         }).collect(),

@@ -64,8 +64,8 @@ pub fn translate_state_variable(
             match container.as_ref() {
                 solidity::Expression::Variable(name) => {
                     if let Some(external_definition) = project.translated_definitions.iter().find(|d| d.name == name.name) {
-                        if let Some(external_struct) = external_definition.structs.iter().find(|s| s.name == member.name) {
-                            translated_definition.ensure_struct_included(project, external_struct);
+                        if let Some(external_struct) = external_definition.structs.iter().find(|s| s.borrow().name == member.name) {
+                            translated_definition.ensure_struct_included(project, external_struct.clone());
                         }
                     }
                 }

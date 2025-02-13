@@ -80,7 +80,7 @@ fn process_import(
         // Extend struct definitions
         for struct_definition in external_definition.structs.iter() {
             if let Some(symbol) = symbol {
-                if !include_all && symbol != struct_definition.name {
+                if !include_all && symbol != struct_definition.borrow().name {
                     continue;
                 }
             }
@@ -89,7 +89,7 @@ fn process_import(
 
             if !translated_definition.structs.contains(struct_definition) {
                 translated_definition.structs.push(struct_definition.clone());
-                translated_definition.struct_names.push(struct_definition.name.clone());
+                translated_definition.struct_names.push(struct_definition.borrow().name.clone());
             }
         }
 

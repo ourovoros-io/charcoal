@@ -360,10 +360,10 @@ pub fn translate_variable_access_expression(
             let (variable, _) = translate_variable_access_expression(project, translated_definition, scope.clone(), container)?;
         
             // Check if container is a struct
-            if let Some(struct_definition) = translated_definition.structs.iter().find(|s| s.name == container_type_name_string) {
+            if let Some(struct_definition) = translated_definition.structs.iter().find(|s| s.borrow().name == container_type_name_string) {
                 let field_name = crate::translate_naming_convention(member.name.as_str(), Case::Snake);
         
-                if struct_definition.fields.iter().any(|f| f.name == field_name) {
+                if struct_definition.borrow().fields.iter().any(|f| f.name == field_name) {
                     return Ok((
                         variable,
                         sway::Expression::from(sway::MemberAccess {

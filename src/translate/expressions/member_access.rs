@@ -515,10 +515,10 @@ pub fn translate_member_access_expression(
         let container_type_name_string = container_type_name.to_string();
     
         // Check if container is a struct
-        if let Some(struct_definition) = translated_definition.structs.iter().find(|s| s.name == container_type_name_string) {
+        if let Some(struct_definition) = translated_definition.structs.iter().find(|s| s.borrow().name == container_type_name_string) {
             let field_name = crate::translate_naming_convention(member.name.as_str(), Case::Snake);
     
-            if struct_definition.fields.iter().any(|f| f.name == field_name) {
+            if struct_definition.borrow().fields.iter().any(|f| f.name == field_name) {
                 return Ok(Some(sway::Expression::from(sway::MemberAccess {
                     expression: container.clone(),
                     member: field_name,

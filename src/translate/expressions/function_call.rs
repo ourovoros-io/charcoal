@@ -1499,18 +1499,18 @@ pub fn translate_function_call_expression(
                         .collect::<Result<Vec<_>, _>>()?;
         
                     // Check to see if the expression is a by-value struct constructor
-                    if let Some(struct_definition) = translated_definition.structs.iter().find(|s| s.name == old_name).cloned() {
+                    if let Some(struct_definition) = translated_definition.structs.iter().find(|s| s.borrow().name == old_name).cloned() {
                         let mut valid = true;
 
-                        if parameters.len() != struct_definition.fields.len() {
+                        if parameters.len() != struct_definition.borrow().fields.len() {
                             if let Some(named_arguments) = named_arguments {
-                                if named_arguments.len() != struct_definition.fields.len() {
+                                if named_arguments.len() != struct_definition.borrow().fields.len() {
                                     valid = false;
                                 } else {
                                     parameters = vec![];
                                     parameter_types = vec![];
 
-                                    for field in struct_definition.fields.iter() {
+                                    for field in struct_definition.borrow().fields.iter() {
                                         let arg = named_arguments.iter().find(|a| {
                                             let new_name = crate::translate_naming_convention(&a.name.name, Case::Snake);
                                             new_name == field.name
@@ -1528,18 +1528,18 @@ pub fn translate_function_call_expression(
                             }
                         }
 
-                        if valid && !struct_definition.fields.iter().zip(parameter_types.iter()).all(|(f, t)| f.type_name.is_compatible_with(t)) {
+                        if valid && !struct_definition.borrow().fields.iter().zip(parameter_types.iter()).all(|(f, t)| f.type_name.is_compatible_with(t)) {
                             valid = false;
                         }
 
                         if valid {
                             return Ok(sway::Expression::from(sway::Constructor {
                                 type_name: sway::TypeName::Identifier {
-                                    name: struct_definition.name.clone(),
+                                    name: struct_definition.borrow().name.clone(),
                                     generic_parameters: None,
                                 },
 
-                                fields: struct_definition.fields.iter()
+                                fields: struct_definition.borrow().fields.iter()
                                     .zip(parameters.iter())
                                     .map(|(field, value)| sway::ConstructorField {
                                         name: field.name.clone(),
@@ -2073,18 +2073,18 @@ pub fn translate_function_call_expression(
                             let old_name = member.name.clone();
 
                             // Check to see if the expression is a by-value struct constructor
-                            if let Some(struct_definition) = external_definition.structs.iter().find(|s| s.name == old_name).cloned() {
+                            if let Some(struct_definition) = external_definition.structs.iter().find(|s| s.borrow().name == old_name).cloned() {
                                 let mut valid = true;
 
-                                if parameters.len() != struct_definition.fields.len() {
+                                if parameters.len() != struct_definition.borrow().fields.len() {
                                     if let Some(named_arguments) = named_arguments {
-                                        if named_arguments.len() != struct_definition.fields.len() {
+                                        if named_arguments.len() != struct_definition.borrow().fields.len() {
                                             valid = false;
                                         } else {
                                             parameters = vec![];
                                             parameter_types = vec![];
 
-                                            for field in struct_definition.fields.iter() {
+                                            for field in struct_definition.borrow().fields.iter() {
                                                 let arg = named_arguments.iter().find(|a| {
                                                     let new_name = crate::translate_naming_convention(&a.name.name, Case::Snake);
                                                     new_name == field.name
@@ -2102,20 +2102,20 @@ pub fn translate_function_call_expression(
                                     }
                                 }
 
-                                if valid && !struct_definition.fields.iter().zip(parameter_types.iter()).all(|(f, t)| f.type_name.is_compatible_with(t)) {
+                                if valid && !struct_definition.borrow().fields.iter().zip(parameter_types.iter()).all(|(f, t)| f.type_name.is_compatible_with(t)) {
                                     valid = false;
                                 }
 
                                 if valid {
-                                    translated_definition.ensure_struct_included(project, &struct_definition);
+                                    translated_definition.ensure_struct_included(project, struct_definition.clone());
 
                                     return Ok(sway::Expression::from(sway::Constructor {
                                         type_name: sway::TypeName::Identifier {
-                                            name: struct_definition.name.clone(),
+                                            name: struct_definition.borrow().name.clone(),
                                             generic_parameters: None,
                                         },
 
-                                        fields: struct_definition.fields.iter()
+                                        fields: struct_definition.borrow().fields.iter()
                                             .zip(parameters.iter())
                                             .map(|(field, value)| sway::ConstructorField {
                                                 name: field.name.clone(),
@@ -2146,18 +2146,18 @@ pub fn translate_function_call_expression(
                             let old_name = member.name.clone();
 
                             // Check to see if the expression is a by-value struct constructor
-                            if let Some(struct_definition) = translated_definition.structs.iter().find(|s| s.name == old_name).cloned() {
+                            if let Some(struct_definition) = translated_definition.structs.iter().find(|s| s.borrow().name == old_name).cloned() {
                                 let mut valid = true;
 
-                                if parameters.len() != struct_definition.fields.len() {
+                                if parameters.len() != struct_definition.borrow().fields.len() {
                                     if let Some(named_arguments) = named_arguments {
-                                        if named_arguments.len() != struct_definition.fields.len() {
+                                        if named_arguments.len() != struct_definition.borrow().fields.len() {
                                             valid = false;
                                         } else {
                                             parameters = vec![];
                                             parameter_types = vec![];
 
-                                            for field in struct_definition.fields.iter() {
+                                            for field in struct_definition.borrow().fields.iter() {
                                                 let arg = named_arguments.iter().find(|a| {
                                                     let new_name = crate::translate_naming_convention(&a.name.name, Case::Snake);
                                                     new_name == field.name
@@ -2175,20 +2175,20 @@ pub fn translate_function_call_expression(
                                     }
                                 }
 
-                                if valid && !struct_definition.fields.iter().zip(parameter_types.iter()).all(|(f, t)| f.type_name.is_compatible_with(t)) {
+                                if valid && !struct_definition.borrow().fields.iter().zip(parameter_types.iter()).all(|(f, t)| f.type_name.is_compatible_with(t)) {
                                     valid = false;
                                 }
 
                                 if valid {
-                                    translated_definition.ensure_struct_included(project, &struct_definition);
+                                    translated_definition.ensure_struct_included(project, struct_definition.clone());
 
                                     return Ok(sway::Expression::from(sway::Constructor {
                                         type_name: sway::TypeName::Identifier {
-                                            name: struct_definition.name.clone(),
+                                            name: struct_definition.borrow().name.clone(),
                                             generic_parameters: None,
                                         },
 
-                                        fields: struct_definition.fields.iter()
+                                        fields: struct_definition.borrow().fields.iter()
                                             .zip(parameters.iter())
                                             .map(|(field, value)| sway::ConstructorField {
                                                 name: field.name.clone(),

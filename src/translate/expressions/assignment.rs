@@ -421,8 +421,8 @@ pub fn translate_assignment_expression(
     if variable.is_none() {
         if let sway::Expression::MemberAccess(member_access) = &expression {
             if let sway::TypeName::Identifier{ name, .. } = translated_definition.get_expression_type(scope, &member_access.expression)? {
-                if let Some(struct_definition) = translated_definition.structs.iter().find(|s| s.name == name) {
-                    if struct_definition.fields.iter().any(|f| f.name == member_access.member) {
+                if let Some(struct_definition) = translated_definition.structs.iter().find(|s| s.borrow().name == name) {
+                    if struct_definition.borrow().fields.iter().any(|f| f.name == member_access.member) {
                         return Ok(expression);
                     }
                 }
