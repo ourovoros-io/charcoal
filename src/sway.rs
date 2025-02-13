@@ -1397,6 +1397,53 @@ impl Expression {
             },
         }))
     }
+
+    pub fn create_member_access(container: Expression, members: &[&str]) -> Expression {
+        assert!(!members.is_empty());
+
+        let mut result = container;
+
+        for member in members {
+            result = Expression::from(MemberAccess {
+                expression: result,
+                member: member.to_string(),
+            });
+        }
+
+        result
+    }
+
+    pub fn create_function_calls(
+        container: Option<Expression>,
+        member_calls: &[(&str, Option<(Option<GenericParameterList>, Vec<Expression>)>)],
+    ) -> Expression {
+        if container.is_none() {
+            assert!(!member_calls.is_empty());
+        }
+        
+        let mut result = container;
+
+        for (member, call_data) in member_calls {
+            if let Some(container) = result {
+                result = Some(Expression::from(MemberAccess {
+                    expression: container,
+                    member: member.to_string(),
+                }));
+            } else {
+                result = Some(Expression::Identifier(member.to_string()));
+            }
+
+            if let Some((generic_parameters, parameters)) = call_data {
+                result = Some(Expression::from(FunctionCall {
+                    function: result.unwrap(),
+                    generic_parameters: generic_parameters.clone(),
+                    parameters: parameters.clone(),
+                }));
+            }
+        }
+
+        result.unwrap()
+    }
 }
 
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
