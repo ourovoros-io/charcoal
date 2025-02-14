@@ -172,11 +172,9 @@ pub fn translate_state_variable(
         
             variable_type_name = sway::TypeName::StringArray { length: value.len() };
             
-            sway::Expression::from(sway::FunctionCall {
-                function: sway::Expression::Identifier("__to_str_array".into()),
-                generic_parameters: None,
-                parameters: vec![sway::Expression::from(sway::Literal::String(value))],
-            })
+            sway::Expression::create_function_calls(None, &[
+                ("__to_str_array", Some((None, vec![sway::Expression::from(sway::Literal::String(value))]))),
+            ])
         }
         
         _ => if let Some(x) = variable_definition.initializer.as_ref() {
@@ -318,37 +316,18 @@ pub fn translate_state_variable(
             });
 
             for (parameter, needs_unwrap) in parameters.iter() {
-                expression = sway::Expression::from(sway::FunctionCall {
-                    function: sway::Expression::from(sway::MemberAccess {
-                        expression,
-                        member: "get".into(),
-                    }),
-                    generic_parameters: None,
-                    parameters: vec![
-                        sway::Expression::Identifier(parameter.name.clone()),
-                    ],
-                });
+                expression = sway::Expression::create_function_calls(Some(expression), &[
+                    ("get", Some((None, vec![sway::Expression::Identifier(parameter.name.clone())]))),
+                ]);
 
                 if *needs_unwrap {
-                    expression = sway::Expression::from(sway::FunctionCall {
-                        function: sway::Expression::from(sway::MemberAccess {
-                            expression,
-                            member: "unwrap".into(),
-                        }),
-                        generic_parameters: None,
-                        parameters: vec![],
-                    });
+                    expression = sway::Expression::create_function_calls(Some(expression), &[
+                        ("unwrap", Some((None, vec![]))),
+                    ]);
                 }
             }
             
-            sway::Expression::from(sway::FunctionCall {
-                function: sway::Expression::from(sway::MemberAccess {
-                    expression,
-                    member: "read".into(),
-                }),
-                generic_parameters: None,
-                parameters: vec![],
-            })
+            sway::Expression::create_function_calls(Some(expression), &[("read", Some((None, vec![])))])
         } else if is_constant || is_immutable {
             sway::Expression::Identifier(new_name.clone())
         } else {
@@ -362,11 +341,9 @@ pub fn translate_state_variable(
     // Create the body for the contract impl's function wrapper
     sway_function.body = Some(sway::Block {
         statements: vec![],
-        final_expr: Some(sway::Expression::from(sway::FunctionCall {
-            function: sway::Expression::Identifier(format!("::{}", sway_function.name)),
-            generic_parameters: None,
-            parameters: vec![],
-        })),
+        final_expr: Some(sway::Expression::create_function_calls(None, &[
+            (format!("::{}", sway_function.name).as_str(), Some((None, vec![]))),
+        ])),
     });
 
     // Create the function wrapper item for the contract impl block

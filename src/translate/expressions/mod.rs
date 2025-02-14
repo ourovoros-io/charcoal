@@ -17,7 +17,6 @@ pub mod list;
 pub mod member_access;
 pub mod new;
 pub mod parenthesis;
-pub mod power;
 pub mod pre_post;
 pub mod expression_type;
 pub mod variable;
@@ -748,7 +747,7 @@ pub fn translate_expression(
         solidity::Expression::UnaryPlus(_, x) => translate_expression(project, translated_definition, scope.clone(), x),
         solidity::Expression::Negate(_, x) => binary_unary::translate_unary_expression(project, translated_definition, scope.clone(), "-", x),
         
-        solidity::Expression::Power(_, lhs, rhs) => power::translate_power_expression(project, translated_definition, scope.clone(), lhs, rhs),
+        solidity::Expression::Power(_, lhs, rhs) => binary_unary::translate_power_expression(project, translated_definition, scope.clone(), lhs, rhs),
         solidity::Expression::Multiply(_, lhs, rhs) => binary_unary::translate_binary_expression(project, translated_definition, scope.clone(), "*", lhs, rhs),
         solidity::Expression::Divide(_, lhs, rhs) => binary_unary::translate_binary_expression(project, translated_definition, scope.clone(), "/", lhs, rhs),
         solidity::Expression::Modulo(_, lhs, rhs) => binary_unary::translate_binary_expression(project, translated_definition, scope.clone(), "%", lhs, rhs),

@@ -105,16 +105,12 @@ pub fn translate_variable_definition_statement(
                             body: sway::Block {
                                 statements: vec![
                                     // v.push(0);
-                                    sway::Statement::from(sway::Expression::from(sway::FunctionCall {
-                                        function: sway::Expression::from(sway::MemberAccess {
-                                            expression: sway::Expression::Identifier("v".into()),
-                                            member: "push".into(),
-                                        }),
-                                        generic_parameters: None,
-                                        parameters: vec![
+                                    sway::Statement::from(sway::Expression::create_function_calls(None, &[
+                                        ("v", None),
+                                        ("push", Some((None, vec![
                                             create_value_expression(translated_definition, scope.clone(), element_type_name, None),
-                                        ],
-                                    })),
+                                        ]))),
+                                    ])),
 
                                     // i += 1;
                                     sway::Statement::from(sway::Expression::from(sway::BinaryExpression {

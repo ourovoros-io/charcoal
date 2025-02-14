@@ -172,16 +172,12 @@ pub fn translate_new_expression(
                             body: sway::Block {
                                 statements: vec![
                                     // v.push(0);
-                                    sway::Statement::from(sway::Expression::from(sway::FunctionCall {
-                                        function: sway::Expression::from(sway::MemberAccess {
-                                            expression: sway::Expression::Identifier("v".into()),
-                                            member: "push".into(),
-                                        }),
-                                        generic_parameters: None,
-                                        parameters: vec![
+                                    sway::Statement::from(sway::Expression::create_function_calls(None, &[
+                                        ("v", None),
+                                        ("push", Some((None, vec![
                                             sway::Expression::from(sway::Literal::DecInt(BigUint::zero(), None)),
-                                        ],
-                                    })),
+                                        ]))),
+                                    ])),
 
                                     // i += 1;
                                     sway::Statement::from(sway::Expression::from(sway::BinaryExpression {
@@ -267,16 +263,12 @@ pub fn translate_new_expression(
                             body: sway::Block {
                                 statements: vec![
                                     // v.push(0);
-                                    sway::Statement::from(sway::Expression::from(sway::FunctionCall {
-                                        function: sway::Expression::from(sway::MemberAccess {
-                                            expression: sway::Expression::Identifier("v".into()),
-                                            member: "push".into(),
-                                        }),
-                                        generic_parameters: None,
-                                        parameters: vec![
+                                    sway::Statement::from(sway::Expression::create_function_calls(None, &[
+                                        ("v", None),
+                                        ("push", Some((None, vec![
                                             sway::Expression::from(sway::Literal::DecInt(BigUint::zero(), None)),
-                                        ],
-                                    })),
+                                        ]))),
+                                    ])),
 
                                     // i += 1;
                                     sway::Statement::from(sway::Expression::from(sway::BinaryExpression {

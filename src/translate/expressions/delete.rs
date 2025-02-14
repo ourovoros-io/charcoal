@@ -26,14 +26,7 @@ pub fn translate_delete_expression(
                     let expression = translate_expression(project, translated_definition, scope.clone(), expression)?;
                     let index = translate_expression(project, translated_definition, scope, index.as_ref().unwrap())?;
                     
-                    return Ok(sway::Expression::from(sway::FunctionCall {
-                        function: sway::Expression::from(sway::MemberAccess {
-                            expression,
-                            member: "remove".into(),
-                        }),
-                        generic_parameters: None,
-                        parameters: vec![index],
-                    }));
+                    return Ok(sway::Expression::create_function_calls(Some(expression), &[("remove", Some((None, vec![index])))]));
                 }
             }
         }

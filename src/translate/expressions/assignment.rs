@@ -28,22 +28,17 @@ pub fn create_assignment_expression(
     let type_name = variable.borrow().type_name.clone();
 
     if is_storage {
-        Ok(sway::Expression::from(sway::FunctionCall {
-            function: sway::Expression::from(sway::MemberAccess {
-                expression: expression.clone(),
-                member: match (&type_name, &rhs_type_name) {
-                    (
-                        sway::TypeName::Identifier { name: lhs_name, .. },
-                        sway::TypeName::StringSlice
-                    ) if lhs_name == "StorageString" => {
-                        "write_slice".into()
-                    }
+        let member = match (&type_name, &rhs_type_name) {
+            (
+                sway::TypeName::Identifier { name: lhs_name, .. },
+                sway::TypeName::StringSlice
+            ) if lhs_name == "StorageString" => "write_slice",
 
-                    _ => "write".into(),
-                },
-            }),
-            generic_parameters: None,
-            parameters: vec![
+            _ => "write".into(),
+        };
+
+        Ok(sway::Expression::create_function_calls(Some(expression.clone()), &[
+            (member, Some((None, vec![
                 match operator {
                     "=" => match (&type_name, &rhs_type_name) {
                         (
@@ -52,12 +47,7 @@ pub fn create_assignment_expression(
                         ) if lhs_name == "StorageString" => {
                             // Ensure `std::string::*` is imported
                             translated_definition.ensure_use_declared("std::string::*");
-
-                            sway::Expression::from(sway::FunctionCall {
-                                function: sway::Expression::Identifier("String::from_ascii_str".into()),
-                                generic_parameters: None,
-                                parameters: vec![rhs.clone()],
-                            })
+                            sway::Expression::create_function_calls(None, &[("String::from_ascii_str", Some((None, vec![rhs.clone()])))])
                         }
 
                         _ => rhs.clone(),
@@ -82,54 +72,28 @@ pub fn create_assignment_expression(
                                                         if lhs_bits > rhs_bits {
                                                             sway::Expression::from(sway::BinaryExpression{
                                                                 operator,
-                                                                lhs: sway::Expression::from(sway::FunctionCall {
-                                                                    function: sway::Expression::from(sway::MemberAccess {
-                                                                        expression: expression.clone(),
-                                                                        member: "read".into(),
-                                                                    }),
-                                                                    generic_parameters: None,
-                                                                    parameters: vec![],
-                                                                }),
-                                                                rhs: sway::Expression::from(sway::FunctionCall {
-                                                                    function: sway::Expression::from(sway::MemberAccess{
-                                                                        expression: rhs,
-                                                                        member: format!("as_u{lhs_bits}"),
-                                                                    }),
-                                                                    generic_parameters: None,
-                                                                    parameters: vec![],
-                                                                })
+                                                                lhs: sway::Expression::create_function_calls(Some(expression.clone()), &[
+                                                                    ("read", Some((None, vec![]))),
+                                                                ]),
+                                                                rhs: sway::Expression::create_function_calls(Some(rhs), &[
+                                                                    (format!("as_u{lhs_bits}").as_str(), Some((None, vec![]))),
+                                                                ]),
                                                             })
                                                         } else if lhs_bits < rhs_bits {
                                                             sway::Expression::from(sway::BinaryExpression{
                                                                 operator,
-                                                                lhs: sway::Expression::from(sway::FunctionCall {
-                                                                    function: sway::Expression::from(sway::MemberAccess{
-                                                                        expression: sway::Expression::from(sway::FunctionCall {
-                                                                            function: sway::Expression::from(sway::MemberAccess {
-                                                                                expression: expression.clone(),
-                                                                                member: "read".into(),
-                                                                            }),
-                                                                            generic_parameters: None,
-                                                                            parameters: vec![],
-                                                                        }),
-                                                                        member: format!("as_u{rhs_bits}"),
-                                                                    }),
-                                                                    generic_parameters: None,
-                                                                    parameters: vec![],
-                                                                }),
+                                                                lhs: sway::Expression::create_function_calls(Some(expression.clone()), &[
+                                                                    ("read", Some((None, vec![]))),
+                                                                    (format!("as_u{rhs_bits}").as_str(), Some((None, vec![]))),
+                                                                ]),
                                                                 rhs,
                                                             })
                                                         } else {
                                                             sway::Expression::from(sway::BinaryExpression{
                                                                 operator,
-                                                                lhs: sway::Expression::from(sway::FunctionCall {
-                                                                    function: sway::Expression::from(sway::MemberAccess {
-                                                                        expression: expression.clone(),
-                                                                        member: "read".into(),
-                                                                    }),
-                                                                    generic_parameters: None,
-                                                                    parameters: vec![],
-                                                                }),
+                                                                lhs: sway::Expression::create_function_calls(Some(expression.clone()), &[
+                                                                    ("read", Some((None, vec![]))),
+                                                                ]),
                                                                 rhs,
                                                             })
                                                         }
@@ -137,14 +101,9 @@ pub fn create_assignment_expression(
                                 
                                                     _ => sway::Expression::from(sway::BinaryExpression{
                                                         operator,
-                                                        lhs: sway::Expression::from(sway::FunctionCall {
-                                                            function: sway::Expression::from(sway::MemberAccess {
-                                                                expression: expression.clone(),
-                                                                member: "read".into(),
-                                                            }),
-                                                            generic_parameters: None,
-                                                            parameters: vec![],
-                                                        }),
+                                                        lhs: sway::Expression::create_function_calls(Some(expression.clone()), &[
+                                                            ("read", Some((None, vec![]))),
+                                                        ]),
                                                         rhs,
                                                     })
                                                 }
@@ -152,14 +111,9 @@ pub fn create_assignment_expression(
                                 
                                             _ => sway::Expression::from(sway::BinaryExpression{
                                                 operator,
-                                                lhs: sway::Expression::from(sway::FunctionCall {
-                                                    function: sway::Expression::from(sway::MemberAccess {
-                                                        expression: expression.clone(),
-                                                        member: "read".into(),
-                                                    }),
-                                                    generic_parameters: None,
-                                                    parameters: vec![],
-                                                }),
+                                                lhs: sway::Expression::create_function_calls(Some(expression.clone()), &[
+                                                    ("read", Some((None, vec![]))),
+                                                ]),
                                                 rhs,
                                             })
                                         }
@@ -167,14 +121,9 @@ pub fn create_assignment_expression(
 
                                     _ => sway::Expression::from(sway::BinaryExpression{
                                         operator,
-                                        lhs: sway::Expression::from(sway::FunctionCall {
-                                            function: sway::Expression::from(sway::MemberAccess {
-                                                expression: expression.clone(),
-                                                member: "read".into(),
-                                            }),
-                                            generic_parameters: None,
-                                            parameters: vec![],
-                                        }),
+                                        lhs: sway::Expression::create_function_calls(Some(expression.clone()), &[
+                                            ("read", Some((None, vec![]))),
+                                        ]),
                                         rhs,
                                     })
                                 }
@@ -182,65 +131,45 @@ pub fn create_assignment_expression(
 
                             _ => sway::Expression::from(sway::BinaryExpression{
                                 operator,
-                                lhs: sway::Expression::from(sway::FunctionCall {
-                                    function: sway::Expression::from(sway::MemberAccess {
-                                        expression: expression.clone(),
-                                        member: "read".into(),
-                                    }),
-                                    generic_parameters: None,
-                                    parameters: vec![],
-                                }),
+                                lhs: sway::Expression::create_function_calls(Some(expression.clone()), &[
+                                    ("read", Some((None, vec![]))),
+                                ]),
                                 rhs,
                             }),
                         }
                     }
                 },
-            ],
-        }))
+            ]))),
+        ]))
     } else {
         match &type_name {
             sway::TypeName::Identifier { name, .. } if name == "Vec" => match &expression {
-                sway::Expression::ArrayAccess(array_access) => Ok(sway::Expression::from(sway::FunctionCall {
-                    function: sway::Expression::from(sway::MemberAccess {
-                        expression: array_access.expression.clone(),
-                        member: "set".into(),
-                    }),
-                    generic_parameters: None,
-                    parameters: vec![
-                        array_access.index.clone(),
-                        match operator {
-                            "=" => rhs.clone(),
-                            
-                            _ => {
-                                variable.borrow_mut().read_count += 1;
+                sway::Expression::ArrayAccess(array_access) => Ok(sway::Expression::create_function_calls(
+                    Some(array_access.expression.clone()), &[
+                        ("set", Some((None, vec![
+                            array_access.index.clone(),
+                            match operator {
+                                "=" => rhs.clone(),
                                 
-                                sway::Expression::from(sway::BinaryExpression {
-                                    operator: operator.trim_end_matches('=').into(),
-    
-                                    lhs: sway::Expression::from(sway::FunctionCall {
-                                        function: sway::Expression::from(sway::MemberAccess {
-                                            expression: sway::Expression::from(sway::FunctionCall {
-                                                function: sway::Expression::from(sway::MemberAccess {
-                                                    expression: array_access.expression.clone(),
-                                                    member: "get".into(),
-                                                }),
-                                                generic_parameters: None,
-                                                parameters: vec![
-                                                    array_access.index.clone(),
-                                                ],
-                                            }),
-                                            member: "unwrap".into(),
-                                        }),
-                                        generic_parameters: None,
-                                        parameters: vec![],
-                                    }),
-    
-                                    rhs: rhs.clone(),
-                                })
+                                _ => {
+                                    variable.borrow_mut().read_count += 1;
+                                    
+                                    sway::Expression::from(sway::BinaryExpression {
+                                        operator: operator.trim_end_matches('=').into(),
+        
+                                        lhs: sway::Expression::create_function_calls(
+                                            Some(array_access.expression.clone()), &[
+                                                ("get", Some((None, vec![array_access.index.clone()]))),
+                                                ("unwrap", Some((None, vec![]))),
+                                            ]),
+        
+                                        rhs: rhs.clone(),
+                                    })
+                                }
                             }
-                        }
+                        ]))),
                     ],
-                })),
+                )),
 
                 sway::Expression::MemberAccess(member_access) => match &member_access.expression {
                     sway::Expression::ArrayAccess(array_access) => {
@@ -259,23 +188,12 @@ pub fn create_assignment_expression(
                                         name: variable_name.clone(),
                                     }),
                                     type_name: None,
-                                    value: sway::Expression::from(sway::FunctionCall {
-                                        function: sway::Expression::from(sway::MemberAccess {
-                                            expression: sway::Expression::from(sway::FunctionCall {
-                                                function: sway::Expression::from(sway::MemberAccess {
-                                                    expression: array_access.expression.clone(),
-                                                    member: "get".into(),
-                                                }),
-                                                generic_parameters: None,
-                                                parameters: vec![
-                                                    array_access.index.clone(),
-                                                ],
-                                            }),
-                                            member: "unwrap".into(),
-                                        }),
-                                        generic_parameters: None,
-                                        parameters: vec![],
-                                    }),
+                                    value: sway::Expression::create_function_calls(
+                                        Some(array_access.expression.clone()), &[
+                                            ("get", Some((None, vec![array_access.index.clone()]))),
+                                            ("unwrap", Some((None, vec![]))),
+                                        ],
+                                    ),
                                 }),
                                 // x.member = value;
                                 sway::Statement::from(sway::Expression::from(sway::BinaryExpression {
@@ -287,16 +205,13 @@ pub fn create_assignment_expression(
                                     rhs: rhs.clone(),
                                 })),
                                 // expr.set(i, a);
-                                sway::Statement::from(sway::Expression::from(sway::FunctionCall {
-                                    function: sway::Expression::from(sway::MemberAccess {
-                                        expression: array_access.expression.clone(),
-                                        member: "set".into(),
-                                    }),
-                                    generic_parameters: None,
-                                    parameters: vec![
-                                        sway::Expression::Identifier(variable_name.clone()),
+                                sway::Statement::from(sway::Expression::create_function_calls(
+                                    Some(array_access.expression.clone()), &[
+                                        ("set", Some((None, vec![
+                                            sway::Expression::Identifier(variable_name.clone()),
+                                        ]))),
                                     ],
-                                })),
+                                )),
                             ],
                             final_expr: None,
                         }))
@@ -325,17 +240,14 @@ pub fn create_assignment_expression(
                             sway::Expression::FunctionCall(function_call) => match &function_call.function {
                                 sway::Expression::MemberAccess(member_access) => match member_access.member.as_str() {
                                     "get" if function_call.parameters.len() == 1 => {
-                                        Ok(sway::Expression::from(sway::FunctionCall {
-                                            function: sway::Expression::from(sway::MemberAccess {
-                                                expression: member_access.expression.clone(),
-                                                member: "set".into(),
-                                            }),
-                                            generic_parameters: None,
-                                            parameters: vec![
-                                                function_call.parameters[0].clone(),
-                                                rhs,
+                                        Ok(sway::Expression::create_function_calls(
+                                            Some(member_access.expression.clone()), &[
+                                                ("set", Some((None, vec![
+                                                    function_call.parameters[0].clone(),
+                                                    rhs,
+                                                ]))),
                                             ],
-                                        }))
+                                        ))
                                     }
 
                                     _ => todo!("translation assignment expression: {}", sway::TabbedDisplayer(expression)),

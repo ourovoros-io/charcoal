@@ -769,43 +769,29 @@ pub fn translate_function_definition(
 
         // Add the `constructor_called` requirement to the beginning of the function
         // require(!storage.initialized.read(), "The Contract constructor has already been called");
-        function_body.statements.insert(0, sway::Statement::from(sway::Expression::from(sway::FunctionCall {
-            function: sway::Expression::Identifier("require".into()),
-            generic_parameters: None,
-            parameters: vec![
+        function_body.statements.insert(0, sway::Statement::from(sway::Expression::create_function_calls(None, &[
+            ("require", Some((None, vec![
                 sway::Expression::from(sway::UnaryExpression {
                     operator: "!".into(),
-                    expression: sway::Expression::from(sway::FunctionCall {
-                        function: sway::Expression::from(sway::MemberAccess {
-                            expression: sway::Expression::from(sway::MemberAccess {
-                                expression: sway::Expression::Identifier("storage".into()),
-                                member: constructor_called_variable_name.clone(),
-                            }),
-                            member: "read".into(),
-                        }),
-                        generic_parameters: None,
-                        parameters: vec![],
-                    })
+                    expression: sway::Expression::create_function_calls(None, &[
+                        ("storage", None),
+                        (constructor_called_variable_name.as_str(), None),
+                        ("read", Some((None, vec![]))),
+                    ])
                 }),
                 sway::Expression::from(sway::Literal::String(format!("The {} constructor has already been called", translated_definition.name))),
-            ],
-        })));
+            ]))),
+        ])));
 
         // Set the `constructor_called` storage field to `true` at the end of the function
         // storage.initialized.write(true);
-        function_body.statements.push(sway::Statement::from(sway::Expression::from(sway::FunctionCall {
-            function: sway::Expression::from(sway::MemberAccess {
-                expression: sway::Expression::from(sway::MemberAccess {
-                    expression: sway::Expression::Identifier("storage".into()),
-                    member: constructor_called_variable_name.clone(),
-                }),
-                member: "write".into(),
-            }),
-            generic_parameters: None,
-            parameters: vec![
+        function_body.statements.push(sway::Statement::from(sway::Expression::create_function_calls(None, &[
+            ("storage", None),
+            (constructor_called_variable_name.as_str(), None),
+            ("write", Some((None, vec![
                 sway::Expression::from(sway::Literal::Bool(true)),
-            ],
-        })));
+            ]))),
+        ])));
     }
 
     // Check for parameters that were mutated and make them local variables
@@ -945,11 +931,17 @@ pub fn translate_function_definition(
         // Create the body for the contract impl's function wrapper
         sway_function.body = Some(sway::Block {
             statements: vec![],
-            final_expr: Some(sway::Expression::from(sway::FunctionCall {
-                function: sway::Expression::Identifier(format!("::{}", sway_function.name)),
-                generic_parameters: None,
-                parameters: sway_function.parameters.entries.iter().map(|p| sway::Expression::Identifier(p.name.clone())).collect(),
-            })),
+            final_expr: Some(sway::Expression::create_function_calls(None, &[
+                (
+                    format!("::{}", sway_function.name).as_str(),
+                    Some((
+                        None,
+                        sway_function.parameters.entries.iter()
+                            .map(|p| sway::Expression::Identifier(p.name.clone()))
+                            .collect(),
+                    )),
+                ),
+            ])),
         });
         
         sway_function.name = new_name_2;

@@ -27,18 +27,10 @@ pub fn translate_variable_expression(
     match variable.name.as_str() {
         "now" => {
             // now => std::block::timestamp().as_u256()
-            return Ok(sway::Expression::from(sway::FunctionCall {
-                function: sway::Expression::from(sway::MemberAccess {
-                    expression: sway::Expression::from(sway::FunctionCall {
-                        function: sway::Expression::Identifier("std::block::timestamp".into()),
-                        generic_parameters: None,
-                        parameters: vec![],
-                    }),
-                    member: "as_u256".into(),
-                }),
-                generic_parameters: None,
-                parameters: vec![],
-            }));
+            return Ok(sway::Expression::create_function_calls(None, &[
+                ("std::block::timestamp", Some((None, vec![]))),
+                ("as_u256", Some((None, vec![]))),
+            ]));
         }
 
         _ => {}
@@ -62,31 +54,15 @@ pub fn translate_variable_expression(
     if variable.is_storage {
         match &variable.type_name {
             sway::TypeName::Identifier { name, .. } if name == "StorageString" => {
-                Ok(sway::Expression::from(sway::FunctionCall {
-                    function: sway::Expression::from(sway::MemberAccess {
-                        expression: sway::Expression::from(sway::FunctionCall {
-                            function: sway::Expression::from(sway::MemberAccess {
-                                expression,
-                                member: "read_slice".into(),
-                            }),
-                            generic_parameters: None,
-                            parameters: vec![],
-                        }),
-                        member: "unwrap".into(),
-                    }),
-                    generic_parameters: None,
-                    parameters: vec![],
-                }))
+                Ok(sway::Expression::create_function_calls(Some(expression), &[
+                    ("read_slice", Some((None, vec![]))),
+                    ("unwrap", Some((None, vec![]))),
+                ]))
             }
 
-            _ => Ok(sway::Expression::from(sway::FunctionCall {
-                function: sway::Expression::from(sway::MemberAccess {
-                    expression,
-                    member: "read".into(),
-                }),
-                generic_parameters: None,
-                parameters: vec![],
-            }))
+            _ => Ok(sway::Expression::create_function_calls(Some(expression), &[
+                ("read", Some((None, vec![]))),
+            ]))
         }
     } else {
         Ok(expression)
@@ -158,50 +134,22 @@ pub fn translate_variable_access_expression(
                 Some(variable),
                 match type_name {
                     sway::TypeName::Identifier { name, generic_parameters } => match (name.as_str(), generic_parameters.as_ref()) {
-                        ("Bytes", None) => sway::Expression::from(sway::FunctionCall {
-                            function: sway::Expression::from(sway::MemberAccess {
-                                expression: sway::Expression::from(sway::FunctionCall {
-                                    function: sway::Expression::from(sway::MemberAccess {
-                                        expression,
-                                        member: "get".into(),
-                                    }),
-                                    generic_parameters: None,
-                                    parameters: vec![index,
-                                    ],
-                                }),
-                                member: "unwrap".into(),
-                            }),
-                            generic_parameters: None,
-                            parameters: vec![],
-                        }),
+                        ("Bytes", None) => sway::Expression::create_function_calls(Some(expression), &[
+                            ("get", Some((None, vec![index]))),
+                            ("unwrap", Some((None, vec![]))),
+                        ]),
 
                         ("StorageKey", Some(generic_parameters)) if generic_parameters.entries.len() == 1 => {
                             match &generic_parameters.entries[0].type_name {
                                 sway::TypeName::Identifier { name, generic_parameters } => match (name.as_str(), generic_parameters.as_ref()) {
-                                    ("StorageMap", Some(_)) => sway::Expression::from(sway::FunctionCall {
-                                        function: sway::Expression::from(sway::MemberAccess {
-                                            expression,
-                                            member: "get".into(),
-                                        }),
-                                        generic_parameters: None,
-                                        parameters: vec![index],
-                                    }),
+                                    ("StorageMap", Some(_)) => sway::Expression::create_function_calls(Some(expression), &[
+                                        ("get", Some((None, vec![index]))),
+                                    ]),
             
-                                    ("StorageVec", Some(_)) => sway::Expression::from(sway::FunctionCall {
-                                        function: sway::Expression::from(sway::MemberAccess {
-                                            expression: sway::Expression::from(sway::FunctionCall {
-                                                function: sway::Expression::from(sway::MemberAccess {
-                                                    expression,
-                                                    member: "get".into(),
-                                                }),
-                                                generic_parameters: None,
-                                                parameters: vec![index],
-                                            }),
-                                            member: "unwrap".into(),
-                                        }),
-                                        generic_parameters: None,
-                                        parameters: vec![],
-                                    }),
+                                    ("StorageVec", Some(_)) => sway::Expression::create_function_calls(Some(expression), &[
+                                        ("get", Some((None, vec![index]))),
+                                        ("unwrap", Some((None, vec![]))),
+                                    ]),
             
                                     (name, _) => todo!(
                                         "{}TODO: translate {name} array subscript expression: {solidity_expression} - {} {expression:#?}",
@@ -225,22 +173,10 @@ pub fn translate_variable_access_expression(
                         }
 
                         ("Vec", Some(generic_parameters)) if generic_parameters.entries.len() == 1 => {
-                            sway::Expression::from(sway::FunctionCall {
-                                function: sway::Expression::from(sway::MemberAccess {
-                                    expression: sway::Expression::from(sway::FunctionCall {
-                                        function: sway::Expression::from(sway::MemberAccess {
-                                            expression,
-                                            member: "get".into(),
-                                        }),
-                                        generic_parameters: None,
-                                        parameters: vec![index,
-                                        ],
-                                    }),
-                                    member: "unwrap".into(),
-                                }),
-                                generic_parameters: None,
-                                parameters: vec![],
-                            })
+                            sway::Expression::create_function_calls(Some(expression), &[
+                                ("get", Some((None, vec![index]))),
+                                ("unwrap", Some((None, vec![]))),
+                            ])
                         }
 
                         (name, _) => todo!(
@@ -254,14 +190,9 @@ pub fn translate_variable_access_expression(
                     }
 
                     _ => if is_storage {
-                        sway::Expression::from(sway::FunctionCall {
-                            function: sway::Expression::from(sway::MemberAccess {
-                                expression,
-                                member: "get".into(),
-                            }),
-                            generic_parameters: None,
-                            parameters: vec![index],
-                        })
+                        sway::Expression::create_function_calls(Some(expression), &[
+                            ("get", Some((None, vec![index]))),
+                        ])
                     } else {
                         sway::Expression::from(sway::ArrayAccess {
                             expression,
@@ -344,14 +275,9 @@ pub fn translate_variable_access_expression(
 
             // HACK: tack `.read()` onto the end if the container is a StorageKey
             if let Some(storage_key_type) = container_type_name.storage_key_type() {
-                translated_container = sway::Expression::from(sway::FunctionCall {
-                    function: sway::Expression::from(sway::MemberAccess {
-                        expression: translated_container,
-                        member: "read".into(),
-                    }),
-                    generic_parameters: None,
-                    parameters: vec![],
-                });
+                translated_container = sway::Expression::create_function_calls(Some(translated_container), &[
+                    ("read", Some((None, vec![]))),
+                ]);
 
                 container_type_name = storage_key_type;
                 container_type_name_string = container_type_name.to_string();

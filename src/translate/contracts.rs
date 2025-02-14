@@ -260,10 +260,10 @@ pub fn translate_contract_definition(
 
         // Create assignment statements for all of the deferred initializations
         for deferred_initialization in deferred_initializations.iter().rev() {
-            let lhs = sway::Expression::from(sway::MemberAccess {
-                expression: sway::Expression::Identifier("storage".into()),
-                member: deferred_initialization.name.clone(),
-            });
+            let lhs = sway::Expression::create_member_access(
+                sway::Expression::Identifier("storage".into()),
+                &[deferred_initialization.name.as_str()],
+            );
             
             let value_type_name = translated_definition.get_expression_type(translated_definition.toplevel_scope.clone(), &deferred_initialization.value)?;
             let variable = translated_definition.toplevel_scope.borrow().get_variable_from_new_name(&deferred_initialization.name).unwrap();
@@ -271,19 +271,13 @@ pub fn translate_contract_definition(
             match &deferred_initialization.value {
                 sway::Expression::Array(sway::Array { elements }) => {
                     for element in elements {
-                        assignment_statements.push(sway::Statement::from(sway::Expression::from(sway::FunctionCall {
-                            function: sway::Expression::from(sway::MemberAccess {
-                                expression: sway::Expression::from(sway::MemberAccess {
-                                    expression: sway::Expression::Identifier("storage".into()),
-                                    member: deferred_initialization.name.clone(),
-                                }),
-                                member: "push".into(),
-                            }),
-                            generic_parameters: None,
-                            parameters: vec![
+                        assignment_statements.push(sway::Statement::from(sway::Expression::create_function_calls(None, &[
+                            ("storage", None),
+                            (deferred_initialization.name.as_str(), None),
+                            ("push", Some((None, vec![
                                 element.clone(),
-                            ],
-                        })));
+                            ]))),
+                        ])));
                     }
                 }
 
@@ -339,43 +333,29 @@ pub fn translate_contract_definition(
     
             // Add the `constructor_called` requirement to the beginning of the function
             // require(!storage.initialized.read(), "The Contract constructor has already been called");
-            function_body.statements.insert(0, sway::Statement::from(sway::Expression::from(sway::FunctionCall {
-                function: sway::Expression::Identifier("require".into()),
-                generic_parameters: None,
-                parameters: vec![
+            function_body.statements.insert(0, sway::Statement::from(sway::Expression::create_function_calls(None, &[
+                ("require", Some((None, vec![
                     sway::Expression::from(sway::UnaryExpression {
                         operator: "!".into(),
-                        expression: sway::Expression::from(sway::FunctionCall {
-                            function: sway::Expression::from(sway::MemberAccess {
-                                expression: sway::Expression::from(sway::MemberAccess {
-                                    expression: sway::Expression::Identifier("storage".into()),
-                                    member: constructor_called_variable_name.clone(),
-                                }),
-                                member: "read".into(),
-                            }),
-                            generic_parameters: None,
-                            parameters: vec![],
-                        })
+                        expression: sway::Expression::create_function_calls(None, &[
+                            ("storage", None),
+                            (constructor_called_variable_name.as_str(), None),
+                            ("read", Some((None, vec![]))),
+                        ]),
                     }),
                     sway::Expression::from(sway::Literal::String(format!("The {} constructor has already been called", translated_definition.name))),
-                ],
-            })));
+                ]))),
+            ])));
     
             // Set the `constructor_called` storage field to `true` at the end of the function
             // storage.initialized.write(true);
-            function_body.statements.push(sway::Statement::from(sway::Expression::from(sway::FunctionCall {
-                function: sway::Expression::from(sway::MemberAccess {
-                    expression: sway::Expression::from(sway::MemberAccess {
-                        expression: sway::Expression::Identifier("storage".into()),
-                        member: constructor_called_variable_name.clone(),
-                    }),
-                    member: "write".into(),
-                }),
-                generic_parameters: None,
-                parameters: vec![
+            function_body.statements.push(sway::Statement::from(sway::Expression::create_function_calls(None, &[
+                ("storage", None),
+                (constructor_called_variable_name.as_str(), None),
+                ("write", Some((None, vec![
                     sway::Expression::from(sway::Literal::Bool(true)),
-                ],
-            })));
+                ]))),
+            ])));
 
             translated_definition.get_contract_impl().items.insert(0, sway::ImplItem::Function(function));
             constructor_function = translated_definition.get_contract_impl().items.iter_mut()

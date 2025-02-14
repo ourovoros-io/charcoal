@@ -23,21 +23,12 @@ pub fn translate_binary_expression(
                     if name == "Identity" {
                         if let solidity::Expression::NumberLiteral(_, value, _, _) = rhs {
                             if value == "0" {
-                                return Ok(sway::Expression::from(sway::FunctionCall {
-                                    function: sway::Expression::from(sway::MemberAccess {
-                                        expression: sway::Expression::from(sway::FunctionCall {
-                                            function: sway::Expression::from(sway::MemberAccess {
-                                                expression,
-                                                member: "as_contract_id".into(),
-                                            }),
-                                            generic_parameters: None,
-                                            parameters: vec![],
-                                        }),
-                                        member: "is_none".into(),
-                                    }),
-                                    generic_parameters: None,
-                                    parameters: vec![],
-                                }));
+                                return Ok(sway::Expression::create_function_calls(
+                                    Some(expression), &[
+                                        ("as_contract_id", Some((None, vec![]))),
+                                        ("is_none", Some((None, vec![]))),
+                                    ],
+                                ));
                             }
                         }
                     }
@@ -100,26 +91,16 @@ pub fn translate_binary_expression(
                                 sway::Expression::from(sway::BinaryExpression{
                                     operator: operator.into(),
                                     lhs,
-                                    rhs: sway::Expression::from(sway::FunctionCall {
-                                        function: sway::Expression::from(sway::MemberAccess{
-                                            expression: rhs,
-                                            member: format!("as_u{lhs_bits}"),
-                                        }),
-                                        generic_parameters: None,
-                                        parameters: vec![],
-                                    }),
+                                    rhs: sway::Expression::create_function_calls(Some(rhs), &[
+                                        (format!("as_u{lhs_bits}").as_str(), Some((None, vec![]))),
+                                    ]),
                                 })
                             } else if lhs_bits < rhs_bits {
                                 sway::Expression::from(sway::BinaryExpression{
                                     operator: operator.into(),
-                                    lhs: sway::Expression::from(sway::FunctionCall {
-                                        function: sway::Expression::from(sway::MemberAccess{
-                                            expression: lhs,
-                                            member: format!("as_u{rhs_bits}"),
-                                        }),
-                                        generic_parameters: None,
-                                        parameters: vec![],
-                                    }),
+                                    lhs: sway::Expression::create_function_calls(Some(lhs), &[
+                                        (format!("as_u{rhs_bits}").as_str(), Some((None, vec![]))),
+                                    ]),
                                     rhs,
                                 })
                             } else {
@@ -177,14 +158,11 @@ pub fn translate_unary_expression(
 
         match &type_name {
             sway::TypeName::Identifier { name, generic_parameters } => match (name.as_str(), generic_parameters.as_ref()) {
-                ("I8" | "I16" | "I32" | "I64" | "I128" | "I256", None) => return Ok(sway::Expression::from(sway::FunctionCall {
-                    function: sway::Expression::from(sway::MemberAccess {
-                        expression,
-                        member: "wrapping_neg".into(),
-                    }),
-                    generic_parameters: None,
-                    parameters: vec![],
-                })),
+                ("I8" | "I16" | "I32" | "I64" | "I128" | "I256", None) => return Ok(
+                    sway::Expression::create_function_calls(Some(expression), &[
+                        ("wrapping_neg", Some((None, vec![]))),
+                    ])
+                ),
 
                 ("u8" | "u16" | "u32" | "u64" | "u256", None) => {
                     let bits: usize = name.trim_start_matches('u').parse().unwrap();
@@ -194,40 +172,19 @@ pub fn translate_unary_expression(
                     );
                     translated_definition.ensure_use_declared(format!("sway_libs::signed_integers::i{bits}::*").as_str());
 
-                    return Ok(sway::Expression::from(sway::FunctionCall {
-                        function: sway::Expression::from(sway::MemberAccess {
-                            expression: sway::Expression::from(sway::FunctionCall {
-                                function: sway::Expression::from(sway::MemberAccess {
-                                    expression: sway::Expression::from(sway::FunctionCall {
-                                        function: sway::Expression::Identifier(format!("I{bits}::from_uint")),
-                                        generic_parameters: None,
-                                        parameters: vec![
-                                            expression.clone()
-                                        ],
-                                    }),
-                                    member: "wrapping_neg".into(),
-                                }),
-                                generic_parameters: None,
-                                parameters: vec![],
-                            }),
-                            member: "underlying".into(),
-                        }),
-                        generic_parameters: None,
-                        parameters: vec![],
-                    }))
+                    return Ok(sway::Expression::create_function_calls(None, &[
+                        (format!("I{bits}::from_uint").as_str(), Some((None, vec![expression.clone()]))),
+                        ("wrapping_neg", Some((None, vec![]))),
+                        ("underlying", Some((None, vec![]))),
+                    ]))
                 },
 
                 _ => {
                     // HACK: allow literals to be negated
                     if let sway::Expression::Literal(sway::Literal::DecInt(_, _) | sway::Literal::HexInt(_, _)) = &expression {
-                        return Ok(sway::Expression::from(sway::FunctionCall {
-                            function: sway::Expression::from(sway::MemberAccess {
-                                expression,
-                                member: "wrapping_neg".into(),
-                            }),
-                            generic_parameters: None,
-                            parameters: vec![],
-                        }));
+                        return Ok(sway::Expression::create_function_calls(Some(expression), &[
+                            ("wrapping_neg", Some((None, vec![]))),
+                        ]));
                     }
 
                     panic!("Unhandled {type_name} negate operator translation")
@@ -242,4 +199,23 @@ pub fn translate_unary_expression(
         operator: operator.into(),
         expression,
     }))
+}
+
+#[inline]
+pub fn translate_power_expression(
+    project: &mut Project,
+    translated_definition: &mut TranslatedDefinition,
+    scope: Rc<RefCell<TranslationScope>>,
+    lhs: &solidity::Expression,
+    rhs: &solidity::Expression,
+) -> Result<sway::Expression, Error> {
+    // lhs ** rhs => lhs.pow(rhs)
+
+    // Ensure std::math::Power is imported for the pow function
+    translated_definition.ensure_use_declared("std::math::Power");
+
+    let lhs = translate_expression(project, translated_definition, scope.clone(), lhs)?;
+    let rhs = translate_expression(project, translated_definition, scope.clone(), rhs)?;
+
+    Ok(sway::Expression::create_function_calls(Some(lhs), &[("pow", Some((None, vec![rhs])))]))
 }

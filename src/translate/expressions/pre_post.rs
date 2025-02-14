@@ -66,14 +66,7 @@ pub fn translate_pre_operator_expression(
         statements: vec![assignment],
         final_expr: Some(
             if variable.is_storage {
-                sway::Expression::from(sway::FunctionCall {
-                    function: sway::Expression::from(sway::MemberAccess {
-                        expression,
-                        member: "read".into(),
-                    }),
-                    generic_parameters: None,
-                    parameters: vec![],
-                })
+                sway::Expression::create_function_calls(Some(expression), &[("read", Some((None, vec![])))])
             } else {
                 expression
             }
@@ -104,6 +97,7 @@ pub fn translate_post_operator_expression(
     if variable.is_none() {
         panic!("Variable not found: {}", sway::TabbedDisplayer(&expression));
     }
+    
     let variable = variable.unwrap();
     let mut variable = variable.borrow_mut();
 
@@ -124,14 +118,7 @@ pub fn translate_post_operator_expression(
                 }),
                 type_name: None,
                 value: if variable.is_storage {
-                    sway::Expression::from(sway::FunctionCall {
-                        function: sway::Expression::from(sway::MemberAccess {
-                            expression,
-                            member: "read".into(),
-                        }),
-                        generic_parameters: None,
-                        parameters: vec![],
-                    })
+                    sway::Expression::create_function_calls(Some(expression), &[("read", Some((None, vec![])))])
                 } else {
                     expression
                 },

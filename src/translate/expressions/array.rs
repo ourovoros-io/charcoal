@@ -99,40 +99,25 @@ pub fn translate_array_slice_expression(
                 // x.ptr()
                 let ptr_expr = match from_index.as_ref() {
                     // x.ptr().add::<T>(from_index)
-                    Some(from_index) => sway::Expression::from(sway::FunctionCall {
-                        function: sway::Expression::from(sway::MemberAccess {
-                            expression: sway::Expression::from(sway::FunctionCall {
-                                function: sway::Expression::from(sway::MemberAccess {
-                                    expression: expression.clone(),
-                                    member: "ptr".into(),
-                                }),
-                                generic_parameters: None,
-                                parameters: vec![],
+                    Some(from_index) => sway::Expression::create_function_calls(Some(expression.clone()), &[
+                        ("ptr", Some((None, vec![]))),
+                        ("add", Some((
+                            Some(sway::GenericParameterList {
+                                entries: vec![
+                                    sway::GenericParameter {
+                                        type_name: element_type.clone(),
+                                        implements: None,
+                                    },
+                                ],
                             }),
-                            member: "add".into(),
-                        }),
-                        generic_parameters: Some(sway::GenericParameterList {
-                            entries: vec![
-                                sway::GenericParameter {
-                                    type_name: element_type.clone(),
-                                    implements: None,
-                                },
+                            vec![
+                                from_index.clone(),
                             ],
-                        }),
-                        parameters: vec![
-                            from_index.clone(),
-                        ],
-                    }),
+                        ))),
+                    ]),
 
                     // x.ptr()
-                    None => sway::Expression::from(sway::FunctionCall {
-                        function: sway::Expression::from(sway::MemberAccess {
-                            expression: expression.clone(),
-                            member: "ptr".into(),
-                        }),
-                        generic_parameters: None,
-                        parameters: vec![],
-                    }),
+                    None => sway::Expression::create_function_calls(Some(expression.clone()), &[("ptr", Some((None, vec![])))]),
                 };
 
                 // ((to_index + 1) - from_index) * __size_of::<T>()
@@ -163,31 +148,25 @@ pub fn translate_array_slice_expression(
                                     ]),
     
                                     // x.len()
-                                    None => sway::Expression::from(sway::FunctionCall {
-                                        function: sway::Expression::from(sway::MemberAccess {
-                                            expression: expression.clone(),
-                                            member: "len".into(),
-                                        }),
-                                        generic_parameters: None,
-                                        parameters: vec![],
-                                    }),
+                                    None => sway::Expression::create_function_calls(Some(expression.clone()), &[("len", Some((None, vec![])))]),
                                 },
     
                                 rhs: from_index.clone(),
                             }),
                         ]),
-                        rhs: sway::Expression::from(sway::FunctionCall {
-                            function: sway::Expression::Identifier("__size_of".into()),
-                            generic_parameters: Some(sway::GenericParameterList {
-                                entries: vec![
-                                    sway::GenericParameter {
-                                        type_name: element_type.clone(),
-                                        implements: None,
-                                    },
-                                ],
-                            }),
-                            parameters: vec![],
-                        }),
+                        rhs: sway::Expression::create_function_calls(None, &[
+                            ("__size_of", Some((
+                                Some(sway::GenericParameterList {
+                                    entries: vec![
+                                        sway::GenericParameter {
+                                            type_name: element_type.clone(),
+                                            implements: None,
+                                        },
+                                    ],
+                                }),
+                                vec![],
+                            ))),
+                        ]),
                     }),
                     
                     // (to_index + 1) * __size_of::<T>()
@@ -207,47 +186,42 @@ pub fn translate_array_slice_expression(
                             ]),
 
                             // x.len()
-                            None => sway::Expression::from(sway::FunctionCall {
-                                function: sway::Expression::from(sway::MemberAccess {
-                                    expression: expression.clone(),
-                                    member: "len".into(),
-                                }),
-                                generic_parameters: None,
-                                parameters: vec![],
-                            }),
+                            None => sway::Expression::create_function_calls(Some(expression.clone()), &[("len", Some((None, vec![])))]),
                         },
 
-                        rhs: sway::Expression::from(sway::FunctionCall {
-                            function: sway::Expression::Identifier("__size_of".into()),
-                            generic_parameters: Some(sway::GenericParameterList {
-                                entries: vec![
-                                    sway::GenericParameter {
-                                        type_name: element_type.clone(),
-                                        implements: None,
-                                    },
-                                ],
-                            }),
-                            parameters: vec![],
-                        }),
+                        rhs: sway::Expression::create_function_calls(None, &[
+                            ("__size_of", Some((
+                                Some(sway::GenericParameterList {
+                                    entries: vec![
+                                        sway::GenericParameter {
+                                            type_name: element_type.clone(),
+                                            implements: None,
+                                        },
+                                    ],
+                                }),
+                                vec![],
+                            ))),
+                        ]),
                     }),
                 };
 
                 // x[from_index:to_index] => raw_slice::from_parts::<T>(ptr_expr, len_expr)
-                return Ok(sway::Expression::from(sway::FunctionCall {
-                    function: sway::Expression::Identifier("raw_slice::from_parts".into()),
-                    generic_parameters: Some(sway::GenericParameterList {
-                        entries: vec![
-                            sway::GenericParameter {
-                                type_name: element_type.clone(),
-                                implements: None,
-                            },
+                return Ok(sway::Expression::create_function_calls(None, &[
+                    ("raw_slice::from_parts", Some((
+                        Some(sway::GenericParameterList {
+                            entries: vec![
+                                sway::GenericParameter {
+                                    type_name: element_type.clone(),
+                                    implements: None,
+                                },
+                            ],
+                        }),
+                        vec![
+                            ptr_expr,
+                            len_expr,
                         ],
-                    }),
-                    parameters: vec![
-                        ptr_expr,
-                        len_expr,
-                    ],
-                }));
+                    ))),
+                ]));
             }
 
             _ => {}
