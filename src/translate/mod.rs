@@ -755,18 +755,27 @@ impl TranslatedDefinition {
                     }
                 }
 
-                let Some(variable) = scope.borrow().get_variable_from_new_name(name) else {
-                    panic!("error: Variable not found in scope: \"{name}\"");
-                };
-        
-                let variable = variable.borrow();
+                if let Some(variable) = scope.borrow().get_variable_from_new_name(name) {
+                    let variable = variable.borrow();
 
-                // Variable should not be a storage field
-                if variable.is_storage {
-                    panic!("error: Variable not found in scope: \"{name}\"");
+                    // Variable should not be a storage field
+                    if variable.is_storage {
+                        panic!("error: Variable not found in scope: \"{name}\"");
+                    }
+
+                    return Ok(variable.type_name.clone());
                 }
+                
+                if let Some(function) = scope.borrow().find_function(|f| f.borrow().new_name == *name) {
+                    let function = function.borrow();
 
-                Ok(variable.type_name.clone())
+                    return Ok(sway::TypeName::Fn {
+                        parameters: function.parameters.clone(),
+                        return_type: function.return_type.as_ref().map(|x| Box::new(x.clone())),
+                    });
+                }
+                
+                panic!("error: Variable not found in scope: \"{name}\"");
             }
 
             sway::Expression::FunctionCall(_) | sway::Expression::FunctionCallBlock(_) => {
@@ -1104,7 +1113,7 @@ impl TranslatedDefinition {
                                 .collect::<Result<Vec<_>, _>>()?;
                             
                             // Ensure the function exists in scope
-                            let Some(function) = scope.borrow().find_function(|f| {
+                            if let Some(function) = scope.borrow().find_function(|f| {
                                 let f = f.borrow();
     
                                 // Ensure the function's new name matches the function call we're translating
@@ -1138,20 +1147,53 @@ impl TranslatedDefinition {
                                 }
     
                                 true
-                            }) else {
-                                panic!(
-                                    "Failed to find function `{new_name}({})` in scope",
-                                    parameter_types.iter().map(|t| t.to_string()).collect::<Vec<_>>().join(", "),
-                                );
-                            };
-    
-                            let function = function.borrow();
-    
-                            if let Some(return_type) = function.return_type.as_ref() {
-                                Ok(return_type.clone())
-                            } else {
-                                Ok(sway::TypeName::Tuple { type_names: vec![] })
+                            }) {
+                                let function = function.borrow();
+        
+                                if let Some(return_type) = function.return_type.as_ref() {
+                                    return Ok(return_type.clone());
+                                } else {
+                                    return Ok(sway::TypeName::Tuple { type_names: vec![] })
+                                }
+                            } else if let Some(variable) = scope.borrow().find_variable(|v| {
+                                let sway::TypeName::Fn { parameters: fn_parameters, .. } = &v.borrow().type_name else {
+                                    return false;
+                                };
+                        
+                                // Ensure the function's new name matches the function call we're translating
+                                if v.borrow().new_name != *name {
+                                    return false;
+                                }
+                        
+                                // Ensure the supplied function call args match the function's parameters
+                                if parameters.len() != fn_parameters.entries.len() {
+                                    return false;
+                                }
+                        
+                                for (i, value_type_name) in parameter_types.iter().enumerate() {
+                                    let Some(parameter_type_name) = fn_parameters.entries[i].type_name.as_ref() else { continue };
+                        
+                                    if !value_type_name.is_compatible_with(parameter_type_name) {
+                                        return false;
+                                    }
+                                }
+                        
+                                true
+                            }) {
+                                let variable = variable.borrow();
+                                let sway::TypeName::Fn { return_type, .. } = &variable.type_name else { unreachable!() };
+                                
+                                if let Some(return_type) = return_type.as_ref() {
+                                    return Ok(return_type.as_ref().clone());
+                                } else {
+                                    return Ok(sway::TypeName::Tuple { type_names: vec![] })
+                                }
                             }
+
+                            panic!(
+                                "Failed to find function `{new_name}({})` in scope",
+                                parameter_types.iter().map(|t| t.to_string()).collect::<Vec<_>>().join(", "),
+                            );
                         }
                     }
     

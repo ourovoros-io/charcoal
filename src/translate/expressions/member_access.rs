@@ -380,31 +380,29 @@ pub fn translate_member_access_expression(
 
                 // Check to see if the variable is an external definition
                 if let Some(external_definition) = project.translated_definitions.iter().find(|d| d.name == name) {
-                    let Some(variable) = external_definition.toplevel_scope.borrow().get_variable_from_old_name(member) else {
-                        panic!(
-                            "{}error: Variable not found in scope: \"{member}\"",
-                            match project.loc_to_line_and_column(&translated_definition.path, &container.loc()) {
-                                Some((line, col)) => format!("{}:{}:{} - ", translated_definition.path.to_string_lossy(), line, col),
-                                None => format!("{} - ", translated_definition.path.to_string_lossy()),
+                    // Check to see if the variable exists in the external definition
+                    if let Some(variable) = external_definition.toplevel_scope.borrow().get_variable_from_old_name(member) {
+                        let variable = variable.borrow();
+                    
+                        // If the variable is a constant, ensure it is added to the current definition
+                        if variable.is_constant {
+                            let constant = external_definition.constants.iter().find(|c| c.name == variable.new_name).unwrap();
+                            
+                            if !translated_definition.constants.contains(constant) {
+                                translated_definition.constants.push(constant.clone());
                             }
-                        );
-                    };
-
-                    let variable = variable.borrow();
-                
-                    // If the variable is a constant, ensure it is added to the current definition
-                    if variable.is_constant {
-                        let constant = external_definition.constants.iter().find(|c| c.name == variable.new_name).unwrap();
-                        
-                        if !translated_definition.constants.contains(constant) {
-                            translated_definition.constants.push(constant.clone());
-                        }
-
-                        if !translated_definition.toplevel_scope.borrow().variables.iter().any(|v| v.borrow().new_name == variable.new_name) {
-                            translated_definition.toplevel_scope.borrow_mut().variables.push(Rc::new(RefCell::new(variable.clone())));
+    
+                            if !translated_definition.toplevel_scope.borrow().variables.iter().any(|v| v.borrow().new_name == variable.new_name) {
+                                translated_definition.toplevel_scope.borrow_mut().variables.push(Rc::new(RefCell::new(variable.clone())));
+                            }
                         }
 
                         return Ok(sway::Expression::Identifier(variable.new_name.clone()));
+                    }
+
+                    // Check to see if the variable is referring to a function (fn pointer type)
+                    if let Some(function) = external_definition.toplevel_scope.borrow().find_function(|f| f.borrow().old_name == member) {
+                        return Ok(sway::Expression::Identifier(function.borrow().new_name.clone()));
                     }
                 }
             }

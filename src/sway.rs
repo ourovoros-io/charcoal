@@ -351,6 +351,10 @@ pub enum TypeName {
     StringArray {
         length: usize,
     },
+    Fn {
+        parameters: ParameterList,
+        return_type: Option<Box<TypeName>>,
+    }
 }
 
 impl Display for TypeName {
@@ -362,6 +366,17 @@ impl Display for TypeName {
             TypeName::Tuple { type_names } => write!(f, "({})", type_names.iter().map(|t| format!("{t}")).collect::<Vec<_>>().join(", ")),
             TypeName::StringSlice => write!(f, "str"),
             TypeName::StringArray { length } => write!(f, "str[{length}]"),
+            TypeName::Fn { parameters, return_type } => {
+                write!(
+                    f,
+                    "fn{}{}",
+                    parameters,
+                    match return_type.as_ref() {
+                        Some(t) => format!(" -> {t}"),
+                        None => String::new(),
+                    },
+                )
+            }
         }
     }
 }
@@ -483,6 +498,38 @@ impl TypeName {
         if let TypeName::Identifier { name, generic_parameters: None } = self {
             if name == "todo!" {
                 return true;
+            }
+        }
+
+        // HACK: Don't check parameter names of function types
+        if let (
+            TypeName::Fn { parameters: lhs_parameters, return_type: lhs_return_type },
+            TypeName::Fn { parameters: rhs_parameters, return_type: rhs_return_type },
+        ) = (self, other) {
+            if lhs_parameters.entries.len() == rhs_parameters.entries.len() {
+                if lhs_parameters.entries.iter()
+                .zip(rhs_parameters.entries.iter())
+                .all(|(lhs, rhs)| {
+                    lhs.type_name.is_some() == rhs.type_name.is_some()
+                    && lhs.type_name.as_ref().map(|x| x.is_compatible_with(rhs.type_name.as_ref().unwrap())).unwrap_or(true)
+                }) {
+                    match (lhs_return_type.as_ref(), rhs_return_type.as_ref()) {
+                        (
+                            Some(lhs_return_type),
+                            Some(rhs_return_type),
+                        ) => {
+                            if lhs_return_type.is_compatible_with(&rhs_return_type) {
+                                return true;
+                            }
+                        }
+
+                        (None, None) => {
+                            return true;
+                        }
+
+                        _ => {}
+                    }
+                }
             }
         }
 

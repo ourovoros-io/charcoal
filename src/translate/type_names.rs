@@ -244,18 +244,38 @@ pub fn translate_type_name(
                 }
             }
 
-            solidity::Type::Function { .. } => {
-                eprintln!(
-                    "WARNING: function pointer types are not supported, using `raw_ptr` for `{type_name}` @ {}",
-                    match project.loc_to_line_and_column(&translated_definition.path, &type_name.loc()) {
-                        Some((line, col)) => format!("{}:{}:{}", translated_definition.path.to_string_lossy(), line, col),
-                        None => format!("{} - ", translated_definition.path.to_string_lossy()),
+            solidity::Type::Function { params, returns, .. } => {
+                sway::TypeName::Fn {
+                    parameters: sway::ParameterList {
+                        entries: params.iter().map(|(_, p)| {
+                            p.as_ref().map(|p| sway::Parameter {
+                                is_ref: false,
+                                is_mut: false,
+                                name: p.name.as_ref().map(|n| n.name.clone()).unwrap_or("_".into()),
+                                type_name: Some(translate_type_name(project, translated_definition, &p.ty, false, true)),
+                            }).unwrap_or_else(|| sway::Parameter {
+                                is_ref: false,
+                                is_mut: false,
+                                name: "_".into(),
+                                type_name: None,
+                            })
+                        }).collect(),
                     },
-                );
-                
-                sway::TypeName::Identifier {
-                    name: "raw_ptr".into(),
-                    generic_parameters: None,
+                    return_type: {
+                        let returns: Option<Vec<sway::TypeName>> = returns.as_ref().map(|r| r.0.iter().map(|(_, p)| match p.as_ref() {
+                            Some(p) => translate_type_name(project, translated_definition, &p.ty, false, true),
+                            None => sway::TypeName::Identifier { name: "_".into(), generic_parameters: None },
+                        }).collect());
+                        
+                        match returns.as_ref() {
+                            Some(returns) => match returns.len() {
+                                0 => None,
+                                1 => Some(Box::new(returns[0].clone())),
+                                _ => Some(Box::new(sway::TypeName::Tuple { type_names: returns.clone() })),
+                            },
+                            None => None,
+                        }
+                    }
                 }
             }
         }

@@ -36,7 +36,7 @@ pub fn translate_variable_expression(
         _ => {}
     }
 
-    let Ok((Some(variable), expression)) = translate_variable_access_expression(project, translated_definition, scope.clone(), expression) else {
+    let Ok((variable, expression)) = translate_variable_access_expression(project, translated_definition, scope.clone(), expression) else {
         panic!(
             "{}ERROR: Variable not found in scope: \"{}\"",
             match project.loc_to_line_and_column(&translated_definition.path, &expression.loc()) {
@@ -47,22 +47,26 @@ pub fn translate_variable_expression(
         );
     };
 
-    let mut variable = variable.borrow_mut();
-
-    variable.read_count += 1;
+    if let Some(variable) = variable {
+        let mut variable = variable.borrow_mut();
     
-    if variable.is_storage {
-        match &variable.type_name {
-            sway::TypeName::Identifier { name, .. } if name == "StorageString" => {
-                Ok(sway::Expression::create_function_calls(Some(expression), &[
-                    ("read_slice", Some((None, vec![]))),
-                    ("unwrap", Some((None, vec![]))),
+        variable.read_count += 1;
+        
+        if variable.is_storage {
+            match &variable.type_name {
+                sway::TypeName::Identifier { name, .. } if name == "StorageString" => {
+                    Ok(sway::Expression::create_function_calls(Some(expression), &[
+                        ("read_slice", Some((None, vec![]))),
+                        ("unwrap", Some((None, vec![]))),
+                    ]))
+                }
+    
+                _ => Ok(sway::Expression::create_function_calls(Some(expression), &[
+                    ("read", Some((None, vec![]))),
                 ]))
             }
-
-            _ => Ok(sway::Expression::create_function_calls(Some(expression), &[
-                ("read", Some((None, vec![]))),
-            ]))
+        } else {
+            Ok(expression)
         }
     } else {
         Ok(expression)
@@ -85,33 +89,37 @@ pub fn translate_variable_access_expression(
 
     match solidity_expression {
         solidity::Expression::Variable(solidity::Identifier { name, .. }) => {
-            let Some(variable) = scope.borrow().get_variable_from_old_name(name) else {
-                return Err(Error::Wrapped(Box::new(std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
-                    format!(
-                        "{}error: Variable not found in scope: \"{name}\" - {solidity_expression}",
-                        match project.loc_to_line_and_column(&translated_definition.path, &solidity_expression.loc()) {
-                            Some((line, col)) => format!("{}:{}:{} - ", translated_definition.path.to_string_lossy(), line, col),
-                            None => format!("{} - ", translated_definition.path.to_string_lossy()),
-                        }
-                    ),
-                ))));
-            };
+            if let Some(variable) = scope.borrow().get_variable_from_old_name(name) {
+                let variable_name = variable.borrow().new_name.clone();
+                let is_storage = variable.borrow().is_storage;
+    
+                return Ok((
+                    Some(variable),
+                    if is_storage {
+                        sway::Expression::from(sway::MemberAccess {
+                            expression: sway::Expression::Identifier("storage".into()),
+                            member: variable_name,
+                        })
+                    } else {
+                        sway::Expression::Identifier(variable_name)
+                    }
+                ));
+            } else if let Some(function) = scope.borrow().find_function(|f| {
+                f.borrow().old_name == *name
+            }) {
+                return Ok((None, sway::Expression::Identifier(function.borrow().new_name.clone())));
+            }
 
-            let variable_name = variable.borrow().new_name.clone();
-            let is_storage = variable.borrow().is_storage;
-
-            Ok((
-                Some(variable),
-                if is_storage {
-                    sway::Expression::from(sway::MemberAccess {
-                        expression: sway::Expression::Identifier("storage".into()),
-                        member: variable_name,
-                    })
-                } else {
-                    sway::Expression::Identifier(variable_name)
-                }
-            ))
+            return Err(Error::Wrapped(Box::new(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!(
+                    "{}error: Variable not found in scope: \"{name}\" - {solidity_expression}",
+                    match project.loc_to_line_and_column(&translated_definition.path, &solidity_expression.loc()) {
+                        Some((line, col)) => format!("{}:{}:{} - ", translated_definition.path.to_string_lossy(), line, col),
+                        None => format!("{} - ", translated_definition.path.to_string_lossy()),
+                    }
+                ),
+            ))));
         }
 
         solidity::Expression::ArraySubscript(_, array_expression, Some(index)) => {
