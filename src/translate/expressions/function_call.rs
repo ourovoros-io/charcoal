@@ -38,22 +38,30 @@ pub fn resolve_function_call(
         if let Some(function) = external_scope.borrow().find_function(|f| {
             let f = f.borrow();
     
+            let sway::TypeName::Function { parameters: f_parameters, .. } = &f.type_name else {
+                panic!("Invalid function type name: {:#?}", f.type_name)
+            };
+            
             if f.old_name != function_name {
                 return false;
             }
     
-            if f.parameters.entries.len() != named_parameters.len() {
+            if f_parameters.entries.len() != named_parameters.len() {
                 return false;
             }
     
-            f.parameters.entries.iter().all(|p| named_parameters.iter().any(|(name, _)| p.name == *name))
+            f_parameters.entries.iter().all(|p| named_parameters.iter().any(|(name, _)| p.name == *name))
         }) {
             let function = function.borrow();
     
+            let sway::TypeName::Function { parameters: function_parameters, .. } = &function.type_name else {
+                panic!("Invalid function type name: {:#?}", function.type_name)
+            };
+            
             parameters.clear();
             parameter_types.clear();
     
-            for parameter in function.parameters.entries.iter() {
+            for parameter in function_parameters.entries.iter() {
                 let arg = named_arguments.iter().find(|a| {
                     let new_name = crate::translate_naming_convention(&a.name.name, Case::Snake);
                     new_name == parameter.name
@@ -70,14 +78,14 @@ pub fn resolve_function_call(
                 return false;
             }
 
-            if let sway::TypeName::Fn { .. } = &f.borrow().type_name {
+            if let sway::TypeName::Function { .. } = &f.borrow().type_name {
                 return true;
             }
 
             false
         }) {
             let variable = variable.borrow();
-            let sway::TypeName::Fn { parameters: fn_parameters, .. } = &variable.type_name else { unreachable!() };
+            let sway::TypeName::Function { parameters: fn_parameters, .. } = &variable.type_name else { unreachable!() };
     
             parameters.clear();
             parameter_types.clear();
@@ -101,6 +109,11 @@ pub fn resolve_function_call(
 
     if let Some(function) = external_scope.borrow().find_function(|function| {
         let function = function.borrow();
+
+        let sway::TypeName::Function { parameters: function_parameters, .. } = &function.type_name else {
+            panic!("Invalid function type name: {:#?}", function.type_name)
+        };
+        
         let mut parameters = parameters_cell.borrow_mut();
 
         // Ensure the function's old name matches the function call we're translating
@@ -109,12 +122,12 @@ pub fn resolve_function_call(
         }
 
         // Ensure the supplied function call args match the function's parameters
-        if parameters.len() != function.parameters.entries.len() {
+        if parameters.len() != function_parameters.entries.len() {
             return false;
         }
 
         for (i, value_type_name) in parameter_types.iter().enumerate() {
-            let Some(parameter_type_name) = function.parameters.entries[i].type_name.as_ref() else { continue };
+            let Some(parameter_type_name) = function_parameters.entries[i].type_name.as_ref() else { continue };
 
             //
             // If `parameter_type_name` is `Identity`, but `container` is an abi cast expression,
@@ -207,7 +220,7 @@ pub fn resolve_function_call(
             return false;
         }
 
-        let sway::TypeName::Fn { parameters: fn_parameters, .. } = &v.borrow().type_name else {
+        let sway::TypeName::Function { parameters: fn_parameters, .. } = &v.borrow().type_name else {
             return false;
         };
 
@@ -2040,11 +2053,15 @@ pub fn translate_function_call_expression(
                             for f in external_definition.toplevel_scope.borrow().functions.iter() {
                                 let f = f.borrow();
 
+                                let sway::TypeName::Function { parameters: f_parameters, .. } = &f.type_name else {
+                                    panic!("Invalid function type name: {:#?}", f.type_name)
+                                };
+                                
                                 if f.old_name != member.name {
                                     continue;
                                 }
 
-                                let Some(parameter) = f.parameters.entries.first() else { continue };
+                                let Some(parameter) = f_parameters.entries.first() else { continue };
                                 let Some(parameter_type_name) = parameter.type_name.as_ref() else { continue };
 
                                 if *parameter_type_name == type_name {
@@ -2562,7 +2579,7 @@ pub fn translate_function_call_expression(
 
                 sway::TypeName::StringArray { .. } => todo!("translate string array member function call: {} - {container:#?}", sway::TabbedDisplayer(&container)),
                 
-                sway::TypeName::Fn { .. } => todo!("translate fn member function call: {} - {container:#?}", sway::TabbedDisplayer(&container)),
+                sway::TypeName::Function { .. } => todo!("translate fn member function call: {} - {container:#?}", sway::TabbedDisplayer(&container)),
             }
         }
 

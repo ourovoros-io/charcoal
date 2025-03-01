@@ -68,9 +68,20 @@ pub fn translate_using_directive(
 
                 // Add the function to the current definition's toplevel scope
                 if !translated_definition.toplevel_scope.borrow().functions.iter().any(|f| {
-                    f.borrow().old_name == scope_entry.borrow().old_name
-                    && f.borrow().parameters == scope_entry.borrow().parameters
-                    && f.borrow().return_type == scope_entry.borrow().return_type
+                    let f = f.borrow();
+                    let scope_entry = scope_entry.borrow();
+
+                    let sway::TypeName::Function { parameters: f_parameters, return_type: f_return_type, .. } = &f.type_name else {
+                        panic!("Invalid function type name: {:#?}", f.type_name)
+                    };
+                    
+                    let sway::TypeName::Function { parameters: scope_parameters, return_type: scope_return_type, .. } = &scope_entry.type_name else {
+                        panic!("Invalid function type name: {:#?}", scope_entry.type_name)
+                    };
+                    
+                    f.old_name == scope_entry.old_name
+                    && f_parameters == scope_parameters
+                    && f_return_type == scope_return_type
                 }) {
                     translated_definition.toplevel_scope.borrow_mut().functions.push(Rc::new(RefCell::new(scope_entry.borrow().clone())));
                 }
@@ -210,12 +221,23 @@ pub fn translate_contract_definition(
         // Add the toplevel function to the list of toplevel functions for the toplevel scope
         let function = translate_function_declaration(project, translated_definition, function_definition)?;
         
+        let sway::TypeName::Function { parameters: function_parameters, return_type: function_return_type, .. } = &function.type_name else {
+            panic!("Invalid function type name: {:#?}", function.type_name)
+        };
+        
         let mut function_exists = false;
 
         for f in translated_definition.toplevel_scope.borrow().functions.iter() {
             let mut f = f.borrow_mut();
 
-            if ((!f.old_name.is_empty() && (f.old_name == function.old_name)) || (f.new_name == function.new_name)) && f.parameters == function.parameters && f.return_type == function.return_type {
+            let sway::TypeName::Function { parameters: f_parameters, return_type: f_return_type, .. } = &f.type_name else {
+                panic!("Invalid function type name: {:#?}", f.type_name)
+            };
+            
+            if ((!f.old_name.is_empty() && (f.old_name == function.old_name)) || (f.new_name == function.new_name))
+                && f_parameters == function_parameters
+                && f_return_type == function_return_type
+            {
                 f.new_name = function.new_name.clone();
                 function_exists = true;
                 break;

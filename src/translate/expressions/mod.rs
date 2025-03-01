@@ -692,7 +692,7 @@ pub fn create_value_expression(
             Some(value) => panic!("Invalid string array value expression: {value:#?}"),
         }
     
-        sway::TypeName::Fn { .. } => match value {
+        sway::TypeName::Function { .. } => match value {
             Some(value) => sway::Expression::create_todo(Some(sway::TabbedDisplayer(value).to_string())),
             None => sway::Expression::create_todo(Some(type_name.to_string())),
         }

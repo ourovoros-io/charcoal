@@ -231,13 +231,25 @@ pub fn translate_variable_access_expression(
                             panic!("Failed to find function in scope: \"{}\"", new_name);
                         };
 
+                        let scope_entry = scope_entry.borrow();
+
+                        let sway::TypeName::Function { parameters: scope_parameters, return_type: scope_return_type, .. } = &scope_entry.type_name else {
+                            panic!("Invalid function type name: {:#?}", scope_entry.type_name)
+                        };
+                        
                         // Add the function to the current definition's toplevel scope
                         if !translated_definition.toplevel_scope.borrow().functions.iter().any(|f| {
-                            f.borrow().old_name == scope_entry.borrow().old_name
-                            && f.borrow().parameters == scope_entry.borrow().parameters
-                            && f.borrow().return_type == scope_entry.borrow().return_type
+                            let f = f.borrow();
+
+                            let sway::TypeName::Function { parameters: f_parameters, return_type: f_return_type, .. } = &f.type_name else {
+                                panic!("Invalid function type name: {:#?}", f.type_name)
+                            };
+                            
+                            f.old_name == scope_entry.old_name
+                            && f_parameters == scope_parameters
+                            && f_return_type == scope_return_type
                         }) {
-                            translated_definition.toplevel_scope.borrow_mut().functions.push(Rc::new(RefCell::new(scope_entry.borrow().clone())));
+                            translated_definition.toplevel_scope.borrow_mut().functions.push(Rc::new(RefCell::new(scope_entry.clone())));
                         }
 
                         // Add the function name to the current definition's function name list

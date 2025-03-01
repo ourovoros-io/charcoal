@@ -245,7 +245,8 @@ pub fn translate_type_name(
             }
 
             solidity::Type::Function { params, returns, .. } => {
-                sway::TypeName::Fn {
+                sway::TypeName::Function {
+                    generic_parameters: None,
                     parameters: sway::ParameterList {
                         entries: params.iter().map(|(_, p)| {
                             p.as_ref().map(|p| sway::Parameter {

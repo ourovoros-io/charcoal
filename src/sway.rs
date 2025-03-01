@@ -351,7 +351,8 @@ pub enum TypeName {
     StringArray {
         length: usize,
     },
-    Fn {
+    Function {
+        generic_parameters: Option<GenericParameterList>,
         parameters: ParameterList,
         return_type: Option<Box<TypeName>>,
     }
@@ -366,10 +367,14 @@ impl Display for TypeName {
             TypeName::Tuple { type_names } => write!(f, "({})", type_names.iter().map(|t| format!("{t}")).collect::<Vec<_>>().join(", ")),
             TypeName::StringSlice => write!(f, "str"),
             TypeName::StringArray { length } => write!(f, "str[{length}]"),
-            TypeName::Fn { parameters, return_type } => {
+            TypeName::Function { generic_parameters, parameters, return_type } => {
                 write!(
                     f,
-                    "fn{}{}",
+                    "fn{}{}{}",
+                    match generic_parameters.as_ref() {
+                        Some(g) => g.to_string(),
+                        None => String::new(),
+                    },
                     parameters,
                     match return_type.as_ref() {
                         Some(t) => format!(" -> {t}"),
@@ -503,8 +508,8 @@ impl TypeName {
 
         // HACK: Don't check parameter names of function types
         if let (
-            TypeName::Fn { parameters: lhs_parameters, return_type: lhs_return_type },
-            TypeName::Fn { parameters: rhs_parameters, return_type: rhs_return_type },
+            TypeName::Function { parameters: lhs_parameters, return_type: lhs_return_type, .. },
+            TypeName::Function { parameters: rhs_parameters, return_type: rhs_return_type, .. },
         ) = (self, other) {
             if lhs_parameters.entries.len() == rhs_parameters.entries.len() {
                 if lhs_parameters.entries.iter()

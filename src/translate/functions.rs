@@ -164,7 +164,6 @@ pub fn translate_function_declaration(
     let translated_function = TranslatedFunction {
         old_name,
         new_name: new_name.clone(),
-        parameters,
         attributes: if is_fallback {
             Some(sway::AttributeList {
                 attributes: vec![
@@ -179,20 +178,24 @@ pub fn translate_function_declaration(
         },
         constructor_calls,
         modifiers,
-        return_type: if function_definition.returns.is_empty() {
-            None
-        } else {
-            Some(if function_definition.returns.len() == 1 {
-                let type_name = translate_type_name(project, translated_definition, &function_definition.returns[0].1.as_ref().unwrap().ty, false, true);
-                translate_return_type_name(project, translated_definition, type_name)
+        type_name: sway::TypeName::Function {
+            generic_parameters: None,
+            parameters,
+            return_type: if function_definition.returns.is_empty() {
+                None
             } else {
-                sway::TypeName::Tuple {
-                    type_names: function_definition.returns.iter().map(|(_, p)| {
-                        let type_name = translate_type_name(project, translated_definition, &p.as_ref().unwrap().ty, false, true);
-                        translate_return_type_name(project, translated_definition, type_name)
-                    }).collect(),
-                }
-            })
+                Some(Box::new(if function_definition.returns.len() == 1 {
+                    let type_name = translate_type_name(project, translated_definition, &function_definition.returns[0].1.as_ref().unwrap().ty, false, true);
+                    translate_return_type_name(project, translated_definition, type_name)
+                } else {
+                    sway::TypeName::Tuple {
+                        type_names: function_definition.returns.iter().map(|(_, p)| {
+                            let type_name = translate_type_name(project, translated_definition, &p.as_ref().unwrap().ty, false, true);
+                            translate_return_type_name(project, translated_definition, type_name)
+                        }).collect(),
+                    }
+                }))
+            },
         },
     };
 
@@ -451,11 +454,14 @@ pub fn translate_modifier_definition(
             translated_definition.toplevel_scope.borrow_mut().functions.push(Rc::new(RefCell::new(TranslatedFunction {
                 old_name: old_name.clone(),
                 new_name: new_name.clone(),
-                parameters: modifier.parameters.clone(),
                 attributes: create_attributes(has_pre_storage_read, has_pre_storage_write),
                 constructor_calls: vec![],
                 modifiers: vec![],
-                return_type: None,
+                type_name: sway::TypeName::Function {
+                    generic_parameters: None,
+                    parameters: modifier.parameters.clone(),
+                    return_type: None,
+                },
             })));
 
             *translated_definition.function_call_counts.entry(modifier.new_name.clone()).or_insert(0) += 1;
@@ -476,11 +482,14 @@ pub fn translate_modifier_definition(
             translated_definition.toplevel_scope.borrow_mut().functions.push(Rc::new(RefCell::new(TranslatedFunction {
                 old_name: old_name.clone(),
                 new_name: new_name.clone(),
-                parameters: modifier.parameters.clone(),
                 attributes: create_attributes(has_pre_storage_read, has_pre_storage_write),
                 constructor_calls: vec![],
                 modifiers: vec![],
-                return_type: None,
+                type_name: sway::TypeName::Function {
+                    generic_parameters: None,
+                    parameters: modifier.parameters.clone(),
+                    return_type: None,
+                },
             })));
 
             *translated_definition.function_call_counts.entry(modifier.new_name.clone()).or_insert(0) += 1;

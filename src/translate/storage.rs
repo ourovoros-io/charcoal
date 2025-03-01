@@ -290,7 +290,6 @@ pub fn translate_state_variable(
     translated_definition.toplevel_scope.borrow_mut().functions.push(Rc::new(RefCell::new(TranslatedFunction {
         old_name: old_name.clone(),
         new_name: new_name.clone(),
-        parameters: sway_function.parameters.clone(),
         attributes: Some(sway::AttributeList {
             attributes: vec![
                 sway::Attribute {
@@ -303,7 +302,11 @@ pub fn translate_state_variable(
         }),
         constructor_calls: vec![],
         modifiers: vec![],
-        return_type: sway_function.return_type.clone(),
+        type_name: sway::TypeName::Function {
+            generic_parameters: None,
+            parameters: sway_function.parameters.clone(),
+            return_type: sway_function.return_type.as_ref().map(|x| Box::new(x.clone())),
+        },
     })));
 
     // Create the body for the toplevel function

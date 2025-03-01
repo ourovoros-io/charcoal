@@ -57,11 +57,10 @@ pub struct TranslatedVariable {
 pub struct TranslatedFunction {
     pub old_name: String,
     pub new_name: String,
-    pub parameters: sway::ParameterList,
     pub attributes: Option<sway::AttributeList>,
     pub constructor_calls: Vec<sway::FunctionCall>,
     pub modifiers: Vec<sway::FunctionCall>,
-    pub return_type: Option<sway::TypeName>,
+    pub type_name: sway::TypeName,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -767,12 +766,7 @@ impl TranslatedDefinition {
                 }
                 
                 if let Some(function) = scope.borrow().find_function(|f| f.borrow().new_name == *name) {
-                    let function = function.borrow();
-
-                    return Ok(sway::TypeName::Fn {
-                        parameters: function.parameters.clone(),
-                        return_type: function.return_type.as_ref().map(|x| Box::new(x.clone())),
-                    });
+                    return Ok(function.borrow().type_name.clone());
                 }
                 
                 panic!("error: Variable not found in scope: \"{name}\"");
@@ -1115,6 +1109,10 @@ impl TranslatedDefinition {
                             // Ensure the function exists in scope
                             if let Some(function) = scope.borrow().find_function(|f| {
                                 let f = f.borrow();
+
+                                let sway::TypeName::Function { parameters: fn_parameters, .. } = &f.type_name else {
+                                    panic!("Invalid function type name: {:#?}", f.type_name)
+                                };
     
                                 // Ensure the function's new name matches the function call we're translating
                                 if f.new_name != new_name {
@@ -1124,7 +1122,7 @@ impl TranslatedDefinition {
                                 // println!("found function \"{new_name}\"");
                                 
                                 // Ensure the supplied function call args match the function's parameters
-                                if parameters.len() != f.parameters.entries.len() {
+                                if parameters.len() != fn_parameters.entries.len() {
                                     // println!(
                                     //     "parameter count mismatch: expected {}, got {}; skipping...",
                                     //     f.parameters.entries.len(),
@@ -1134,7 +1132,7 @@ impl TranslatedDefinition {
                                 }
     
                                 for (i, value_type_name) in parameter_types.iter().enumerate() {
-                                    let Some(parameter_type_name) = f.parameters.entries[i].type_name.as_ref() else { continue };
+                                    let Some(parameter_type_name) = fn_parameters.entries[i].type_name.as_ref() else { continue };
     
                                     if !value_type_name.is_compatible_with(parameter_type_name) {
                                         // println!(
@@ -1150,13 +1148,17 @@ impl TranslatedDefinition {
                             }) {
                                 let function = function.borrow();
         
-                                if let Some(return_type) = function.return_type.as_ref() {
-                                    return Ok(return_type.clone());
+                                let sway::TypeName::Function { return_type, .. } = &function.type_name else {
+                                    panic!("Invalid function type name: {:#?}", function.type_name)
+                                };
+    
+                                if let Some(return_type) = return_type.as_ref() {
+                                    return Ok(return_type.as_ref().clone());
                                 } else {
                                     return Ok(sway::TypeName::Tuple { type_names: vec![] })
                                 }
                             } else if let Some(variable) = scope.borrow().find_variable(|v| {
-                                let sway::TypeName::Fn { parameters: fn_parameters, .. } = &v.borrow().type_name else {
+                                let sway::TypeName::Function { parameters: fn_parameters, .. } = &v.borrow().type_name else {
                                     return false;
                                 };
                         
@@ -1181,7 +1183,7 @@ impl TranslatedDefinition {
                                 true
                             }) {
                                 let variable = variable.borrow();
-                                let sway::TypeName::Fn { return_type, .. } = &variable.type_name else { unreachable!() };
+                                let sway::TypeName::Function { return_type, .. } = &variable.type_name else { unreachable!() };
                                 
                                 if let Some(return_type) = return_type.as_ref() {
                                     return Ok(return_type.as_ref().clone());

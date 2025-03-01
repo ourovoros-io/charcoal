@@ -1,5 +1,6 @@
 use crate::{
     errors::Error,
+    sway,
     translate::{
         translate_contract_definition, translate_enum_definition, translate_error_definition,
         translate_event_definition, translate_function_declaration, translate_function_definition,
@@ -314,12 +315,23 @@ impl Project {
             // Add the toplevel function to the list of toplevel functions for the toplevel scope
             let function = translate_function_declaration(self, &mut translated_definition, function_definition)?;
             
+            let sway::TypeName::Function { parameters: function_parameters, return_type: function_return_type, .. } = &function.type_name else {
+                panic!("Invalid function type name: {:#?}", function.type_name)
+            };
+            
             let mut function_exists = false;
             
             for f in translated_definition.toplevel_scope.borrow().functions.iter() {
                 let mut f = f.borrow_mut();
 
-                if ((!f.old_name.is_empty() && (f.old_name == function.old_name)) || (f.new_name == function.new_name)) && f.parameters == function.parameters && f.return_type == function.return_type {
+                let sway::TypeName::Function { parameters: f_parameters, return_type: f_return_type, .. } = &f.type_name else {
+                    panic!("Invalid function type name: {:#?}", f.type_name)
+                };
+                
+                if ((!f.old_name.is_empty() && (f.old_name == function.old_name)) || (f.new_name == function.new_name))
+                    && f_parameters == function_parameters
+                    && f_return_type == function_return_type
+                {
                     f.new_name = function.new_name.clone();
                     function_exists = true;
                     break;

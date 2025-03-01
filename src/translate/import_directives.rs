@@ -119,11 +119,10 @@ fn process_import(
                 translated_definition.toplevel_scope.borrow_mut().functions.push(Rc::new(RefCell::new(TranslatedFunction {
                     old_name: external_function.old_name.clone(),
                     new_name: external_function.new_name.clone(),
-                    parameters: external_function.parameters.clone(),
                     attributes: external_function.attributes.clone(),
                     constructor_calls: external_function.constructor_calls.clone(),
                     modifiers: external_function.modifiers.clone(),
-                    return_type: external_function.return_type.clone(),
+                    type_name: external_function.type_name.clone(),
                 })));
             }
 

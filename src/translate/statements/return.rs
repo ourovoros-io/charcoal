@@ -16,12 +16,16 @@ pub fn translate_return_statement(
     let current_function_name = translated_definition.current_functions.last().unwrap();
     let function = scope.borrow().find_function(|f| f.borrow().new_name == *current_function_name).unwrap();
 
-    let return_type = function.borrow().return_type.clone().unwrap();
+    let sway::TypeName::Function { return_type, .. } = function.borrow().type_name.clone() else {
+        panic!("Invalid function type name: {:#?}", function.borrow().type_name)
+    };
+    
+    let return_type = return_type.unwrap();
 
     let expression = translate_expression(project, translated_definition, scope.clone(), expression)?;
     
     Ok(sway::Statement::from(sway::Expression::Return(Some(Box::new(
-        modify_return_expression(translated_definition, scope.clone(), &return_type, &expression)
+        modify_return_expression(translated_definition, scope.clone(), return_type.as_ref(), &expression)
     )))))
 }
 
