@@ -22,9 +22,13 @@ impl std::fmt::Display for Error {
             }
 
             Error::LineNotFound(path, offset) => {
-                write!(f, "error: Offset {offset} not found in file: \"{}\"", path.to_string_lossy())
+                write!(
+                    f,
+                    "error: Offset {offset} not found in file: \"{}\"",
+                    path.to_string_lossy()
+                )
             }
-            
+
             Error::SolangDiagnostics(path, line_ranges, diagnostics) => {
                 let loc_offset_to_line = |offset: usize| -> usize {
                     for (i, line_range) in line_ranges.iter().enumerate() {
@@ -44,7 +48,7 @@ impl std::fmt::Display for Error {
                         path.to_string_lossy(),
                         loc_offset_to_line(diagnostic.loc.start()),
                     )?;
-                    
+
                     write!(f, "\t{}", diagnostic.message)?;
 
                     if i < diagnostics.len() - 1 {
@@ -55,9 +59,16 @@ impl std::fmt::Display for Error {
                 Ok(())
             }
 
-            Error::IneffectualStatement(path, statement) =>  {
-                write!(f, "error: Ineffectual statement in file: \"{}\" - {}", path.to_string_lossy(), statement)
+            Error::IneffectualStatement(path, statement) => {
+                write!(
+                    f,
+                    "error: Ineffectual statement in file: \"{}\" - {}",
+                    path.to_string_lossy(),
+                    statement
+                )
             }
         }
     }
 }
+
+impl std::error::Error for Error {}
