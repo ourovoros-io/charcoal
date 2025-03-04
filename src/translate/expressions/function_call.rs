@@ -548,6 +548,203 @@ pub fn resolve_struct_constructor(
     })))
 }
 
+pub fn resolve_event_constructor(
+    project: &mut Project,
+    translated_definition: &mut TranslatedDefinition,
+    scope: Rc<RefCell<TranslationScope>>,
+    events_enums: &[(Rc<RefCell<sway::Enum>>, Rc<RefCell<sway::Impl>>)],
+    event_name: &str,
+    mut parameters: Vec<sway::Expression>,
+    mut parameter_types: Vec<sway::TypeName>,
+) -> Result<Option<sway::Expression>, Error> {
+    let Some((event_definition, _)) = events_enums
+        .iter()
+        .find(|(e, _)| e.borrow().variants.iter().any(|v| v.name == event_name))
+    else {
+        return Ok(None);
+    };
+
+    let event_definition = event_definition.borrow();
+
+    let Some(event_variant) = event_definition
+        .variants
+        .iter()
+        .find(|e| e.name == event_name)
+    else {
+        return Ok(None);
+    };
+
+    match &event_variant.type_name {
+        sway::TypeName::Tuple { type_names } => {
+            if parameter_types.len() != type_names.len() {
+                return Ok(None);
+            }
+
+            for (i, (lhs_type, rhs_type)) in parameter_types.iter().zip(type_names).enumerate() {
+                if !lhs_type.is_compatible_with(rhs_type) {
+                    if lhs_type.is_uint() && rhs_type.is_uint() || lhs_type.is_int() && rhs_type.is_int() {
+                        let lhs_bits: usize = lhs_type.to_string().trim_start_matches("u").trim_start_matches("i").parse().unwrap();
+                        let rhs_bits: usize = rhs_type.to_string().trim_start_matches("u").trim_start_matches("i").parse().unwrap();
+
+                        if lhs_bits > rhs_bits {
+                            // x.as_u256()
+                            // u64::try_from(x).unwrap()
+                            parameters[i]  = sway::Expression::create_function_calls(Some(parameters[i].clone()), &[
+                                (format!("as_{lhs_type}").as_str(), Some((None, vec![]))),
+                            ])    
+                        } else if lhs_bits < rhs_bits {
+                            parameters[i] = sway::Expression::create_function_calls(None, &[
+                                (format!("{lhs_type}::try_from").as_str(), Some((None, vec![parameters[i].clone()]))),
+                                ("unwrap", Some((None, vec![])))
+                            ])
+                        } 
+                    }
+                }
+            }
+        },
+        
+        _ => {}
+    }
+
+    todo!()
+}
+
+pub fn coerce_expression(expression: &mut sway::Expression, from_type_name: &mut sway::TypeName, to_type_name: &sway::TypeName) -> bool {
+    // if from_type_name.is_compatible_with(to_type_name) {
+    //     return true;
+    // }
+    
+    let from_type_name_string = from_type_name.to_string();
+
+    let is_uint = from_type_name.is_uint();
+    let is_int = from_type_name.is_int();
+
+    match (from_type_name.clone(), to_type_name.clone()) {
+        (sway::TypeName::Undefined, sway::TypeName::Undefined) => {},
+
+        (sway::TypeName::Identifier {
+            name: lhs_name,
+            generic_parameters: lhs_generic_parameters,
+        }, sway::TypeName::Identifier {
+            name: rhs_name,
+            generic_parameters: rhs_generic_parameters,
+        }) => {
+            if *lhs_name == rhs_name {
+                return true;
+            }
+
+            if lhs_generic_parameters.is_some() != lhs_generic_parameters.is_some() {
+                return false;
+            }
+
+            if let (Some(lhs_generic_parameters), Some(rhs_generic_parameters)) = (lhs_generic_parameters, rhs_generic_parameters) {
+                if lhs_generic_parameters.entries.len() != rhs_generic_parameters.entries.len() {
+                    return false;
+                }
+            }
+
+            if is_uint && !to_type_name.is_uint() {
+                return false;
+            }
+
+            if is_int && !to_type_name.is_int() {
+                return false;
+            }
+
+            if (is_uint && to_type_name.is_uint()) || (is_int && to_type_name.is_int()) {
+                let lhs_bits: usize = lhs_name.trim_start_matches("u").trim_start_matches("i").parse().unwrap();
+                let rhs_bits: usize = rhs_name.trim_start_matches("u").trim_start_matches("i").parse().unwrap();
+
+                if lhs_bits > rhs_bits {
+                    // x.as_u256()
+                    // u64::try_from(x).unwrap()
+                    *expression  = sway::Expression::create_function_calls(Some(expression.clone()), &[
+                        (format!("as_{from_type_name_string}").as_str(), Some((None, vec![]))),
+                    ]);    
+                } else if lhs_bits < rhs_bits {
+                    *expression = sway::Expression::create_function_calls(None, &[
+                        (format!("{to_type_name}::try_from").as_str(), Some((None, vec![expression.clone()]))),
+                        ("unwrap", Some((None, vec![])))
+                    ]);
+                }
+            }
+        },
+
+        (sway::TypeName::Array {
+            type_name: lhs_type_name,
+            length: lhs_len,
+        }, sway::TypeName::Array {
+            type_name: rhs_type_name,
+            length: rhs_len,
+        }) => {},
+
+        (sway::TypeName::Tuple {
+            type_names: mut lhs_type_names,
+        },sway::TypeName::Tuple {
+            type_names: rhs_type_names,
+        },)=> {
+            match expression {
+                sway::Expression::Identifier(_) => {
+                
+                    let component_names = ('a'..='z')
+                    .enumerate()
+                    .take_while(|(i, _)| *i < lhs_type_names.len())
+                    .map(|(_, c)| sway::LetIdentifier{ is_mutable: false, name: c.to_string() })
+                    .collect::<Vec<_>>();
+                    
+                    let let_stmt = sway::Statement::from(sway::Let{ pattern: sway::LetPattern::Tuple(component_names.clone()), type_name: None, value: expression.clone() });
+                    let mut exprs = component_names.iter().map(|c| sway::Expression::Identifier(c.name.clone())).collect::<Vec<_>>();
+                    for (i, expr) in exprs.iter_mut().enumerate() {
+                        coerce_expression(expr, &mut lhs_type_names[i], &rhs_type_names[i]);
+                    }
+
+                    *expression = sway::Expression::from(sway::Block{ statements: vec![let_stmt], final_expr: Some(sway::Expression::Tuple(exprs)) })
+                }, 
+
+                sway::Expression::Tuple(expressions) => {
+                    if expressions.len() != rhs_type_names.len() {
+                        return false;
+                    }
+                    
+                    for (i, (lhs, rhs)) in lhs_type_names.iter_mut().zip(rhs_type_names).enumerate() {
+                       if !coerce_expression(&mut expressions[i], lhs, &rhs) {
+                        return false;
+                       }
+                    }
+                },
+                
+                _ => {
+                    return false;
+                }
+            }
+        },
+
+        (sway::TypeName::StringSlice, sway::TypeName::StringSlice) => {},
+
+        (sway::TypeName::StringArray {
+            length: lhs_len,
+        }, sway::TypeName::StringArray {
+            length: rhs_len,
+        }) => {},
+
+        (sway::TypeName::Function {
+            generic_parameters: lhs_generic_parameters,
+            parameters: lhs_parameters_list,
+            return_type: lhs_return_type,
+        }, sway::TypeName::Function {
+            generic_parameters: rhs_generic_parameters,
+            parameters: rhs_parameters_list,
+            return_type: rhs_return_type,
+        }) => {
+            
+        },
+
+        _ => return false
+    }
+
+    true
+} 
+
 #[inline]
 pub fn translate_function_call_expression(
     project: &mut Project,
@@ -2993,7 +3190,7 @@ fn translate_int_types_casting(
         ))
     };
 
-    let Some(bits) = crate::translate::utils::match_bits(bits, true) else {
+    let Some(bits) = match_bits(bits, true) else {
         panic!("Invalid int type: {expression:#?}")
     };
 
@@ -3099,7 +3296,7 @@ fn translate_uint_types_casting(
     };
 
     let bits = bits as usize;
-    let Some(bits) = crate::translate::utils::match_bits(bits, false) else {
+    let Some(bits) = match_bits(bits, false) else {
         panic!("Invalid uint type: {expression:#?}")
     };
 
@@ -3770,5 +3967,66 @@ fn translate_string_type_casting(
             "translate {value_type_name} type cast: {} - {expression:#?}",
             expression
         ),
+    }
+}
+
+/// Utils
+
+fn match_bits(bits: usize, signed: bool) -> Option<usize> {
+    let (name, ty, ident) = if signed {
+        ("signed", "int", "I")
+    } else {
+        ("unsigned", "uint", "U")
+    };
+    match bits {
+        0..=8 => {
+            if bits != 8 {
+                eprintln!(
+                    "WARNING: unsupported {name} integer type `{ty}{bits}`, using `{ident}8`..."
+                );
+            }
+            Some(8)
+        }
+        9..=16 => {
+            if bits != 16 {
+                eprintln!(
+                    "WARNING: unsupported {name} integer type `{ty}{bits}`, using `{ident}16`..."
+                );
+            }
+            Some(16)
+        }
+        17..=32 => {
+            if bits != 32 {
+                eprintln!(
+                    "WARNING: unsupported {name} integer type `{ty}{bits}`, using `{ident}32`..."
+                );
+            }
+            Some(32)
+        }
+        33..=64 => {
+            if bits != 64 {
+                eprintln!(
+                    "WARNING: unsupported {name} integer type `{ty}{bits}`, using `{ident}64`..."
+                );
+            }
+            Some(64)
+        }
+        65..=128 => {
+            if bits != 128 {
+                eprintln!(
+                    "WARNING: unsupported {name} integer type `{ty}{bits}`, using `{ident}128`..."
+                );
+            }
+            Some(128)
+        }
+        129..=256 => {
+            if bits != 256 {
+                eprintln!(
+                    "WARNING: unsupported {name} integer type `{ty}{bits}`, using `{ident}256`..."
+                );
+            }
+            Some(256)
+        }
+        _ => None,
     }
 }

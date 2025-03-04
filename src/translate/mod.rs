@@ -9,7 +9,6 @@ mod storage;
 mod structs;
 mod type_definitions;
 mod type_names;
-mod utils;
 
 #[allow(ambiguous_glob_reexports)]
 pub use self::{
