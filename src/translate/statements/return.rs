@@ -37,6 +37,16 @@ fn modify_return_expression(
 ) -> sway::Expression {
     let value_type = translated_definition.get_expression_type(scope.clone(), expression).unwrap();
     
+    if let Some(value_type) = value_type.storage_key_type() {
+        if value_type.is_compatible_with(type_name) {
+            let expression = sway::Expression::create_function_calls(Some(expression.clone()), &[
+                ("read",Some((None, vec![])))
+            ]);
+            
+            return modify_return_expression(translated_definition, scope, &value_type, &expression);
+        }
+    }
+
     match type_name {
         sway::TypeName::Identifier { name, generic_parameters } => match (name.as_str(), generic_parameters.as_ref()) {
             ("String", None) => match value_type {

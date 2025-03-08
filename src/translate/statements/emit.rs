@@ -2,7 +2,7 @@ use crate::{
     errors::Error,
     project::Project,
     sway,
-    translate::{function_call::coerce_expression, translate_expression, TranslatedDefinition, TranslationScope},
+    translate::{function_call::utils::coerce_expression, translate_expression, TranslatedDefinition, TranslationScope},
 };
 use convert_case::Case;
 use solang_parser::{helpers::CodeLocation, pt as solidity};
@@ -65,26 +65,41 @@ pub fn translate_emit_statement(
                                                     ),
                                                     generic_parameters: None,
                                                     parameters: vec![if arguments.len() == 1 {
-                                                        translate_expression(
+                                                        let mut argument = translate_expression(
                                                             project,
                                                             translated_definition,
                                                             scope.clone(),
                                                             &arguments[0],
-                                                        )?
+                                                        )?;
+                                                        let mut argument_type = translated_definition.get_expression_type(scope.clone(), &argument)?;
+                                                        coerce_expression(&mut argument, &mut argument_type, &variant.type_name);
+                                                        argument
                                                     } else {
-                                                        sway::Expression::Tuple(
-                                                            arguments
-                                                                .iter()
-                                                                .map(|p| {
-                                                                    translate_expression(
-                                                                        project,
-                                                                        translated_definition,
-                                                                        scope.clone(),
-                                                                        p,
-                                                                    )
-                                                                })
-                                                                .collect::<Result<Vec<_>, _>>()?,
-                                                        )
+                                                        let mut arguments = arguments
+                                                            .iter()
+                                                            .map(|p| {
+                                                                translate_expression(
+                                                                    project,
+                                                                    translated_definition,
+                                                                    scope.clone(),
+                                                                    p,
+                                                                )
+                                                            })
+                                                            .collect::<Result<Vec<_>, _>>()?;
+
+                                                        let mut arguments_types = arguments.iter().map(|a| translated_definition.get_expression_type(scope.clone(), a).unwrap()).collect::<Vec<_>>();
+
+                                                        let sway::TypeName::Tuple { ref type_names } = variant.type_name else { panic!("Expected a tuple") };
+
+                                                        let coerced: Vec<sway::Expression> = arguments
+                                                            .iter_mut().zip(arguments_types.iter_mut().zip(type_names))
+                                                            .map(|(expr, (from_type_name, to_type_name))| {                                        
+                                                                coerce_expression(expr, from_type_name, &to_type_name);
+                                                                expr.clone()
+                                                            })
+                                                            .collect();
+                                                        
+                                                        sway::Expression::Tuple(coerced)
                                                     }],
                                                 })
                                             }],
@@ -146,12 +161,15 @@ pub fn translate_emit_statement(
                             )),
                             generic_parameters: None,
                             parameters: vec![if arguments.len() == 1 {
-                                translate_expression(
+                                let mut argument = translate_expression(
                                     project,
                                     translated_definition,
                                     scope.clone(),
                                     &arguments[0],
-                                )?
+                                )?;
+                                let mut argument_type = translated_definition.get_expression_type(scope.clone(), &argument)?;
+                                coerce_expression(&mut argument, &mut argument_type, &event_variant.type_name);
+                                argument
                             } else {
                                 let mut arguments = arguments
                                     .iter()
