@@ -1,4 +1,5 @@
 use std::{cell::RefCell, rc::Rc};
+use function_call::utils::coerce_expression;
 use num_bigint::BigUint;
 use num_traits::{Num, Zero};
 use solang_parser::pt as solidity;
@@ -317,15 +318,15 @@ pub fn create_value_expression(
             }
 
             ("I8" | "I16" | "I32" | "I64" | "I128" | "I256", None) => {
-                let value = match value.as_ref() {
-                    Some(value) => *value,
-                    None => &sway::Expression::from(sway::Literal::DecInt(
+                let mut value = match value.cloned() {
+                    Some(value) => value,
+                    None => sway::Expression::from(sway::Literal::DecInt(
                         BigUint::zero(),
                         Some(format!("u{}", name.trim_start_matches("I").to_string())),
                     )),
                 };
 
-                match value {
+                match &value {
                     sway::Expression::Literal(sway::Literal::DecInt(_, _) | sway::Literal::HexInt(_, _)) => {
                         sway::Expression::from(sway::FunctionCall {
                             function: sway::Expression::Identifier(format!("{name}::from_uint").into()),
@@ -338,24 +339,24 @@ pub fn create_value_expression(
                         sway::Expression::Identifier(name) if name == "todo!" => value.clone(),
                         
                         _ => {
-                            let value_type_name = translated_definition.get_expression_type(scope.clone(), value).unwrap();
+                            let mut value_type_name = translated_definition.get_expression_type(scope.clone(), &value).unwrap();
                             
+                            if value_type_name.is_uint() {
+                                coerce_expression(&mut value, &mut value_type_name, &type_name);
+                            }
+
                             if !value_type_name.is_int() {
-                                panic!("Invalid {name} value expression: {value:#?} ({value_type_name})")
+                                panic!("Invalid {name} value expression: {} ({value_type_name})", sway::TabbedDisplayer(&value))
                             }
                             
-                            sway::Expression::from(sway::FunctionCall {
-                                function: sway::Expression::Identifier(format!("{name}::from_uint").into()),
-                                generic_parameters: None,
-                                parameters: vec![value.clone()],
-                            })
+                            value.clone()
                         }
                     }
                     
-                    x if matches!(x, sway::Expression::BinaryExpression(_)) => (*x).clone(),
+                    x if matches!(x, sway::Expression::BinaryExpression(_)) => (x).clone(),
                     
-                    sway::Expression::Identifier(name) => {
-                        let Some(variable) = scope.borrow().get_variable_from_new_name(name) else {
+                    sway::Expression::Identifier(ref name) => {
+                        let Some(variable) = scope.borrow().get_variable_from_new_name(&name) else {
                             panic!("error: Variable not found in scope: \"{name}\"");
                         };
                         
@@ -367,7 +368,7 @@ pub fn create_value_expression(
                     }
                     
                     _ => {
-                        let value_type_name = translated_definition.get_expression_type(scope.clone(), value).unwrap();
+                        let value_type_name = translated_definition.get_expression_type(scope.clone(), &value).unwrap();
                         
                         if value_type_name != *type_name {
                             panic!("Invalid {name} value expression: {value:#?}")

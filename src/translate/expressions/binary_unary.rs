@@ -57,6 +57,44 @@ pub fn translate_binary_expression(
         ]);
     }
 
+    // HACK: de-cast identity abi cast comparisons
+    let abi_check = |lhs_type: &sway::TypeName, rhs: &mut sway::Expression| -> bool {
+        if lhs_type.is_identity() {
+            if let sway::Expression::FunctionCall(expr) = &rhs {
+                if let sway::Expression::Identifier(ident) = &expr.function {
+                    if ident == "abi" && expr.parameters.len() == 2 {
+                        *rhs = expr.parameters[1].clone();
+                        if let sway::Expression::FunctionCall(f) = &rhs {
+                            if let sway::Expression::MemberAccess(e) = &f.function {
+                                if e.member == "into" {
+                                    if let sway::Expression::FunctionCall(f) = &e.expression {
+                                        if let sway::Expression::MemberAccess(e) = &f.function {
+                                            if e.member == "unwrap" {
+                                                if let sway::Expression::FunctionCall(f) = &e.expression {
+                                                    if let sway::Expression::MemberAccess(e) = &f.function {
+                                                        if e.member == "as_contract_id" {
+                                                            *rhs = e.expression.clone();
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    };
+    
+    if !abi_check(&lhs_type, &mut rhs) {
+        abi_check(&rhs_type, &mut lhs);
+    }
+
     coerce_expression(&mut rhs, &mut rhs_type, &lhs_type);
 
     Ok(sway::Expression::from(sway::BinaryExpression {

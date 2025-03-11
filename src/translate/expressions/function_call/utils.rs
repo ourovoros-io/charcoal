@@ -257,6 +257,23 @@ pub fn resolve_function_call(
                 }
             }
 
+            // HACK: [u*; N]
+            if let sway::TypeName::Array { type_name: value_element_type, length: value_element_length } = &value_type_name {
+                if let sway::TypeName::Array { type_name: parameter_element_type, length: parameter_element_length } = parameter_type_name {
+                    if value_element_length != parameter_element_length {
+                        return false;
+                    }
+                    
+                    if value_element_type.is_uint() && parameter_element_type.is_uint() {
+                        return true;
+                    }
+
+                    if value_element_type.is_compatible_with(&parameter_element_type) {
+                        return true;
+                    }
+                }
+            }
+
             if !value_type_name.is_compatible_with(parameter_type_name) {
                 return false;
             }
@@ -634,16 +651,63 @@ pub fn coerce_expression(expression: &mut sway::Expression, from_type_name: &mut
             }
 
             if is_uint && !to_type_name.is_uint() {
-                return false;
+                if to_type_name.is_int() {
+                    
+                    let lhs_bits: usize = lhs_name.trim_start_matches("u").trim_start_matches("I").parse().unwrap();
+                    let rhs_bits: usize = rhs_name.trim_start_matches("u").trim_start_matches("I").parse().unwrap();
+                    
+                    if lhs_bits > rhs_bits {
+                        *expression = sway::Expression::create_function_calls(None, &[
+                            (format!("u{rhs_bits}::try_from").as_str(), Some((None, vec![expression.clone()]))),
+                            ("unwrap", Some((None, vec![])))
+                        ]);
+                            
+                    } else if lhs_bits < rhs_bits {
+                        *expression = sway::Expression::create_function_calls(Some(expression.clone()), &[
+                            (format!("as_u{rhs_bits}").as_str(), Some((None, vec![]))),
+                        ]);
+                    }
+
+                    *expression = sway::Expression::create_function_calls(None, &[
+                        (format!("I{rhs_bits}::from_uint").as_str(), Some((None, vec![expression.clone()]))),
+                    ]);
+                } else {
+                    return false;
+                }
+               
             }
 
             if is_int && !to_type_name.is_int() {
-                return false;
+                if to_type_name.is_uint() {
+                    let lhs_bits: usize = lhs_name.trim_start_matches("u").trim_start_matches("I").parse().unwrap();
+                    let rhs_bits: usize = rhs_name.trim_start_matches("u").trim_start_matches("I").parse().unwrap();
+                    
+                    if lhs_bits > rhs_bits {
+                        *expression = sway::Expression::create_function_calls(None, &[
+                            (format!("u{rhs_bits}::try_from").as_str(), Some((None, vec![
+                                sway::Expression::from(sway::MemberAccess{ expression: expression.clone(), member: "underlying".to_string() })
+                            ]))),
+                            ("unwrap", Some((None, vec![])))
+                        ]);
+                            
+                    } else if lhs_bits < rhs_bits {
+                        *expression = sway::Expression::create_function_calls(Some(expression.clone()), &[
+                            ("underlying", None),
+                            (format!("as_u{rhs_bits}").as_str(), Some((None, vec![]))),
+                        ]);
+                    }
+
+                    *expression = sway::Expression::create_function_calls(None, &[
+                        (format!("I{rhs_bits}::from_uint").as_str(), Some((None, vec![expression.clone()]))),
+                    ]);
+                } else {
+                    return false;
+                }
             }
 
             if (is_uint && to_type_name.is_uint()) || (is_int && to_type_name.is_int()) {
-                let lhs_bits: usize = lhs_name.trim_start_matches("u").trim_start_matches("i").parse().unwrap();
-                let rhs_bits: usize = rhs_name.trim_start_matches("u").trim_start_matches("i").parse().unwrap();
+                let lhs_bits: usize = lhs_name.trim_start_matches("u").trim_start_matches("I").parse().unwrap();
+                let rhs_bits: usize = rhs_name.trim_start_matches("u").trim_start_matches("I").parse().unwrap();
 
                 if lhs_bits > rhs_bits {
                     // x.as_u256()
@@ -733,5 +797,6 @@ pub fn coerce_expression(expression: &mut sway::Expression, from_type_name: &mut
         _ => return false
     }
 
+    *from_type_name = to_type_name.clone();
     true
 } 

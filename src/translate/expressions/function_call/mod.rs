@@ -215,7 +215,7 @@ pub fn translate_function_call_expression(
                             .map(|p| translated_definition.get_expression_type(scope.clone(), p))
                             .collect::<Result<Vec<_>, _>>()?;
 
-                        // TODO: check full inheritance heirarchy
+                        // TODO: check full inheritance hierarchy
                         // Check for explicit super function calls
                         if translated_definition.inherits.iter().any(|i| i == name) {
                             if let Some(inherited_definition) =
@@ -318,7 +318,52 @@ pub fn translate_function_call_expression(
                                 return Ok(result);
                             }
                         }
-                        return Err(Error::Wrapped("Failed to resolve function call".into()));
+
+                        // Check if variable is an abi type
+                        if let Some(variable) = scope.borrow().find_variable(|v| v.borrow().old_name == name) {
+                            let abi_type_name = variable.borrow().abi_type_name.clone();
+                            if let Some(abi_type_name) = abi_type_name.as_ref() {
+                                if let Some(external_definition) = project.find_definition_with_abi(&abi_type_name.to_string()) {
+                                    if let Some(result) = resolve_function_call(
+                                        project,
+                                        translated_definition,
+                                        scope.clone(),
+                                        external_definition.toplevel_scope.clone(),
+                                        member.name.as_str(),
+                                        named_arguments,
+                                        parameters.clone(),
+                                        parameter_types.clone(),
+                                    )? {
+                                        let sway::Expression::FunctionCall(expr) = result else { unreachable!() };
+                                        let sway::Expression::Identifier(ident) = &expr.function else { unreachable!() };
+
+                                        let container = translate_expression(project, translated_definition, scope.clone(), container)?;
+
+                                        return Ok(sway::Expression::from(sway::FunctionCall{ 
+                                            function: sway::Expression::from(sway::MemberAccess{ 
+                                                expression: sway::Expression::from(sway::FunctionCall { 
+                                                    function: sway::Expression::Identifier("abi".to_string()), 
+                                                    generic_parameters: None, 
+                                                    parameters: vec![
+                                                        sway::Expression::Identifier(abi_type_name.to_string()),
+                                                        sway::Expression::create_function_calls(Some(container), &[
+                                                            ("as_contract_id", Some((None, vec![]))),
+                                                            ("unwrap", Some((None, vec![]))),
+                                                            ("into", Some((None, vec![])))
+                                                        ]),
+                                                    ] 
+                                                }), 
+                                                member: ident.to_string() 
+                                            }), 
+                                            generic_parameters: None, 
+                                            parameters: expr.parameters.clone() 
+                                        }));
+                                    }
+                                }
+                            }
+                        }
+
+                        panic!("Failed to resolve function call : {}({})", member.name, parameter_types.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(", "));
                     }
                 },
 
