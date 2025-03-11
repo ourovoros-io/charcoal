@@ -1,7 +1,7 @@
 use std::{cell::RefCell, rc::Rc};
-use solang_parser::pt as solidity;
+use solang_parser::{helpers::CodeLocation, pt as solidity};
 use crate::{errors::Error, project::Project, sway, translate::{TranslatedDefinition, TranslatedVariable, TranslationScope}};
-use super::{pre_post::translate_pre_or_post_operator_value_expression, translate_expression, variable::translate_variable_access_expression};
+use super::{function_call::utils::coerce_expression, pre_post::translate_pre_or_post_operator_value_expression, translate_expression, variable::translate_variable_access_expression};
 
 #[inline]
 pub fn create_assignment_expression(
@@ -17,10 +17,8 @@ pub fn create_assignment_expression(
     // Generate a unique name for our variable
     let variable_name = scope.borrow_mut().generate_unique_variable_name("x");
     
-    let rhs = rhs.clone();
-    
-    let lhs_type = translated_definition.get_expression_type(scope.clone(), &expression)?;
-    let rhs_type = translated_definition.get_expression_type(scope.clone(), &rhs)?;
+    let mut rhs = rhs.clone();
+    let mut rhs_type = translated_definition.get_expression_type(scope.clone(), &rhs)?;
 
     variable.borrow_mut().mutation_count += 1;
 
@@ -55,88 +53,21 @@ pub fn create_assignment_expression(
 
                     _ => {
                         variable.borrow_mut().read_count += 1;
+                        
+                        let lhs = sway::Expression::create_function_calls(Some(expression.clone()), &[
+                            ("read", Some((None, vec![]))),
+                        ]);
+                        let lhs_type = translated_definition.get_expression_type(scope.clone(), &lhs)?;
 
                         let operator = operator.trim_end_matches("=").to_string();
+
+                        coerce_expression(&mut rhs, &mut rhs_type, &lhs_type);
                         
-                        match lhs_type {
-                            sway::TypeName::Identifier { name: lhs_name, generic_parameters } => {
-                                match (lhs_name.as_str(), generic_parameters.as_ref()) {
-                                    ("u8" | "u16" | "u32" | "u64" | "u256", None) => {
-                                        match rhs_type {
-                                            sway::TypeName::Identifier { name: rhs_name, generic_parameters } => {
-                                                match (rhs_name.as_str(), generic_parameters.as_ref()) {
-                                                    ("u8" | "u16" | "u32" | "u64" | "u256", None) => {
-                                                        let lhs_bits: usize = lhs_name.trim_start_matches("u").parse().unwrap();
-                                                        let rhs_bits: usize = rhs_name.trim_start_matches("u").parse().unwrap();
-
-                                                        if lhs_bits > rhs_bits {
-                                                            sway::Expression::from(sway::BinaryExpression{
-                                                                operator,
-                                                                lhs: sway::Expression::create_function_calls(Some(expression.clone()), &[
-                                                                    ("read", Some((None, vec![]))),
-                                                                ]),
-                                                                rhs: sway::Expression::create_function_calls(Some(rhs), &[
-                                                                    (format!("as_u{lhs_bits}").as_str(), Some((None, vec![]))),
-                                                                ]),
-                                                            })
-                                                        } else if lhs_bits < rhs_bits {
-                                                            sway::Expression::from(sway::BinaryExpression{
-                                                                operator,
-                                                                lhs: sway::Expression::create_function_calls(Some(expression.clone()), &[
-                                                                    ("read", Some((None, vec![]))),
-                                                                    (format!("as_u{rhs_bits}").as_str(), Some((None, vec![]))),
-                                                                ]),
-                                                                rhs,
-                                                            })
-                                                        } else {
-                                                            sway::Expression::from(sway::BinaryExpression{
-                                                                operator,
-                                                                lhs: sway::Expression::create_function_calls(Some(expression.clone()), &[
-                                                                    ("read", Some((None, vec![]))),
-                                                                ]),
-                                                                rhs,
-                                                            })
-                                                        }
-                                                    }
-                                
-                                                    _ => sway::Expression::from(sway::BinaryExpression{
-                                                        operator,
-                                                        lhs: sway::Expression::create_function_calls(Some(expression.clone()), &[
-                                                            ("read", Some((None, vec![]))),
-                                                        ]),
-                                                        rhs,
-                                                    })
-                                                }
-                                            }
-                                
-                                            _ => sway::Expression::from(sway::BinaryExpression{
-                                                operator,
-                                                lhs: sway::Expression::create_function_calls(Some(expression.clone()), &[
-                                                    ("read", Some((None, vec![]))),
-                                                ]),
-                                                rhs,
-                                            })
-                                        }
-                                    }
-
-                                    _ => sway::Expression::from(sway::BinaryExpression{
-                                        operator,
-                                        lhs: sway::Expression::create_function_calls(Some(expression.clone()), &[
-                                            ("read", Some((None, vec![]))),
-                                        ]),
-                                        rhs,
-                                    })
-                                }
-                            }
-
-                            _ => sway::Expression::from(sway::BinaryExpression{
-                                operator,
-                                lhs: sway::Expression::create_function_calls(Some(expression.clone()), &[
-                                    ("read", Some((None, vec![]))),
-                                ]),
-                                rhs,
-                            }),
-                        }
+                        sway::Expression::from(sway::BinaryExpression{
+                            operator,
+                            lhs,
+                            rhs,
+                        })
                     }
                 },
             ]))),
@@ -330,6 +261,7 @@ pub fn translate_assignment_expression(
     
     let (variable, expression) = translate_variable_access_expression(project, translated_definition, scope.clone(), lhs)?;
     
+    // HACK: struct field lookup
     if variable.is_none() {
         if let sway::Expression::MemberAccess(member_access) = &expression {
             if let sway::TypeName::Identifier{ name, .. } = translated_definition.get_expression_type(scope, &member_access.expression)? {

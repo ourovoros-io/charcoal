@@ -464,23 +464,6 @@ impl TypeName {
 
     /// Checks to see if the type name is compatible with another type name
     pub fn is_compatible_with(&self, other: &TypeName) -> bool {
-        // HACK: Don't check uint value types
-        if self.is_uint() && other.is_uint() {
-            return true;
-        }
-        // HACK: Don't check int value types
-        if self.is_int() && other.is_int() {
-            return true;
-        }
-        // HACK: Don't check string value types
-        if self.is_string() && other.is_string() {
-            return true;
-        }
-        // HACK: Consider string and byte array compatible (freakin solidity...)
-        if (self.is_string() && other.is_u8_array()) || (self.is_u8_array() && other.is_string()) {
-            return true;
-        }
-
         match self {
             TypeName::Array { type_name: lhs_type_name, length: lhs_length } => match other {
                 TypeName::Array { type_name: rhs_type_name, length: rhs_length } => {

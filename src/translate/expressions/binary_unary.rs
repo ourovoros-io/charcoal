@@ -1,7 +1,7 @@
 use std::{cell::RefCell, rc::Rc};
 use solang_parser::pt as solidity;
 use crate::{errors::Error, project::Project, sway, translate::{TranslatedDefinition, TranslationScope}};
-use super::translate_expression;
+use super::{function_call::utils::coerce_expression, translate_expression};
 
 #[inline]
 pub fn translate_binary_expression(
@@ -37,109 +37,33 @@ pub fn translate_binary_expression(
         }
     }
 
-    let lhs = translate_expression(project, translated_definition, scope.clone(), lhs)?;
-    let mut new_name = None;
+    let mut lhs = translate_expression(project, translated_definition, scope.clone(), lhs)?;
+    let mut lhs_type = translated_definition.get_expression_type(scope.clone(), &lhs)?;
 
-    if let sway::Expression::FunctionCall(expr) = &lhs {
-        if let sway::Expression::MemberAccess(expr) = &expr.function {
-            if expr.member == "read" {
-                if let sway::Expression::MemberAccess(expr) = &expr.expression {
-                    if let sway::Expression::Identifier(ident) = &expr.expression {
-                        if ident == "storage" {
-                            new_name = Some(expr.member.clone());
-                        }
-                    }
-                }
-            }
-        }
-    }
-    
-    if new_name.is_some() {
-        let lhs_type_name = scope.borrow()
-        .get_variable_from_new_name(new_name.as_ref().unwrap().as_str())
-        .and_then(|v| v.borrow().abi_type_name.clone());
+    let mut rhs = translate_expression(project, translated_definition, scope.clone(), rhs)?;
+    let mut rhs_type = translated_definition.get_expression_type(scope.clone(), &rhs)?;
 
-        if let Some(lhs_type_name) = lhs_type_name {
-            if let solidity::Expression::FunctionCall(_, rhs_expr, rhs_exprs) = rhs {
-                if let solidity::Expression::Variable(solidity::Identifier { name: rhs_name, .. }) = rhs_expr.as_ref() {
-                    if *rhs_name == lhs_type_name.to_string() {
-                        return Ok(sway::Expression::from(sway::BinaryExpression {
-                            operator: operator.into(),
-                            lhs,
-                            rhs: translate_expression(project, translated_definition, scope.clone(), &rhs_exprs[0])?,
-                        }));
-                    }
-                }
-            }
-        }
+    if let Some(value_type) = lhs_type.storage_key_type() {
+        lhs_type = value_type;
+        lhs = sway::Expression::create_function_calls(Some(lhs), &[
+            ("read", Some((None, vec![])))
+        ]);
     }
 
-    let rhs = translate_expression(project, translated_definition, scope.clone(), rhs)?;
+    if let Some(value_type) = rhs_type.storage_key_type() {
+        rhs_type = value_type;
+        rhs = sway::Expression::create_function_calls(Some(rhs), &[
+            ("read", Some((None, vec![])))
+        ]);
+    }
 
-    let lhs_type = translated_definition.get_expression_type(scope.clone(), &lhs)?;
-    let rhs_type = translated_definition.get_expression_type(scope.clone(), &rhs)?;
+    coerce_expression(&mut rhs, &mut rhs_type, &lhs_type);
 
-    Ok(match lhs_type {
-        sway::TypeName::Identifier { name: lhs_name, generic_parameters } => {
-            match (lhs_name.as_str(), generic_parameters.as_ref()) {
-                ("u8" | "u16" | "u32" | "u64" | "u256", None) => match rhs_type {
-                    sway::TypeName::Identifier { name: rhs_name, generic_parameters } => match (rhs_name.as_str(), generic_parameters.as_ref()) {
-                        ("u8" | "u16" | "u32" | "u64" | "u256", None) => {
-                            let lhs_bits: usize = lhs_name.trim_start_matches("u").parse().unwrap();
-                            let rhs_bits: usize = rhs_name.trim_start_matches("u").parse().unwrap();
-                            if lhs_bits > rhs_bits {
-                                sway::Expression::from(sway::BinaryExpression{
-                                    operator: operator.into(),
-                                    lhs,
-                                    rhs: sway::Expression::create_function_calls(Some(rhs), &[
-                                        (format!("as_u{lhs_bits}").as_str(), Some((None, vec![]))),
-                                    ]),
-                                })
-                            } else if lhs_bits < rhs_bits {
-                                sway::Expression::from(sway::BinaryExpression{
-                                    operator: operator.into(),
-                                    lhs: sway::Expression::create_function_calls(Some(lhs), &[
-                                        (format!("as_u{rhs_bits}").as_str(), Some((None, vec![]))),
-                                    ]),
-                                    rhs,
-                                })
-                            } else {
-                                sway::Expression::from(sway::BinaryExpression{
-                                    operator: operator.into(),
-                                    lhs,
-                                    rhs,
-                                })
-                            }
-                        }
-                        
-                        _ => sway::Expression::from(sway::BinaryExpression{
-                            operator: operator.into(),
-                            lhs,
-                            rhs,
-                        })
-                    }
-                    
-                    _ => sway::Expression::from(sway::BinaryExpression{
-                        operator: operator.into(),
-                        lhs,
-                        rhs,
-                    })
-                }
-
-                _ => sway::Expression::from(sway::BinaryExpression{
-                    operator: operator.into(),
-                    lhs,
-                    rhs,
-                })
-            }
-        }
-
-        _ => sway::Expression::from(sway::BinaryExpression{
-            operator: operator.into(),
-            lhs,
-            rhs,
-        })
-    })
+    Ok(sway::Expression::from(sway::BinaryExpression {
+        operator: operator.into(),
+        lhs,
+        rhs,
+    }))   
 }
 
 #[inline]
