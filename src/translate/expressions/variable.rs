@@ -147,6 +147,21 @@ pub fn translate_variable_access_expression(
                             ("unwrap", Some((None, vec![]))),
                         ]),
 
+                        ("Option", Some(generic_parameters)) if generic_parameters.entries.len() ==1 => {
+                            if let Some(storage_key_type) = generic_parameters.entries[0].type_name.storage_key_type() {
+                                if storage_key_type.is_storage_map() {
+                                    sway::Expression::create_function_calls(Some(expression), &[
+                                        ("unwrap", Some((None, vec![]))),
+                                        ("get", Some((None, vec![index]))),
+                                    ])
+                                } else {
+                                    todo!()
+                                }
+                            } else {
+                                todo!()
+                            }
+                        }
+
                         ("StorageKey", Some(generic_parameters)) if generic_parameters.entries.len() == 1 => {
                             match &generic_parameters.entries[0].type_name {
                                 sway::TypeName::Identifier { name, generic_parameters } => match (name.as_str(), generic_parameters.as_ref()) {

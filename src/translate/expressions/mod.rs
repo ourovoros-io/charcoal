@@ -1,4 +1,4 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, clone, rc::Rc};
 use function_call::utils::coerce_expression;
 use num_bigint::BigUint;
 use num_traits::{Num, Zero};
@@ -480,6 +480,11 @@ pub fn create_value_expression(
                 }),
 
                 Some(value) => value.clone(),
+            }
+
+            ("Option", Some(generic_parameters)) if generic_parameters.entries.len() ==1 => match value {
+                Some(value) => value.clone(),
+                None => sway::Expression::Identifier("None".into())
             }
 
             ("StorageKey", Some(generic_parameters)) if generic_parameters.entries.len() == 1 => {

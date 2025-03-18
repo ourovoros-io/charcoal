@@ -244,6 +244,8 @@ pub struct TranslatedDefinition {
 
     pub storage_fields_name_counts: HashMap<String, usize>,
     pub storage_fields_names: HashMap<String, String>,
+
+    pub mapping_names: Vec<(String, Vec<String>)>,
 }
 
 impl Display for TranslatedDefinition {
@@ -522,6 +524,8 @@ impl TranslatedDefinition {
 
             storage_fields_name_counts: HashMap::new(),
             storage_fields_names: HashMap::new(),
+
+            mapping_names: Vec::new(),
         }
     }
 
@@ -676,7 +680,58 @@ impl TranslatedDefinition {
         self.storage.as_mut().unwrap()
     }
 
-    /// Atempts to find the translated definition's `impl` block, if available.
+
+    #[inline]
+    pub fn get_constructor_fn(&mut self) -> &mut sway::Function {
+        let abi = self.get_abi();
+        if !abi.functions.iter().any(|f| f.name == "constructor") {
+            abi.functions.push(sway::Function{ 
+                attributes: None, 
+                is_public: false, 
+                old_name: String::new(), 
+                name: "constructor".into(), 
+                generic_parameters: None, 
+                parameters: sway::ParameterList{ entries: vec![] }, 
+                return_type: None, 
+                body: None,
+            });
+        }
+
+        let contract_impl = self.get_contract_impl();
+        if !contract_impl.items.iter().any(|f| {
+            match f {
+                sway::ImplItem::Function(function) => function.name == "constructor",
+                _ => false
+            }
+        }) {
+            contract_impl.items.push(sway::ImplItem::Function(sway::Function{ 
+                attributes: None, 
+                is_public: false, 
+                old_name: String::new(), 
+                name: "constructor".into(), 
+                generic_parameters: None, 
+                parameters: sway::ParameterList{ entries: vec![] }, 
+                return_type: None, 
+                body: Some(sway::Block { 
+                    statements: vec![], 
+                    final_expr: None, 
+                }),
+            }));
+        }
+
+        let Some(sway::ImplItem::Function(item)) = contract_impl.items.iter_mut().find(|f| {
+            match f {
+                sway::ImplItem::Function(function) => function.name == "constructor",
+                _ => false,
+            }
+        }) else { 
+            unreachable!() 
+        };
+
+        item
+    }
+
+    /// Attempts to find the translated definition's `impl` block, if available.
     #[inline]
     pub fn find_contract_impl(&self) -> Option<&sway::Impl> {
         self.impls.iter().find(|i| {

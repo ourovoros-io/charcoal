@@ -410,6 +410,13 @@ impl TypeName {
         }
     }
 
+    pub fn is_u64(&self) -> bool {
+        match self {
+            TypeName::Identifier { name, generic_parameters: None } => name == "u64",
+            _ => false,
+        }
+    }
+
     /// Checks if the type name is `Identity`
     pub fn is_identity(&self) -> bool {
         match self {
@@ -460,6 +467,25 @@ impl TypeName {
     #[inline]
     pub fn is_storage_key(&self) -> bool {
         self.storage_key_type().is_some()
+    }
+
+    pub fn storage_map_type(&self) -> Option<(TypeName, TypeName)> {
+        match self {
+            TypeName::Identifier { name, generic_parameters: Some(generic_parameters) } => {
+                if name == "StorageMap" && generic_parameters.entries.len() == 2 {
+                    Some((generic_parameters.entries[0].type_name.clone(), generic_parameters.entries[1].type_name.clone()))
+                } else {
+                    None
+                }
+            }
+
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn is_storage_map(&self) -> bool {
+        self.storage_map_type().is_some()
     }
 
     /// Checks to see if the type name is compatible with another type name

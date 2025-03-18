@@ -2,12 +2,12 @@ use crate::{
     errors::Error,
     sway,
     translate::{
-        translate_contract_definition, translate_enum_definition, translate_error_definition,
-        translate_event_definition, translate_function_declaration, translate_function_definition,
-        translate_import_directives, translate_struct_definition, translate_type_definition,
-        translate_using_directive, TranslatedDefinition,
+        translate_contract_definition, translate_enum_definition, translate_error_definition, translate_event_definition, translate_function_declaration, translate_function_definition, translate_import_directives, translate_storage_name, translate_struct_definition, translate_type_definition, translate_using_directive, TranslatedDefinition
     },
 };
+use convert_case::Case;
+use num_bigint::BigUint;
+use num_traits::One;
 use solang_parser::pt as solidity;
 use std::{
     cell::RefCell,
@@ -348,6 +348,124 @@ impl Project {
             translate_function_definition(self, &mut translated_definition, function_definition)?;
         }
 
+
+        let finalize_mappings = |project: &mut Project, translated_definition: &mut TranslatedDefinition| {
+            let translated_definition_name = translated_definition.name.clone();
+            let prefix = crate::translate_naming_convention(translated_definition_name.as_str(), Case::Snake);
+            
+            let mut constructor = translated_definition.get_constructor_fn().clone();
+            let body = constructor.body.as_mut().unwrap();
+
+            if body.statements.is_empty() {
+                let constructor_called_variable_name =  translate_storage_name(project, translated_definition, format!("{prefix}_constructor_called").as_str());
+                
+                // Add the `constructor_called` field to the storage block
+                translated_definition.get_storage().fields.push(sway::StorageField {
+                    name: constructor_called_variable_name.clone(),
+                    type_name: sway::TypeName::Identifier {
+                        name: "bool".into(),
+                        generic_parameters: None,
+                    },
+                    value: sway::Expression::from(sway::Literal::Bool(false)),
+                });
+
+                // Add the `constructor_called` requirement to the beginning of the function
+                // require(!storage.initialized.read(), "The Contract constructor has already been called");
+                body.statements.insert(0, sway::Statement::from(sway::Expression::create_function_calls(None, &[
+                    ("require", Some((None, vec![
+                        sway::Expression::from(sway::UnaryExpression {
+                            operator: "!".into(),
+                            expression: sway::Expression::create_function_calls(None, &[
+                                ("storage", None),
+                                (constructor_called_variable_name.as_str(), None),
+                                ("read", Some((None, vec![]))),
+                            ])
+                        }),
+                        sway::Expression::from(sway::Literal::String(format!("The {} constructor has already been called", translated_definition_name))),
+                    ]))),
+                ])));
+
+                // Set the `constructor_called` storage field to `true` at the end of the function
+                // storage.initialized.write(true);
+                body.statements.push(sway::Statement::from(sway::Expression::create_function_calls(None, &[
+                    ("storage", None),
+                    (constructor_called_variable_name.as_str(), None),
+                    ("write", Some((None, vec![
+                        sway::Expression::from(sway::Literal::Bool(true)),
+                    ]))),
+                ])));
+            }
+
+            for (mapping_name, field_names) in translated_definition.mapping_names.clone() {
+                let mut i = 0;
+                while i < body.statements.len() {
+                    let sway::Statement::Expression(sway::Expression::FunctionCall(f)) = &body.statements[i] else { break };
+                    let sway::Expression::Identifier(id) = &f.function else { break }; 
+                    if id != "require" {
+                        break;
+                    }
+                    i += 1;
+                }
+
+                body.statements.insert(i, sway::Statement::from(sway::Expression::create_function_calls(None, &[
+                    ("storage", None),
+                    (format!("{}_instance_count", mapping_name).as_str(), None),
+                    ("write", Some((None, vec![sway::Expression::from(sway::BinaryExpression{ 
+                        operator: "+".into(), 
+                        lhs: sway::Expression::Identifier("i".to_string()), 
+                        rhs: sway::Expression::from(sway::Literal::DecInt(BigUint::one(), None)) 
+                    })])))
+                ])));   
+
+                body.statements.insert(i, sway::Statement::from(sway::Let { 
+                    pattern: sway::LetPattern::Identifier(sway::LetIdentifier { 
+                        is_mutable: false, 
+                        name: "i".to_string() 
+                    }), 
+                    type_name: None, 
+                    value: sway::Expression::create_function_calls(None, &[
+                        ("storage", None),
+                        (format!("{}_instance_count", mapping_name).as_str(), None),
+                        ("read", Some((None, vec![])))
+                    ]) 
+                }));
+
+                // HACK: Skip forward two statements
+                i += 2;
+
+                // let i = storage.my_struct_count.read();
+                // storage.my_struct_count.write(i + 1);
+                // let balances = storage.my_struct_balances.get(i);
+                // storage.my_struct.balances.write(Some(balances));
+                for field_name in field_names.iter().rev() {
+                    body.statements.insert(i, sway::Statement::from(sway::Expression::create_function_calls(None, &[
+                        ("storage", None),
+                        (mapping_name.as_str(), None),
+                        (field_name.as_str(), None),
+                        ("write", Some((None, vec![
+                            sway::Expression::Identifier(field_name.clone())
+                        ])))
+                    ])));
+                    body.statements.insert(i, sway::Statement::from(
+                        sway::Let{ 
+                            pattern: sway::LetPattern::Identifier(sway::LetIdentifier{ 
+                                is_mutable: false, 
+                                name: field_name.clone() 
+                            }), 
+                            type_name: None, 
+                            value: sway::Expression::create_function_calls(None, &[
+                                ("storage", None),
+                                (format!("{}_{}s", mapping_name, field_name).as_str(), None),
+                                ("get", Some((None, vec![sway::Expression::Identifier("i".to_string())])))
+                            ]) 
+                        }
+                    ));
+                }
+            }
+
+            *translated_definition.get_constructor_fn() = constructor;
+        };
+
         // Translate any contract definitions in the file
         for source_unit_part in source_unit.0.iter() {
             let solidity::SourceUnitPart::ContractDefinition(contract_definition) = source_unit_part else { continue };
@@ -379,8 +497,12 @@ impl Project {
                 contract_definition,
             )?;
 
+            finalize_mappings(self, &mut translated_definition);
+
             self.translated_definitions.push(translated_definition);
         }
+
+        finalize_mappings(self, &mut translated_definition);
 
         // HACK: if we don't have any contracts, add a standalone translated definition
         if contract_names.is_empty() {
