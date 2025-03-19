@@ -1,9 +1,12 @@
-use std::{cell::RefCell, rc::Rc};
-
+use crate::{
+    errors::Error,
+    project::Project,
+    sway,
+    translate::{translate_expression, TranslatedDefinition, TranslationScope},
+};
 use convert_case::Case;
 use solang_parser::pt as solidity;
-
-use crate::{errors::Error, project::Project, sway, translate::{translate_expression, TranslatedDefinition, TranslationScope}};
+use std::{cell::RefCell, rc::Rc};
 
 #[inline]
 pub fn resolve_function_call(
@@ -731,7 +734,7 @@ pub fn coerce_expression(expression: &mut sway::Expression, from_type_name: &mut
         }, sway::TypeName::Array {
             type_name: rhs_type_name,
             length: rhs_len,
-        }) => {},
+        }) => todo!(),
 
         (sway::TypeName::Tuple {
             type_names: mut lhs_type_names,
@@ -780,7 +783,7 @@ pub fn coerce_expression(expression: &mut sway::Expression, from_type_name: &mut
             length: lhs_len,
         }, sway::TypeName::StringArray {
             length: rhs_len,
-        }) => {},
+        }) => todo!(),
 
         (sway::TypeName::Function {
             generic_parameters: lhs_generic_parameters,
@@ -790,9 +793,7 @@ pub fn coerce_expression(expression: &mut sway::Expression, from_type_name: &mut
             generic_parameters: rhs_generic_parameters,
             parameters: rhs_parameters_list,
             return_type: rhs_return_type,
-        }) => {
-            
-        },
+        }) => todo!(),
 
         _ => return false
     }

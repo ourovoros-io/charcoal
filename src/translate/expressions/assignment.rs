@@ -1,7 +1,16 @@
+use super::{
+    function_call::utils::coerce_expression,
+    pre_post::translate_pre_or_post_operator_value_expression, translate_expression,
+    variable::translate_variable_access_expression,
+};
+use crate::{
+    errors::Error,
+    project::Project,
+    sway,
+    translate::{TranslatedDefinition, TranslatedVariable, TranslationScope},
+};
+use solang_parser::pt as solidity;
 use std::{cell::RefCell, rc::Rc};
-use solang_parser::{helpers::CodeLocation, pt as solidity};
-use crate::{errors::Error, project::Project, sway, translate::{TranslatedDefinition, TranslatedVariable, TranslationScope}};
-use super::{function_call::utils::coerce_expression, pre_post::translate_pre_or_post_operator_value_expression, translate_expression, variable::translate_variable_access_expression};
 
 #[inline]
 pub fn create_assignment_expression(

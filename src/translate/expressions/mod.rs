@@ -1,4 +1,4 @@
-use std::{cell::RefCell, clone, rc::Rc};
+use std::{cell::RefCell, rc::Rc};
 use function_call::utils::coerce_expression;
 use num_bigint::BigUint;
 use num_traits::{Num, Zero};

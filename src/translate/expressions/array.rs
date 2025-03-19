@@ -1,7 +1,12 @@
-use std::{cell::RefCell, rc::Rc};
-use solang_parser::pt as solidity;
-use crate::{errors::Error, project::Project, sway, translate::{TranslatedDefinition, TranslationScope}};
 use super::{translate_expression, variable::translate_variable_access_expression};
+use crate::{
+    errors::Error,
+    project::Project,
+    sway,
+    translate::{function_call::utils::coerce_expression, TranslatedDefinition, TranslationScope},
+};
+use solang_parser::pt as solidity;
+use std::{cell::RefCell, rc::Rc};
 
 #[inline]
 pub fn translate_array_literal_expression(
@@ -58,29 +63,36 @@ pub fn translate_array_slice_expression(
     let expression = translate_expression(project, translated_definition, scope.clone(), array_expression)?;
     let type_name = translated_definition.get_expression_type(scope.clone(), &expression)?;
 
-    let from_index = from_index.as_ref().map(|x| {
-        // println!("input from_index: {x} - {x:#?}");
+    let u64_type = sway::TypeName::Identifier {
+        name: "u64".into(),
+        generic_parameters: None,
+    };
+
+    let mut from_index = from_index.as_ref().map(|x| {
         translate_expression(project, translated_definition, scope.clone(), x.as_ref()).unwrap()
     });
 
-    let from_index_type = from_index.as_ref().map(|x| {
-        // println!("translated from_index: {} - {x:#?}", sway::TabbedDisplayer(x));
+    let mut from_index_type = from_index.as_ref().map(|x| {
         translated_definition.get_expression_type(scope.clone(), x).unwrap()
     });
 
-    //
-    // TODO: Check if from_index needs to be cast to u64
-    //
-    
-    let to_index = to_index.as_ref().map(|x| {
-        // println!("input to_index: {x} - {x:#?}");
+    // Check if from_index needs to be cast to u64
+    if let (Some(from_index), Some(from_index_type)) = (from_index.as_mut(), from_index_type.as_mut()) {
+        coerce_expression(from_index, from_index_type, &u64_type);
+    }
+
+    let mut to_index = to_index.as_ref().map(|x| {
         translate_expression(project, translated_definition, scope.clone(), x.as_ref()).unwrap()
     });
 
-    let to_index_type = to_index.as_ref().map(|x| {
-        // println!("translated to_index: {} - {x:#?}", sway::TabbedDisplayer(x));
+    let mut to_index_type = to_index.as_ref().map(|x| {
         translated_definition.get_expression_type(scope.clone(), x).unwrap()
     });
+
+    // Check if to_index needs to be cast to u64
+    if let (Some(to_index), Some(to_index_type)) = (to_index.as_mut(), to_index_type.as_mut()) {
+        coerce_expression(to_index, to_index_type, &u64_type);
+    }
 
     //
     // TODO: Check if to_index needs to be cast to u64
