@@ -484,6 +484,25 @@ impl TypeName {
     }
 
     #[inline]
+    pub fn is_storage_vec(&self) -> bool {
+        self.storage_vec_type().is_some()
+    }
+
+    pub fn storage_vec_type(&self) -> Option<TypeName> {
+        match self {
+            TypeName::Identifier { name, generic_parameters: Some(generic_parameters) } => {
+                if name == "StorageVec" && generic_parameters.entries.len() == 1 {
+                    Some(generic_parameters.entries[0].type_name.clone())
+                } else {
+                    None
+                }
+            }
+
+            _ => None,
+        }
+    }
+
+    #[inline]
     pub fn is_storage_map(&self) -> bool {
         self.storage_map_type().is_some()
     }

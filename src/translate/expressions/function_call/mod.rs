@@ -319,8 +319,8 @@ pub fn translate_function_call_expression(
                             }
                         }
 
-                        // Check if variable is an abi type
                         if let Some(variable) = scope.borrow().find_variable(|v| v.borrow().old_name == name) {
+                            // Check if variable is an abi type
                             let abi_type_name = variable.borrow().abi_type_name.clone();
                             if let Some(abi_type_name) = abi_type_name.as_ref() {
                                 if let Some(external_definition) = project.find_definition_with_abi(&abi_type_name.to_string()) {
@@ -361,7 +361,25 @@ pub fn translate_function_call_expression(
                                     }
                                 }
                             }
+                            
+                            // Check if variable is a storage vector
+                            if variable.borrow().is_storage {
+                                if variable.borrow().type_name.is_storage_vec() {
+                                    match member.name.as_str() {
+                                        "push" => {
+                                            return Ok(sway::Expression::create_function_calls(None, &[
+                                                ("storage", None),
+                                                (variable.borrow().new_name.as_str(), None),
+                                                ("push", Some((None, parameters)))
+                                            ]))
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                            }
                         }
+
+
 
                         panic!("Failed to resolve function call : {}({})", member.name, parameter_types.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(", "));
                     }

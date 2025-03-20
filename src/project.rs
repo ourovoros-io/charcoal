@@ -444,7 +444,9 @@ impl Project {
                         (mapping_name.as_str(), None),
                         (field_name.as_str(), None),
                         ("write", Some((None, vec![
-                            sway::Expression::Identifier(field_name.clone())
+                            sway::Expression::create_function_calls(None, &[
+                                ("Some", Some((None, vec![sway::Expression::Identifier(field_name.to_string())])))
+                            ])
                         ])))
                     ])));
 
@@ -465,8 +467,50 @@ impl Project {
                     ));
                 }
             }
-        
-            *translated_definition.get_constructor_fn().body.as_mut().unwrap() = constructor_body;
+            
+            let mut constructor_attrs = None;
+
+            {
+                let constructor_fn = translated_definition.get_constructor_fn();
+
+                *constructor_fn.body.as_mut().unwrap() = constructor_body;
+
+                if constructor_fn.attributes.is_none() {
+                    constructor_fn.attributes = Some(Default::default());
+                }
+
+                let Some(attributes) = constructor_fn.attributes.as_mut() else { unreachable!() };
+
+                if !attributes.attributes.iter().any(|a| a.name == "storage") {
+                    attributes.attributes.push(sway::Attribute{ 
+                        name: "storage".to_string(), 
+                        parameters: None
+                    });
+                }
+
+                let Some(storage_attr) = attributes.attributes.iter_mut().find(|a| a.name == "storage") else { unreachable!() };
+                if storage_attr.parameters.is_none() {
+                    storage_attr.parameters = Some(Default::default());
+                }
+
+                let Some(parameters) = storage_attr.parameters.as_mut() else { unreachable!() };
+                
+                if !parameters.iter().any(|p| p == "read") {
+                    parameters.push("read".to_string());
+                }
+
+                if !parameters.iter().any(|p| p == "write") {
+                    parameters.push("write".to_string());
+                }
+
+                constructor_attrs = Some(attributes.clone());
+            }
+
+            let abi = translated_definition.get_abi();
+
+            if let Some(abi_constructor) = abi.functions.iter_mut().find(|f| f.name == "constructor") {
+                abi_constructor.attributes = constructor_attrs;
+            }
         };
 
         // Translate any contract definitions in the file

@@ -4,7 +4,7 @@ use solang_parser::{helpers::CodeLocation, pt as solidity};
 
 use crate::{errors::Error, project::Project, sway, translate::{TranslatedDefinition, TranslatedVariable, TranslationScope}};
 
-use super::translate_expression;
+use super::{function_call::utils::coerce_expression, translate_expression};
 
 #[inline]
 pub fn translate_variable_expression(
@@ -123,7 +123,7 @@ pub fn translate_variable_access_expression(
         }
 
         solidity::Expression::ArraySubscript(_, array_expression, Some(index)) => {
-            let index = translate_expression(project, translated_definition, scope.clone(), index.as_ref())?;
+            let mut index = translate_expression(project, translated_definition, scope.clone(), index.as_ref())?;
             
             let (variable, expression) = translate_variable_access_expression(project, translated_definition, scope.clone(), array_expression)?;
 
@@ -163,16 +163,23 @@ pub fn translate_variable_access_expression(
                         }
 
                         ("StorageKey", Some(generic_parameters)) if generic_parameters.entries.len() == 1 => {
+
                             match &generic_parameters.entries[0].type_name {
                                 sway::TypeName::Identifier { name, generic_parameters } => match (name.as_str(), generic_parameters.as_ref()) {
                                     ("StorageMap", Some(_)) => sway::Expression::create_function_calls(Some(expression), &[
                                         ("get", Some((None, vec![index]))),
                                     ]),
             
-                                    ("StorageVec", Some(_)) => sway::Expression::create_function_calls(Some(expression), &[
-                                        ("get", Some((None, vec![index]))),
-                                        ("unwrap", Some((None, vec![]))),
-                                    ]),
+                                    ("StorageVec", Some(_)) => {
+                                        let mut index_type_name = translated_definition.get_expression_type(scope.clone(), &index)?;
+                                        
+                                        coerce_expression(&mut index, &mut index_type_name, &sway::TypeName::Identifier { name: "u64".to_string(), generic_parameters: None });
+                                        
+                                        sway::Expression::create_function_calls(Some(expression), &[
+                                            ("get", Some((None, vec![index]))),
+                                            ("unwrap", Some((None, vec![]))),
+                                        ])
+                                    },
             
                                     (name, _) => todo!(
                                         "{}TODO: translate {name} array subscript expression: {solidity_expression} - {} {expression:#?}",
