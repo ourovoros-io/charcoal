@@ -349,6 +349,10 @@ impl Project {
         }
         
         let finalize_mappings = |project: &mut Project, translated_definition: &mut TranslatedDefinition| {
+            if translated_definition.mapping_names.is_empty() {
+                return;
+            }
+            
             let mut constructor_body = translated_definition.get_constructor_fn().body.as_ref().cloned().unwrap();
 
             // Insert constructor call guard if necessary
@@ -468,7 +472,7 @@ impl Project {
                 }
             }
             
-            let mut constructor_attrs = None;
+            let constructor_attrs;
 
             {
                 let constructor_fn = translated_definition.get_constructor_fn();
