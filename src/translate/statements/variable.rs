@@ -134,9 +134,12 @@ pub fn translate_variable_definition_statement(
     }
 
     let value = if let Some(value) = value {
+        type_name = translated_definition.get_expression_type(scope.clone(), &value)?;
         value
     } else if let Some(x) = initializer.as_ref() {
-        translate_pre_or_post_operator_value_expression(project, translated_definition, scope.clone(), x)?
+        let x = translate_pre_or_post_operator_value_expression(project, translated_definition, scope.clone(), x)?;
+        type_name = translated_definition.get_expression_type(scope.clone(), &x)?;
+        x
     } else {
         create_value_expression(translated_definition, scope.clone(), &type_name, None)
     };
