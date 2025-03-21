@@ -647,7 +647,7 @@ pub fn coerce_expression(expression: &mut sway::Expression, from_type_name: &mut
                 return false;
             }
 
-            if let (Some(lhs_generic_parameters), Some(rhs_generic_parameters)) = (lhs_generic_parameters, rhs_generic_parameters) {
+            if let (Some(lhs_generic_parameters), Some(rhs_generic_parameters)) = (lhs_generic_parameters.as_ref(), rhs_generic_parameters.as_ref()) {
                 if lhs_generic_parameters.entries.len() != rhs_generic_parameters.entries.len() {
                     return false;
                 }
@@ -734,7 +734,11 @@ pub fn coerce_expression(expression: &mut sway::Expression, from_type_name: &mut
         }, sway::TypeName::Array {
             type_name: rhs_type_name,
             length: rhs_len,
-        }) => todo!(),
+        }) => {
+            if lhs_len != rhs_len || !lhs_type_name.is_compatible_with(&rhs_type_name) {
+                todo!("Handle conversion from {from_type_name} to {to_type_name}")
+            }
+        }
 
         (sway::TypeName::Tuple {
             type_names: mut lhs_type_names,
@@ -743,20 +747,30 @@ pub fn coerce_expression(expression: &mut sway::Expression, from_type_name: &mut
         },)=> {
             match expression {
                 sway::Expression::Identifier(_) => {
-                
                     let component_names = ('a'..='z')
-                    .enumerate()
-                    .take_while(|(i, _)| *i < lhs_type_names.len())
-                    .map(|(_, c)| sway::LetIdentifier{ is_mutable: false, name: c.to_string() })
-                    .collect::<Vec<_>>();
+                        .enumerate()
+                        .take_while(|(i, _)| *i < lhs_type_names.len())
+                        .map(|(_, c)| sway::LetIdentifier{ is_mutable: false, name: c.to_string() })
+                        .collect::<Vec<_>>();
                     
-                    let let_stmt = sway::Statement::from(sway::Let{ pattern: sway::LetPattern::Tuple(component_names.clone()), type_name: None, value: expression.clone() });
-                    let mut exprs = component_names.iter().map(|c| sway::Expression::Identifier(c.name.clone())).collect::<Vec<_>>();
+                    let let_stmt = sway::Statement::from(sway::Let {
+                        pattern: sway::LetPattern::Tuple(component_names.clone()),
+                        type_name: None,
+                        value: expression.clone(),
+                    });
+
+                    let mut exprs = component_names.iter()
+                        .map(|c| sway::Expression::Identifier(c.name.clone()))
+                        .collect::<Vec<_>>();
+                    
                     for (i, expr) in exprs.iter_mut().enumerate() {
                         coerce_expression(expr, &mut lhs_type_names[i], &rhs_type_names[i]);
                     }
 
-                    *expression = sway::Expression::from(sway::Block{ statements: vec![let_stmt], final_expr: Some(sway::Expression::Tuple(exprs)) })
+                    *expression = sway::Expression::from(sway::Block {
+                        statements: vec![let_stmt],
+                        final_expr: Some(sway::Expression::Tuple(exprs)),
+                    })
                 }, 
 
                 sway::Expression::Tuple(expressions) => {
@@ -765,9 +779,9 @@ pub fn coerce_expression(expression: &mut sway::Expression, from_type_name: &mut
                     }
                     
                     for (i, (lhs, rhs)) in lhs_type_names.iter_mut().zip(rhs_type_names).enumerate() {
-                       if !coerce_expression(&mut expressions[i], lhs, &rhs) {
-                        return false;
-                       }
+                        if !coerce_expression(&mut expressions[i], lhs, &rhs) {
+                            return false;
+                        }
                     }
                 },
                 
@@ -783,19 +797,67 @@ pub fn coerce_expression(expression: &mut sway::Expression, from_type_name: &mut
             length: lhs_len,
         }, sway::TypeName::StringArray {
             length: rhs_len,
-        }) => todo!(),
+        }) => {
+            if lhs_len != rhs_len {
+                todo!("Handle coersion from str[{lhs_len}] to str[{rhs_len}]")
+            }
+
+            // otherwise it's the same length and we don't need to do anything
+        }
 
         (sway::TypeName::Function {
-            generic_parameters: lhs_generic_parameters,
-            parameters: lhs_parameters_list,
-            return_type: lhs_return_type,
+            generic_parameters: _lhs_generic_parameters,
+            parameters: _lhs_parameters_list,
+            return_type: _lhs_return_type,
         }, sway::TypeName::Function {
-            generic_parameters: rhs_generic_parameters,
-            parameters: rhs_parameters_list,
-            return_type: rhs_return_type,
+            generic_parameters: _rhs_generic_parameters,
+            parameters: _rhs_parameters_list,
+            return_type: _rhs_return_type,
         }) => todo!(),
 
-        _ => return false
+        (_, sway::TypeName::Identifier { name, generic_parameters }) => match (name.as_str(), generic_parameters.as_ref()) {
+            ("String", None) => match from_type_name {
+                sway::TypeName::Identifier { name, generic_parameters } => match (name.as_str(), generic_parameters.as_ref()) {
+                    ("todo!", None) => {}
+                    ("String", None) => {}
+                    _ => todo!(),
+                }
+                
+                // String::from_ascii_str(x)
+                sway::TypeName::StringSlice => {
+                    *expression = sway::Expression::from(sway::FunctionCall{
+                        function: sway::Expression::Identifier("String::from_ascii_str".into()),
+                        generic_parameters: None,
+                        parameters: vec![
+                            expression.clone(),
+                        ],
+                    });
+                }
+                
+                // String::from_ascii_str(from_str_array(x))
+                sway::TypeName::StringArray { .. } => {
+                    *expression = sway::Expression::from(sway::FunctionCall{
+                        function: sway::Expression::Identifier("String::from_ascii_str".into()),
+                        generic_parameters: None,
+                        parameters: vec![
+                            sway::Expression::from(sway::FunctionCall {
+                                function: sway::Expression::Identifier("from_str_array".into()),
+                                generic_parameters: None,
+                                parameters: vec![
+                                    expression.clone(),
+                                ],
+                            }),
+                        ],
+                    });
+                }
+                
+                _ => todo!("{}", sway::TabbedDisplayer(&to_type_name)),
+            }
+            
+            _ => return false,
+        }
+    
+        _ => return false,
     }
 
     *from_type_name = to_type_name.clone();
