@@ -130,7 +130,7 @@ pub fn translate_unary_expression(
                     let bits: usize = name.trim_start_matches('u').parse().unwrap();
                     
                     translated_definition.ensure_dependency_declared(
-                        "sway_libs = { git = \"https://github.com/FuelLabs/sway-libs\", tag = \"v0.24.0\" }"
+                        "sway_libs = { git = \"https://github.com/FuelLabs/sway-libs\", tag = \"v0.25.0\" }"
                     );
                     translated_definition.ensure_use_declared(format!("sway_libs::signed_integers::i{bits}::*").as_str());
 

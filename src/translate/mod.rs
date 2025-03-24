@@ -2094,7 +2094,7 @@ impl TranslatedDefinition {
 
                                     "wrapping_neg" => {
                                         self.ensure_dependency_declared(
-                                            "sway_libs = { git = \"https://github.com/FuelLabs/sway-libs\", tag = \"v0.24.0\" }"
+                                            "sway_libs = { git = \"https://github.com/FuelLabs/sway-libs\", tag = \"v0.25.0\" }"
                                         );
 
                                         Ok(sway::TypeName::Identifier {
