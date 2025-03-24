@@ -660,6 +660,21 @@ impl TranslatedDefinition {
         self.abi.as_mut().unwrap()
     }
 
+    #[inline]
+    pub fn find_abi<F: Copy + FnMut(&&sway::Abi) -> bool>(&self, mut f: F) -> Option<&sway::Abi> {
+        if let Some(abi) = self.abi.as_ref() {
+            if f(&abi) {
+                return Some(abi);
+            }
+        }
+
+        if let Some(abi) = self.abis.iter().find(f) {
+            return Some(abi);
+        }
+
+        None
+    }
+
     /// Gets the configurable block for the translated definition. If it doesn't exist, it gets created.
     #[inline]
     pub fn get_configurable(&mut self) -> &mut sway::Configurable {
@@ -1414,15 +1429,22 @@ impl TranslatedDefinition {
                     },
 
                     sway::Expression::MemberAccess(member_access) => {
-                        let mut container_type =
-                            self.get_expression_type(scope.clone(), &member_access.expression)?;
+                        let mut container_type = self.get_expression_type(scope.clone(), &member_access.expression)?;
+
+                        // Check to see if the container's type is a translated enum and switch to its underlying type
+                        for enum_definition in self.enums.iter() {
+                            if enum_definition.type_definition.name == container_type {
+                                if let Some(underlying_type) = enum_definition.type_definition.underlying_type.as_ref() {
+                                    container_type = underlying_type.clone();
+                                    break;
+                                }
+                            }
+                        }
 
                         // Check to see if the container's type is a UDT and switch to its underlying type
                         for type_definition in self.type_definitions.iter() {
                             if type_definition.name == container_type {
-                                if let Some(underlying_type) =
-                                    type_definition.underlying_type.as_ref()
-                                {
+                                if let Some(underlying_type) = type_definition.underlying_type.as_ref() {
                                     container_type = underlying_type.clone();
                                     break;
                                 }

@@ -17,7 +17,7 @@ use casting::{translate_address_type_cast_function_call, translate_bytes_type_ca
 use member_access::{translate_abi_member_access_function_call, translate_function_call_block_member_access, translate_member_access_function_call, translate_super_member_access_function_call, translate_this_member_access_function_call};
 use solang_parser::{helpers::CodeLocation, pt as solidity};
 use member_access::{translate_identity_member_access_function_call, translate_storage_vec_member_access_function_call, translate_vec_member_access_function_call};
-use utils::{resolve_function_call, resolve_struct_constructor};
+use utils::{resolve_abi_function_call, resolve_function_call, resolve_struct_constructor};
 use std::{cell::RefCell, rc::Rc};
 use super::translate_expression;
 
@@ -322,42 +322,23 @@ pub fn translate_function_call_expression(
                         if let Some(variable) = scope.borrow().find_variable(|v| v.borrow().old_name == name) {
                             // Check if variable is an abi type
                             let abi_type_name = variable.borrow().abi_type_name.clone();
+
                             if let Some(abi_type_name) = abi_type_name.as_ref() {
-                                if let Some(external_definition) = project.find_definition_with_abi(&abi_type_name.to_string()) {
-                                    if let Some(result) = resolve_function_call(
+                                if let Some(external_definition) = project.find_definition_with_abi(&abi_type_name.to_string()).cloned() {
+                                    let container = translate_expression(project, translated_definition, scope.clone(), container)?;
+                                    
+                                    if let Some(result) = resolve_abi_function_call(
                                         project,
                                         translated_definition,
                                         scope.clone(),
-                                        external_definition.toplevel_scope.clone(),
+                                        external_definition.find_abi(|a| a.name == abi_type_name.to_string()).unwrap(),
+                                        &container,
                                         member.name.as_str(),
                                         named_arguments,
                                         parameters.clone(),
                                         parameter_types.clone(),
                                     )? {
-                                        let sway::Expression::FunctionCall(expr) = result else { unreachable!() };
-                                        let sway::Expression::Identifier(ident) = &expr.function else { unreachable!() };
-
-                                        let container = translate_expression(project, translated_definition, scope.clone(), container)?;
-
-                                        return Ok(sway::Expression::from(sway::FunctionCall{ 
-                                            function: sway::Expression::from(sway::MemberAccess{ 
-                                                expression: sway::Expression::from(sway::FunctionCall { 
-                                                    function: sway::Expression::Identifier("abi".to_string()), 
-                                                    generic_parameters: None, 
-                                                    parameters: vec![
-                                                        sway::Expression::Identifier(abi_type_name.to_string()),
-                                                        sway::Expression::create_function_calls(Some(container), &[
-                                                            ("as_contract_id", Some((None, vec![]))),
-                                                            ("unwrap", Some((None, vec![]))),
-                                                            ("into", Some((None, vec![])))
-                                                        ]),
-                                                    ] 
-                                                }), 
-                                                member: ident.to_string() 
-                                            }), 
-                                            generic_parameters: None, 
-                                            parameters: expr.parameters.clone() 
-                                        }));
+                                        return Ok(result);
                                     }
                                 }
                             }

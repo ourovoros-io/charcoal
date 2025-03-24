@@ -200,7 +200,7 @@ fn process_import(
 
         // Extend the abis
         if let Some(abi) = external_definition.abi.as_ref() {
-            if !include_all && symbol.is_none() || symbol.unwrap() == abi.name {
+            if (!include_all && symbol.is_none()) || symbol.as_ref().map(|s| *s == abi.name).unwrap_or(false) {
                 found = true;
         
                 if !translated_definition.abis.contains(abi) {

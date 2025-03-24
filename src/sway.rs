@@ -895,6 +895,13 @@ impl TabbedDisplay for Abi {
     }
 }
 
+impl Abi {
+    /// Atempts to find a function using a custom function
+    #[inline]
+    pub fn find_function<F: Copy + FnMut(&&Function) -> bool>(&self, f: F) -> Option<&Function> {
+        self.functions.iter().find(f)
+    }
+}
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 #[derive(Clone, Debug, PartialEq)]
