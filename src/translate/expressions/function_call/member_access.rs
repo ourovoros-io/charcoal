@@ -985,8 +985,8 @@ pub fn translate_abi_member_access_function_call(
         "encode" | "encodePacked" => {
             // abi.encode(a, b, ...) | abi.encodePacked(a, b, ...) => {
             //     let mut bytes = Bytes::new();
-            //     bytes.append(Bytes::from(core::codec::encode(a)));
-            //     bytes.append(Bytes::from(core::codec::encode(b)));
+            //     bytes.append(Bytes::from(std::codec::encode(a)));
+            //     bytes.append(Bytes::from(std::codec::encode(b)));
             //     // ...
             //     bytes
             // }
@@ -1038,7 +1038,7 @@ pub fn translate_abi_member_access_function_call(
                                                 vec![sway::Expression::create_function_calls(
                                                     None,
                                                     &[(
-                                                        "core::codec::encode",
+                                                        "std::codec::encode",
                                                         Some((None, vec![parameter.clone()])),
                                                     )],
                                                 )],

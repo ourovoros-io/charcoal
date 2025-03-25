@@ -135,32 +135,38 @@ pub fn translate_builtin_function_call(
         }
 
         "ecrecover" => {
-            // ecrecover(hash, v, r, s) => std::ecr::ec_recover(sig, msg_hash)
-
-            //
-            // TODO: how should we generate the sig value from v,r,s?
-            //
-
+            // ecrecover(hash, v, r, s) => Identity::Address(Address::from(Secp256k1::from((r, s)).address(Message::from(hash)).unwrap()))
             if parameters.len() != 4 {
                 panic!("Invalid ecrecover call: {expression:#?}");
             }
 
-            Ok(sway::Expression::create_function_calls(
-                None,
-                &[(
-                    "std::ecr::ec_recover",
-                    Some((
-                        None,
-                        vec![
-                            sway::Expression::create_todo(Some(
-                                "ecrecover: how should we generate the sig value from v,r,s?"
-                                    .into(),
-                            )),
-                            parameters[0].clone(),
-                        ],
-                    )),
-                )],
-            ))
+            translated_definition.ensure_use_declared("std::crypto::secp256k1::Secp256k1");
+            translated_definition.ensure_use_declared("std::crypto::message::Message");
+            
+            Ok(sway::Expression::create_function_calls(None, &[
+                ("Identity::Address", Some((None, vec![
+                    sway::Expression::create_function_calls(None, &[
+                        ("Address::from", Some((None, vec![
+                            sway::Expression::create_function_calls(None, &[
+                                ("Secp256k1::from", Some((None, vec![
+                                    sway::Expression::Tuple(vec![
+                                        parameters[2].clone(),
+                                        parameters[3].clone(),
+                                    ]),
+                                ]))),
+                                ("address", Some((None, vec![
+                                    sway::Expression::create_function_calls(None, &[
+                                        ("Message::from", Some((None, vec![
+                                            parameters[0].clone(),
+                                        ]))),
+                                    ]),
+                                ]))),
+                                ("unwrap", Some((None, vec![]))),
+                            ]),
+                        ])))
+                    ]),
+                ]))),
+            ]))
         }
 
         "selfdestruct" => {
