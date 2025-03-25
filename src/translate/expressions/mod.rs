@@ -342,7 +342,8 @@ pub fn create_value_expression(
                             let mut value_type_name = translated_definition.get_expression_type(scope.clone(), &value).unwrap();
                             
                             if value_type_name.is_uint() {
-                                coerce_expression(&mut value, &mut value_type_name, &type_name);
+                                value = coerce_expression(&value, &value_type_name, &type_name).unwrap();
+                                value_type_name = type_name.clone();
                             }
 
                             if !value_type_name.is_int() {

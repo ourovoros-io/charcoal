@@ -78,7 +78,8 @@ pub fn translate_array_slice_expression(
 
     // Check if from_index needs to be cast to u64
     if let (Some(from_index), Some(from_index_type)) = (from_index.as_mut(), from_index_type.as_mut()) {
-        coerce_expression(from_index, from_index_type, &u64_type);
+        *from_index = coerce_expression(from_index, from_index_type, &u64_type).unwrap();
+        *from_index_type = u64_type.clone();
     }
 
     let mut to_index = to_index.as_ref().map(|x| {
@@ -91,7 +92,8 @@ pub fn translate_array_slice_expression(
 
     // Check if to_index needs to be cast to u64
     if let (Some(to_index), Some(to_index_type)) = (to_index.as_mut(), to_index_type.as_mut()) {
-        coerce_expression(to_index, to_index_type, &u64_type);
+        *to_index = coerce_expression(to_index, to_index_type, &u64_type).unwrap();
+        *to_index_type = u64_type.clone();
     }
 
     //

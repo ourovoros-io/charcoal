@@ -95,7 +95,7 @@ pub fn translate_binary_expression(
         abi_check(&rhs_type, &mut lhs);
     }
 
-    coerce_expression(&mut rhs, &mut rhs_type, &lhs_type);
+    rhs = coerce_expression(&rhs, &rhs_type, &lhs_type).unwrap();
 
     Ok(sway::Expression::from(sway::BinaryExpression {
         operator: operator.into(),

@@ -64,43 +64,45 @@ pub fn translate_emit_statement(
                                                         ),
                                                     ),
                                                     generic_parameters: None,
-                                                    parameters: vec![if arguments.len() == 1 {
-                                                        let mut argument = translate_expression(
-                                                            project,
-                                                            translated_definition,
-                                                            scope.clone(),
-                                                            &arguments[0],
-                                                        )?;
-                                                        let mut argument_type = translated_definition.get_expression_type(scope.clone(), &argument)?;
-                                                        coerce_expression(&mut argument, &mut argument_type, &variant.type_name);
-                                                        argument
-                                                    } else {
-                                                        let mut arguments = arguments
-                                                            .iter()
-                                                            .map(|p| {
-                                                                translate_expression(
-                                                                    project,
-                                                                    translated_definition,
-                                                                    scope.clone(),
-                                                                    p,
-                                                                )
-                                                            })
-                                                            .collect::<Result<Vec<_>, _>>()?;
+                                                    parameters: vec![
+                                                        if arguments.len() == 1 {
+                                                            let argument = translate_expression(
+                                                                project,
+                                                                translated_definition,
+                                                                scope.clone(),
+                                                                &arguments[0],
+                                                            )?;
+                                                            
+                                                            let argument_type = translated_definition.get_expression_type(scope.clone(), &argument)?;
+                                                            
+                                                            coerce_expression(&argument, &argument_type, &variant.type_name).unwrap()
+                                                        } else {
+                                                            let mut arguments = arguments
+                                                                .iter()
+                                                                .map(|p| {
+                                                                    translate_expression(
+                                                                        project,
+                                                                        translated_definition,
+                                                                        scope.clone(),
+                                                                        p,
+                                                                    )
+                                                                })
+                                                                .collect::<Result<Vec<_>, _>>()?;
 
-                                                        let mut arguments_types = arguments.iter().map(|a| translated_definition.get_expression_type(scope.clone(), a).unwrap()).collect::<Vec<_>>();
+                                                            let mut arguments_types = arguments.iter().map(|a| translated_definition.get_expression_type(scope.clone(), a).unwrap()).collect::<Vec<_>>();
 
-                                                        let sway::TypeName::Tuple { ref type_names } = variant.type_name else { panic!("Expected a tuple") };
+                                                            let sway::TypeName::Tuple { ref type_names } = variant.type_name else { panic!("Expected a tuple") };
 
-                                                        let coerced: Vec<sway::Expression> = arguments
-                                                            .iter_mut().zip(arguments_types.iter_mut().zip(type_names))
-                                                            .map(|(expr, (from_type_name, to_type_name))| {                                        
-                                                                coerce_expression(expr, from_type_name, &to_type_name);
-                                                                expr.clone()
-                                                            })
-                                                            .collect();
-                                                        
-                                                        sway::Expression::Tuple(coerced)
-                                                    }],
+                                                            let coerced: Vec<sway::Expression> = arguments
+                                                                .iter_mut().zip(arguments_types.iter_mut().zip(type_names))
+                                                                .map(|(expr, (from_type_name, to_type_name))| {                                        
+                                                                    coerce_expression(expr, from_type_name, &to_type_name).unwrap()
+                                                                })
+                                                                .collect();
+                                                            
+                                                            sway::Expression::Tuple(coerced)
+                                                        },
+                                                    ],
                                                 })
                                             }],
                                         },
@@ -153,51 +155,47 @@ pub fn translate_emit_statement(
                             event_variant_name,
                         ))
                     } else {
-                        sway::Expression::from(sway::FunctionCall {
-                            function: sway::Expression::Identifier(format!(
-                                "{}::{}",
-                                events_enum.name,
-                                event_variant_name,
-                            )),
-                            generic_parameters: None,
-                            parameters: vec![if arguments.len() == 1 {
-                                let mut argument = translate_expression(
-                                    project,
-                                    translated_definition,
-                                    scope.clone(),
-                                    &arguments[0],
-                                )?;
-                                let mut argument_type = translated_definition.get_expression_type(scope.clone(), &argument)?;
-                                coerce_expression(&mut argument, &mut argument_type, &event_variant.type_name);
-                                argument
-                            } else {
-                                let mut arguments = arguments
-                                    .iter()
-                                    .map(|p| {
-                                        translate_expression(
-                                            project,
-                                            translated_definition,
-                                            scope.clone(),
-                                            p,
-                                        )
-                                    })
-                                    .collect::<Result<Vec<_>, _>>()?;
+                        sway::Expression::create_function_calls(None, &[
+                            (format!("{}::{}", events_enum.name, event_variant_name).as_str(), Some((None, vec![
+                                if arguments.len() == 1 {
+                                    let argument = translate_expression(
+                                        project,
+                                        translated_definition,
+                                        scope.clone(),
+                                        &arguments[0],
+                                    )?;
+                                    
+                                    let argument_type = translated_definition.get_expression_type(scope.clone(), &argument)?;
+                                    
+                                    coerce_expression(&argument, &argument_type, &event_variant.type_name).unwrap()
+                                } else {
+                                    let mut arguments = arguments
+                                        .iter()
+                                        .map(|p| {
+                                            translate_expression(
+                                                project,
+                                                translated_definition,
+                                                scope.clone(),
+                                                p,
+                                            )
+                                        })
+                                        .collect::<Result<Vec<_>, _>>()?;
 
-                                let mut arguments_types = arguments.iter().map(|a| translated_definition.get_expression_type(scope.clone(), a).unwrap()).collect::<Vec<_>>();
+                                    let mut arguments_types = arguments.iter().map(|a| translated_definition.get_expression_type(scope.clone(), a).unwrap()).collect::<Vec<_>>();
 
-                                let sway::TypeName::Tuple { ref type_names } = event_variant.type_name else { panic!("Expected a tuple") };
+                                    let sway::TypeName::Tuple { ref type_names } = event_variant.type_name else { panic!("Expected a tuple") };
 
-                                let coerced: Vec<sway::Expression> = arguments
-                                    .iter_mut().zip(arguments_types.iter_mut().zip(type_names))
-                                    .map(|(expr, (from_type_name, to_type_name))| {                                        
-                                        coerce_expression(expr, from_type_name, &to_type_name);
-                                        expr.clone()
-                                    })
-                                    .collect();
-                                
-                                sway::Expression::Tuple(coerced)
-                            }],
-                        })
+                                    let coerced: Vec<sway::Expression> = arguments
+                                        .iter_mut().zip(arguments_types.iter_mut().zip(type_names))
+                                        .map(|(expr, (from_type_name, to_type_name))| {                                        
+                                            coerce_expression(expr, from_type_name, &to_type_name).unwrap()
+                                        })
+                                        .collect();
+                                    
+                                    sway::Expression::Tuple(coerced)
+                                },
+                            ]))),
+                        ])
                     }],
                 },
             )));

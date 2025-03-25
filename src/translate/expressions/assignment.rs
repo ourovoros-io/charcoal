@@ -25,9 +25,6 @@ pub fn create_assignment_expression(
 ) -> Result<sway::Expression, Error> {
     // Generate a unique name for our variable
     let variable_name = scope.borrow_mut().generate_unique_variable_name("x");
-    
-    let mut rhs = rhs.clone();
-    let mut rhs_type = translated_definition.get_expression_type(scope.clone(), &rhs)?;
 
     variable.borrow_mut().mutation_count += 1;
 
@@ -68,12 +65,13 @@ pub fn create_assignment_expression(
                         ]);
                         let lhs_type = translated_definition.get_expression_type(scope.clone(), &lhs)?;
 
-                        let operator = operator.trim_end_matches("=").to_string();
+                        let mut rhs = rhs.clone();
+                        let rhs_type = translated_definition.get_expression_type(scope.clone(), &rhs)?;
 
-                        coerce_expression(&mut rhs, &mut rhs_type, &lhs_type);
+                        rhs = coerce_expression(&rhs, &rhs_type, &lhs_type).unwrap();
                         
                         sway::Expression::from(sway::BinaryExpression{
-                            operator,
+                            operator: operator.trim_end_matches("=").into(),
                             lhs,
                             rhs,
                         })
@@ -184,7 +182,7 @@ pub fn create_assignment_expression(
                                             Some(member_access.expression.clone()), &[
                                                 ("set", Some((None, vec![
                                                     function_call.parameters[0].clone(),
-                                                    rhs,
+                                                    rhs.clone(),
                                                 ]))),
                                             ],
                                         ))

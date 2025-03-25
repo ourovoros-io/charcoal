@@ -171,9 +171,9 @@ pub fn translate_variable_access_expression(
                                     ]),
             
                                     ("StorageVec", Some(_)) => {
-                                        let mut index_type_name = translated_definition.get_expression_type(scope.clone(), &index)?;
-                                        
-                                        coerce_expression(&mut index, &mut index_type_name, &sway::TypeName::Identifier { name: "u64".to_string(), generic_parameters: None });
+                                        let index_type_name = translated_definition.get_expression_type(scope.clone(), &index)?;
+                                        let u64_type = sway::TypeName::Identifier { name: "u64".to_string(), generic_parameters: None };
+                                        index = coerce_expression(&index, &index_type_name, &u64_type).unwrap();
                                         
                                         sway::Expression::create_function_calls(Some(expression), &[
                                             ("get", Some((None, vec![index]))),

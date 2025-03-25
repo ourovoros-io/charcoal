@@ -408,62 +408,54 @@ pub fn translate_identity_member_access_function_call(
     function: &solidity::Expression,
 ) -> Result<sway::Expression, Error> {
     match member.name.as_str() {
-        "transfer" => {
-            // to.transfer(amount) => std::asset::transfer(to, asset_id, amount)
+        // to.transfer(amount) => std::asset::transfer(to, asset_id, amount)
+        "transfer" if arguments.len() == 1 => {
+            let argument = translate_expression(project, translated_definition, scope.clone(), &arguments[0])?;
+            let argument_type_name = translated_definition.get_expression_type(scope.clone(), &argument)?;
+            
+            let container_type = sway::TypeName::Identifier { name: "u64".to_string(), generic_parameters: None };
+            
+            let argument = coerce_expression(&argument, &argument_type_name, &container_type).unwrap();
+            
+            return Ok(sway::Expression::create_function_calls(None, &[
+                ("std::asset::transfer", Some((None, vec![
+                    container,
+                    sway::Expression::create_function_calls(None, &[("AssetId::default", Some((None, vec![])))]),
+                    argument
+                    ,
+                ]))),
+            ]));
+        }
 
-            if arguments.len() == 1 {
-                let mut argument = translate_expression(project, translated_definition, scope.clone(), &arguments[0])?;
-                let mut argument_type_name = translated_definition.get_expression_type(scope.clone(), &argument)?;
-                
-                let container_type = sway::TypeName::Identifier { name: "u64".to_string(), generic_parameters: None };
-                
-                if coerce_expression(&mut argument, &mut argument_type_name, &container_type) {
-                    return Ok(sway::Expression::create_function_calls(None, &[
+        // to.send(amount) => {
+        //     std::asset::transfer(to, asset_id, amount);
+        //     true
+        // }
+        "send" if arguments.len() == 1 => {
+            let argument = translate_expression(project, translated_definition, scope.clone(), &arguments[0])?;
+            let argument_type_name = translated_definition.get_expression_type(scope.clone(), &argument)?;
+
+            let u64_type = sway::TypeName::Identifier { name: "u64".to_string(), generic_parameters: None };
+            
+            let argument = coerce_expression(&argument, &argument_type_name, &u64_type).unwrap();
+            
+            return Ok(sway::Expression::from(sway::Block {
+                statements: vec![
+                    sway::Statement::from(sway::Expression::create_function_calls(None, &[
                         ("std::asset::transfer", Some((None, vec![
                             container,
                             sway::Expression::create_function_calls(None, &[("AssetId::default", Some((None, vec![])))]),
-                            argument
-                            ,
+                            argument,
                         ]))),
-                    ]));
-                }
-            }
+                    ])),
+                ],
+                final_expr: Some(sway::Expression::from(sway::Literal::Bool(true))),
+            }));
         }
 
-        "send" => {
-            // to.send(amount) => {
-            //     std::asset::transfer(to, asset_id, amount);
-            //     true
-            // }
-
-            if arguments.len() == 1 {
-                let mut argument = translate_expression(project, translated_definition, scope.clone(), &arguments[0])?;
-                let mut argument_type_name = translated_definition.get_expression_type(scope.clone(), &argument)?;
-
-                let container_type = sway::TypeName::Identifier { name: "u64".to_string(), generic_parameters: None };
-                
-                if coerce_expression(&mut argument, &mut argument_type_name, &container_type) {
-                    return Ok(sway::Expression::from(sway::Block {
-                        statements: vec![
-                            sway::Statement::from(sway::Expression::create_function_calls(None, &[
-                                ("std::asset::transfer", Some((None, vec![
-                                    container,
-                                    sway::Expression::create_function_calls(None, &[("AssetId::default", Some((None, vec![])))]),
-                                    argument,
-                                ]))),
-                            ])),
-                        ],
-                        final_expr: Some(sway::Expression::from(sway::Literal::Bool(true))),
-                    }));
-                }
-            }
-        }
-
-        "call" => {
-            if arguments.len() == 1 {
-                let payload = translate_expression(project, translated_definition, scope.clone(), &arguments[0])?;
-                return translate_address_call_expression(project, translated_definition, scope.clone(), payload, None, None, None);
-            }
+        "call" if arguments.len() == 1 => {
+            let payload = translate_expression(project, translated_definition, scope.clone(), &arguments[0])?;
+            return translate_address_call_expression(project, translated_definition, scope.clone(), payload, None, None, None);
         }
 
         "delegatecall" => {
