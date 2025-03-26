@@ -766,14 +766,16 @@ pub fn resolve_struct_constructor(
         }
     }
 
-    if !struct_definition
-        .borrow()
-        .fields
-        .iter()
-        .zip(parameter_types.iter())
-        .all(|(f, t)| f.type_name.is_compatible_with(t))
+    // Attempt to coerce each parameter value to the struct's field type
+    for ((parameter, parameter_type), field) in parameters
+        .iter_mut()
+        .zip(parameter_types.iter_mut())
+        .zip(struct_definition.borrow().fields.iter())
     {
-        return Ok(None);
+        match coerce_expression(parameter, parameter_type, &field.type_name) {
+            Some(expression) => *parameter = expression,
+            None => return Ok(None),
+        }
     }
 
     translated_definition.ensure_struct_included(project, struct_definition.clone());

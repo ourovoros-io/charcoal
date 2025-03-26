@@ -31,6 +31,12 @@ pub fn create_assignment_expression(
     let is_storage = variable.borrow().is_storage;
     let type_name = variable.borrow().type_name.clone();
 
+    let expr_type_name = translated_definition.get_expression_type(scope.clone(), expression)?;
+
+    if !type_name.is_compatible_with(&expr_type_name) {
+        todo!("check to see if expression is a struct field assignment")
+    }
+
     if is_storage {
         let member = match (&type_name, &rhs_type_name) {
             (
@@ -245,6 +251,7 @@ pub fn translate_assignment_expression(
     lhs: &solidity::Expression,
     rhs: &solidity::Expression,
 ) -> Result<sway::Expression, Error> {
+    // use solang_parser::helpers::CodeLocation;
     // println!(
     //     "Translating assignment expression: {lhs} {operator} {rhs}; from {}",
     //     match project.loc_to_line_and_column(&translated_definition.path, &lhs.loc()) {
