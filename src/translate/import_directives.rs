@@ -108,9 +108,37 @@ fn process_import(
             }
         }
 
-        //
-        // TODO: events and errors
-        //
+        // Extend event definitions
+        for event_definition in external_definition.events_enums.iter() {
+            
+            if let Some(symbol) = symbol {
+                if !include_all && symbol != event_definition.0.borrow().name.to_string() {
+                    continue;
+                }
+            }
+
+            found = true;
+
+            if !translated_definition.events_enums.contains(event_definition) {
+                translated_definition.events_enums.push(event_definition.clone());
+            }
+        }
+
+        // Extend error definitions
+        for error_definition in external_definition.errors_enums.iter() {
+            
+            if let Some(symbol) = symbol {
+                if !include_all && symbol != error_definition.0.borrow().name.to_string() {
+                    continue;
+                }
+            }
+
+            found = true;
+
+            if !translated_definition.errors_enums.contains(error_definition) {
+                translated_definition.errors_enums.push(error_definition.clone());
+            }
+        }
 
         let mut extend_function = |function_definition: &sway::Function, scope_entry: Rc<RefCell<TranslatedFunction>>| {
             if translated_definition.toplevel_scope.borrow().find_function(|f| f.borrow().new_name == function_definition.name).is_none() {
@@ -239,7 +267,9 @@ pub fn translate_import_directives(
         match import_directive {
             solidity::Import::Plain(solidity::ImportPath::Filename(filename), _) => {
                 let import_path = project.canonicalize_import_path(&source_unit_directory, &filename.string)?;
+                
                 let found = process_import(project, translated_definition, None, &import_path)?;
+                
                 if !found {
                     panic!(
                         "{}ERROR: failed to resolve import directive from `{import_directive}`",

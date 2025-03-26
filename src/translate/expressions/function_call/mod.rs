@@ -354,13 +354,18 @@ pub fn translate_function_call_expression(
                                                 ("push", Some((None, parameters)))
                                             ]))
                                         }
+                                        "pop" => {
+                                            return Ok(sway::Expression::create_function_calls(None, &[
+                                                ("storage", None),
+                                                (variable.borrow().new_name.as_str(), None),
+                                                ("pop", Some((None, parameters)))
+                                            ]))
+                                        }
                                         _ => {}
                                     }
                                 }
                             }
                         }
-
-
 
                         panic!("Failed to resolve function call : {}({})", member.name, parameter_types.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(", "));
                     }

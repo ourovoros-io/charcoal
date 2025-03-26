@@ -1418,7 +1418,7 @@ impl TranslatedDefinition {
                             }
 
                             panic!(
-                                "Failed to find function `{new_name}({})` in scope",
+                                "Failed to find function or variable `{new_name}({})` in scope",
                                 parameter_types
                                     .iter()
                                     .map(|t| t.to_string())
