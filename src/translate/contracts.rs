@@ -473,7 +473,8 @@ pub fn translate_contract_definition(
         let function_names = translated_definition.functions.iter().map(|f| f.name.clone()).collect::<Vec<_>>();
         for function_name in function_names {
             let (None | Some(0)) = translated_definition.function_call_counts.get(&function_name) else { continue };
-            let Some((toplevel_function_index, _)) = translated_definition.functions.iter().enumerate().find(|(_, f)| f.name == function_name) else { continue };
+            let Some((toplevel_function_index, toplevel_function)) = translated_definition.functions.iter().enumerate().find(|(_, f)| f.name == function_name) else { continue };
+            let toplevel_function = toplevel_function.clone();
             let body = translated_definition.functions[toplevel_function_index].body.clone();
 
             let Some(contract_impl) = translated_definition.find_contract_impl_mut() else { continue };
@@ -484,8 +485,10 @@ pub fn translate_contract_definition(
                 })
                 .find(|f| f.name == function_name) else { continue };
             
-            contract_impl_function.body = body;
-            translated_definition.functions.remove(toplevel_function_index);
+            if toplevel_function.parameters.entries.iter().zip(contract_impl_function.parameters.entries.iter()).all(|(p1, p2)| p1 == p2) {
+                contract_impl_function.body = body;
+                translated_definition.functions.remove(toplevel_function_index);
+            }
         }
     }
     

@@ -417,6 +417,19 @@ pub fn translate_modifier_definition(
                 body: Some(pre_body.clone()),
             });
 
+            translated_definition.toplevel_scope.borrow_mut().functions.push(Rc::new(RefCell::new(TranslatedFunction {
+                old_name: "".into(), // TODO
+                new_name: modifier_pre_function_name.clone(),
+                attributes: create_attributes(has_pre_storage_read, has_pre_storage_write),
+                constructor_calls: vec![],
+                modifiers: vec![],
+                type_name: sway::TypeName::Function {
+                    generic_parameters: None,
+                    parameters: modifier.parameters.clone(),
+                    return_type: None,
+                },
+            })));
+
             *translated_definition.function_call_counts.entry(modifier_pre_function_name.clone()).or_insert(0) += 1;
 
             let modifier_post_function_name = format!("{}_post", modifier.new_name);
@@ -435,6 +448,19 @@ pub fn translate_modifier_definition(
                 return_type: None,
                 body: Some(post_body.clone()),
             });
+
+            translated_definition.toplevel_scope.borrow_mut().functions.push(Rc::new(RefCell::new(TranslatedFunction {
+                old_name: "".into(), // TODO
+                new_name: modifier_post_function_name.clone(),
+                attributes: create_attributes(has_pre_storage_read, has_pre_storage_write),
+                constructor_calls: vec![],
+                modifiers: vec![],
+                type_name: sway::TypeName::Function {
+                    generic_parameters: None,
+                    parameters: modifier.parameters.clone(),
+                    return_type: None,
+                },
+            })));
 
             *translated_definition.function_call_counts.entry(modifier_post_function_name.clone()).or_insert(0) += 1;
         }
@@ -654,25 +680,36 @@ pub fn translate_function_definition(
         body: None,
     };
 
+    let mut abi_function = None;
+
     if is_public {
         sway_function.name = new_name_2.clone();
 
-        if let Some(abi) = translated_definition.abi.as_mut() {
+        abi_function = Some(sway_function.clone());
+        let abi_function = abi_function.as_mut().unwrap();
+        let mut use_string = false;
+        
+        {
+            let abi = translated_definition.get_abi();
+            for p in abi_function.parameters.entries.iter_mut() {
+                if p.type_name == Some(sway::TypeName::StringSlice) {
+                    use_string = true;
+                    p.type_name = Some(sway::TypeName::Identifier { name: "String".into(), generic_parameters: None });
+                }   
+            }
+
             // Only add the function to the abi if it doesn't already exist
-            if !abi.functions.contains(&sway_function) && !is_override {
+            if !abi.functions.contains(&abi_function) && !is_override {
                 if is_constructor {
-                    abi.functions.insert(0, sway_function.clone());
+                    abi.functions.insert(0, abi_function.clone());
                 } else {
-                    abi.functions.push(sway_function.clone());
+                    abi.functions.push(abi_function.clone());
                 }
             }
-        } else {
-            // Add the function to the abi
-            if is_constructor {
-                translated_definition.get_abi().functions.insert(0, sway_function.clone());
-            } else {
-                translated_definition.get_abi().functions.push(sway_function.clone());
-            }
+        } 
+
+        if use_string {
+            translated_definition.ensure_use_declared("std::string::String");
         }
 
         sway_function.name = new_name.clone();
@@ -937,9 +974,69 @@ pub fn translate_function_definition(
     translated_definition.functions.push(sway_function.clone());
 
     if is_public {
+        let mut statements = vec![];
+
+        for p in sway_function.parameters.entries.iter_mut() {
+            if p.type_name == Some(sway::TypeName::StringSlice) {
+                translated_definition.ensure_use_declared("std::string::String");
+                p.type_name = Some(sway::TypeName::Identifier { name: "String".into(), generic_parameters: None });
+                statements.push(sway::Statement::from(sway::Let{ 
+                    pattern: sway::LetPattern::Identifier(sway::LetIdentifier{ is_mutable: true, name: p.name.clone() }), 
+                    type_name: None, 
+                    value: sway::Expression::from(sway::Block {
+                        // let bytes = x.as_bytes();
+                        // let ptr = bytes.ptr();
+                        // let str_size = bytes.len();
+                        // asm(s: (ptr, str_size)) {
+                        //     s: str
+                        // }
+                        statements: vec![
+                            sway::Statement::from(sway::Let { 
+                                pattern: sway::LetPattern::Identifier(sway::LetIdentifier{ is_mutable: false, name: "bytes".into() }),  
+                                type_name: None, 
+                                value: sway::Expression::create_function_calls(Some(sway::Expression::Identifier(p.name.clone())), &[
+                                    ("as_bytes", Some((None, vec![])))
+                                ]), 
+                            }),
+                            sway::Statement::from(sway::Let { 
+                                pattern: sway::LetPattern::Identifier(sway::LetIdentifier{ is_mutable: false, name: "ptr".into() }),  
+                                type_name: None, 
+                                value: sway::Expression::create_function_calls(Some(sway::Expression::Identifier("bytes".into())), &[
+                                    ("ptr", Some((None, vec![])))
+                                ]), 
+                            }),
+                            sway::Statement::from(sway::Let { 
+                                pattern: sway::LetPattern::Identifier(sway::LetIdentifier{ is_mutable: false, name: "str_size".into() }),  
+                                type_name: None, 
+                                value: sway::Expression::create_function_calls(Some(sway::Expression::Identifier("bytes".into())), &[
+                                    ("len", Some((None, vec![])))
+                                ]), 
+                            }),
+                        ],
+                        final_expr: Some(sway::Expression::from(sway::AsmBlock {
+                            registers: vec![
+                                sway::AsmRegister { 
+                                    name: "s".into(), 
+                                    value: Some(sway::Expression::Tuple(vec![
+                                        sway::Expression::Identifier("ptr".into()), 
+                                        sway::Expression::Identifier("str_size".into())
+                                    ])) 
+                                }
+                            ],
+                            instructions: vec![],
+                            final_expression: Some(sway::AsmFinalExpression { 
+                                register: "s".into(), 
+                                type_name: Some(sway::TypeName::StringSlice) 
+                            }),
+                        })),
+                    }) 
+                }))
+            }
+        }
+
         // Create the body for the contract impl's function wrapper
         sway_function.body = Some(sway::Block {
-            statements: vec![],
+            statements,
             final_expr: Some(sway::Expression::create_function_calls(None, &[
                 (
                     format!("::{}", sway_function.name).as_str(),
@@ -957,7 +1054,6 @@ pub fn translate_function_definition(
         
         // Create the function wrapper item for the contract impl block
         let impl_item = sway::ImplItem::Function(sway_function.clone());
-        
         if let Some(contract_impl) = translated_definition.find_contract_impl_mut() {
             if let Some(sway::ImplItem::Function(f)) = contract_impl.items.iter_mut().find(|item| {
                 let sway::ImplItem::Function(f) = item else { return false };

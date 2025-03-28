@@ -309,9 +309,6 @@ pub fn translate_member_access_expression(
             ("tx", "origin") => {
                 // tx.origin => Identity::from(Address::from(/*unsupported: tx.origin; using:*/ ZERO_B256))
 
-                // Ensure `std::constants::ZERO_B256` is imported
-                translated_definition.ensure_use_declared("std::constants::ZERO_B256");
-
                 return Ok(sway::Expression::from(sway::FunctionCall {
                     function: sway::Expression::Identifier("Identity::Address".into()),
                     generic_parameters: None,
@@ -322,7 +319,9 @@ pub fn translate_member_access_expression(
                             parameters: vec![
                                 sway::Expression::Commented(
                                     "unsupported: tx.origin; using:".into(),
-                                    Box::new(sway::Expression::Identifier("ZERO_B256".into())),
+                                    Box::new(sway::Expression::create_function_calls(None, &[
+                                        ("b256::zero", Some((None, vec![])))
+                                    ])),
                                 ),
                             ],
                         }),

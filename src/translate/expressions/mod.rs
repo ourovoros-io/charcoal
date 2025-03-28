@@ -33,10 +33,9 @@ pub fn evaluate_expression(
             sway::Literal::DecInt(value, _) | sway::Literal::HexInt(value, _) => match type_name {
                 sway::TypeName::Identifier { name, generic_parameters } => match (name.as_str(), generic_parameters.as_ref()) {
                     ("b256", None) if value.is_zero() => {
-                        // Ensure `std::constants::ZERO_B256` is imported
-                        translated_definition.ensure_use_declared("std::constants::ZERO_B256");
-
-                        sway::Expression::Identifier("ZERO_B256".into())
+                        sway::Expression::create_function_calls(None, &[
+                            ("b256::zero", Some((None, vec![])))
+                        ])
                     }
 
                     _ => expression.clone(),
@@ -102,10 +101,9 @@ pub fn evaluate_expression(
                             format!("{}", sway::TabbedDisplayer(expression)),
                             Box::new(
                                 if value.is_zero() {
-                                    // Ensure `std::constants::ZERO_B256` is imported
-                                    translated_definition.ensure_use_declared("std::constants::ZERO_B256");
-
-                                    sway::Expression::Identifier("ZERO_B256".into())
+                                    sway::Expression::create_function_calls(None, &[
+                                        ("b256::zero", Some((None, vec![])))
+                                    ])
                                 } else {
                                     sway::Expression::from(sway::Literal::HexInt(value, None))
                                 }
@@ -264,10 +262,9 @@ pub fn create_value_expression(
 
             ("b256", None) => match value {
                 None => {
-                    // Ensure `std::constants::ZERO_B256` is imported
-                    translated_definition.ensure_use_declared("std::constants::ZERO_B256");
-
-                    sway::Expression::Identifier("ZERO_B256".into())
+                    sway::Expression::create_function_calls(None, &[
+                        ("b256::zero", Some((None, vec![])))
+                    ])
                 }
 
                 Some(value) => {
@@ -468,13 +465,10 @@ pub fn create_value_expression(
                         sway::Expression::from(sway::FunctionCall {
                             function: sway::Expression::Identifier("Address::from".into()),
                             generic_parameters: None,
-                            parameters: vec![
-                                {
-                                    // Ensure `std::constants::ZERO_B256` is imported
-                                    translated_definition.ensure_use_declared("std::constants::ZERO_B256");
-            
-                                    sway::Expression::Identifier("ZERO_B256".into())
-                                },
+                            parameters: vec![                                
+                                sway::Expression::create_function_calls(None, &[
+                                    ("b256::zero", Some((None, vec![])))
+                                ])
                             ],
                         })
                     ],

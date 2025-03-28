@@ -1031,7 +1031,46 @@ pub fn translate_abi_member_access_function_call(
                                                     None,
                                                     &[(
                                                         "std::codec::encode",
-                                                        Some((None, vec![parameter.clone()])),
+                                                        Some((None, vec![
+                                                            match translated_definition.get_expression_type(scope.clone(), &parameter)? {
+                                                                sway::TypeName::Identifier { name, generic_parameters } => {
+                                                                    match (name.as_str(), generic_parameters.as_ref()) {
+                                                                        ("Identity", None) => {
+                                                                            let identity_variant_branch = |name: &str| -> sway::MatchBranch {
+                                                                                sway::MatchBranch {
+                                                                                    pattern: sway::Expression::create_function_calls(None, &[
+                                                                                        (format!("Identity::{name}").as_str(), Some((None, vec![
+                                                                                            sway::Expression::Identifier("x".into()),
+                                                                                        ]))),
+                                                                                    ]),
+                                                                                    value: sway::Expression::create_function_calls(None, &[
+                                                                                        ("x", None),
+                                                                                        ("bits", Some((None, vec![]))),
+                                                                                    ]),
+                                                                                }
+                                                                            };
+                                                    
+                                                                            sway::Expression::from(sway::Match {
+                                                                                expression: parameter,
+                                                                                branches: vec![
+                                                                                    identity_variant_branch("Address"),
+                                                                                    identity_variant_branch("ContractId"),
+                                                                                ],
+                                                                            })
+                                                                        },
+                                                                        
+                                                                        ("I8" | "I16" | "I32" | "I64" | "I128" | "I256", None) => {
+                                                                            sway::Expression::create_function_calls(Some(parameter), &[
+                                                                                ("underlying", Some((None, vec![])))
+                                                                            ])
+                                                                        }
+
+                                                                        _ => parameter
+                                                                    }
+                                                                }
+                                                                _ => parameter
+                                                            }
+                                                        ])),
                                                     )],
                                                 )],
                                             )),

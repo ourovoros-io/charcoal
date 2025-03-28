@@ -140,18 +140,35 @@ fn process_import(
             }
         }
 
-        let mut extend_function = |function_definition: &sway::Function, scope_entry: Rc<RefCell<TranslatedFunction>>| {
+        let mut extend_function = |function_definition: &sway::Function, scope_entry: Option<Rc<RefCell<TranslatedFunction>>>| {
             if translated_definition.toplevel_scope.borrow().find_function(|f| f.borrow().new_name == function_definition.name).is_none() {
-                let external_function = scope_entry.borrow();
-
-                translated_definition.toplevel_scope.borrow_mut().functions.push(Rc::new(RefCell::new(TranslatedFunction {
-                    old_name: external_function.old_name.clone(),
-                    new_name: external_function.new_name.clone(),
-                    attributes: external_function.attributes.clone(),
-                    constructor_calls: external_function.constructor_calls.clone(),
-                    modifiers: external_function.modifiers.clone(),
-                    type_name: external_function.type_name.clone(),
-                })));
+                match scope_entry.as_ref() {
+                    Some(external_function) => {
+                        let external_function = external_function.borrow();
+                        translated_definition.toplevel_scope.borrow_mut().functions.push(Rc::new(RefCell::new(TranslatedFunction {
+                            old_name: external_function.old_name.clone(),
+                            new_name: external_function.new_name.clone(),
+                            attributes: external_function.attributes.clone(),
+                            constructor_calls: external_function.constructor_calls.clone(),
+                            modifiers: external_function.modifiers.clone(),
+                            type_name: external_function.type_name.clone(),
+                        })));
+                    }
+                    None => {
+                        translated_definition.toplevel_scope.borrow_mut().functions.push(Rc::new(RefCell::new(TranslatedFunction {
+                            old_name: function_definition.old_name.clone(),
+                            new_name: function_definition.name.clone(),
+                            attributes: function_definition.attributes.clone(),
+                            constructor_calls: vec![],
+                            modifiers: vec![],
+                            type_name: sway::TypeName::Function { 
+                                generic_parameters: function_definition.generic_parameters.clone(), 
+                                parameters: function_definition.parameters.clone(), 
+                                return_type: function_definition.return_type.as_ref().map(|r| Box::new(r.clone()))
+                            },
+                        })));
+                    }
+                }
             }
 
             if !translated_definition.functions.contains(function_definition) {
@@ -211,14 +228,12 @@ fn process_import(
 
         // Extend the functions
         for function_definition in external_definition.functions.iter() {
-            let Some(scope_entry) = external_definition.toplevel_scope.borrow().find_function(|f| f.borrow().new_name == function_definition.name) else {
-                external_definition.toplevel_scope.borrow().dump(false, true);
-                panic!("Failed to find function: {}", function_definition.name)
-            };
-
-            if let Some(symbol) = symbol {
-                if !include_all && symbol != scope_entry.borrow().old_name {
-                    continue;
+            let scope_entry = external_definition.toplevel_scope.borrow().find_function(|f| f.borrow().new_name == function_definition.name); 
+            if let Some(scope_entry) = scope_entry.as_ref() {
+                if let Some(symbol) = symbol {
+                    if !include_all && symbol != scope_entry.borrow().old_name {
+                        continue;
+                    }
                 }
             }
 

@@ -36,12 +36,9 @@ pub fn translate_address_type_cast_function_call(
                                             .unwrap();
 
                                             if value.is_zero() {
-                                                // Ensure `std::constants::ZERO_B256` is imported
-                                                translated_definition.ensure_use_declared(
-                                                    "std::constants::ZERO_B256",
-                                                );
-
-                                                sway::Expression::Identifier("ZERO_B256".into())
+                                                sway::Expression::create_function_calls(None, &[
+                                                    ("b256::zero", Some((None, vec![])))
+                                                ])
                                             } else {
                                                 sway::Expression::from(sway::Literal::HexInt(
                                                     value,
@@ -54,12 +51,9 @@ pub fn translate_address_type_cast_function_call(
                                             let value: BigUint = value.parse().unwrap();
 
                                             if value.is_zero() {
-                                                // Ensure `std::constants::ZERO_B256` is imported
-                                                translated_definition.ensure_use_declared(
-                                                    "std::constants::ZERO_B256",
-                                                );
-
-                                                sway::Expression::Identifier("ZERO_B256".into())
+                                                sway::Expression::create_function_calls(None, &[
+                                                    ("b256::zero", Some((None, vec![])))
+                                                ])
                                             } else {
                                                 sway::Expression::from(sway::Literal::DecInt(
                                                     value,

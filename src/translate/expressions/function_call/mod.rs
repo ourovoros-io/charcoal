@@ -8,8 +8,7 @@ use crate::{
     project::Project,
     sway,
     translate::{
-        TranslatedDefinition,
-        TranslationScope,
+        address_call::translate_address_call_expression, TranslatedDefinition, TranslationScope
     },
 };
 use build_ins::translate_builtin_function_call;
@@ -342,7 +341,7 @@ pub fn translate_function_call_expression(
                                     }
                                 }
                             }
-                            
+
                             // Check if variable is a storage vector
                             if variable.borrow().is_storage {
                                 if variable.borrow().type_name.is_storage_vec() {
@@ -363,6 +362,42 @@ pub fn translate_function_call_expression(
                                         }
                                         _ => {}
                                     }
+                                }
+                            }
+
+                            let container = translate_expression(
+                                project,
+                                translated_definition,
+                                scope.clone(),
+                                container,
+                            )?;
+                            
+                            let type_name = translated_definition.get_expression_type(scope.clone(), &container)?;
+
+                            if type_name.is_identity()  {
+                                match member.name.as_str() {
+                                    "call" if arguments.len() == 1 => {
+                                        let payload = translate_expression(project, translated_definition, scope.clone(), &arguments[0])?;
+                                        return translate_address_call_expression(project, translated_definition, scope.clone(), payload, None, None, None);
+                                    }
+
+                                    "delegatecall" => {
+                                        //
+                                        // TODO: is delegatecall possible?
+                                        //
+
+                                        return Ok(sway::Expression::create_todo(Some(expression.to_string())));
+                                    }
+
+                                    "staticcall" => {
+                                        //
+                                        // TODO: is staticcall possible?
+                                        //
+
+                                        return Ok(sway::Expression::create_todo(Some(expression.to_string())));
+                                    }
+                                    
+                                    _ => {}
                                 }
                             }
                         }

@@ -515,6 +515,11 @@ pub fn resolve_function_call(
                 }
             }
 
+            if let Some(expr) = coerce_expression(&parameters[i], &value_type_name, parameter_type_name) {
+                parameters[i] = expr;
+                continue;
+            } 
+
             if !value_type_name.is_compatible_with(parameter_type_name) {
                 return false;
             }
@@ -677,6 +682,11 @@ pub fn resolve_function_call(
                     continue;
                 }
             }
+
+            if let Some(expr) = coerce_expression(&parameters[i], &value_type_name, parameter_type_name) {
+                parameters[i] = expr;
+                continue;
+            } 
 
             if !value_type_name.is_compatible_with(parameter_type_name) {
                 return false;

@@ -76,8 +76,6 @@ pub fn translate_new_expression(
             if project.find_definition_with_abi(name).is_some() {
                 // new Contract(...) => /*unsupported: new Contract(...); using:*/ abi(Contract, Identity::ContractId(ContractId::from(ZERO_B256)))
 
-                translated_definition.ensure_use_declared("std::constants::ZERO_B256");
-
                 return Ok(sway::Expression::Commented(
                     format!("unsupported: new {expression}; using:"),
                     Box::new(sway::Expression::from(sway::FunctionCall {
@@ -93,7 +91,9 @@ pub fn translate_new_expression(
                                         function: sway::Expression::Identifier("ContractId::from".into()),
                                         generic_parameters: None,
                                         parameters: vec![
-                                            sway::Expression::Identifier("ZERO_B256".into()),
+                                            sway::Expression::create_function_calls(None, &[
+                                                ("b256::zero", Some((None, vec![])))
+                                            ]),
                                         ],
                                     }),
                                 ],
