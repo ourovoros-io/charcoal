@@ -31,11 +31,11 @@ pub fn create_assignment_expression(
     let is_storage = variable.borrow().is_storage;
     let type_name = variable.borrow().type_name.clone();
 
-    let expr_type_name = translated_definition.get_expression_type(scope.clone(), expression)?;
-
-    if !type_name.is_compatible_with(&expr_type_name) {
-        todo!("check to see if expression is a struct field assignment")
-    }
+    // let expr_type_name = translated_definition.get_expression_type(scope.clone(), expression)?;
+    //
+    // if !type_name.is_compatible_with(&expr_type_name) {
+    //     todo!("check to see if expression is a struct field assignment")
+    // }
 
     if is_storage {
         let member = match (&type_name, &rhs_type_name) {
@@ -71,10 +71,7 @@ pub fn create_assignment_expression(
                         ]);
                         let lhs_type = translated_definition.get_expression_type(scope.clone(), &lhs)?;
 
-                        let mut rhs = rhs.clone();
-                        let rhs_type = translated_definition.get_expression_type(scope.clone(), &rhs)?;
-
-                        rhs = coerce_expression(&rhs, &rhs_type, &lhs_type).unwrap();
+                        let rhs = coerce_expression(rhs, rhs_type_name, &lhs_type).unwrap();
                         
                         sway::Expression::from(sway::BinaryExpression{
                             operator: operator.trim_end_matches("=").into(),

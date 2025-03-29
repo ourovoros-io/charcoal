@@ -680,17 +680,15 @@ pub fn translate_function_definition(
         body: None,
     };
 
-    let mut abi_function = None;
-
     if is_public {
         sway_function.name = new_name_2.clone();
 
-        abi_function = Some(sway_function.clone());
-        let abi_function = abi_function.as_mut().unwrap();
+        let mut abi_function = sway_function.clone();
         let mut use_string = false;
         
         {
             let abi = translated_definition.get_abi();
+            
             for p in abi_function.parameters.entries.iter_mut() {
                 if p.type_name == Some(sway::TypeName::StringSlice) {
                     use_string = true;
