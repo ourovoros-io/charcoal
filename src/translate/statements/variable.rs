@@ -3,7 +3,7 @@ use convert_case::Case;
 use num_bigint::BigUint;
 use num_traits::{One, Zero};
 use solang_parser::pt as solidity;
-use crate::{errors::Error, project::Project, sway, translate::{create_value_expression, pre_post::translate_pre_or_post_operator_value_expression, translate_expression, translate_type_name, TranslatedDefinition, TranslatedVariable, TranslationScope}};
+use crate::{errors::Error, project::Project, sway, translate::{create_value_expression, function_call::utils::coerce_expression, pre_post::translate_pre_or_post_operator_value_expression, translate_expression, translate_type_name, TranslatedDefinition, TranslatedVariable, TranslationScope}};
 
 #[inline]
 pub fn translate_variable_definition_statement(
@@ -134,12 +134,12 @@ pub fn translate_variable_definition_statement(
     }
 
     let value = if let Some(value) = value {
-        type_name = translated_definition.get_expression_type(scope.clone(), &value)?;
-        value
+        let value_type = translated_definition.get_expression_type(scope.clone(), &value)?;
+        coerce_expression(&value, &value_type, &type_name).unwrap()
     } else if let Some(x) = initializer.as_ref() {
         let x = translate_pre_or_post_operator_value_expression(project, translated_definition, scope.clone(), x)?;
-        type_name = translated_definition.get_expression_type(scope.clone(), &x)?;
-        x
+        let value_type = translated_definition.get_expression_type(scope.clone(), &x)?;
+        coerce_expression(&x, &value_type, &type_name).unwrap()
     } else {
         create_value_expression(translated_definition, scope.clone(), &type_name, None)
     };

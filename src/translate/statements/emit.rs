@@ -44,27 +44,21 @@ pub fn translate_emit_statement(
                                             .push(events_enum.clone());
                                     }
 
-                                    return Ok(sway::Statement::from(sway::Expression::from(
-                                        sway::FunctionCall {
-                                            function: sway::Expression::Identifier("log".into()),
-                                            generic_parameters: None,
-                                            parameters: vec![if arguments.is_empty() {
+                                    return Ok(sway::Statement::from(sway::Expression::create_function_calls(None, &[
+                                        ("log", Some((None, vec![
+                                            if arguments.is_empty() {
                                                 sway::Expression::Identifier(format!(
                                                     "{}::{}",
                                                     events_enum.0.borrow().name,
                                                     event_variant_name,
                                                 ))
                                             } else {
-                                                sway::Expression::from(sway::FunctionCall {
-                                                    function: sway::Expression::Identifier(
-                                                        format!(
-                                                            "{}::{}",
-                                                            events_enum.0.borrow().name,
-                                                            event_variant_name,
-                                                        ),
-                                                    ),
-                                                    generic_parameters: None,
-                                                    parameters: vec![
+                                                sway::Expression::create_function_calls(None, &[
+                                                    (format!(
+                                                        "{}::{}",
+                                                        events_enum.0.borrow().name,
+                                                        event_variant_name,
+                                                    ).as_str(), Some((None, vec![
                                                         if arguments.len() == 1 {
                                                             let argument = translate_expression(
                                                                 project,
@@ -102,11 +96,11 @@ pub fn translate_emit_statement(
                                                             
                                                             sway::Expression::Tuple(coerced)
                                                         },
-                                                    ],
-                                                })
-                                            }],
-                                        },
-                                    )));
+                                                    ]))),
+                                                ])
+                                            },
+                                        ])))
+                                    ])));
                                 }
                             }
                         }

@@ -894,12 +894,19 @@ pub fn coerce_expression(
             name: rhs_name,
             generic_parameters: rhs_generic_parameters,
         }) => {
-            if lhs_name == rhs_name {
-                return Some(expression.clone());
-            }
-
-            if lhs_generic_parameters.is_some() != lhs_generic_parameters.is_some() {
-                return None;
+            if lhs_generic_parameters.is_some() != rhs_generic_parameters.is_some() {
+                // From `StorageKey<T>` to `T`
+                if let Some(storage_key_type) = from_type_name.storage_key_type() {
+                    if !storage_key_type.is_compatible_with(to_type_name) {
+                        return None;
+                    }
+                    
+                    expression = sway::Expression::create_function_calls(Some(expression.clone()), &[
+                        ("read", Some((None, vec![]))),
+                    ]);
+                } else {
+                    return None;
+                }
             }
 
             if let (Some(lhs_generic_parameters), Some(rhs_generic_parameters)) = (lhs_generic_parameters.as_ref(), rhs_generic_parameters.as_ref()) {
@@ -908,6 +915,11 @@ pub fn coerce_expression(
                 }
             }
 
+            if lhs_name == rhs_name {
+                return Some(expression.clone());
+            }
+
+            // From uint to int
             if from_type_name.is_uint() && !to_type_name.is_uint() {
                 if to_type_name.is_int() {
                     let lhs_bits: usize = lhs_name.trim_start_matches("u").trim_start_matches("I").parse().unwrap();
@@ -932,7 +944,8 @@ pub fn coerce_expression(
                     return None;
                 }
             }
-
+            
+            // From int to uint
             if is_int && !to_type_name.is_int() {
                 if to_type_name.is_uint() {
                     let lhs_bits: usize = lhs_name.trim_start_matches("u").trim_start_matches("I").parse().unwrap();
@@ -960,7 +973,8 @@ pub fn coerce_expression(
                     return None;
                 }
             }
-
+            
+            // From uint/int of different bit lengths
             if (is_uint && to_type_name.is_uint()) || (is_int && to_type_name.is_int()) {
                 let lhs_bits: usize = lhs_name.trim_start_matches("u").trim_start_matches("I").parse().unwrap();
                 let rhs_bits: usize = rhs_name.trim_start_matches("u").trim_start_matches("I").parse().unwrap();
@@ -972,9 +986,8 @@ pub fn coerce_expression(
                         (format!("{to_type_name}::try_from").as_str(), Some((None, vec![expression.clone()]))),
                         ("unwrap", Some((None, vec![])))
                     ]);
-                        
                 } else if lhs_bits < rhs_bits {
-                    expression  = sway::Expression::create_function_calls(Some(expression.clone()), &[
+                    expression = sway::Expression::create_function_calls(Some(expression.clone()), &[
                         (format!("as_{to_type_name}").as_str(), Some((None, vec![]))),
                     ]);
                 }

@@ -3,7 +3,17 @@ use convert_case::Case;
 use num_bigint::BigUint;
 use num_traits::One;
 use solang_parser::{helpers::CodeLocation, pt as solidity};
-use crate::{errors::Error, project::Project, sway, translate::{address_call::translate_address_call_expression, expressions::variable::translate_variable_access_expression, function_call::utils::{coerce_expression, resolve_function_call}, translate_expression, translate_type_name, TranslatedDefinition, TranslationScope}};
+use crate::{
+    errors::Error,
+    project::Project,
+    sway,
+    translate::{
+        address_call::translate_address_call_expression,
+        expressions::variable::translate_variable_access_expression,
+        function_call::utils::{coerce_expression, resolve_function_call},
+        translate_expression, translate_type_name, TranslatedDefinition, TranslationScope,
+    },
+};
 
 pub fn translate_member_access_function_call(
     project: &mut Project,
@@ -32,6 +42,7 @@ pub fn translate_member_access_function_call(
                         &args[0],
                     )?)
                 }
+
                 "gas" if args.len() == 1 => {
                     gas = Some(translate_expression(
                         project,
@@ -40,6 +51,7 @@ pub fn translate_member_access_function_call(
                         &args[0],
                     )?)
                 }
+
                 _ => todo!("translate member function call: {member}"),
             };
 
@@ -53,12 +65,14 @@ pub fn translate_member_access_function_call(
                     )
                     .ok()
                     .map(|(v, _)| v);
+
                     let mut container = translate_expression(
                         project,
                         translated_definition,
                         scope.clone(),
                         container,
                     )?;
+
                     let type_name = translated_definition
                         .get_expression_type(scope.clone(), &container)?;
 
@@ -168,6 +182,7 @@ pub fn translate_member_access_function_call(
                 _ => todo!("translate member function call: {member}"),
             }
         }
+
         _ => todo!("translate function call: {function}"),
     }
 }
@@ -190,10 +205,9 @@ pub fn translate_function_call_block_member_access(
     )
     .ok()
     .map(|(v, _)| v);
-    let mut container =
-        translate_expression(project, translated_definition, scope.clone(), container)?;
-    let type_name =
-        translated_definition.get_expression_type(scope.clone(), &container)?;
+
+    let mut container = translate_expression(project, translated_definition, scope.clone(), container)?;
+    let type_name = translated_definition.get_expression_type(scope.clone(), &container)?;
 
     let solidity::Statement::Args(_, block_args) = block else {
         panic!("Malformed `address.call` call, expected args block, found: {block:#?}");
@@ -212,6 +226,7 @@ pub fn translate_function_call_block_member_access(
                     &block_arg.expr,
                 )?)
             }
+
             "gas" => {
                 gas = Some(translate_expression(
                     project,
@@ -220,6 +235,7 @@ pub fn translate_function_call_block_member_access(
                     &block_arg.expr,
                 )?)
             }
+
             arg => todo!("address.transfer block arg: {arg}"),
         }
     }
@@ -240,6 +256,7 @@ pub fn translate_function_call_block_member_access(
                         scope.clone(),
                         &arguments[0],
                     )?;
+                    
                     translate_address_call_expression(
                         project,
                         translated_definition,

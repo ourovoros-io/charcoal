@@ -44,9 +44,10 @@ pub fn translate_pre_operator_expression(
     operator: &str,
 ) -> Result<sway::Expression, Error> {
     let assignment = sway::Statement::from(
-        translate_assignment_expression(project,
+        translate_assignment_expression(
+            project,
             translated_definition,
-           scope.clone(),
+            scope.clone(),
             operator,
             x,
             &solidity::Expression::NumberLiteral(*loc, "1".into(), "".into(), None),
@@ -54,12 +55,12 @@ pub fn translate_pre_operator_expression(
     );
 
     let (variable, expression) = translate_variable_access_expression(project, translated_definition, scope.clone(), x)?;
-    if variable.is_none() {
-        panic!("Variable not found: {}", sway::TabbedDisplayer(&expression));
-    }
-    let variable = variable.unwrap();
-    let mut variable = variable.borrow_mut();
 
+    let Some(variable) = variable else {
+        panic!("Variable not found: {}", sway::TabbedDisplayer(&expression));
+    };
+
+    let mut variable = variable.borrow_mut();
     variable.read_count += 1;
 
     Ok(sway::Expression::from(sway::Block {
