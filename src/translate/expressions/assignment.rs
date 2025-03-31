@@ -93,10 +93,17 @@ pub fn create_assignment_expression(
             ("Vec", Some(generic_parameters)) if generic_parameters.entries.len() == 1 => {
                 match &expression {
                     sway::Expression::ArrayAccess(array_access) => {
+                        let index_type = translated_definition.get_expression_type(scope.clone(), &array_access.index)?;
+                        let u64_type = sway::TypeName::Identifier { name: "u64".into(), generic_parameters: None };
+                        let index = coerce_expression(&array_access.index, &index_type, &u64_type).unwrap();
+                        
+                        let rhs_type = translated_definition.get_expression_type(scope.clone(), &rhs)?;
+                        let rhs = coerce_expression(&rhs, &rhs_type, &generic_parameters.entries[0].type_name).unwrap();
+
                         return Ok(sway::Expression::create_function_calls(
                             Some(array_access.expression.clone()), &[
                                 ("set", Some((None, vec![
-                                    array_access.index.clone(),
+                                    index.clone(),
                                     match operator {
                                         "=" => rhs.clone(),
                                         
@@ -108,7 +115,7 @@ pub fn create_assignment_expression(
                 
                                                 lhs: sway::Expression::create_function_calls(
                                                     Some(array_access.expression.clone()), &[
-                                                        ("get", Some((None, vec![array_access.index.clone()]))),
+                                                        ("get", Some((None, vec![index]))),
                                                         ("unwrap", Some((None, vec![]))),
                                                     ]),
                 
@@ -190,6 +197,9 @@ pub fn create_assignment_expression(
                                 sway::Expression::FunctionCall(function_call) => match &function_call.function {
                                     sway::Expression::MemberAccess(member_access) => match member_access.member.as_str() {
                                         "get" if function_call.parameters.len() == 1 => {
+                                            let rhs_type = translated_definition.get_expression_type(scope.clone(), &rhs)?;
+                                            let rhs = coerce_expression(&rhs, &rhs_type, &generic_parameters.entries[0].type_name).unwrap();
+
                                             return Ok(sway::Expression::create_function_calls(
                                                 Some(member_access.expression.clone()), &[
                                                     ("set", Some((None, vec![

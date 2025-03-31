@@ -62,6 +62,20 @@ fn process_import(
             }
         }
 
+        // Extend dependencies
+        for dep in external_definition.dependencies.iter() {
+            if !translated_definition.dependencies.contains(dep) {
+                translated_definition.dependencies.push(dep.clone());
+            }
+        }
+
+        // Extend uses
+        for uses in external_definition.uses.iter() {
+            if !translated_definition.uses.contains(uses) {
+                translated_definition.uses.push(uses.clone());
+            }
+        }
+
         // Extend type definitions
         for type_definition in external_definition.type_definitions.iter() {
             if let Some(symbol) = symbol {

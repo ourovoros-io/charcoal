@@ -1250,7 +1250,7 @@ impl TranslatedDefinition {
                             }),
                         }),
 
-                        "U128::from" | "U128::max" | "U128::min" => {
+                        "U128::from" | "U128::max" | "U128::min" | "U128::zero" => {
                             Ok(sway::TypeName::Identifier {
                                 name: "U128".into(),
                                 generic_parameters: None,

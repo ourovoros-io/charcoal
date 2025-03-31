@@ -4,6 +4,8 @@ use num_traits::Zero;
 use solang_parser::{helpers::CodeLocation, pt as solidity};
 use crate::{errors::Error, project::Project, sway, translate::{function_call::{resolve_function_call, resolve_struct_constructor}, TranslatedDefinition, TranslationScope}};
 
+use super::utils::coerce_expression;
+
 /// Translates solidity build in types
 /// Note: function argument is only needed for the loc debug in the end of the function
 /// should be removed at some point
@@ -206,7 +208,18 @@ pub fn translate_builtin_function_call(
             if parameters.len() != 2 {
                 panic!("Invalid require call: {expression:#?}");
             }
-
+            
+            let parameter_type = translated_definition.get_expression_type(scope.clone(), &parameters[0])?;
+            
+            parameters[0] = coerce_expression(
+                &parameters[0], 
+                &parameter_type, 
+                &sway::TypeName::Identifier { 
+                    name: "bool".into(), 
+                    generic_parameters: None 
+                }
+            ).unwrap();
+            
             Ok(sway::Expression::create_function_calls(
                 None,
                 &[("require", Some((None, parameters)))],

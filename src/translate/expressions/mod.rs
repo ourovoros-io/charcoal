@@ -317,10 +317,19 @@ pub fn create_value_expression(
             ("I8" | "I16" | "I32" | "I64" | "I128" | "I256", None) => {
                 let mut value = match value.cloned() {
                     Some(value) => value,
-                    None => sway::Expression::from(sway::Literal::DecInt(
-                        BigUint::zero(),
-                        Some(format!("u{}", name.trim_start_matches("I").to_string())),
-                    )),
+                    None => match name.as_str() {
+                        "I128" => {
+                            translated_definition.ensure_use_declared("std::u128::*");
+                            sway::Expression::create_function_calls(None, &[
+                                ("U128::zero", Some((None, vec![])))
+                            ])
+                        },
+                        
+                        _ => sway::Expression::from(sway::Literal::DecInt(
+                            BigUint::zero(),
+                            Some(format!("u{}", name.trim_start_matches("I").to_string())),
+                        ))
+                    }
                 };
 
                 match &value {
