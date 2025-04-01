@@ -202,9 +202,19 @@ pub fn generate_enum_abi_encode_function(
                 type_name: None,
                 value: match type_name {
                     sway::TypeName::Identifier { name: type_name, .. } => match type_name.as_str() {
-                        "bool" | "I8" | "I16" | "I32" | "I64" | "I128" | "I256" | "u8" | "u16" | "u32" | "u64" | "u256" | "b256" | "Bytes" | "Vec" => {
+                        "bool" | "u8" | "u16" | "u32" | "u64" | "u256" | "b256" | "Bytes" | "Vec" => {
                             sway::Expression::create_function_calls(None, &[
                                 (name, None),
+                                ("abi_encode", Some((None, vec![
+                                    sway::Expression::Identifier("buffer".into()),
+                                ]))),
+                            ])
+                        }
+
+                        "I8" | "I16" | "I32" | "I64" | "I128" | "I256" => {
+                            sway::Expression::create_function_calls(None, &[
+                                (name, None),
+                                ("underlying", Some((None, vec![]))),
                                 ("abi_encode", Some((None, vec![
                                     sway::Expression::Identifier("buffer".into()),
                                 ]))),
