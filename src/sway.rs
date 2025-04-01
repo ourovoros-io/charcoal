@@ -445,6 +445,18 @@ impl TypeName {
         }
     }
 
+    pub fn array_info(&self) -> Option<(TypeName, usize)> {
+        match self {
+            TypeName::Array { type_name, length } => Some((type_name.as_ref().clone(), *length)),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn is_array(&self) -> bool {
+        self.array_info().is_some()
+    }
+
     #[inline]
     pub fn is_u8_array(&self) -> bool {
         self.u8_array_length().is_some()

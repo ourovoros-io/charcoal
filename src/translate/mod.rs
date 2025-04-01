@@ -1309,6 +1309,11 @@ impl TranslatedDefinition {
                                 .map(|p| self.get_expression_type(scope.clone(), p))
                                 .collect::<Result<Vec<_>, _>>()?;
 
+                            //
+                            // TODO:
+                            // We should bring this up to par with resolve_function_call...
+                            //
+
                             // Ensure the function exists in scope
                             if let Some(function) = scope.borrow().find_function(|f| {
                                 let f = f.borrow();
@@ -1339,12 +1344,75 @@ impl TranslatedDefinition {
                                 }
 
                                 for (i, value_type_name) in parameter_types.iter().enumerate() {
-                                    let Some(parameter_type_name) =
-                                        fn_parameters.entries[i].type_name.as_ref()
-                                    else {
+                                    let Some(parameter_type_name) = fn_parameters.entries[i].type_name.as_ref() else {
                                         continue;
                                     };
 
+                                    // HACK: allow numeric literals for any uint types
+                                    if value_type_name.is_uint() && parameter_type_name.is_uint() {
+                                        match &parameters[i] {
+                                            sway::Expression::Literal(
+                                                sway::Literal::DecInt(_, None) | sway::Literal::HexInt(_, None)
+                                            ) => continue,
+
+                                            sway::Expression::Commented(_, expression) => match expression.as_ref() {
+                                                sway::Expression::Literal(
+                                                    sway::Literal::DecInt(_, None) | sway::Literal::HexInt(_, None)
+                                                ) => continue,
+
+                                                _ => {}
+                                            }
+
+                                            _ => {}
+                                        }
+                                    }
+
+                                    // HACK: allow array literals of uint types containing only literals if the lengths match
+                                    if let (
+                                        sway::TypeName::Array {
+                                            type_name: value_type_name,
+                                            length: value_length,
+                                        },
+                                        sway::TypeName::Array {
+                                            type_name: parameter_type_name,
+                                            length: parameter_length,
+                                        }
+                                    ) = (value_type_name, parameter_type_name) {
+                                        if value_length != parameter_length {
+                                            return false;
+                                        }
+
+                                        if value_type_name.is_uint() && parameter_type_name.is_uint() {
+                                            match &parameters[i] {
+                                                sway::Expression::Array(array) => {
+                                                    if array.elements.iter().all(|e| {
+                                                        matches!(e, sway::Expression::Literal(
+                                                            sway::Literal::DecInt(_, None) | sway::Literal::HexInt(_, None)
+                                                        ))
+                                                    }) {
+                                                        continue;
+                                                    }
+                                                }
+
+                                                sway::Expression::Commented(_, expression) => match expression.as_ref() {
+                                                    sway::Expression::Array(array) => {
+                                                        if array.elements.iter().all(|e| {
+                                                            matches!(e, sway::Expression::Literal(
+                                                                sway::Literal::DecInt(_, None) | sway::Literal::HexInt(_, None)
+                                                            ))
+                                                        }) {
+                                                            continue;
+                                                        }
+                                                    }
+
+                                                    _ => {}
+                                                }
+                                                
+                                                _ => {}
+                                            }
+                                        }
+                                    }
+                                    
                                     if !value_type_name.is_compatible_with(parameter_type_name) {
                                         // println!(
                                         //     "incompatible parameter type: expected {}, got {}; skipping...",
