@@ -1046,6 +1046,31 @@ pub fn coerce_expression(
             if lhs_len != rhs_len || !lhs_type_name.is_compatible_with(&rhs_type_name) {
                 todo!("Handle conversion from {from_type_name} to {to_type_name}")
             }
+
+            match expression {
+                sway::Expression::Array(array) => {
+                    expression = sway::Expression::from(sway::Array {
+                        elements: array.elements.iter().map(|e| {
+                            coerce_expression(e, &lhs_type_name, &rhs_type_name).unwrap()
+                        }).collect(),
+                    });
+                }
+
+                _ => {
+                    expression = sway::Expression::from(sway::Array {
+                        elements: (0..*rhs_len).map(|i| {
+                            coerce_expression(
+                                &sway::Expression::from(sway::ArrayAccess {
+                                    expression: expression.clone(),
+                                    index: sway::Expression::from(sway::Literal::DecInt(i.into(), None)),
+                                }),
+                                &lhs_type_name,
+                                &rhs_type_name,
+                            ).unwrap()
+                        }).collect()
+                    });
+                }
+            }
         }
 
         (sway::TypeName::Tuple {

@@ -33,13 +33,119 @@ pub fn create_assignment_expression(
 
     let expr_type_name = translated_definition.get_expression_type(scope.clone(), expression)?;
     
-    // if !type_name.is_compatible_with(&expr_type_name) {
-    //     todo!("check to see if expression is a struct field assignment")
-    // }
+    // Check for assignments to fields of struct variables defined in scope
+    if !type_name.is_compatible_with(&expr_type_name) {
+        if let sway::Expression::MemberAccess(member_access) = expression {
+            if member_access.expression != sway::Expression::Identifier("storage".into()) {
+                let type_name = translated_definition.get_expression_type(scope.clone(), &member_access.expression)?;
+
+                if let Some(struct_definition) = translated_definition.structs.iter().find(|s| {
+                    let s = s.borrow();
+        
+                    let sway::TypeName::Identifier { name, generic_parameters } = &type_name else {
+                        return false;
+                    };
+        
+                    if s.name != *name || s.generic_parameters.is_some() != generic_parameters.is_some() {
+                        return false;
+                    }
+        
+                    if let (Some(lhs_generic_parameters), Some(rhs_generic_parameters)) = (s.generic_parameters.as_ref(), generic_parameters.as_ref()) {
+                        if lhs_generic_parameters.entries.len() != rhs_generic_parameters.entries.len() {
+                            return false;
+                        }
+                    }
+
+                    if !s.fields.iter().any(|f| f.name == member_access.member) {
+                        return false;
+                    }
+        
+                    true
+                }) {
+                    let struct_definition = struct_definition.borrow();
+                    let field = struct_definition.fields.iter().find(|f| f.name == member_access.member).unwrap();
+
+                    let mut expression = member_access.expression.clone();
+
+                    if is_storage {
+                        // Remove the `.read()` from the end of the expression
+                        if let sway::Expression::FunctionCall(function_call) = &member_access.expression {
+                            if let sway::Expression::MemberAccess(member_access) = &function_call.function {
+                                if member_access.member == "read" {
+                                    expression = member_access.expression.clone();
+                                }
+                            }
+                        };
+
+                        // Create a local variable to store the local mutable copy of the struct
+                        let variable_name = scope.borrow_mut().generate_unique_variable_name("x");
+
+                        //
+                        // TODO:
+                        // We should really assign to a mutable local variable copy of the struct if it's in storage,
+                        // but for now we're just gonna write one in place at a time...
+                        //
+
+                        // Create a block that:
+                        // 1. Reads the struct from storage into a local mutable variable
+                        // 2. Updates the field of the local copy of the struct
+                        // 3. Writes the local copy of the struct back to storage
+                        return Ok(sway::Expression::from(sway::Block {
+                            statements: vec![
+                                // let x = blah.read();
+                                sway::Statement::from(sway::Let {
+                                    pattern: sway::LetPattern::Identifier(sway::LetIdentifier {
+                                        is_mutable: true,
+                                        name: variable_name.clone(),
+                                    }),
+                                    type_name: None,
+                                    value: sway::Expression::create_function_calls(Some(expression.clone()), &[
+                                        ("read", Some((None, vec![]))),
+                                    ]),
+                                }),
+                                // x.field = value;
+                                sway::Statement::from(sway::Expression::from(sway::BinaryExpression {
+                                    operator: "=".into(),
+                                    lhs: sway::Expression::from(sway::MemberAccess {
+                                        expression: sway::Expression::Identifier(variable_name.clone()),
+                                        member: field.name.clone(),
+                                    }),
+                                    rhs: coerce_expression(rhs, rhs_type_name, &field.type_name).unwrap(),
+                                })),
+                                // blah.write(x);
+                                sway::Statement::from(sway::Expression::create_function_calls(Some(expression.clone()), &[
+                                    ("write", Some((None, vec![
+                                        sway::Expression::Identifier(variable_name),
+                                    ]))),
+                                ])),
+                            ],
+                            final_expr: None,
+                        }));
+                    }
+                    
+                    // Non-storage struct field assignment
+                    //   blah.field = value;
+                    return Ok(sway::Expression::from(sway::BinaryExpression {
+                        operator: "=".into(),
+                        lhs: sway::Expression::from(sway::MemberAccess {
+                            expression: member_access.expression.clone(),
+                            member: field.name.clone(),
+                        }),
+                        rhs: coerce_expression(rhs, rhs_type_name, &field.type_name).unwrap(),
+                    }));
+                }
+            }
+        }
+    }
 
     // Handle assignments to storage
     if is_storage {
-        let storage_key_type = expr_type_name.storage_key_type().unwrap();
+        let Some(storage_key_type) = expr_type_name.storage_key_type() else {
+            todo!(
+                "check to see if {type_name} `{}` expression is a struct field assignment ({expr_type_name})",
+                sway::TabbedDisplayer(expression),
+            )
+        };
 
         let member = match (&type_name, &rhs_type_name) {
             (
