@@ -50,7 +50,7 @@ pub fn translate_state_variable(
     // Translate the variable's naming convention
     let old_name = variable_definition.name.as_ref().unwrap().name.clone();
     let new_name = if is_constant || is_immutable {
-        crate::translate_naming_convention(old_name.as_str(), Case::ScreamingSnake)
+        crate::translate_naming_convention(old_name.as_str(), Case::Constant)
     } else {
         translate_storage_name(project, translated_definition, old_name.as_str())
     };

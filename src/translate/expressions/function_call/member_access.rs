@@ -496,7 +496,7 @@ pub fn translate_identity_member_access_function_call(
 
     let mut name = name.clone();
     let new_name_lower = crate::translate_naming_convention(member.name.as_str(), Case::Snake);
-    let new_name_upper = crate::translate_naming_convention(member.name.as_str(), Case::ScreamingSnake);
+    let new_name_upper = crate::translate_naming_convention(member.name.as_str(), Case::Constant);
 
     // Check using directives for Identity-specific function
     for using_directive in translated_definition.using_directives.iter() {
