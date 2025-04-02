@@ -993,6 +993,7 @@ pub fn coerce_expression(
                     let lhs_bits: usize = lhs_name.trim_start_matches("u").trim_start_matches("U").trim_start_matches("I").parse().unwrap();
                     let rhs_bits: usize = rhs_name.trim_start_matches("u").trim_start_matches("U").trim_start_matches("I").parse().unwrap();
                     
+                    
                     if lhs_bits > rhs_bits {
                         expression = sway::Expression::create_function_calls(None, &[
                             (format!("u{rhs_bits}::try_from").as_str(), Some((None, vec![
@@ -1021,17 +1022,40 @@ pub fn coerce_expression(
                 let lhs_bits: usize = lhs_name.trim_start_matches("u").trim_start_matches("U").trim_start_matches("I").parse().unwrap();
                 let rhs_bits: usize = rhs_name.trim_start_matches("u").trim_start_matches("U").trim_start_matches("I").parse().unwrap();
 
-                if lhs_bits > rhs_bits {
-                    // x.as_u256()
-                    // u64::try_from(x).unwrap()
-                    expression = sway::Expression::create_function_calls(None, &[
-                        (format!("{to_type_name}::try_from").as_str(), Some((None, vec![expression.clone()]))),
-                        ("unwrap", Some((None, vec![])))
-                    ]);
-                } else if lhs_bits < rhs_bits {
-                    expression = sway::Expression::create_function_calls(Some(expression.clone()), &[
-                        (format!("as_{to_type_name}").as_str(), Some((None, vec![]))),
-                    ]);
+                match &expression {
+                    sway::Expression::Literal(sway::Literal::DecInt(i, suffix)) => {
+                        if suffix.is_none() {
+                            expression = sway::Expression::Literal(sway::Literal::DecInt(
+                                i.clone(), 
+                                Some(format!("{}{}", rhs_name.chars().nth(0).unwrap(), rhs_bits))
+                            ));
+                        } else {
+                            if lhs_bits > rhs_bits {
+                                // x.as_u256()
+                                // u64::try_from(x).unwrap()
+                                expression = sway::Expression::create_function_calls(None, &[
+                                    (format!("{to_type_name}::try_from").as_str(), Some((None, vec![expression.clone()]))),
+                                    ("unwrap", Some((None, vec![])))
+                                ]);
+                            } else if lhs_bits < rhs_bits {
+                                expression = sway::Expression::create_function_calls(Some(expression.clone()), &[
+                                    (format!("as_{to_type_name}").as_str(), Some((None, vec![]))),
+                                ]);
+                            }
+                        }
+                    }
+                    _ => if lhs_bits > rhs_bits {
+                        // x.as_u256()
+                        // u64::try_from(x).unwrap()
+                        expression = sway::Expression::create_function_calls(None, &[
+                            (format!("{to_type_name}::try_from").as_str(), Some((None, vec![expression.clone()]))),
+                            ("unwrap", Some((None, vec![])))
+                        ]);
+                    } else if lhs_bits < rhs_bits {
+                        expression = sway::Expression::create_function_calls(Some(expression.clone()), &[
+                            (format!("as_{to_type_name}").as_str(), Some((None, vec![]))),
+                        ]);
+                    }
                 }
             }
         },

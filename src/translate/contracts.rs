@@ -568,6 +568,13 @@ pub fn propagate_inherited_definitions(
         translated_definition.toplevel_scope.borrow_mut().variables.extend(inherited_variables);
         translated_definition.toplevel_scope.borrow_mut().functions.extend(inherited_functions);
 
+        // Extend the dependencies 
+        for deps in inherited_definition.dependencies.iter() {
+            if !translated_definition.dependencies.contains(deps) {
+                translated_definition.dependencies.push(deps.clone());
+            }
+        }
+
         // Extend the use statements
         for inherited_use in inherited_definition.uses.iter() {
             if !translated_definition.uses.contains(inherited_use) {

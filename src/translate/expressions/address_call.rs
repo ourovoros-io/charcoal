@@ -39,6 +39,8 @@ pub fn translate_address_call_expression(
     let return_length_name = scope.borrow_mut().generate_unique_variable_name("return_length");
     let result_ptr_name = scope.borrow_mut().generate_unique_variable_name("result_ptr");
 
+    let payload_type = translated_definition.get_expression_type(scope.clone(), &payload)?;
+
     Ok(sway::Expression::from(sway::Block {
         statements: vec![
             // let return_ptr = asm(
@@ -61,7 +63,7 @@ pub fn translate_address_call_expression(
                         sway::AsmRegister {
                             name: "r1".into(),
                             value: Some(sway::Expression::create_function_calls(Some(payload.clone()), &[
-                                ("ptr", Some((None, vec![]))),
+                                (if payload_type.is_string_slice() {"as_ptr"} else { "ptr" }, Some((None, vec![]))),
                             ])),
                         },
                         sway::AsmRegister {

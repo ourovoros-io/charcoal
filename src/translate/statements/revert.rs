@@ -2,7 +2,7 @@ use std::{cell::RefCell, rc::Rc};
 use num_bigint::BigUint;
 use num_traits::Zero;
 use solang_parser::pt as solidity;
-use crate::{errors::Error, project::Project, sway, translate::{translate_expression, TranslatedDefinition, TranslationScope}};
+use crate::{errors::Error, project::Project, sway, translate::{function_call::utils::coerce_expression, translate_expression, TranslatedDefinition, TranslationScope}};
 
 #[inline]
 pub fn translate_revert_statement(
@@ -38,6 +38,8 @@ pub fn translate_revert_statement(
         }
 
         let (errors_enum, _) = errors_enum_and_impl;
+
+        let error_variant = errors_enum.borrow().variants.iter().find(|e| e.name == error_variant_name).unwrap().clone(); 
         
         return Ok(sway::Statement::from(sway::Expression::from(sway::Block {
             statements: vec![
@@ -62,14 +64,23 @@ pub fn translate_revert_statement(
                                 generic_parameters: None,
                                 parameters: vec![
                                     if parameters.len() == 1 {
-                                        translate_expression(project, translated_definition, scope.clone(), &parameters[0])?
+                                        let parameter_expression = translate_expression(project, translated_definition, scope.clone(), &parameters[0])?;
+                                        let parameter_expression_type = translated_definition.get_expression_type(scope.clone(), &parameter_expression)?;
+                                        coerce_expression(&parameter_expression, &parameter_expression_type, &error_variant.type_name).unwrap()                                        
                                     } else {
+                                        let sway::TypeName::Tuple { type_names } = &error_variant.type_name else { 
+                                            panic!("Expected type Tuple");
+                                        };
                                         sway::Expression::Tuple(
-                                            parameters.iter()
-                                                .map(|p| translate_expression(project, translated_definition, scope.clone(), p))
-                                                .collect::<Result<Vec<_>, _>>()?
+                                            parameters.iter().zip(type_names.iter())
+                                                .map(|(param, type_name)| {
+                                                    let parameter_expression = translate_expression(project, translated_definition, scope.clone(), &param).unwrap();
+                                                    let parameter_expression_type = translated_definition.get_expression_type(scope.clone(), &parameter_expression).unwrap();
+                                                    coerce_expression(&parameter_expression, &parameter_expression_type, &type_name).unwrap()
+                                                })
+                                            .collect::<Vec<_>>()
                                         )
-                                    },
+                                    }
                                 ]
                             })
                         },

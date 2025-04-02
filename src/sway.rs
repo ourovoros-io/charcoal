@@ -425,6 +425,13 @@ impl TypeName {
         }
     }
 
+    pub fn is_string_slice(&self) -> bool {
+        match self {
+            TypeName::StringSlice => true,
+            _ => false,
+        }
+    }
+
     pub fn is_string(&self) -> bool {
         match self {
             TypeName::Identifier { name, generic_parameters: None } => name == "String",

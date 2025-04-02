@@ -12,6 +12,14 @@ use structopt::{clap::AppSettings, StructOpt};
 
 #[inline]
 pub fn translate_naming_convention(name: &str, case: Case) -> String {
+    // HACK: do not allow dollar signs
+    let mut name = name.replace("$", "dollar_sign").to_case(case).to_string();
+    
+    // HACK: do not allow name to start with double underscore
+    while name.starts_with("__") {
+        name = name[2..].to_string();
+    }
+
     let name = if name.chars().all(|c| c == '_') {
         name.to_string()
     } else {
