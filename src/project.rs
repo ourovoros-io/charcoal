@@ -348,6 +348,173 @@ impl Project {
             translate_function_definition(self, &mut translated_definition, function_definition)?;
         }
         
+        let finalize_mappings = |project: &mut Project, translated_definition: &mut TranslatedDefinition| {
+            if translated_definition.mapping_names.is_empty() {
+                return;
+            }
+            
+            let mut constructor_body = translated_definition.get_constructor_fn().body.as_ref().cloned().unwrap();
+
+            // Insert constructor call guard if necessary
+            if constructor_body.statements.is_empty() {
+                let prefix = crate::translate_naming_convention(translated_definition.name.as_str(), Case::Snake);
+                let constructor_called_variable_name =  translate_storage_name(project, translated_definition, format!("{prefix}_constructor_called").as_str());
+                
+                // Add the `constructor_called` field to the storage block
+                translated_definition.get_storage().fields.push(sway::StorageField {
+                    name: constructor_called_variable_name.clone(),
+                    type_name: sway::TypeName::Identifier {
+                        name: "bool".into(),
+                        generic_parameters: None,
+                    },
+                    value: sway::Expression::from(sway::Literal::Bool(false)),
+                });
+
+                // Add the `constructor_called` requirement to the beginning of the function
+                // require(!storage.initialized.read(), "The Contract constructor has already been called");
+                constructor_body.statements.insert(0, sway::Statement::from(sway::Expression::create_function_calls(None, &[
+                    ("require", Some((None, vec![
+                        sway::Expression::from(sway::UnaryExpression {
+                            operator: "!".into(),
+                            expression: sway::Expression::create_function_calls(None, &[
+                                ("storage", None),
+                                (constructor_called_variable_name.as_str(), None),
+                                ("read", Some((None, vec![]))),
+                            ])
+                        }),
+                        sway::Expression::from(sway::Literal::String(
+                            format!("The {} constructor has already been called", translated_definition.name)
+                        )),
+                    ]))),
+                ])));
+
+                // Set the `constructor_called` storage field to `true` at the end of the function
+                // storage.initialized.write(true);
+                constructor_body.statements.push(sway::Statement::from(sway::Expression::create_function_calls(None, &[
+                    ("storage", None),
+                    (constructor_called_variable_name.as_str(), None),
+                    ("write", Some((None, vec![
+                        sway::Expression::from(sway::Literal::Bool(true)),
+                    ]))),
+                ])));
+            }
+
+            // Insert statements into the constructor to initialize each struct mapping
+            for (mapping_name, field_names) in translated_definition.mapping_names.iter() {
+                let mut i = 0;
+
+                // Skip `require` statements in the constructor
+                while i < constructor_body.statements.len() {
+                    let sway::Statement::Expression(sway::Expression::FunctionCall(f)) = &constructor_body.statements[i] else { break };
+                    let sway::Expression::Identifier(id) = &f.function else { break }; 
+                    if id != "require" {
+                        break;
+                    }
+                    i += 1;
+                }
+
+                // storage.x_instance_count.write(i + 1);
+                constructor_body.statements.insert(i, sway::Statement::from(sway::Expression::create_function_calls(None, &[
+                    ("storage", None),
+                    (format!("{}_instance_count", mapping_name).as_str(), None),
+                    ("write", Some((None, vec![sway::Expression::from(sway::BinaryExpression{ 
+                        operator: "+".into(), 
+                        lhs: sway::Expression::Identifier("i".to_string()), 
+                        rhs: sway::Expression::from(sway::Literal::DecInt(BigUint::one(), None)) 
+                    })])))
+                ])));   
+
+                // let i = storage.x_instance_count.read();
+                constructor_body.statements.insert(i, sway::Statement::from(sway::Let { 
+                    pattern: sway::LetPattern::Identifier(sway::LetIdentifier { 
+                        is_mutable: false, 
+                        name: "i".to_string() 
+                    }), 
+                    type_name: None, 
+                    value: sway::Expression::create_function_calls(None, &[
+                        ("storage", None),
+                        (format!("{}_instance_count", mapping_name).as_str(), None),
+                        ("read", Some((None, vec![])))
+                    ]) 
+                }));
+
+                // HACK: Skip forward two statements
+                i += 2;
+
+                for field_name in field_names.iter().rev() {
+                    // storage.my_struct.my_mapping.write(Some(my_mapping));
+                    constructor_body.statements.insert(i, sway::Statement::from(sway::Expression::create_function_calls(None, &[
+                        ("storage", None),
+                        (mapping_name.as_str(), None),
+                        (field_name.as_str(), None),
+                        ("write", Some((None, vec![
+                            sway::Expression::create_function_calls(None, &[
+                                ("Some", Some((None, vec![sway::Expression::Identifier(field_name.to_string())])))
+                            ])
+                        ])))
+                    ])));
+
+                    // let my_mapping = storage.my_struct_mappings.get(i);
+                    constructor_body.statements.insert(i, sway::Statement::from(
+                        sway::Let{ 
+                            pattern: sway::LetPattern::Identifier(sway::LetIdentifier{ 
+                                is_mutable: false, 
+                                name: field_name.clone() 
+                            }), 
+                            type_name: None, 
+                            value: sway::Expression::create_function_calls(None, &[
+                                ("storage", None),
+                                (format!("{}_{}s", mapping_name, field_name).as_str(), None),
+                                ("get", Some((None, vec![sway::Expression::Identifier("i".to_string())])))
+                            ]) 
+                        }
+                    ));
+                }
+            }
+            
+            // Set up constructor attributes
+            let constructor_attrs = {
+                let constructor_fn = translated_definition.get_constructor_fn();
+
+                *constructor_fn.body.as_mut().unwrap() = constructor_body;
+
+                if constructor_fn.attributes.is_none() {
+                    constructor_fn.attributes = Some(Default::default());
+                }
+
+                let Some(attributes) = constructor_fn.attributes.as_mut() else { unreachable!() };
+
+                if !attributes.attributes.iter().any(|a| a.name == "storage") {
+                    attributes.attributes.push(sway::Attribute{ 
+                        name: "storage".to_string(), 
+                        parameters: None
+                    });
+                }
+
+                let Some(storage_attr) = attributes.attributes.iter_mut().find(|a| a.name == "storage") else { unreachable!() };
+                if storage_attr.parameters.is_none() {
+                    storage_attr.parameters = Some(Default::default());
+                }
+
+                let Some(parameters) = storage_attr.parameters.as_mut() else { unreachable!() };
+                
+                if !parameters.iter().any(|p| p == "read") {
+                    parameters.push("read".to_string());
+                }
+
+                if !parameters.iter().any(|p| p == "write") {
+                    parameters.push("write".to_string());
+                }
+
+                Some(attributes.clone())
+            };
+
+            let abi = translated_definition.get_abi();
+
+            if let Some(abi_constructor) = abi.functions.iter_mut().find(|f| f.name == "constructor") {
+                abi_constructor.attributes = constructor_attrs;
+            }
+        };
 
         // Translate any contract definitions in the file
         for source_unit_part in source_unit.0.iter() {
@@ -380,9 +547,12 @@ impl Project {
                 contract_definition,
             )?;
 
+            finalize_mappings(self, &mut translated_definition);
 
             self.translated_definitions.push(translated_definition);
         }
+        
+        finalize_mappings(self, &mut translated_definition);
 
         // HACK: if we don't have any contracts, add a standalone translated definition
         if contract_names.is_empty() {

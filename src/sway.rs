@@ -469,6 +469,25 @@ impl TypeName {
         self.u8_array_length().is_some()
     }
 
+    pub fn option_type(&self) -> Option<TypeName> {
+        match self {
+            TypeName::Identifier { name, generic_parameters: Some(generic_parameters) } => {
+                if name == "Option" && generic_parameters.entries.len() == 1 {
+                    Some(generic_parameters.entries[0].type_name.clone())
+                } else {
+                    None
+                }
+            }
+
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn is_option(&self) -> bool {
+        self.option_type().is_some()
+    }
+
     pub fn storage_key_type(&self) -> Option<TypeName> {
         match self {
             TypeName::Identifier { name, generic_parameters: Some(generic_parameters) } => {

@@ -5,6 +5,8 @@ use super::{
 };
 use crate::{project::Project, sway, Error};
 use convert_case::Case;
+use num_bigint::BigUint;
+use num_traits::Zero;
 use solang_parser::pt as solidity;
 use std::{cell::RefCell, rc::Rc};
 
@@ -156,10 +158,93 @@ pub fn translate_state_variable(
                 create_value_expression(translated_definition, value_scope.clone(), &variable_type_name, initializer.as_ref())
             }
 
-            _ => {
+            (name, generic_parameters) => {
                 let initializer = variable_definition.initializer.as_ref()
                     .map(|x| translate_expression(project, translated_definition, value_scope.clone(), x))
                     .transpose()?;
+
+                // HACK: Add to mapping names for toplevel structs in storage that contain storage mappings
+                if generic_parameters.is_none() {
+                    if let Some(struct_definition) = translated_definition.structs.iter().find(|s| s.borrow().name == name).cloned() {
+                        for field in struct_definition.borrow().fields.iter() {
+                            let Some(option_type) = field.type_name.option_type() else { continue };
+                            let Some(storage_key_type) = option_type.storage_key_type() else { continue };
+                            let Some(_) = storage_key_type.storage_map_type() else { continue };
+
+                            let struct_name = crate::translate_naming_convention(struct_definition.borrow().name.as_str(), Case::Snake);
+
+                            if !translated_definition.mapping_names.iter().any(|(n, _)| *n == struct_name) {
+                                translated_definition.mapping_names.push((struct_name.clone(), vec![]));
+                            }
+
+                            let mapping_names = translated_definition.mapping_names.iter_mut().find(|m| m.0 == struct_name).unwrap();
+                            mapping_names.1.push(field.name.clone());
+
+                            let instance_field_name = format!("{}_instance_count", struct_name);
+                            let mapping_field_name = format!("{}_{}s", struct_name, field.name);
+
+                            let storage = translated_definition.get_storage();
+
+                            if let Some(field) = storage.fields.iter().find(|f| f.name == instance_field_name) {
+                                if !field.type_name.is_u64() {
+                                    panic!("Instance count field already exists : {field:#?}");
+                                }
+                            } else {
+                                storage.fields.push(
+                                    sway::StorageField { 
+                                        name: instance_field_name, 
+                                        type_name: sway::TypeName::Identifier { 
+                                            name: "u64".into(), 
+                                            generic_parameters: None 
+                                        }, 
+                                        value: sway::Expression::Literal(sway::Literal::DecInt(BigUint::zero(), None)) 
+                                    }
+                                );
+                            }
+
+                            if let Some(field) = storage.fields.iter().find(|f| f.name == mapping_field_name) {
+                                if let Some((k, v)) = field.type_name.storage_map_type() {
+                                    if !k.is_u64() && !v.is_compatible_with(&storage_key_type) {
+                                        panic!("Instance mapping field already exists : {field:#?}");
+                                    }
+                                } else {
+                                    panic!("Instance mapping field already exists : {field:#?}");
+                                }
+                            } else {
+                                storage.fields.push(
+                                    sway::StorageField { 
+                                        name: mapping_field_name, 
+                                        type_name: sway::TypeName::Identifier { 
+                                            name: "StorageMap".into(), 
+                                            generic_parameters: Some(sway::GenericParameterList{ 
+                                                entries: vec![
+                                                    sway::GenericParameter { 
+                                                        type_name: sway::TypeName::Identifier { 
+                                                            name: "u64".into(), 
+                                                            generic_parameters: None, 
+                                                        }, 
+                                                        implements: None,
+                                                    },
+                                                    sway::GenericParameter { 
+                                                        type_name: storage_key_type.clone(),
+                                                        implements: None, 
+                                                    }
+                                                ] 
+                                            })
+                                        }, 
+                                        value: sway::Expression::from(sway::Constructor { 
+                                            type_name: sway::TypeName::Identifier { 
+                                                name: "StorageMap".into(), 
+                                                generic_parameters: None,
+                                            }, 
+                                            fields: vec![] 
+                                        })
+                                    }
+                                );
+                            }
+                        }
+                    }
+                }
 
                 create_value_expression(translated_definition, value_scope.clone(), &variable_type_name, initializer.as_ref())
             }
