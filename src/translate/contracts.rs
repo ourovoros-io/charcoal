@@ -192,14 +192,14 @@ pub fn translate_contract_definition(
     let events_enum_name = format!("{}Event", translated_definition.name);
 
     if let Some((events_enum, abi_encode_impl)) = translated_definition.events_enums.iter().find(|(e, _)| e.borrow().name == events_enum_name).cloned() {
-        generate_enum_abi_encode_function(project, translated_definition, events_enum.clone(), abi_encode_impl.clone())?;
+        generate_enum_abi_encode_function(project, translated_definition, &events_enum, &abi_encode_impl)?;
     }
 
     // Create the abi encoding function for the errors enum (if any)
     let errors_enum_name = format!("{}Error", translated_definition.name);
 
     if let Some((errors_enum, abi_encode_impl)) = translated_definition.errors_enums.iter().find(|(e, _)| e.borrow().name == errors_enum_name).cloned() {
-        generate_enum_abi_encode_function(project, translated_definition, errors_enum.clone(), abi_encode_impl.clone())?;
+        generate_enum_abi_encode_function(project, translated_definition, &errors_enum, &abi_encode_impl)?;
     }
 
     // Translate contract state variables
@@ -287,7 +287,7 @@ pub fn translate_contract_definition(
                 &[deferred_initialization.name.as_str()],
             );
             
-            let value_type_name = translated_definition.get_expression_type(translated_definition.toplevel_scope.clone(), &deferred_initialization.value)?;
+            let value_type_name = translated_definition.get_expression_type(&translated_definition.toplevel_scope.clone(), &deferred_initialization.value)?;
             let variable = translated_definition.toplevel_scope.borrow().get_variable_from_new_name(&deferred_initialization.name).unwrap();
 
             match &deferred_initialization.value {
@@ -309,10 +309,10 @@ pub fn translate_contract_definition(
                     assignment_statements.push(sway::Statement::from(create_assignment_expression(
                         project,
                         translated_definition,
-                        scope,
+                        &scope,
                         "=",
                         &lhs,
-                        variable,
+                        &variable,
                         &deferred_initialization.value,
                         &value_type_name,
                     )?));
@@ -327,7 +327,7 @@ pub fn translate_contract_definition(
             let mut function = sway::Function {
                 attributes: None,
                 is_public: false,
-                old_name: "".into(),
+                old_name: String::new(),
                 name: "constructor".into(),
                 generic_parameters: None,
                 parameters: sway::ParameterList::default(),
@@ -340,7 +340,7 @@ pub fn translate_contract_definition(
             function.body = Some(sway::Block::default());
             let function_body = function.body.as_mut().unwrap();
     
-            let prefix = crate::translate_naming_convention(translated_definition.name.as_str(), Case::Snake);
+            let prefix = crate::translate::translate_naming_convention(translated_definition.name.as_str(), Case::Snake);
             let constructor_called_variable_name =  translate_storage_name(project, translated_definition, format!("{prefix}_constructor_called").as_str());
             
             // Add the `constructor_called` field to the storage block
@@ -598,7 +598,7 @@ pub fn propagate_inherited_definitions(
 
         // Extend the structs
         for inherited_struct in inherited_definition.structs.iter() {
-            translated_definition.ensure_struct_included(project, inherited_struct.clone());
+            translated_definition.ensure_struct_included(project, &inherited_struct.clone());
         }
 
         // Extend the struct names
@@ -729,7 +729,7 @@ pub fn propagate_inherited_definitions(
                     if inherited_function.name == "constructor" {
                         let mut inherited_function = inherited_function.clone();
                         
-                        let prefix = crate::translate_naming_convention(inherited_definition.name.as_str(), Case::Snake);
+                        let prefix = crate::translate::translate_naming_convention(inherited_definition.name.as_str(), Case::Snake);
                         inherited_function.name = format!("{prefix}_constructor");
 
                         if !translated_definition.functions.contains(&inherited_function) {

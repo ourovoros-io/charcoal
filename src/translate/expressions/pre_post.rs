@@ -9,14 +9,14 @@ use super::{assignment::translate_assignment_expression, translate_expression, v
 pub fn translate_pre_or_post_operator_value_expression(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    scope: Rc<RefCell<TranslationScope>>,
+    scope: &Rc<RefCell<TranslationScope>>,
     expression: &solidity::Expression,
 ) -> Result<sway::Expression, Error> {
     match expression {
-        solidity::Expression::PreIncrement(loc, x) => translate_pre_operator_expression(project, translated_definition, scope.clone(), loc, x, "+="),
-        solidity::Expression::PreDecrement(loc, x) => translate_pre_operator_expression(project, translated_definition, scope.clone(), loc, x, "-="),
-        solidity::Expression::PostIncrement(loc, x) => translate_post_operator_expression(project, translated_definition, scope.clone(), loc, x, "+="),
-        solidity::Expression::PostDecrement(loc, x) => translate_post_operator_expression(project, translated_definition, scope.clone(), loc, x, "-="),
+        solidity::Expression::PreIncrement(loc, x) => translate_pre_operator_expression(project, translated_definition, scope, loc, x, "+="),
+        solidity::Expression::PreDecrement(loc, x) => translate_pre_operator_expression(project, translated_definition, scope, loc, x, "-="),
+        solidity::Expression::PostIncrement(loc, x) => translate_post_operator_expression(project, translated_definition, scope, loc, x, "+="),
+        solidity::Expression::PostDecrement(loc, x) => translate_post_operator_expression(project, translated_definition, scope, loc, x, "-="),
         
         _ => {
             // println!(
@@ -27,7 +27,7 @@ pub fn translate_pre_or_post_operator_value_expression(
             //     },
             // );
 
-            let result = translate_expression(project, translated_definition, scope.clone(), expression)?;
+            let result = translate_expression(project, translated_definition, scope, expression)?;
             // println!("Translated pre- or post-operator value expression: {}", sway::TabbedDisplayer(&result));
             Ok(result)
         }
@@ -38,7 +38,7 @@ pub fn translate_pre_or_post_operator_value_expression(
 pub fn translate_pre_operator_expression(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    scope: Rc<RefCell<TranslationScope>>,
+    scope: &Rc<RefCell<TranslationScope>>,
     loc: &solidity::Loc,
     x: &solidity::Expression,
     operator: &str,
@@ -47,14 +47,14 @@ pub fn translate_pre_operator_expression(
         translate_assignment_expression(
             project,
             translated_definition,
-            scope.clone(),
+            scope,
             operator,
             x,
-            &solidity::Expression::NumberLiteral(*loc, "1".into(), "".into(), None),
+            &solidity::Expression::NumberLiteral(*loc, "1".into(), String::new(), None),
         )?
     );
 
-    let (variable, expression) = translate_variable_access_expression(project, translated_definition, scope.clone(), x)?;
+    let (variable, expression) = translate_variable_access_expression(project, translated_definition, scope, x)?;
 
     let Some(variable) = variable else {
         panic!("Variable not found: {}", sway::TabbedDisplayer(&expression));
@@ -79,7 +79,7 @@ pub fn translate_pre_operator_expression(
 pub fn translate_post_operator_expression(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    scope: Rc<RefCell<TranslationScope>>,
+    scope: &Rc<RefCell<TranslationScope>>,
     loc: &solidity::Loc,
     x: &solidity::Expression,
     operator: &str,
@@ -87,14 +87,14 @@ pub fn translate_post_operator_expression(
     let assignment = sway::Statement::from(
         translate_assignment_expression(project,
             translated_definition,
-           scope.clone(),
+           scope,
             operator,
             x,
-            &solidity::Expression::NumberLiteral(*loc, "1".into(), "".into(), None),
+            &solidity::Expression::NumberLiteral(*loc, "1".into(), String::new(), None),
         )?
     );
 
-    let (variable, expression) = translate_variable_access_expression(project, translated_definition, scope.clone(), x)?;
+    let (variable, expression) = translate_variable_access_expression(project, translated_definition, scope, x)?;
     if variable.is_none() {
         panic!("Variable not found: {}", sway::TabbedDisplayer(&expression));
     }

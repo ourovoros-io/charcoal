@@ -24,7 +24,7 @@ use super::translate_expression;
 pub fn translate_function_call_expression(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    scope: Rc<RefCell<TranslationScope>>,
+    scope: &Rc<RefCell<TranslationScope>>,
     expression: &solidity::Expression,
     function: &solidity::Expression,
     named_arguments: Option<&[solidity::NamedArgument]>,
@@ -115,7 +115,7 @@ pub fn translate_function_call_expression(
         solidity::Expression::Variable(solidity::Identifier { name, .. }) => {
             let parameters = arguments
                 .iter()
-                .map(|a| translate_expression(project, translated_definition, scope.clone(), a))
+                .map(|a| translate_expression(project, translated_definition, scope, a))
                 .collect::<Result<Vec<_>, _>>()?;
 
             translate_builtin_function_call(
@@ -141,7 +141,7 @@ pub fn translate_function_call_expression(
                             // TODO: how should this be handled?
                             //
 
-                            return Ok(sway::Expression::create_todo(Some(expression.to_string())));
+                            Ok(sway::Expression::create_todo(Some(expression.to_string())))
                         }
 
                         member => todo!("translate `string.{member}``"),
@@ -155,7 +155,7 @@ pub fn translate_function_call_expression(
                             // TODO: how should this be handled?
                             //
 
-                            return Ok(sway::Expression::create_todo(Some(expression.to_string())));
+                            Ok(sway::Expression::create_todo(Some(expression.to_string())))
                         }
 
                         member => todo!("translate `bytes.{member}`"),
@@ -203,7 +203,7 @@ pub fn translate_function_call_expression(
                                 translate_expression(
                                     project,
                                     translated_definition,
-                                    scope.clone(),
+                                    scope,
                                     a,
                                 )
                             })
@@ -211,7 +211,7 @@ pub fn translate_function_call_expression(
 
                         let parameter_types = parameters
                             .iter()
-                            .map(|p| translated_definition.get_expression_type(scope.clone(), p))
+                            .map(|p| translated_definition.get_expression_type(scope, p))
                             .collect::<Result<Vec<_>, _>>()?;
 
                         // TODO: check full inheritance hierarchy
@@ -223,8 +223,8 @@ pub fn translate_function_call_expression(
                                 if let Some(result) = resolve_function_call(
                                     project,
                                     translated_definition,
-                                    scope.clone(),
-                                    inherited_definition.toplevel_scope.clone(),
+                                    scope,
+                                    &inherited_definition.toplevel_scope,
                                     member.name.as_str(),
                                     named_arguments,
                                     parameters.clone(),
@@ -262,7 +262,7 @@ pub fn translate_function_call_expression(
                             if let Some(result) = resolve_struct_constructor(
                                 project,
                                 translated_definition,
-                                scope.clone(),
+                                scope,
                                 external_definition.structs.clone().as_slice(),
                                 member.name.as_str(),
                                 named_arguments,
@@ -276,8 +276,8 @@ pub fn translate_function_call_expression(
                             if let Some(result) = resolve_function_call(
                                 project,
                                 translated_definition,
-                                scope.clone(),
-                                external_definition.toplevel_scope.clone(),
+                                scope,
+                                &external_definition.toplevel_scope,
                                 member.name.as_str(),
                                 named_arguments,
                                 parameters.clone(),
@@ -293,7 +293,7 @@ pub fn translate_function_call_expression(
                             if let Some(result) = resolve_struct_constructor(
                                 project,
                                 translated_definition,
-                                scope.clone(),
+                                scope,
                                 translated_definition.structs.clone().as_slice(),
                                 member.name.as_str(),
                                 named_arguments,
@@ -307,8 +307,8 @@ pub fn translate_function_call_expression(
                             if let Some(result) = resolve_function_call(
                                 project,
                                 translated_definition,
-                                scope.clone(),
-                                translated_definition.toplevel_scope.clone(),
+                                scope,
+                                &translated_definition.toplevel_scope.clone(),
                                 member.name.as_str(),
                                 named_arguments,
                                 parameters.clone(),
@@ -324,12 +324,12 @@ pub fn translate_function_call_expression(
 
                             if let Some(abi_type_name) = abi_type_name.as_ref() {
                                 if let Some(external_definition) = project.find_definition_with_abi(&abi_type_name.to_string()).cloned() {
-                                    let container = translate_expression(project, translated_definition, scope.clone(), container)?;
+                                    let container = translate_expression(project, translated_definition, scope, container)?;
                                     
                                     if let Some(result) = resolve_abi_function_call(
                                         project,
                                         translated_definition,
-                                        scope.clone(),
+                                        scope,
                                         external_definition.find_abi(|a| a.name == abi_type_name.to_string()).unwrap(),
                                         &container,
                                         member.name.as_str(),
@@ -368,17 +368,17 @@ pub fn translate_function_call_expression(
                             let container = translate_expression(
                                 project,
                                 translated_definition,
-                                scope.clone(),
+                                scope,
                                 container,
                             )?;
                             
-                            let type_name = translated_definition.get_expression_type(scope.clone(), &container)?;
+                            let type_name = translated_definition.get_expression_type(scope, &container)?;
 
                             if type_name.is_identity()  {
                                 match member.name.as_str() {
                                     "call" if arguments.len() == 1 => {
-                                        let payload = translate_expression(project, translated_definition, scope.clone(), &arguments[0])?;
-                                        return translate_address_call_expression(project, translated_definition, scope.clone(), payload, None, None, None);
+                                        let payload = translate_expression(project, translated_definition, scope, &arguments[0])?;
+                                        return translate_address_call_expression(project, translated_definition, scope, &payload, None, None, None);
                                     }
 
                                     "delegatecall" => {
@@ -412,11 +412,11 @@ pub fn translate_function_call_expression(
                     let mut container = translate_expression(
                         project,
                         translated_definition,
-                        scope.clone(),
+                        scope,
                         container,
                     )?;
                     let mut type_name =
-                        translated_definition.get_expression_type(scope.clone(), &container)?;
+                        translated_definition.get_expression_type(scope, &container)?;
 
                     // println!(
                     //     "type of {} is {}",
@@ -439,19 +439,19 @@ pub fn translate_function_call_expression(
                         sway::TypeName::Undefined => panic!("Undefined type name"),
 
                         sway::TypeName::Identifier { name, generic_parameters } => match (name.as_str(), generic_parameters.as_ref()) {
-                            ("Identity", None) => translate_identity_member_access_function_call(project, translated_definition, scope.clone(), expression, arguments, container, type_name.clone(), member, solidity_container.clone(), name.to_string(), function),
+                            ("Identity", None) => translate_identity_member_access_function_call(project, translated_definition, scope, expression, arguments, container, &type_name, member, solidity_container, name.to_string(), function),
                             
-                            ("StorageVec", Some(_)) => translate_storage_vec_member_access_function_call(project, translated_definition, scope, expression, arguments, member, solidity_container.clone(), container),
+                            ("StorageVec", Some(_)) => translate_storage_vec_member_access_function_call(project, translated_definition, scope, expression, arguments, member, solidity_container, &container),
 
-                            ("Vec", Some(_)) => translate_vec_member_access_function_call(project, translated_definition, scope, arguments, member, solidity_container.clone(), container),
+                            ("Vec", Some(_)) => translate_vec_member_access_function_call(project, translated_definition, scope, arguments, member, solidity_container, &container),
 
                             _ => {
                                 let mut parameters = arguments.iter()
-                                    .map(|a| translate_expression(project, translated_definition, scope.clone(), a))
+                                    .map(|a| translate_expression(project, translated_definition, scope, a))
                                     .collect::<Result<Vec<_>, _>>()?;
 
                                 let parameter_types = parameters.iter()
-                                    .map(|p| translated_definition.get_expression_type(scope.clone(), p))
+                                    .map(|p| translated_definition.get_expression_type(scope, p))
                                     .collect::<Result<Vec<_>, _>>()
                                     .unwrap();
 
@@ -459,7 +459,7 @@ pub fn translate_function_call_expression(
                                 using_parameters.insert(0, container.clone());
 
                                 let mut using_parameter_types = parameter_types.clone();
-                                using_parameter_types.insert(0, translated_definition.get_expression_type(scope.clone(), &container).unwrap());
+                                using_parameter_types.insert(0, translated_definition.get_expression_type(scope, &container).unwrap());
 
                                 // Check if this is a function from a using directive
                                 for using_directive in translated_definition.using_directives.clone() {
@@ -487,8 +487,8 @@ pub fn translate_function_call_expression(
                                     if let Some(result) = resolve_function_call(
                                         project,
                                         translated_definition,
-                                        scope.clone(),
-                                        external_scope.clone(),
+                                        scope,
+                                        &external_scope,
                                         member.name.as_str(),
                                         named_arguments,
                                         using_parameters.clone(),
@@ -558,7 +558,7 @@ pub fn translate_function_call_expression(
                                         *translated_definition.function_call_counts.entry(function.name.clone()).or_insert(0) += 1;
                                         translated_definition.functions_called
                                             .entry(translated_definition.current_functions.last().cloned().unwrap())
-                                            .or_insert_with(|| vec![])
+                                            .or_insert_with(|| Vec::new())
                                             .push(function.name.clone());
 
                                         return Ok(Some(sway::Expression::create_function_calls(Some(container.clone()), &[(function.name.as_str(), Some((None, vec![])))])));
@@ -592,16 +592,16 @@ pub fn translate_function_call_expression(
 
                         sway::TypeName::Array { .. } => {
                             let mut parameters = arguments.iter()
-                                .map(|a| translate_expression(project, translated_definition, scope.clone(), a))
+                                .map(|a| translate_expression(project, translated_definition, scope, a))
                                 .collect::<Result<Vec<_>, _>>()?;
 
                             let mut parameter_types = parameters.iter()
-                                .map(|p| translated_definition.get_expression_type(scope.clone(), p))
+                                .map(|p| translated_definition.get_expression_type(scope, p))
                                 .collect::<Result<Vec<_>, _>>()
                                 .unwrap();
 
                             parameters.insert(0, container.clone());
-                            parameter_types.insert(0, translated_definition.get_expression_type(scope.clone(), &container).unwrap());
+                            parameter_types.insert(0, translated_definition.get_expression_type(scope, &container).unwrap());
 
                             // Check if this is a function from a using directive
                             for using_directive in translated_definition.using_directives.clone() {
@@ -630,8 +630,8 @@ pub fn translate_function_call_expression(
                                 if let Some(result) = resolve_function_call(
                                     project,
                                     translated_definition,
-                                    scope.clone(),
-                                    external_scope.clone(),
+                                    scope,
+                                    &external_scope,
                                     member.name.as_str(),
                                     named_arguments,
                                     parameters.clone(),
@@ -656,16 +656,16 @@ pub fn translate_function_call_expression(
 
                         sway::TypeName::StringSlice => {
                             let mut parameters = arguments.iter()
-                                .map(|a| translate_expression(project, translated_definition, scope.clone(), a))
+                                .map(|a| translate_expression(project, translated_definition, scope, a))
                                 .collect::<Result<Vec<_>, _>>()?;
 
                             let mut parameter_types = parameters.iter()
-                                .map(|p| translated_definition.get_expression_type(scope.clone(), p))
+                                .map(|p| translated_definition.get_expression_type(scope, p))
                                 .collect::<Result<Vec<_>, _>>()
                                 .unwrap();
 
                             parameters.insert(0, container.clone());
-                            parameter_types.insert(0, translated_definition.get_expression_type(scope.clone(), &container).unwrap());
+                            parameter_types.insert(0, translated_definition.get_expression_type(scope, &container).unwrap());
 
                             // Check if this is a function from a using directive
                             for using_directive in translated_definition.using_directives.clone() {
@@ -688,8 +688,8 @@ pub fn translate_function_call_expression(
                                 if let Some(result) = resolve_function_call(
                                     project,
                                     translated_definition,
-                                    scope.clone(),
-                                    external_scope.clone(),
+                                    scope,
+                                    &external_scope,
                                     member.name.as_str(),
                                     named_arguments,
                                     parameters.clone(),
@@ -739,7 +739,7 @@ pub fn translate_function_call_expression(
 pub fn translate_function_call_block_expression(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    scope: Rc<RefCell<TranslationScope>>,
+    scope: &Rc<RefCell<TranslationScope>>,
     function: &solidity::Expression,
     block: &solidity::Statement,
 ) -> Result<sway::Expression, Error> {

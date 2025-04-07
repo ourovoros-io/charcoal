@@ -6,7 +6,7 @@ use crate::{errors::Error, project::Project, sway, translate::{TranslatedDefinit
 pub fn translate_type_expression(
     _project: &mut Project,
     _translated_definition: &mut TranslatedDefinition,
-    _scope: Rc<RefCell<TranslationScope>>,
+    _scope: &Rc<RefCell<TranslationScope>>,
     expression: &solidity::Expression,
 ) -> Result<sway::Expression, Error> {
     //

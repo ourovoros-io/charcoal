@@ -12,7 +12,7 @@ use std::{cell::RefCell, rc::Rc};
 pub fn translate_assembly_statement(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    scope: Rc<RefCell<TranslationScope>>,
+    scope: &Rc<RefCell<TranslationScope>>,
     _dialect: &Option<solidity::StringLiteral>,
     _flags: &Option<Vec<solidity::StringLiteral>>,
     yul_block: &solidity::YulBlock,
@@ -24,7 +24,7 @@ pub fn translate_assembly_statement(
 
     // Translate the block
     let translated_block = sway::Statement::from(sway::Expression::from(
-        translate_yul_block(project, translated_definition, scope.clone(), yul_block)?
+        translate_yul_block(project, translated_definition, &scope, yul_block)?
     ));
 
     Ok(translated_block)
@@ -34,20 +34,20 @@ pub fn translate_assembly_statement(
 pub fn translate_yul_block(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    scope: Rc<RefCell<TranslationScope>>,
+    scope: &Rc<RefCell<TranslationScope>>,
     yul_block: &solidity::YulBlock,
 ) -> Result<sway::Block, Error> {
     let mut block = sway::Block::default();
 
     let scope = Rc::new(RefCell::new(TranslationScope {
-        parent: Some(scope),
+        parent: Some(scope.clone()),
         ..Default::default()
     }));
 
     // Translate each of the statements in the block
     for statement in yul_block.statements.iter() {
         // Translate the statement
-        let sway_statement = translate_yul_statement(project, translated_definition, scope.clone(), statement)?;
+        let sway_statement = translate_yul_statement(project, translated_definition, &scope, statement)?;
 
         // Store the index of the sway statement
         let statement_index = block.statements.len();
@@ -77,7 +77,7 @@ pub fn translate_yul_block(
         }
     }
 
-    finalize_block_translation(project, scope.clone(), &mut block)?;
+    finalize_block_translation(project, &scope, &mut block)?;
 
     Ok(block)
 }
@@ -86,21 +86,21 @@ pub fn translate_yul_block(
 pub fn translate_yul_statement(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    scope: Rc<RefCell<TranslationScope>>,
+    scope: &Rc<RefCell<TranslationScope>>,
     yul_statement: &solidity::YulStatement,
 ) -> Result<sway::Statement, Error> {
     match yul_statement {
-        solidity::YulStatement::Assign(_, identifiers, value) => translate_yul_assign_statement(project, translated_definition, scope.clone(), identifiers, value),
-        solidity::YulStatement::VariableDeclaration(_, identifiers, value) => translate_yul_variable_declaration_statement(project, translated_definition, scope.clone(), identifiers, value),
-        solidity::YulStatement::If(_, condition, then_block) => translate_yul_if_statement(project, translated_definition, scope.clone(), condition, then_block),
-        solidity::YulStatement::For(yul_for) => translate_yul_for_statement(project, translated_definition, scope.clone(), yul_for),
-        solidity::YulStatement::Switch(yul_switch) => translate_yul_switch_statement(project, translated_definition, scope.clone(), yul_switch),
+        solidity::YulStatement::Assign(_, identifiers, value) => translate_yul_assign_statement(project, translated_definition, scope, identifiers, value),
+        solidity::YulStatement::VariableDeclaration(_, identifiers, value) => translate_yul_variable_declaration_statement(project, translated_definition, scope, identifiers, value),
+        solidity::YulStatement::If(_, condition, then_block) => translate_yul_if_statement(project, translated_definition, scope, condition, then_block),
+        solidity::YulStatement::For(yul_for) => translate_yul_for_statement(project, translated_definition, scope, yul_for),
+        solidity::YulStatement::Switch(yul_switch) => translate_yul_switch_statement(project, translated_definition, scope, yul_switch),
         solidity::YulStatement::Leave(_) => todo!("yul leave statement: {yul_statement} - {yul_statement:#?}"),
         solidity::YulStatement::Break(_) => Ok(sway::Statement::from(sway::Expression::Break)),
         solidity::YulStatement::Continue(_) => Ok(sway::Statement::from(sway::Expression::Continue)),
-        solidity::YulStatement::Block(block) => Ok(sway::Statement::from(sway::Expression::from(translate_yul_block(project, translated_definition, scope.clone(), block)?))),
+        solidity::YulStatement::Block(block) => Ok(sway::Statement::from(sway::Expression::from(translate_yul_block(project, translated_definition, scope, block)?))),
         solidity::YulStatement::FunctionDefinition(_) => todo!("yul function definition statement: {yul_statement} - {yul_statement:#?}"),
-        solidity::YulStatement::FunctionCall(yul_function_call) => translate_yul_function_call_statement(project, translated_definition, scope.clone(), yul_function_call),
+        solidity::YulStatement::FunctionCall(yul_function_call) => translate_yul_function_call_statement(project, translated_definition, scope, yul_function_call),
         solidity::YulStatement::Error(_) => todo!("yul error statement: {yul_statement} - {yul_statement:#?}"),
     }
 }
@@ -109,12 +109,12 @@ pub fn translate_yul_statement(
 pub fn translate_yul_assign_statement(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    scope: Rc<RefCell<TranslationScope>>,
+    scope: &Rc<RefCell<TranslationScope>>,
     identifiers: &[solidity::YulExpression],
     value: &solidity::YulExpression,
 ) -> Result<sway::Statement, Error> {
     let translated_identifiers = identifiers.iter()
-        .map(|i| translate_yul_expression(project, translated_definition, scope.clone(), i))
+        .map(|i| translate_yul_expression(project, translated_definition, scope, i))
         .collect::<Result<Vec<_>, _>>()?;
 
     for (i, identifier) in translated_identifiers.iter().enumerate() {
@@ -133,7 +133,7 @@ pub fn translate_yul_assign_statement(
         variable.borrow_mut().mutation_count += 1;
     }
 
-    let value = translate_yul_expression(project, translated_definition, scope.clone(), value)?;
+    let value = translate_yul_expression(project, translated_definition, scope, value)?;
     
     Ok(sway::Statement::from(sway::Expression::from(sway::BinaryExpression {
         operator: "=".into(),
@@ -150,7 +150,7 @@ pub fn translate_yul_assign_statement(
 pub fn translate_yul_variable_declaration_statement(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    scope: Rc<RefCell<TranslationScope>>,
+    scope: &Rc<RefCell<TranslationScope>>,
     identifiers: &[solidity::YulTypedIdentifier],
     value: &Option<solidity::YulExpression>,
 ) -> Result<sway::Statement, Error> {
@@ -160,7 +160,7 @@ pub fn translate_yul_variable_declaration_statement(
     for p in identifiers.iter() {
         variables.push(Rc::new(RefCell::new(TranslatedVariable {
             old_name: p.id.name.clone(),
-            new_name: crate::translate_naming_convention(p.id.name.as_str(), Case::Snake),
+            new_name: crate::translate::translate_naming_convention(p.id.name.as_str(), Case::Snake),
             type_name: sway::TypeName::Identifier {
                 name: "u256".into(),
                 generic_parameters: None,
@@ -192,11 +192,11 @@ pub fn translate_yul_variable_declaration_statement(
         type_name: None,
         
         value: if let Some(value) = value.as_ref() {
-            translate_yul_expression(project, translated_definition, scope.clone(), value)?
+            translate_yul_expression(project, translated_definition, scope, value)?
         } else {
             create_value_expression(
                 translated_definition,
-                scope,
+                scope.clone(),
                 &sway::TypeName::Identifier {
                     name: "u256".into(),
                     generic_parameters: None,
@@ -211,12 +211,12 @@ pub fn translate_yul_variable_declaration_statement(
 pub fn translate_yul_if_statement(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    scope: Rc<RefCell<TranslationScope>>,
+    scope: &Rc<RefCell<TranslationScope>>,
     condition: &solidity::YulExpression,
     then_block: &solidity::YulBlock,
 ) -> Result<sway::Statement, Error> {
-    let condition = translate_yul_expression(project, translated_definition, scope.clone(), condition)?;
-    let then_body = translate_yul_block(project, translated_definition, scope.clone(), then_block)?;
+    let condition = translate_yul_expression(project, translated_definition, scope, condition)?;
+    let then_body = translate_yul_block(project, translated_definition, scope, then_block)?;
 
     Ok(sway::Statement::from(sway::Expression::from(sway::If {
         condition: Some(condition),
@@ -229,7 +229,7 @@ pub fn translate_yul_if_statement(
 pub fn translate_yul_for_statement(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    scope: Rc<RefCell<TranslationScope>>,
+    scope: &Rc<RefCell<TranslationScope>>,
     yul_for: &solidity::YulFor,
 ) -> Result<sway::Statement, Error> {
     // {
@@ -252,7 +252,7 @@ pub fn translate_yul_for_statement(
     // Translate the initialization statements and add them to the for loop logic block's statements
     for statement in yul_for.init_block.statements.iter() {
         let statement_index = statements.len();
-        let mut statement = translate_yul_statement(project, translated_definition, scope.clone(), statement)?;
+        let mut statement = translate_yul_statement(project, translated_definition, &scope, statement)?;
 
         // Store the statement index of variable declaration statements in their scope entries
         if let sway::Statement::Let(sway::Let { pattern, .. }) = &mut statement {
@@ -274,15 +274,15 @@ pub fn translate_yul_for_statement(
     }
 
     // Translate the condition of the for loop ahead of time
-    let condition = translate_yul_expression(project, translated_definition, scope.clone(), &yul_for.condition)?;
+    let condition = translate_yul_expression(project, translated_definition, &scope, &yul_for.condition)?;
 
     // Translate the body of the for loop ahead of time
-    let mut body = translate_yul_block(project, translated_definition, scope.clone(), &yul_for.execution_block)?;
+    let mut body = translate_yul_block(project, translated_definition, &scope, &yul_for.execution_block)?;
 
     // Translate the statements of the post block of the for loop and add them to the end of for loop's body block
     for statement in yul_for.post_block.statements.iter() {
         body.statements.push(
-            translate_yul_statement(project, translated_definition, scope.clone(), statement)?
+            translate_yul_statement(project, translated_definition, &scope, statement)?
         );
     }
 
@@ -307,7 +307,7 @@ pub fn translate_yul_for_statement(
     };
 
     // Finalize the for loop logic block
-    finalize_block_translation(project, scope.clone(), &mut block)?;
+    finalize_block_translation(project, &scope, &mut block)?;
 
     Ok(sway::Statement::from(sway::Expression::from(block)))
 }
@@ -316,23 +316,23 @@ pub fn translate_yul_for_statement(
 pub fn translate_yul_switch_statement(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    scope: Rc<RefCell<TranslationScope>>,
+    scope: &Rc<RefCell<TranslationScope>>,
     yul_switch: &solidity::YulSwitch,
 ) -> Result<sway::Statement, Error> {
-    let expression = translate_yul_expression(project, translated_definition, scope.clone(), &yul_switch.condition)?;
+    let expression = translate_yul_expression(project, translated_definition, scope, &yul_switch.condition)?;
     let mut branches = vec![];
 
     for case in yul_switch.cases.iter() {
         match case {
             solidity::YulSwitchOptions::Case(_, pattern, body) => {
-                let pattern = translate_yul_expression(project, translated_definition, scope.clone(), pattern)?;
-                let value = sway::Expression::from(translate_yul_block(project, translated_definition, scope.clone(), body)?);
+                let pattern = translate_yul_expression(project, translated_definition, scope, pattern)?;
+                let value = sway::Expression::from(translate_yul_block(project, translated_definition, scope, body)?);
                 branches.push(sway::MatchBranch { pattern, value });
             }
 
             solidity::YulSwitchOptions::Default(_, body) => {
                 let pattern = sway::Expression::Identifier("_".into());
-                let value = sway::Expression::from(translate_yul_block(project, translated_definition, scope.clone(), body)?);
+                let value = sway::Expression::from(translate_yul_block(project, translated_definition, scope, body)?);
                 branches.push(sway::MatchBranch { pattern, value });
             }
         }
@@ -345,18 +345,18 @@ pub fn translate_yul_switch_statement(
 pub fn translate_yul_function_call_statement(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    scope: Rc<RefCell<TranslationScope>>,
+    scope: &Rc<RefCell<TranslationScope>>,
     yul_function_call: &solidity::YulFunctionCall,
 ) -> Result<sway::Statement, Error> {
     Ok(sway::Statement::from(
-        translate_yul_function_call_expression(project, translated_definition, scope.clone(), yul_function_call)?
+        translate_yul_function_call_expression(project, translated_definition, scope, yul_function_call)?
     ))
 }
 
 pub fn translate_yul_expression(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    scope: Rc<RefCell<TranslationScope>>,
+    scope: &Rc<RefCell<TranslationScope>>,
     expression: &solidity::YulExpression,
 ) -> Result<sway::Expression, Error> {
     match expression {
@@ -365,8 +365,8 @@ pub fn translate_yul_expression(
         solidity::YulExpression::HexNumberLiteral(_, value, _) => Ok(sway::Expression::from(sway::Literal::HexInt(BigUint::from_str_radix(value.trim_start_matches("0x"), 16).unwrap(), None))),
         solidity::YulExpression::HexStringLiteral(hex_literal, _) => Ok(sway::Expression::from(sway::Literal::HexInt(BigUint::from_str_radix(&hex_literal.to_string(), 16).unwrap(), None))),
         solidity::YulExpression::StringLiteral(string_literal, _) => Ok(sway::Expression::from(sway::Literal::String(string_literal.string.clone()))),
-        solidity::YulExpression::Variable(solidity::Identifier { name, .. }) => translate_yul_variable_expression(project, translated_definition, scope.clone(), expression, name.as_str()),
-        solidity::YulExpression::FunctionCall(function_call) => translate_yul_function_call_expression(project, translated_definition, scope.clone(), function_call),
+        solidity::YulExpression::Variable(solidity::Identifier { name, .. }) => translate_yul_variable_expression(project, translated_definition, scope, expression, name.as_str()),
+        solidity::YulExpression::FunctionCall(function_call) => translate_yul_function_call_expression(project, translated_definition, scope, function_call),
         solidity::YulExpression::SuffixAccess(_, _, _) => Ok(sway::Expression::create_todo(Some(expression.to_string()))),
     }
 }
@@ -375,7 +375,7 @@ pub fn translate_yul_expression(
 pub fn translate_yul_variable_expression(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    scope: Rc<RefCell<TranslationScope>>,
+    scope: &Rc<RefCell<TranslationScope>>,
     expression: &solidity::YulExpression,
     name: &str,
 ) -> Result<sway::Expression, Error> {
@@ -467,11 +467,11 @@ pub fn translate_yul_variable_expression(
 pub fn translate_yul_function_call_expression(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    scope: Rc<RefCell<TranslationScope>>,
+    scope: &Rc<RefCell<TranslationScope>>,
     function_call: &solidity::YulFunctionCall,
 ) -> Result<sway::Expression, Error> {
     let parameters = function_call.arguments.iter()
-        .map(|a| translate_yul_expression(project, translated_definition, scope.clone(), a))
+        .map(|a| translate_yul_expression(project, translated_definition, scope, a))
         .collect::<Result<Vec<_>, _>>()?;
 
     match function_call.id.name.as_str() {
@@ -686,7 +686,7 @@ pub fn translate_yul_function_call_expression(
                 panic!("Invalid yul iszero function call, expected 1 parameters, found {}", parameters.len());
             }
 
-            let type_name = translated_definition.get_expression_type(scope.clone(), &parameters[0])?;
+            let type_name = translated_definition.get_expression_type(&scope, &parameters[0])?;
 
             Ok(sway::Expression::from(sway::BinaryExpression {
                 operator: "==".into(),

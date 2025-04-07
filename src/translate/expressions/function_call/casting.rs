@@ -8,7 +8,7 @@ use super::utils::match_bits;
 pub fn translate_address_type_cast_function_call(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    scope: Rc<RefCell<TranslationScope>>,
+    scope: &Rc<RefCell<TranslationScope>>,
     expression: &solidity::Expression,
     argument: &solidity::Expression,
 ) -> Result<sway::Expression, Error> {
@@ -90,9 +90,9 @@ pub fn translate_address_type_cast_function_call(
         }
 
         value => {
-            let value = translate_expression(project, translated_definition, scope.clone(), value)?;
+            let value = translate_expression(project, translated_definition, scope, value)?;
             let value_type_name =
-                translated_definition.get_expression_type(scope.clone(), &value)?;
+                translated_definition.get_expression_type(scope, &value)?;
 
             match &value_type_name {
             // No reason to cast if it's already an Identity
@@ -113,7 +113,7 @@ pub fn translate_address_type_cast_function_call(
             sway::TypeName::Array { type_name: element_type_name, length } => match element_type_name.as_ref() {
                 sway::TypeName::Identifier { name, generic_parameters } => match (name.as_str(), generic_parameters.as_ref()) {
                     ("u8", None) => {
-                        translated_definition.ensure_use_declared(format!("std::array_conversions::u256::*").as_str());
+                        translated_definition.ensure_use_declared("std::array_conversions::u256::*");
 
                         let mut elements = (0..*length).map(|i| {
                             sway::Expression::from(sway::ArrayAccess {
@@ -177,17 +177,17 @@ pub fn translate_address_type_cast_function_call(
 pub fn translate_payable_type_cast_function_call(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    scope: Rc<RefCell<TranslationScope>>,
+    scope: &Rc<RefCell<TranslationScope>>,
     expression: &solidity::Expression,
     arguments: &[solidity::Expression],
 ) -> Result<sway::Expression, Error> {
     let parameters = arguments
         .iter()
-        .map(|a| translate_expression(project, translated_definition, scope.clone(), a))
+        .map(|a| translate_expression(project, translated_definition, scope, a))
         .collect::<Result<Vec<_>, _>>()?;
 
     if parameters.len() != 1 {
-        panic!("Malformed payable cast: {} - {expression:#?}", expression);
+        panic!("Malformed payable cast: {expression} - {expression:#?}");
     }
 
     Ok(parameters[0].clone())
@@ -196,15 +196,15 @@ pub fn translate_payable_type_cast_function_call(
 pub fn translate_int_types_cast_function_call(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    scope: Rc<RefCell<TranslationScope>>,
+    scope: &Rc<RefCell<TranslationScope>>,
     expression: &solidity::Expression,
     argument: &solidity::Expression,
     bits: usize,
 ) -> Result<sway::Expression, Error> {
     let value_expression =
-        translate_expression(project, translated_definition, scope.clone(), argument)?;
+        translate_expression(project, translated_definition, scope, argument)?;
     let value_type_name =
-        translated_definition.get_expression_type(scope.clone(), &value_expression)?;
+        translated_definition.get_expression_type(scope, &value_expression)?;
     let value_type_name = translated_definition.get_underlying_type(&value_type_name);
 
     let create_int_try_from_unwrap_expression = |from_bits: usize,
@@ -258,12 +258,12 @@ pub fn translate_int_types_cast_function_call(
 
     match &value_type_name {
         sway::TypeName::Identifier { name, generic_parameters: None } => match (name.as_str(), bits) {
-            ("I8", 8 | 16 | 32 | 64 | 128 | 256) => create_int_try_from_unwrap_expression(8, bits as usize, value_expression),
-            ("I16", 8 | 16 | 32 | 64 | 128 | 256) => create_int_try_from_unwrap_expression(16, bits as usize, value_expression),
-            ("I32", 8 | 16 | 32 | 64 | 128 | 256) => create_int_try_from_unwrap_expression(32, bits as usize, value_expression),
-            ("I64", 8 | 16 | 32 | 64 | 128 | 256) => create_int_try_from_unwrap_expression(64, bits as usize, value_expression),
-            ("I128", 8 | 16 | 32 | 64 | 128 | 256) => create_int_try_from_unwrap_expression(128, bits as usize, value_expression),
-            ("I256", 8 | 16 | 32 | 64 | 128 | 256) => create_int_try_from_unwrap_expression(256, bits as usize, value_expression),
+            ("I8", 8 | 16 | 32 | 64 | 128 | 256) => create_int_try_from_unwrap_expression(8, bits, value_expression),
+            ("I16", 8 | 16 | 32 | 64 | 128 | 256) => create_int_try_from_unwrap_expression(16, bits, value_expression),
+            ("I32", 8 | 16 | 32 | 64 | 128 | 256) => create_int_try_from_unwrap_expression(32, bits, value_expression),
+            ("I64", 8 | 16 | 32 | 64 | 128 | 256) => create_int_try_from_unwrap_expression(64, bits, value_expression),
+            ("I128", 8 | 16 | 32 | 64 | 128 | 256) => create_int_try_from_unwrap_expression(128, bits, value_expression),
+            ("I256", 8 | 16 | 32 | 64 | 128 | 256) => create_int_try_from_unwrap_expression(256, bits, value_expression),
 
             ("u8", 32) => Ok(sway::Expression::create_function_calls(None, &[
                 ("I32::from_uint", Some((None, vec![
@@ -291,15 +291,15 @@ pub fn translate_int_types_cast_function_call(
 pub fn translate_uint_types_cast_function_call(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    scope: Rc<RefCell<TranslationScope>>,
+    scope: &Rc<RefCell<TranslationScope>>,
     expression: &solidity::Expression,
     argument: &solidity::Expression,
     bits: usize,
 ) -> Result<sway::Expression, Error> {
     let value_expression =
-        translate_expression(project, translated_definition, scope.clone(), argument)?;
+        translate_expression(project, translated_definition, scope, argument)?;
     let value_type_name =
-        translated_definition.get_expression_type(scope.clone(), &value_expression)?;
+        translated_definition.get_expression_type(scope, &value_expression)?;
     let value_type_name = translated_definition.get_underlying_type(&value_type_name);
 
     if value_type_name.is_int() {
@@ -357,7 +357,6 @@ pub fn translate_uint_types_cast_function_call(
         ))
     };
 
-    let bits = bits as usize;
     let Some(bits) = match_bits(bits, false) else {
         panic!("Invalid uint type: {expression:#?}")
     };
@@ -365,19 +364,19 @@ pub fn translate_uint_types_cast_function_call(
     match &value_type_name {
         sway::TypeName::Identifier { name, .. } => match (name.as_str(), bits) {
             ("u8", 8 | 16 | 32 | 64 | 256) => {
-                create_uint_try_from_unwrap_expression(8, bits as usize, value_expression)
+                create_uint_try_from_unwrap_expression(8, bits, value_expression)
             }
             ("u16", 8 | 16 | 32 | 64 | 256) => {
-                create_uint_try_from_unwrap_expression(16, bits as usize, value_expression)
+                create_uint_try_from_unwrap_expression(16, bits, value_expression)
             }
             ("u32", 8 | 16 | 32 | 64 | 256) => {
-                create_uint_try_from_unwrap_expression(32, bits as usize, value_expression)
+                create_uint_try_from_unwrap_expression(32, bits, value_expression)
             }
             ("u64", 8 | 16 | 32 | 64 | 256) => {
-                create_uint_try_from_unwrap_expression(64, bits as usize, value_expression)
+                create_uint_try_from_unwrap_expression(64, bits, value_expression)
             }
             ("u256", 8 | 16 | 32 | 64 | 256) => {
-                create_uint_try_from_unwrap_expression(256, bits as usize, value_expression)
+                create_uint_try_from_unwrap_expression(256, bits, value_expression)
             }
 
             // Direct signed-to-unsigned conversion
@@ -562,15 +561,15 @@ pub fn translate_uint_types_cast_function_call(
 pub fn translate_bytes_type_cast_function_call(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    scope: Rc<RefCell<TranslationScope>>,
+    scope: &Rc<RefCell<TranslationScope>>,
     argument: &solidity::Expression,
     byte_count: usize,
     function: &solidity::Expression,
 ) -> Result<sway::Expression, Error> {
     let value_expression =
-        translate_expression(project, translated_definition, scope.clone(), argument)?;
+        translate_expression(project, translated_definition, scope, argument)?;
     let value_type_name =
-        translated_definition.get_expression_type(scope.clone(), &value_expression)?;
+        translated_definition.get_expression_type(scope, &value_expression)?;
 
     match &value_type_name {
         sway::TypeName::Undefined => panic!("Undefined type name"),
@@ -832,8 +831,6 @@ pub fn translate_bytes_type_cast_function_call(
                 Ok(sway::Expression::from(sway::Array {
                     elements: (0..byte_count)
                         .map(|index| {
-                            let index = index as usize;
-
                             sway::Expression::from(sway::Literal::HexInt(
                                 if index < bytes.len() {
                                     bytes[index].into()
@@ -858,13 +855,13 @@ pub fn translate_bytes_type_cast_function_call(
 pub fn translate_dynamic_bytes_type_cast_function_call(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    scope: Rc<RefCell<TranslationScope>>,
+    scope: &Rc<RefCell<TranslationScope>>,
     argument: &solidity::Expression,
 ) -> Result<sway::Expression, Error> {
     let value_expression =
-        translate_expression(project, translated_definition, scope.clone(), argument)?;
+        translate_expression(project, translated_definition, scope, argument)?;
     let value_type_name =
-        translated_definition.get_expression_type(scope.clone(), &value_expression)?;
+        translated_definition.get_expression_type(scope, &value_expression)?;
 
     match &value_type_name {
         sway::TypeName::Undefined => panic!("Undefined type name"),
@@ -995,14 +992,14 @@ pub fn translate_dynamic_bytes_type_cast_function_call(
 pub fn translate_string_type_cast_function_call(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    scope: Rc<RefCell<TranslationScope>>,
+    scope: &Rc<RefCell<TranslationScope>>,
     expression: &solidity::Expression,
     argument: &solidity::Expression,
 ) -> Result<sway::Expression, Error> {
     let value_expression =
-        translate_expression(project, translated_definition, scope.clone(), argument)?;
+        translate_expression(project, translated_definition, scope, argument)?;
     let value_type_name =
-        translated_definition.get_expression_type(scope.clone(), &value_expression)?;
+        translated_definition.get_expression_type(scope, &value_expression)?;
 
     match &value_type_name {
         sway::TypeName::Identifier {

@@ -7,7 +7,7 @@ use crate::{errors::Error, project::Project, sway, translate::{assignment::trans
 pub fn translate_expression_statement(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    scope: Rc<RefCell<TranslationScope>>,
+    scope: &Rc<RefCell<TranslationScope>>,
     expression: &solidity::Expression,
 ) -> Result<sway::Statement, Error> {
     match expression {
@@ -15,18 +15,18 @@ pub fn translate_expression_statement(
         solidity::Expression::Assign(_, lhs, rhs) => {
             if let solidity::Expression::List(_, parameters) = lhs.as_ref() {
                 // Check for a pure assignment without new variable declarations
-                if parameters.iter().all(|(_, p)| p.as_ref().map(|p| p.name.is_none()).unwrap_or(true)) {
+                if parameters.iter().all(|(_, p)| p.as_ref().map_or(true, |p| p.name.is_none())) {
                     return Ok(sway::Statement::from(sway::Expression::from(sway::BinaryExpression {
                         operator: "=".into(),
                         lhs: sway::Expression::Tuple(
                             parameters.iter()
                                 .map(|(_, p)| match p.as_ref() {
-                                    Some(p) => translate_expression(project, translated_definition, scope.clone(), &p.ty),
+                                    Some(p) => translate_expression(project, translated_definition, scope, &p.ty),
                                     None => Ok(sway::Expression::Identifier("_".into())),
                                 })
                                 .collect::<Result<Vec<_>, _>>()?
                         ),
-                        rhs: translate_expression(project, translated_definition, scope.clone(), rhs)?,
+                        rhs: translate_expression(project, translated_definition, scope, rhs)?,
                     })));
                 }
 
@@ -39,7 +39,7 @@ pub fn translate_expression_statement(
 
                     variables.push(Rc::new(RefCell::new(TranslatedVariable {
                         old_name: name.name.clone(),
-                        new_name: crate::translate_naming_convention(name.name.as_str(), Case::Snake),
+                        new_name: crate::translate::translate_naming_convention(name.name.as_str(), Case::Snake),
                         type_name: translate_type_name(project, translated_definition, &p.ty, false, false),
                         ..Default::default()
                     })));
@@ -55,7 +55,7 @@ pub fn translate_expression_statement(
                                 is_mutable: false,
                                 name: if let Some(p) = p.as_ref() {
                                     if let Some(name) = p.name.as_ref() {
-                                        crate::translate_naming_convention(name.name.as_str(), Case::Snake)
+                                        crate::translate::translate_naming_convention(name.name.as_str(), Case::Snake)
                                     } else {
                                         "_".into()
                                     }
@@ -81,7 +81,7 @@ pub fn translate_expression_statement(
                             .collect(),
                     }),
                     
-                    value: translate_expression(project, translated_definition, scope.clone(), rhs.as_ref())?,
+                    value: translate_expression(project, translated_definition, scope, rhs.as_ref())?,
                 }));
             }
         }
@@ -95,7 +95,7 @@ pub fn translate_expression_statement(
                 scope,
                 "-=",
                 x,
-                &solidity::Expression::NumberLiteral(*loc, "1".into(), "".into(), None),
+                &solidity::Expression::NumberLiteral(*loc, "1".into(), String::new(), None),
             )?
         )),
 
@@ -108,7 +108,7 @@ pub fn translate_expression_statement(
                 scope,
                 "+=",
                 x,
-                &solidity::Expression::NumberLiteral(*loc, "1".into(), "".into(), None),
+                &solidity::Expression::NumberLiteral(*loc, "1".into(), String::new(), None),
             )?
         )),
 
@@ -120,6 +120,6 @@ pub fn translate_expression_statement(
     }
     
     Ok(sway::Statement::from(
-        translate_expression(project, translated_definition, scope.clone(), expression)?
+        translate_expression(project, translated_definition, scope, expression)?
     ))
 }

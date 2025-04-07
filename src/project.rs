@@ -1,6 +1,6 @@
 use crate::{
     errors::Error,
-    sway,
+    sway::{self, AttributeList},
     translate::{
         translate_contract_definition, translate_enum_definition, translate_error_definition, translate_event_definition, translate_function_declaration, translate_function_definition, translate_import_directives, translate_storage_name, translate_struct_definition, translate_type_definition, translate_using_directive, TranslatedDefinition
     },
@@ -68,7 +68,7 @@ impl Project {
         let source = std::fs::read_to_string(path.clone())
             .map_err(|e| Error::Wrapped(Box::new(e)))?;
         
-        self.load_line_ranges(path.clone(), source.as_str());
+        self.load_line_ranges(&path, source.as_str());
 
         let line_ranges = self.line_ranges.get(&path).unwrap();
 
@@ -84,7 +84,7 @@ impl Project {
 
     /// Loads line ranges in a specific file `path` from the provided `source` text.
     #[inline]
-    fn load_line_ranges(&mut self, path: PathBuf, source: &str) {
+    fn load_line_ranges(&mut self, path: &PathBuf, source: &str) {
         let mut line_range = (0usize, 0usize);
 
         for (i, c) in source.chars().enumerate() {
@@ -332,7 +332,7 @@ impl Project {
                     && f_parameters == function_parameters
                     && f_return_type == function_return_type
                 {
-                    f.new_name = function.new_name.clone();
+                    f.new_name.clone_from(&function.new_name);
                     function_exists = true;
                     break;
                 }
@@ -353,11 +353,11 @@ impl Project {
                 return;
             }
             
-            let mut constructor_body = translated_definition.get_constructor_fn().body.as_ref().cloned().unwrap();
+            let mut constructor_body = translated_definition.get_constructor_fn().body.clone().unwrap();
 
             // Insert constructor call guard if necessary
             if constructor_body.statements.is_empty() {
-                let prefix = crate::translate_naming_convention(translated_definition.name.as_str(), Case::Snake);
+                let prefix = crate::translate::translate_naming_convention(translated_definition.name.as_str(), Case::Snake);
                 let constructor_called_variable_name =  translate_storage_name(project, translated_definition, format!("{prefix}_constructor_called").as_str());
                 
                 // Add the `constructor_called` field to the storage block
@@ -416,7 +416,7 @@ impl Project {
                 // storage.x_instance_count.write(i + 1);
                 constructor_body.statements.insert(i, sway::Statement::from(sway::Expression::create_function_calls(None, &[
                     ("storage", None),
-                    (format!("{}_instance_count", mapping_name).as_str(), None),
+                    (format!("{mapping_name}_instance_count").as_str(), None),
                     ("write", Some((None, vec![sway::Expression::from(sway::BinaryExpression{ 
                         operator: "+".into(), 
                         lhs: sway::Expression::Identifier("i".to_string()), 
@@ -433,7 +433,7 @@ impl Project {
                     type_name: None, 
                     value: sway::Expression::create_function_calls(None, &[
                         ("storage", None),
-                        (format!("{}_instance_count", mapping_name).as_str(), None),
+                        (format!("{mapping_name}_instance_count").as_str(), None),
                         ("read", Some((None, vec![])))
                     ]) 
                 }));
@@ -464,7 +464,7 @@ impl Project {
                             type_name: None, 
                             value: sway::Expression::create_function_calls(None, &[
                                 ("storage", None),
-                                (format!("{}_{}s", mapping_name, field_name).as_str(), None),
+                                (format!("{mapping_name}_{field_name}s").as_str(), None),
                                 ("get", Some((None, vec![sway::Expression::Identifier("i".to_string())])))
                             ]) 
                         }
@@ -479,7 +479,7 @@ impl Project {
                 *constructor_fn.body.as_mut().unwrap() = constructor_body;
 
                 if constructor_fn.attributes.is_none() {
-                    constructor_fn.attributes = Some(Default::default());
+                    constructor_fn.attributes = Some(AttributeList::default());
                 }
 
                 let Some(attributes) = constructor_fn.attributes.as_mut() else { unreachable!() };
@@ -493,7 +493,7 @@ impl Project {
 
                 let Some(storage_attr) = attributes.attributes.iter_mut().find(|a| a.name == "storage") else { unreachable!() };
                 if storage_attr.parameters.is_none() {
-                    storage_attr.parameters = Some(Default::default());
+                    storage_attr.parameters = Some(Vec::default());
                 }
 
                 let Some(parameters) = storage_attr.parameters.as_mut() else { unreachable!() };
@@ -571,7 +571,7 @@ impl Project {
             };
 
             let remappings = self.get_remappings(path).map_err(|e| Error::Wrapped(
-                format!("Failed to get remappings for Foundry project: {:#?}", e).into()
+                format!("Failed to get remappings for Foundry project: {e:#?}").into()
             ))?;
 
             self.kind = ProjectKind::Foundry { remappings };
@@ -581,7 +581,7 @@ impl Project {
             self.kind = ProjectKind::Brownie { remappings: HashMap::new() };
 
             self.kind = ProjectKind::Brownie { remappings: self.get_remappings(path).map_err(|e| Error::Wrapped(
-                format!("Failed to get remappings for Brownie project: {:#?}", e).into()
+                format!("Failed to get remappings for Brownie project: {e:#?}").into()
             ))? };
         } else if path.join(ProjectKind::TRUFFLE_CONFIG_FILE).exists() {
             self.kind = ProjectKind::Truffle;
@@ -613,7 +613,7 @@ impl Project {
                     }
                 }
 
-                Ok(PathBuf::from(source_unit_directory.join(filename)))
+                Ok(source_unit_directory.join(filename))
             }
 
             // Remappings in hardhat and truffle are done using the @ symbol and the node_modules folder
@@ -636,7 +636,7 @@ impl Project {
                 match &components[0] {
                     Component::Normal(_) => {
                         components.insert(1, Component::Normal("src".as_ref()));
-                        let component = PathBuf::from(components.iter().map(|c| c.as_os_str()).collect::<PathBuf>());
+                        let component = components.iter().map(|c| c.as_os_str()).collect::<PathBuf>();
                         Ok(project_root_folder.join("lib").join(component))
                     }
 

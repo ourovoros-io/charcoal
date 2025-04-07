@@ -12,12 +12,12 @@ use std::{cell::RefCell, rc::Rc};
 pub fn translate_array_literal_expression(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    scope: Rc<RefCell<TranslationScope>>,
+    scope: &Rc<RefCell<TranslationScope>>,
     expressions: &[solidity::Expression],
 ) -> Result<sway::Expression, Error> {
     Ok(sway::Expression::Array(sway::Array {
         elements: expressions.iter()
-            .map(|x| translate_expression(project, translated_definition, scope.clone(), x))
+            .map(|x| translate_expression(project, translated_definition, scope, x))
             .collect::<Result<Vec<_>, _>>()?,
     }))
 }
@@ -26,7 +26,7 @@ pub fn translate_array_literal_expression(
 pub fn translate_array_subscript_expression(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    scope: Rc<RefCell<TranslationScope>>,
+    scope: &Rc<RefCell<TranslationScope>>,
     expression: &solidity::Expression,
 ) -> Result<sway::Expression, Error> {
     //
@@ -35,7 +35,7 @@ pub fn translate_array_subscript_expression(
     // Writes are handled when translating assignment expressions.
     //
 
-    let (variable, expression) = translate_variable_access_expression(project, translated_definition, scope.clone(), expression)?;
+    let (variable, expression) = translate_variable_access_expression(project, translated_definition, scope, expression)?;
 
     if variable.is_none() {
         return Ok(expression);
@@ -53,15 +53,15 @@ pub fn translate_array_subscript_expression(
 pub fn translate_array_slice_expression(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    scope: Rc<RefCell<TranslationScope>>,
+    scope: &Rc<RefCell<TranslationScope>>,
     expression: &solidity::Expression,
 ) -> Result<sway::Expression, Error> {
     let solidity::Expression::ArraySlice(_, array_expression, from_index, to_index) = expression else {
         panic!("Expected ArraySlice, found {expression:#?}")
     };
 
-    let expression = translate_expression(project, translated_definition, scope.clone(), array_expression)?;
-    let type_name = translated_definition.get_expression_type(scope.clone(), &expression)?;
+    let expression = translate_expression(project, translated_definition, scope, array_expression)?;
+    let type_name = translated_definition.get_expression_type(scope, &expression)?;
 
     let u64_type = sway::TypeName::Identifier {
         name: "u64".into(),
@@ -69,11 +69,11 @@ pub fn translate_array_slice_expression(
     };
 
     let mut from_index = from_index.as_ref().map(|x| {
-        translate_expression(project, translated_definition, scope.clone(), x.as_ref()).unwrap()
+        translate_expression(project, translated_definition, scope, x.as_ref()).unwrap()
     });
 
     let mut from_index_type = from_index.as_ref().map(|x| {
-        translated_definition.get_expression_type(scope.clone(), x).unwrap()
+        translated_definition.get_expression_type(scope, x).unwrap()
     });
 
     // Check if from_index needs to be cast to u64
@@ -83,11 +83,11 @@ pub fn translate_array_slice_expression(
     }
 
     let mut to_index = to_index.as_ref().map(|x| {
-        translate_expression(project, translated_definition, scope.clone(), x.as_ref()).unwrap()
+        translate_expression(project, translated_definition, scope, x.as_ref()).unwrap()
     });
 
     let mut to_index_type = to_index.as_ref().map(|x| {
-        translated_definition.get_expression_type(scope.clone(), x).unwrap()
+        translated_definition.get_expression_type(scope, x).unwrap()
     });
 
     // Check if to_index needs to be cast to u64

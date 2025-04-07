@@ -12,7 +12,7 @@ use super::utils::coerce_expression;
 pub fn translate_builtin_function_call(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    scope: Rc<RefCell<TranslationScope>>,
+    scope: &Rc<RefCell<TranslationScope>>,
     function: &solidity::Expression,
     named_arguments: Option<&[solidity::NamedArgument]>,
     name: &str,
@@ -209,7 +209,7 @@ pub fn translate_builtin_function_call(
                 panic!("Invalid require call: {expression:#?}");
             }
             
-            let parameter_type = translated_definition.get_expression_type(scope.clone(), &parameters[0])?;
+            let parameter_type = translated_definition.get_expression_type(scope, &parameters[0])?;
             
             parameters[0] = coerce_expression(
                 &parameters[0], 
@@ -281,14 +281,14 @@ pub fn translate_builtin_function_call(
         old_name => {
             let parameter_types = parameters
                 .iter()
-                .map(|p| translated_definition.get_expression_type(scope.clone(), p))
+                .map(|p| translated_definition.get_expression_type(scope, p))
                 .collect::<Result<Vec<_>, _>>()?;
 
             // Check to see if the expression is a by-value struct constructor
             if let Some(result) = resolve_struct_constructor(
                 project,
                 translated_definition,
-                scope.clone(),
+                scope,
                 translated_definition.structs.clone().as_slice(),
                 old_name,
                 named_arguments,
@@ -302,7 +302,7 @@ pub fn translate_builtin_function_call(
             if parameters.len() == 1 {
                 if let Some(external_definition) = project.find_definition_with_abi(old_name) {
                     match translated_definition
-                        .get_expression_type(scope.clone(), &parameters[0])?
+                        .get_expression_type(scope, &parameters[0])?
                     {
                         sway::TypeName::Identifier {
                             name,
@@ -383,8 +383,8 @@ pub fn translate_builtin_function_call(
             if let Some(result) = resolve_function_call(
                 project,
                 translated_definition,
-                scope.clone(),
-                scope.clone(),
+                scope,
+                scope,
                 old_name,
                 named_arguments,
                 parameters.clone(),

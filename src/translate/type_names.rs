@@ -7,7 +7,7 @@ use std::{cell::RefCell, rc::Rc};
 pub fn translate_return_type_name(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    type_name: sway::TypeName,
+    type_name: &sway::TypeName,
 ) -> sway::TypeName {
     match type_name {
         sway::TypeName::StringSlice => {
@@ -252,7 +252,7 @@ pub fn translate_type_name(
                             p.as_ref().map(|p| sway::Parameter {
                                 is_ref: false,
                                 is_mut: false,
-                                name: p.name.as_ref().map(|n| n.name.clone()).unwrap_or("_".into()),
+                                name: p.name.as_ref().map_or("_".into(), |n| n.name.clone()),
                                 type_name: Some(translate_type_name(project, translated_definition, &p.ty, false, true)),
                             }).unwrap_or_else(|| sway::Parameter {
                                 is_ref: false,
@@ -347,7 +347,7 @@ pub fn translate_type_name(
                         ..Default::default()
                     }));
 
-                    match translate_expression(project, translated_definition, scope.clone(), length.as_ref()) {
+                    match translate_expression(project, translated_definition, &scope, length.as_ref()) {
                         Ok(sway::Expression::Literal(sway::Literal::DecInt(length, _) | sway::Literal::HexInt(length, _))) => length.try_into().unwrap(),
                         Ok(_) => panic!("Invalid array length expression: {length:#?}"),
                         Err(e) => panic!("Failed to translate array length expression: {e}"),
@@ -425,7 +425,7 @@ pub fn translate_type_name(
                     if let Some(translated_enum) = translated_enum {
                         translated_definition.add_enum(&translated_enum);
                     } else if let Some(translated_struct) = translated_struct {
-                        translated_definition.ensure_struct_included(project, translated_struct.clone());
+                        translated_definition.ensure_struct_included(project, &translated_struct.clone());
                     } else if let Some(translated_type) = translated_type {
                         if !translated_definition.type_definitions.contains(&translated_type) {
                             translated_definition.type_definitions.push(translated_type);

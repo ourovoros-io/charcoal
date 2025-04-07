@@ -11,7 +11,7 @@ use super::translate_expression;
 pub fn translate_new_expression(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    scope: Rc<RefCell<TranslationScope>>,
+    scope: &Rc<RefCell<TranslationScope>>,
     expression: &solidity::Expression,
 ) -> Result<sway::Expression, Error> {
     let solidity::Expression::FunctionCall(_, mut expr, args) = expression.clone() else {
@@ -29,7 +29,7 @@ pub fn translate_new_expression(
             let mut fields = vec![];
 
             for block_arg in block_args.iter() {
-                let value = translate_expression(project, translated_definition, scope.clone(), &block_arg.expr)?;
+                let value = translate_expression(project, translated_definition, scope, &block_arg.expr)?;
 
                 match block_arg.name.name.as_str() {
                     "value" => fields.push(sway::ConstructorField {
@@ -68,7 +68,7 @@ pub fn translate_new_expression(
     }
 
     let args = args.iter()
-        .map(|e| translate_expression(project, translated_definition, scope.clone(), e))
+        .map(|e| translate_expression(project, translated_definition, scope, e))
         .collect::<Result<Vec<_>, _>>()?;
 
     match expr.as_ref() {

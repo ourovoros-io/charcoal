@@ -1,14 +1,14 @@
 use std::{cell::RefCell, rc::Rc};
 use convert_case::Case;
 use solang_parser::pt as solidity;
-use crate::{errors::Error, project::Project, sway, translate::{translate_expression, translate_type_name, TranslatedDefinition, TranslatedVariable, TranslationScope}, translate_naming_convention};
+use crate::{errors::Error, project::Project, sway, translate::{translate_expression, translate_type_name, TranslatedDefinition, TranslatedVariable, TranslationScope}, translate::translate_naming_convention};
 use super::translate_statement;
 
 #[allow(clippy::type_complexity)]
 pub fn translate_try_catch_statement(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    scope: Rc<RefCell<TranslationScope>>,
+    scope: &Rc<RefCell<TranslationScope>>,
     expr: &solidity::Expression,
     params_and_body:  &Option<(Vec<(solidity::Loc, Option<solidity::Parameter>)>, Box<solidity::Statement>)>,
     catch_clauses: &[solidity::CatchClause],
@@ -30,7 +30,7 @@ pub fn translate_try_catch_statement(
                         }).collect())
                     },
                     type_name: None,
-                    value: translate_expression(project, translated_definition, scope.clone(), expr)?
+                    value: translate_expression(project, translated_definition, scope, expr)?
                 };
                 let store_let_identifier = |id: &sway::LetIdentifier, type_name: &sway::TypeName| {
                     
@@ -58,10 +58,10 @@ pub fn translate_try_catch_statement(
                 statements.push(sway::Statement::from(let_statement));
             }
             
-            match translate_statement(project, translated_definition, scope.clone(), body)? {
+            match translate_statement(project, translated_definition, scope, body)? {
                 sway::Statement::Expression(sway::Expression::Block(block)) => {
                     if block.statements.len() == 1 {
-                        statements.extend(block.statements.clone())
+                        statements.extend(block.statements.clone());
                     } else {
                         statements.push(sway::Statement::from(sway::Expression::from(block.as_ref().clone())));
                     }

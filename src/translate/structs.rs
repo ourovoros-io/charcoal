@@ -14,7 +14,7 @@ pub fn translate_struct_definition(
 
     for field in struct_definition.fields.iter() {
         // TODO: keep track of original struct name?
-        let name = crate::translate_naming_convention(field.name.as_ref().unwrap().name.as_str(), Case::Snake);
+        let name = crate::translate::translate_naming_convention(field.name.as_ref().unwrap().name.as_str(), Case::Snake);
         let mut type_name = translate_type_name(project, translated_definition, &field.ty, false, false);
 
         if let sway::TypeName::Identifier { name, generic_parameters } = &type_name {
@@ -41,7 +41,7 @@ pub fn translate_struct_definition(
                             // Check if the field type is a struct
                             for external_struct in external_definition.structs.iter() {
                                 if external_struct.borrow().name == *name {
-                                    translated_definition.ensure_struct_included(project, external_struct.clone());
+                                    translated_definition.ensure_struct_included(project, &external_struct.clone());
                                     break 'lookup;
                                 }
                             }

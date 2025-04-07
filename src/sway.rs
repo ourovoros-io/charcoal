@@ -426,10 +426,7 @@ impl TypeName {
     }
 
     pub fn is_string_slice(&self) -> bool {
-        match self {
-            TypeName::StringSlice => true,
-            _ => false,
-        }
+        matches!(self, TypeName::StringSlice)
     }
 
     pub fn is_string(&self) -> bool {
@@ -550,7 +547,7 @@ impl TypeName {
         match self {
             TypeName::Array { type_name: lhs_type_name, length: lhs_length } => match other {
                 TypeName::Array { type_name: rhs_type_name, length: rhs_length } => {
-                    if !lhs_type_name.is_compatible_with(&rhs_type_name) {
+                    if !lhs_type_name.is_compatible_with(rhs_type_name) {
                         return false;
                     }
 
@@ -582,14 +579,14 @@ impl TypeName {
                 .zip(rhs_parameters.entries.iter())
                 .all(|(lhs, rhs)| {
                     lhs.type_name.is_some() == rhs.type_name.is_some()
-                    && lhs.type_name.as_ref().map(|x| x.is_compatible_with(rhs.type_name.as_ref().unwrap())).unwrap_or(true)
+                    && lhs.type_name.as_ref().map_or(true, |x| x.is_compatible_with(rhs.type_name.as_ref().unwrap()))
                 }) {
                     match (lhs_return_type.as_ref(), rhs_return_type.as_ref()) {
                         (
                             Some(lhs_return_type),
                             Some(rhs_return_type),
                         ) => {
-                            if lhs_return_type.is_compatible_with(&rhs_return_type) {
+                            if lhs_return_type.is_compatible_with(rhs_return_type) {
                                 return true;
                             }
                         }
@@ -756,10 +753,10 @@ impl TabbedDisplay for Literal {
             Literal::DecInt(x, suffix) => write!(
                 f,
                 "{}{}",
-                if suffix.as_ref().map(|s| s == "u256" || s == "b256").unwrap_or(false) {
+                if suffix.as_ref().is_some_and(|s| s == "u256" || s == "b256") {
                     format!("0x{x:064X}")
                 } else {
-                    format!("{}", x)
+                    format!("{x}")
                 },
                 if let Some(suffix) = suffix.as_ref() {
                     suffix.as_str()
@@ -1952,7 +1949,7 @@ impl Display for AsmFinalExpression {
         write!(f, "{}", self.register)?;
         
         if let Some(type_name) = self.type_name.as_ref() {
-            write!(f, ": {}", type_name)?;
+            write!(f, ": {type_name}")?;
         }
 
         Ok(())

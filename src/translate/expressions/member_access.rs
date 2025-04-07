@@ -10,7 +10,7 @@ use super::translate_expression;
 pub fn translate_member_access_expression(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    scope: Rc<RefCell<TranslationScope>>,
+    scope: &Rc<RefCell<TranslationScope>>,
     expression: &solidity::Expression,
     container: &solidity::Expression,
     member: &solidity::Identifier,
@@ -366,7 +366,7 @@ pub fn translate_member_access_expression(
                     sway::TypeName::Identifier { name: enum_name, .. } => enum_name == name,
                     _ => false
                 }) {
-                    let new_name = crate::translate_naming_convention(member, Case::Constant);
+                    let new_name = crate::translate::translate_naming_convention(member, Case::Constant);
 
                     // Check to see if member is part of translated enum
                     if let Some(sway::ImplItem::Constant(c)) = translated_enum.variants_impl.items.iter().find(|i| match i {
@@ -440,7 +440,7 @@ pub fn translate_member_access_expression(
                             panic!("Expected Identifier type name, found {:#?}", external_enum.type_definition.name);
                         };
     
-                        let variant_name = crate::translate_naming_convention(member.name.as_str(), Case::Constant);
+                        let variant_name = crate::translate::translate_naming_convention(member.name.as_str(), Case::Constant);
     
                         // Ensure the variant exists
                         if external_enum.variants_impl.items.iter().any(|i| {
@@ -460,15 +460,15 @@ pub fn translate_member_access_expression(
         _ => {}
     }
 
-    let container = translate_expression(project, translated_definition, scope.clone(), container)?;
+    let container = translate_expression(project, translated_definition, scope, container)?;
     
     let mut check_container = |container: &sway::Expression| -> Result<Option<sway::Expression>, Error> {
-        let container_type_name = translated_definition.get_expression_type(scope.clone(), &container)?;
+        let container_type_name = translated_definition.get_expression_type(scope, container)?;
         let container_type_name_string = container_type_name.to_string();
     
         // Check if container is a struct
         if let Some(struct_definition) = translated_definition.structs.iter().find(|s| s.borrow().name == container_type_name_string) {
-            let field_name = crate::translate_naming_convention(member.name.as_str(), Case::Snake);
+            let field_name = crate::translate::translate_naming_convention(member.name.as_str(), Case::Snake);
     
             if struct_definition.borrow().fields.iter().any(|f| f.name == field_name) {
                 return Ok(Some(sway::Expression::from(sway::MemberAccess {
@@ -555,7 +555,7 @@ pub fn translate_member_access_expression(
         return Ok(result);
     }
 
-    let container_type_name = translated_definition.get_expression_type(scope.clone(), &container)?;
+    let container_type_name = translated_definition.get_expression_type(scope, &container)?;
     let container_type_name_string = container_type_name.to_string();
 
     todo!("{}translate {container_type_name_string} member access expression: {expression} - {expression:#?}", match project.loc_to_line_and_column(&translated_definition.path, &expression.loc()) {
