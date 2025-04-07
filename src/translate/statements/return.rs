@@ -14,7 +14,7 @@ use std::{cell::RefCell, rc::Rc};
 pub fn translate_return_statement(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    scope: Rc<RefCell<TranslationScope>>,
+    scope: &Rc<RefCell<TranslationScope>>,
     expression: &Option<solidity::Expression>,
 ) -> Result<sway::Statement, Error> {
     let Some(expression) = expression else {
@@ -30,8 +30,8 @@ pub fn translate_return_statement(
     
     let return_type = return_type.unwrap();
 
-    let mut expression = translate_expression(project, translated_definition, scope.clone(), expression)?;
-    let expression_type = translated_definition.get_expression_type(scope.clone(), &expression)?;
+    let mut expression = translate_expression(project, translated_definition, scope, expression)?;
+    let expression_type = translated_definition.get_expression_type(scope, &expression)?;
     
     expression = coerce_expression(&expression, &expression_type, &return_type).unwrap();
 

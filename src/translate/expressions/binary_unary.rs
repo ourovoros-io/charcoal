@@ -7,7 +7,7 @@ use super::{function_call::utils::coerce_expression, translate_expression};
 pub fn translate_binary_expression(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    scope: Rc<RefCell<TranslationScope>>,
+    scope: &Rc<RefCell<TranslationScope>>,
     operator: &str,
     lhs: &solidity::Expression,
     rhs: &solidity::Expression,
@@ -16,8 +16,8 @@ pub fn translate_binary_expression(
     if let solidity::Expression::MemberAccess(_, x, member2) = lhs {
         if let solidity::Expression::MemberAccess(_, x, member1) = x.as_ref() {
             if member1.name == "code" && member2.name == "length" {
-                let expression = translate_expression(project, translated_definition, scope.clone(), x)?;
-                let type_name = translated_definition.get_expression_type(scope.clone(), &expression)?;
+                let expression = translate_expression(project, translated_definition, scope, x)?;
+                let type_name = translated_definition.get_expression_type(scope, &expression)?;
 
                 if let sway::TypeName::Identifier { name, generic_parameters: None } = type_name {
                     if name == "Identity" {
@@ -37,11 +37,11 @@ pub fn translate_binary_expression(
         }
     }
 
-    let mut lhs = translate_expression(project, translated_definition, scope.clone(), lhs)?;
-    let mut lhs_type = translated_definition.get_expression_type(scope.clone(), &lhs)?;
+    let mut lhs = translate_expression(project, translated_definition, scope, lhs)?;
+    let mut lhs_type = translated_definition.get_expression_type(scope, &lhs)?;
 
-    let mut rhs = translate_expression(project, translated_definition, scope.clone(), rhs)?;
-    let mut rhs_type = translated_definition.get_expression_type(scope.clone(), &rhs)?;
+    let mut rhs = translate_expression(project, translated_definition, scope, rhs)?;
+    let mut rhs_type = translated_definition.get_expression_type(scope, &rhs)?;
 
     if let Some(value_type) = lhs_type.storage_key_type() {
         lhs_type = value_type;
@@ -108,11 +108,11 @@ pub fn translate_binary_expression(
 pub fn translate_unary_expression(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    scope: Rc<RefCell<TranslationScope>>,
+    scope: &Rc<RefCell<TranslationScope>>,
     operator: &str,
     expression: &solidity::Expression,
 ) -> Result<sway::Expression, Error> {
-    let expression = translate_expression(project, translated_definition, scope.clone(), expression)?;
+    let expression = translate_expression(project, translated_definition, scope, expression)?;
 
     // NOTE: Sway does not have a negate operator, so we need to make sure to use the correct translation
     if operator == "-" {
@@ -167,7 +167,7 @@ pub fn translate_unary_expression(
 pub fn translate_power_expression(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    scope: Rc<RefCell<TranslationScope>>,
+    scope: &Rc<RefCell<TranslationScope>>,
     lhs: &solidity::Expression,
     rhs: &solidity::Expression,
 ) -> Result<sway::Expression, Error> {
@@ -176,8 +176,8 @@ pub fn translate_power_expression(
     // Ensure std::math::Power is imported for the pow function
     translated_definition.ensure_use_declared("std::math::Power");
 
-    let lhs = translate_expression(project, translated_definition, scope.clone(), lhs)?;
-    let rhs = translate_expression(project, translated_definition, scope.clone(), rhs)?;
+    let lhs = translate_expression(project, translated_definition, scope, lhs)?;
+    let rhs = translate_expression(project, translated_definition, scope, rhs)?;
 
     Ok(sway::Expression::create_function_calls(Some(lhs), &[("pow", Some((None, vec![rhs])))]))
 }

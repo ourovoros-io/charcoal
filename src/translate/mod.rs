@@ -17,6 +17,7 @@ pub use self::{
 };
 
 use crate::{errors::Error, project::Project, sway};
+use convert_case::{Case, Casing};
 use solang_parser::pt as solidity;
 use std::{
     cell::RefCell,
@@ -485,8 +486,8 @@ impl TranslatedDefinition {
     pub fn new<P: AsRef<Path>, S1: ToString, S2: ToString>(
         path: P,
         kind: solidity::ContractTy,
-        name: S1,
-        inherits: Vec<S2>,
+        name: &S1,
+        inherits: &[S2],
     ) -> Self {
         Self {
             path: path.as_ref().into(),
@@ -577,14 +578,14 @@ impl TranslatedDefinition {
     pub fn ensure_struct_included(
         &mut self,
         project: &Project,
-        struct_definition: Rc<RefCell<sway::Struct>>,
+        struct_definition: &Rc<RefCell<sway::Struct>>,
     ) {
         if !self.struct_names.contains(&struct_definition.borrow().name) {
             self.struct_names
                 .push(struct_definition.borrow().name.clone());
         }
 
-        if self.structs.contains(&struct_definition) {
+        if self.structs.contains(struct_definition) {
             return;
         }
 
@@ -837,19 +838,19 @@ impl TranslatedDefinition {
     /// Attempts to get the type of the supplied expression.
     pub fn get_expression_type(
         &mut self,
-        scope: Rc<RefCell<TranslationScope>>,
+        scope: &Rc<RefCell<TranslationScope>>,
         expression: &sway::Expression,
     ) -> Result<sway::TypeName, Error> {
         match expression {
-            sway::Expression::Literal(literal) => Self::handle_type_literal(literal),
+            sway::Expression::Literal(literal) => Ok(Self::handle_type_literal(literal)),
 
-            sway::Expression::Identifier(name) => Self::handle_type_identifier(self, scope, name),
+            sway::Expression::Identifier(name) => Ok(Self::handle_type_identifier(self, scope, name)),
 
             sway::Expression::FunctionCall(_) | sway::Expression::FunctionCallBlock(_) => Self::handle_type_function_call_and_function_call_block(self, scope, expression),
             
             sway::Expression::Block(block) => Self::handle_type_block(self, scope, block),
 
-            sway::Expression::Return(value) => Self::handle_type_return(self, scope, value),
+            sway::Expression::Return(value) => Self::handle_type_return(self, scope, value.as_deref()),
 
             sway::Expression::Array(array) => Self::handle_type_array(self, scope, array),
 
@@ -874,17 +875,17 @@ impl TranslatedDefinition {
 
             sway::Expression::AsmBlock(asm_block) => Self::handle_type_asm_block(asm_block),
 
-            sway::Expression::Commented(_, x) => self.get_expression_type(scope.clone(), x),
+            sway::Expression::Commented(_, x) => self.get_expression_type(scope, x),
         }
     }
 
-    fn handle_type_literal(literal: &sway::Literal) -> Result<sway::TypeName, Error> {
+    fn handle_type_literal(literal: &sway::Literal) -> sway::TypeName {
         match literal {
-            sway::Literal::Bool(_) => Ok(sway::TypeName::Identifier {
+            sway::Literal::Bool(_) => sway::TypeName::Identifier {
                 name: "bool".into(),
                 generic_parameters: None,
-            }),
-            sway::Literal::DecInt(value, suffix) => Ok(sway::TypeName::Identifier {
+            },
+            sway::Literal::DecInt(value, suffix) => sway::TypeName::Identifier {
                 name: if let Some(suffix) = suffix.as_ref() {
                     suffix.clone()
                 } else {
@@ -903,11 +904,11 @@ impl TranslatedDefinition {
                         panic!("integer has too many bits: {bits}")
                     }
 
-                    format!("u{}", bits)
+                    format!("u{bits}")
                 },
                 generic_parameters: None,
-            }),
-            sway::Literal::HexInt(value, suffix) => Ok(sway::TypeName::Identifier {
+            },
+            sway::Literal::HexInt(value, suffix) => sway::TypeName::Identifier {
                 name: if let Some(suffix) = suffix.as_ref() {
                     suffix.clone()
                 } else {
@@ -926,19 +927,19 @@ impl TranslatedDefinition {
                         panic!("integer has too many bits: {bits}")
                     }
 
-                    format!("u{}", bits)
+                    format!("u{bits}")
                 },
                 generic_parameters: None,
-            }),
-            sway::Literal::String(_) => Ok(sway::TypeName::StringSlice),
+            },
+            sway::Literal::String(_) => sway::TypeName::StringSlice,
         }        
     }
 
     fn handle_type_identifier(
         translated_definition: &mut TranslatedDefinition, 
-        scope: Rc<RefCell<TranslationScope>>, 
+        scope: &Rc<RefCell<TranslationScope>>, 
         name: &String
-    ) -> Result<sway::TypeName, Error> {
+    ) -> sway::TypeName {
         // HACK: Check if the identifier is a translated enum variant
         if name.contains("::") {
             let parts = name.split("::").collect::<Vec<_>>();
@@ -967,10 +968,10 @@ impl TranslatedDefinition {
 
                     name == enum_name
                 }) {
-                    return Ok(sway::TypeName::Identifier {
+                    return sway::TypeName::Identifier {
                         name: enum_name.into(),
                         generic_parameters: None,
-                    });
+                    };
                 }
             }
         }
@@ -979,18 +980,16 @@ impl TranslatedDefinition {
             let variable = variable.borrow();
 
             // Variable should not be a storage field
-            if variable.is_storage {
-                panic!("error: Variable not found in scope: \"{name}\"");
-            }
+            assert!(!variable.is_storage, "error: Variable not found in scope: \"{name}\"");
 
-            return Ok(variable.type_name.clone());
+            return variable.type_name.clone();
         }
 
         if let Some(function) = scope
             .borrow()
             .find_function(|f| f.borrow().new_name == *name)
         {
-            return Ok(function.borrow().type_name.clone());
+            return function.borrow().type_name.clone();
         }
 
         panic!("error: Variable not found in scope: \"{name}\"");
@@ -998,7 +997,7 @@ impl TranslatedDefinition {
 
     fn handle_type_function_call_and_function_call_block(
         translated_definition: &mut TranslatedDefinition, 
-        scope: Rc<RefCell<TranslationScope>>, 
+        scope: &Rc<RefCell<TranslationScope>>, 
         expression: &sway::Expression
     ) -> Result<sway::TypeName, Error> {
 
@@ -1025,12 +1024,7 @@ impl TranslatedDefinition {
                 }),
 
                 "abi" => {
-                    if parameters.len() != 2 {
-                        panic!(
-                            "Malformed abi cast, expected 2 parameters, found {}",
-                            parameters.len()
-                        );
-                    }
+                    assert!(parameters.len() == 2, "Malformed abi cast, expected 2 parameters, found {}",parameters.len());
 
                     let sway::Expression::Identifier(definition_name) = &parameters[0]
                     else {
@@ -1354,7 +1348,7 @@ impl TranslatedDefinition {
                 new_name => {
                     let parameter_types = parameters
                         .iter()
-                        .map(|p| translated_definition.get_expression_type(scope.clone(), p))
+                        .map(|p| translated_definition.get_expression_type(scope, p))
                         .collect::<Result<Vec<_>, _>>()?;
 
                     // Ensure the function exists in scope
@@ -1539,7 +1533,7 @@ impl TranslatedDefinition {
             },
 
             sway::Expression::MemberAccess(member_access) => {
-                let mut container_type = translated_definition.get_expression_type(scope.clone(), &member_access.expression)?;
+                let mut container_type = translated_definition.get_expression_type(scope, &member_access.expression)?;
 
                 // Check to see if the container's type is a translated enum and switch to its underlying type
                 for enum_definition in translated_definition.enums.iter() {
@@ -1771,7 +1765,7 @@ impl TranslatedDefinition {
                         }
 
                         ("Option", Some(generic_parameters)) if generic_parameters.entries.len() == 1 => match member_access.member.as_str() {
-                            "is_none" | "is_some" if parameters.len() == 0 => Ok(sway::TypeName::Identifier {
+                            "is_none" | "is_some" if parameters.is_empty() => Ok(sway::TypeName::Identifier {
                                 name: "bool".into(),
                                 generic_parameters: None,
                             }),
@@ -2334,8 +2328,8 @@ impl TranslatedDefinition {
 
     fn handle_type_block(
         translated_definition: &mut TranslatedDefinition, 
-        scope: Rc<RefCell<TranslationScope>>, 
-        block: &Box<sway::Block>
+        scope: &Rc<RefCell<TranslationScope>>, 
+        block: &sway::Block
     ) -> Result<sway::TypeName, Error> {
 
         let Some(expression) = block.final_expr.as_ref() else {
@@ -2359,7 +2353,7 @@ impl TranslatedDefinition {
 
             let type_name = match type_name.as_ref() {
                 Some(type_name) => type_name.clone(),
-                None => translated_definition.get_expression_type(inner_scope.clone(), value)?,
+                None => translated_definition.get_expression_type(&inner_scope, value)?,
             };
 
             let add_variable = |id: &sway::LetIdentifier, type_name: &sway::TypeName| {
@@ -2388,16 +2382,16 @@ impl TranslatedDefinition {
             }
         }
 
-        translated_definition.get_expression_type(inner_scope, expression)
+        translated_definition.get_expression_type(&inner_scope, expression)
     }
 
     fn handle_type_return(
         translated_definition: &mut TranslatedDefinition, 
-        scope: Rc<RefCell<TranslationScope>>, 
-        value: &Option<Box<sway::Expression>>
+        scope: &Rc<RefCell<TranslationScope>>, 
+        value: Option<&sway::Expression>
     ) -> Result<sway::TypeName, Error> {
         if let Some(value) = value.as_ref() {
-            translated_definition.get_expression_type(scope.clone(), value)
+            translated_definition.get_expression_type(scope, value)
         } else {
             Ok(sway::TypeName::Tuple { type_names: vec![] })
         }
@@ -2405,12 +2399,12 @@ impl TranslatedDefinition {
 
     fn handle_type_array(
         translated_definition: &mut TranslatedDefinition, 
-        scope: Rc<RefCell<TranslationScope>>, 
+        scope: &Rc<RefCell<TranslationScope>>, 
         array: &sway::Array,
     ) -> Result<sway::TypeName, Error> {
         Ok(sway::TypeName::Array {
             type_name: Box::new(if let Some(expression) = array.elements.first() {
-                translated_definition.get_expression_type(scope.clone(), expression)?
+                translated_definition.get_expression_type(scope, expression)?
             } else {
                 sway::TypeName::Tuple { type_names: vec![] }
             }),
@@ -2420,11 +2414,11 @@ impl TranslatedDefinition {
 
     fn handle_type_array_access(
         translated_definition: &mut TranslatedDefinition, 
-        scope: Rc<RefCell<TranslationScope>>, 
-        array_access: &Box<sway::ArrayAccess>,
+        scope: &Rc<RefCell<TranslationScope>>, 
+        array_access: &sway::ArrayAccess,
     ) -> Result<sway::TypeName, Error> { 
         let element_type_name =
-        translated_definition.get_expression_type(scope.clone(), &array_access.expression)?;
+        translated_definition.get_expression_type(scope, &array_access.expression)?;
 
         let type_name = match &element_type_name {
             sway::TypeName::Identifier {
@@ -2442,8 +2436,8 @@ impl TranslatedDefinition {
 
     fn handle_type_member_access(
         translated_definition: &mut TranslatedDefinition, 
-        scope: Rc<RefCell<TranslationScope>>, 
-        member_access: &Box<sway::MemberAccess>,
+        scope: &Rc<RefCell<TranslationScope>>, 
+        member_access: &sway::MemberAccess,
         expression: &sway::Expression,
     ) -> Result<sway::TypeName, Error> {
         match &member_access.expression {
@@ -2473,7 +2467,7 @@ impl TranslatedDefinition {
 
                 _ => {
                     let container_type =
-                        translated_definition.get_expression_type(scope.clone(), &member_access.expression)?;
+                        translated_definition.get_expression_type(scope, &member_access.expression)?;
 
                     match &container_type {
                         sway::TypeName::Identifier { name, generic_parameters } => match (name.as_str(), generic_parameters.as_ref()) {
@@ -2550,7 +2544,7 @@ impl TranslatedDefinition {
 
             _ => {
                 let type_name =
-                    translated_definition.get_expression_type(scope.clone(), &member_access.expression)?;
+                    translated_definition.get_expression_type(scope, &member_access.expression)?;
                 let type_name_string = type_name.to_string();
 
                 // Check to see if container is a built-in type
@@ -2605,16 +2599,16 @@ impl TranslatedDefinition {
 
     fn handle_type_tuple(
         translated_definition: &mut TranslatedDefinition, 
-        scope: Rc<RefCell<TranslationScope>>, 
-        tuple: &Vec<sway::Expression>,
+        scope: &Rc<RefCell<TranslationScope>>, 
+        tuple: &[sway::Expression],
     ) -> Result<sway::TypeName, Error> {
         if tuple.len() == 1 {
-            translated_definition.get_expression_type(scope.clone(), tuple.first().unwrap())
+            translated_definition.get_expression_type(scope, tuple.first().unwrap())
         } else {
             Ok(sway::TypeName::Tuple {
                 type_names: tuple
                     .iter()
-                    .map(|x| translated_definition.get_expression_type(scope.clone(), x))
+                    .map(|x| translated_definition.get_expression_type(scope, x))
                     .collect::<Result<Vec<_>, _>>()?,
             })
         }
@@ -2622,11 +2616,11 @@ impl TranslatedDefinition {
 
     fn handle_type_if(
         translated_definition: &mut TranslatedDefinition, 
-        scope: Rc<RefCell<TranslationScope>>, 
-        if_expr: &Box<sway::If>,
+        scope: &Rc<RefCell<TranslationScope>>, 
+        if_expr: &sway::If,
     ) -> Result<sway::TypeName, Error> {
         if let Some(expression) = if_expr.then_body.final_expr.as_ref() {
-            translated_definition.get_expression_type(scope.clone(), expression)
+            translated_definition.get_expression_type(scope, expression)
         } else {
             Ok(sway::TypeName::Tuple { type_names: vec![] })
         }
@@ -2634,11 +2628,11 @@ impl TranslatedDefinition {
 
     fn handle_type_match(
         translated_definition: &mut TranslatedDefinition, 
-        scope: Rc<RefCell<TranslationScope>>, 
-        match_expr: &Box<sway::Match>,
+        scope: &Rc<RefCell<TranslationScope>>, 
+        match_expr: &sway::Match,
     ) -> Result<sway::TypeName, Error> {
         if let Some(branch) = match_expr.branches.first() {
-            translated_definition.get_expression_type(scope.clone(), &branch.value)
+            translated_definition.get_expression_type(scope, &branch.value)
         } else {
             Ok(sway::TypeName::Tuple { type_names: vec![] })
         }
@@ -2646,16 +2640,16 @@ impl TranslatedDefinition {
 
     fn handle_type_unary(
         translated_definition: &mut TranslatedDefinition, 
-        scope: Rc<RefCell<TranslationScope>>, 
-        unary_expression: &Box<sway::UnaryExpression>,
+        scope: &Rc<RefCell<TranslationScope>>, 
+        unary_expression: &sway::UnaryExpression,
     ) -> Result<sway::TypeName, Error> {
-        translated_definition.get_expression_type(scope.clone(), &unary_expression.expression)
+        translated_definition.get_expression_type(scope, &unary_expression.expression)
     }
 
     fn handle_type_binary(
         translated_definition: &mut TranslatedDefinition, 
-        scope: Rc<RefCell<TranslationScope>>, 
-        binary_expression: &Box<sway::BinaryExpression>,
+        scope: &Rc<RefCell<TranslationScope>>, 
+        binary_expression: &sway::BinaryExpression,
     ) -> Result<sway::TypeName, Error> {
         match binary_expression.operator.as_str() {
             "==" | "!=" | ">" | "<" | ">=" | "<=" | "&&" | "||" => {
@@ -2665,11 +2659,11 @@ impl TranslatedDefinition {
                 })
             }
 
-            _ => translated_definition.get_expression_type(scope.clone(), &binary_expression.lhs),
+            _ => translated_definition.get_expression_type(scope, &binary_expression.lhs),
         }
     }
 
-    fn handle_type_asm_block(asm_block: &Box<sway::AsmBlock>) -> Result<sway::TypeName, Error> { 
+    fn handle_type_asm_block(asm_block: &sway::AsmBlock) -> Result<sway::TypeName, Error> { 
         match asm_block.final_expression.as_ref() {
             Some(expression) => match expression.type_name.as_ref() {
                 Some(type_name) => Ok(type_name.clone()),
@@ -2681,3 +2675,26 @@ impl TranslatedDefinition {
 
 }
 
+#[inline]
+pub fn translate_naming_convention(name: &str, case: Case) -> String {
+    // HACK: do not allow dollar signs
+    let mut name = name.replace('$', "dollar_sign").to_case(case).to_string();
+    
+    // HACK: do not allow name to start with double underscore
+    while name.starts_with("__") {
+        name = name[2..].to_string();
+    }
+
+    let name = if name.chars().all(|c| c == '_') {
+        name.to_string()
+    } else {
+        let prefix = name.chars().take_while(|c| *c == '_').collect::<String>();
+        let postfix = name.chars().rev().take_while(|c| *c == '_').collect::<String>();
+        format!("{prefix}{}{postfix}", name.to_case(case))
+    };
+
+    match name.as_str() {
+        "self" => "this".into(),
+        _ => name,
+    }
+}

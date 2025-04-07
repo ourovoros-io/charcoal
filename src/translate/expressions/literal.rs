@@ -18,7 +18,7 @@ pub fn translate_literal_expression(
         }
 
         solidity::Expression::RationalNumberLiteral(_, _, _, _, _) => {
-            Ok(sway::Expression::create_todo(Some(format!("rational number: {}", expression))))
+            Ok(sway::Expression::create_todo(Some(format!("rational number: {expression}"))))
         }
 
         solidity::Expression::HexNumberLiteral(_, value, _) | solidity::Expression::AddressLiteral(_, value) => {
@@ -49,6 +49,6 @@ pub fn translate_literal_expression(
             )))
         }
 
-        _ => panic!("Expected literal expression, found {} - {expression:#?}", expression),
+        _ => panic!("Expected literal expression, found {expression} - {expression:#?}"),
     }
 }

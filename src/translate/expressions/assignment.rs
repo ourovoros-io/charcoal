@@ -16,10 +16,10 @@ use std::{cell::RefCell, rc::Rc};
 pub fn create_assignment_expression(
     _project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    scope: Rc<RefCell<TranslationScope>>,
+    scope: &Rc<RefCell<TranslationScope>>,
     operator: &str,
     expression: &sway::Expression,
-    variable: Rc<RefCell<TranslatedVariable>>,
+    variable: &Rc<RefCell<TranslatedVariable>>,
     rhs: &sway::Expression,
     rhs_type_name: &sway::TypeName,
 ) -> Result<sway::Expression, Error> {
@@ -31,13 +31,13 @@ pub fn create_assignment_expression(
     let is_storage = variable.borrow().is_storage;
     let type_name = variable.borrow().type_name.clone();
 
-    let expr_type_name = translated_definition.get_expression_type(scope.clone(), expression)?;
+    let expr_type_name = translated_definition.get_expression_type(scope, expression)?;
     
     // Check for assignments to fields of struct variables defined in scope
     if !type_name.is_compatible_with(&expr_type_name) {
         if let sway::Expression::MemberAccess(member_access) = expression {
             if member_access.expression != sway::Expression::Identifier("storage".into()) {
-                let type_name = translated_definition.get_expression_type(scope.clone(), &member_access.expression)?;
+                let type_name = translated_definition.get_expression_type(scope, &member_access.expression)?;
 
                 if let Some(struct_definition) = translated_definition.structs.iter().find(|s| {
                     let s = s.borrow();
@@ -153,7 +153,7 @@ pub fn create_assignment_expression(
                 sway::TypeName::StringSlice
             ) if lhs_name == "StorageString" => "write_slice",
 
-            _ => "write".into(),
+            _ => "write",
         };
 
         return Ok(sway::Expression::create_function_calls(Some(expression.clone()), &[
@@ -181,7 +181,7 @@ pub fn create_assignment_expression(
                         variable.borrow_mut().read_count += 1;
                         
                         sway::Expression::from(sway::BinaryExpression{
-                            operator: operator.trim_end_matches("=").into(),
+                            operator: operator.trim_end_matches('=').into(),
                             lhs: sway::Expression::create_function_calls(Some(expression.clone()), &[
                                 ("read", Some((None, vec![]))),
                             ]),
@@ -199,12 +199,12 @@ pub fn create_assignment_expression(
             ("Vec", Some(generic_parameters)) if generic_parameters.entries.len() == 1 => {
                 match &expression {
                     sway::Expression::ArrayAccess(array_access) => {
-                        let index_type = translated_definition.get_expression_type(scope.clone(), &array_access.index)?;
+                        let index_type = translated_definition.get_expression_type(scope, &array_access.index)?;
                         let u64_type = sway::TypeName::Identifier { name: "u64".into(), generic_parameters: None };
                         let index = coerce_expression(&array_access.index, &index_type, &u64_type).unwrap();
                         
-                        let rhs_type = translated_definition.get_expression_type(scope.clone(), &rhs)?;
-                        let rhs = coerce_expression(&rhs, &rhs_type, &generic_parameters.entries[0].type_name).unwrap();
+                        let rhs_type = translated_definition.get_expression_type(scope, rhs)?;
+                        let rhs = coerce_expression(rhs, &rhs_type, &generic_parameters.entries[0].type_name).unwrap();
 
                         return Ok(sway::Expression::create_function_calls(
                             Some(array_access.expression.clone()), &[
@@ -294,7 +294,7 @@ pub fn create_assignment_expression(
                     sway::Expression::FunctionCall(function_call) => match &function_call.function {
                         sway::Expression::MemberAccess(member_access) => match member_access.member.as_str() {
                             "get" if function_call.parameters.len() == 1 => {
-                                let container_type = translated_definition.get_expression_type(scope.clone(), &member_access.expression)?;
+                                let container_type = translated_definition.get_expression_type(scope, &member_access.expression)?;
         
                                 todo!("translation {container_type} assignment expression: {}", sway::TabbedDisplayer(expression))
                             }
@@ -303,8 +303,8 @@ pub fn create_assignment_expression(
                                 sway::Expression::FunctionCall(function_call) => match &function_call.function {
                                     sway::Expression::MemberAccess(member_access) => match member_access.member.as_str() {
                                         "get" if function_call.parameters.len() == 1 => {
-                                            let rhs_type = translated_definition.get_expression_type(scope.clone(), &rhs)?;
-                                            let rhs = coerce_expression(&rhs, &rhs_type, &generic_parameters.entries[0].type_name).unwrap();
+                                            let rhs_type = translated_definition.get_expression_type(scope, rhs)?;
+                                            let rhs = coerce_expression(rhs, &rhs_type, &generic_parameters.entries[0].type_name).unwrap();
 
                                             return Ok(sway::Expression::create_function_calls(
                                                 Some(member_access.expression.clone()), &[
@@ -374,7 +374,7 @@ pub fn create_assignment_expression(
 pub fn translate_assignment_expression(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    scope: Rc<RefCell<TranslationScope>>,
+    scope: &Rc<RefCell<TranslationScope>>,
     operator: &str,
     lhs: &solidity::Expression,
     rhs: &solidity::Expression,
@@ -391,17 +391,17 @@ pub fn translate_assignment_expression(
     let rhs = match operator {
         "=" => {
             // println!("taking translate_pre_or_post_operator_value_expression path...");
-            translate_pre_or_post_operator_value_expression(project, translated_definition, scope.clone(), rhs)?
+            translate_pre_or_post_operator_value_expression(project, translated_definition, scope, rhs)?
         }
         _ => {
             // println!("taking translate_expression path...");
-            translate_expression(project, translated_definition, scope.clone(), rhs)?
+            translate_expression(project, translated_definition, scope, rhs)?
         }
     };
     
-    let rhs_type_name = translated_definition.get_expression_type(scope.clone(), &rhs)?;
+    let rhs_type_name = translated_definition.get_expression_type(scope, &rhs)?;
     
-    let (variable, expression) = translate_variable_access_expression(project, translated_definition, scope.clone(), lhs)?;
+    let (variable, expression) = translate_variable_access_expression(project, translated_definition, scope, lhs)?;
     
     // HACK: struct field lookup
     if variable.is_none() {
@@ -420,5 +420,5 @@ pub fn translate_assignment_expression(
 
     let variable = variable.unwrap();
 
-    create_assignment_expression(project, translated_definition, scope.clone(), operator, &expression, variable, &rhs, &rhs_type_name)
+    create_assignment_expression(project, translated_definition, scope, operator, &expression, &variable, &rhs, &rhs_type_name)
 }

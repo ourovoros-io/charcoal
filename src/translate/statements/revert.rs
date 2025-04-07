@@ -8,7 +8,7 @@ use crate::{errors::Error, project::Project, sway, translate::{function_call::ut
 pub fn translate_revert_statement(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    scope: Rc<RefCell<TranslationScope>>,
+    scope: &Rc<RefCell<TranslationScope>>,
     error_type: &Option<solidity::IdentifierPath>,
     parameters: &[solidity::Expression],
 ) -> Result<sway::Statement, Error> {
@@ -64,8 +64,8 @@ pub fn translate_revert_statement(
                                 generic_parameters: None,
                                 parameters: vec![
                                     if parameters.len() == 1 {
-                                        let parameter_expression = translate_expression(project, translated_definition, scope.clone(), &parameters[0])?;
-                                        let parameter_expression_type = translated_definition.get_expression_type(scope.clone(), &parameter_expression)?;
+                                        let parameter_expression = translate_expression(project, translated_definition, scope, &parameters[0])?;
+                                        let parameter_expression_type = translated_definition.get_expression_type(scope, &parameter_expression)?;
                                         coerce_expression(&parameter_expression, &parameter_expression_type, &error_variant.type_name).unwrap()                                        
                                     } else {
                                         let sway::TypeName::Tuple { type_names } = &error_variant.type_name else { 
@@ -74,9 +74,9 @@ pub fn translate_revert_statement(
                                         sway::Expression::Tuple(
                                             parameters.iter().zip(type_names.iter())
                                                 .map(|(param, type_name)| {
-                                                    let parameter_expression = translate_expression(project, translated_definition, scope.clone(), &param).unwrap();
-                                                    let parameter_expression_type = translated_definition.get_expression_type(scope.clone(), &parameter_expression).unwrap();
-                                                    coerce_expression(&parameter_expression, &parameter_expression_type, &type_name).unwrap()
+                                                    let parameter_expression = translate_expression(project, translated_definition, scope, param).unwrap();
+                                                    let parameter_expression_type = translated_definition.get_expression_type(scope, &parameter_expression).unwrap();
+                                                    coerce_expression(&parameter_expression, &parameter_expression_type, type_name).unwrap()
                                                 })
                                             .collect::<Vec<_>>()
                                         )
@@ -119,7 +119,7 @@ pub fn translate_revert_statement(
                         generic_parameters: None,
                         parameters: vec![
                             sway::Expression::from(sway::Literal::String(
-                                reason.iter().map(|s| s.string.clone()).collect::<Vec<_>>().join("")
+                                reason.iter().map(|s| s.string.clone()).collect::<String>()
                             )),
                         ]
                     })),
@@ -180,7 +180,7 @@ pub fn translate_revert_statement(
 pub fn translate_revert_named_arguments(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    scope: Rc<RefCell<TranslationScope>>,
+    scope: &Rc<RefCell<TranslationScope>>,
     path: &Option<solidity::IdentifierPath>,
     named_args: &[solidity::NamedArgument]
 ) -> Result<sway::Statement, Error> {

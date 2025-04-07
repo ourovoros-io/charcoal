@@ -17,7 +17,7 @@ pub fn translate_storage_name(
     name: &str,
 ) -> String {
     if !translated_definition.storage_fields_names.contains_key(name) {
-        let mut new_name = crate::translate_naming_convention(name, Case::Snake);
+        let mut new_name = crate::translate::translate_naming_convention(name, Case::Snake);
 
         let count = translated_definition.storage_fields_name_counts.entry(new_name.clone()).or_insert(0);
         *count += 1;
@@ -52,7 +52,7 @@ pub fn translate_state_variable(
     // Translate the variable's naming convention
     let old_name = variable_definition.name.as_ref().unwrap().name.clone();
     let new_name = if is_constant || is_immutable {
-        crate::translate_naming_convention(old_name.as_str(), Case::Constant)
+        crate::translate::translate_naming_convention(old_name.as_str(), Case::Constant)
     } else {
         translate_storage_name(project, translated_definition, old_name.as_str())
     };
@@ -67,7 +67,7 @@ pub fn translate_state_variable(
                 solidity::Expression::Variable(name) => {
                     if let Some(external_definition) = project.translated_definitions.iter().find(|d| d.name == name.name) {
                         if let Some(external_struct) = external_definition.structs.iter().find(|s| s.borrow().name == member.name) {
-                            translated_definition.ensure_struct_included(project, external_struct.clone());
+                            translated_definition.ensure_struct_included(project, &external_struct.clone());
                         }
                     }
                 }
@@ -115,7 +115,7 @@ pub fn translate_state_variable(
             // Create deferred initializations for types that can't be initialized with a value
             ("StorageString", None) | ("StorageVec", Some(_)) => {
                 if let Some(x) = variable_definition.initializer.as_ref() {
-                    let value = translate_expression(project, translated_definition, value_scope.clone(), x)?;
+                    let value = translate_expression(project, translated_definition, &value_scope, x)?;
 
                     translated_definition.deferred_initializations.push(DeferredInitialization {
                         name: new_name.clone(),
@@ -139,7 +139,7 @@ pub fn translate_state_variable(
             ("Identity", None) => {
                 let initializer = variable_definition.initializer.as_ref()
                     .map(|x| {
-                        let mut value = translate_expression(project, translated_definition, value_scope.clone(), x);
+                        let mut value = translate_expression(project, translated_definition, &value_scope, x);
                         
                         if let Ok(sway::Expression::Commented(comment, expression)) = &value {
                             if let sway::Expression::FunctionCall(function_call) = expression.as_ref() {
@@ -160,7 +160,7 @@ pub fn translate_state_variable(
 
             (name, generic_parameters) => {
                 let initializer = variable_definition.initializer.as_ref()
-                    .map(|x| translate_expression(project, translated_definition, value_scope.clone(), x))
+                    .map(|x| translate_expression(project, translated_definition, &value_scope, x))
                     .transpose()?;
 
                 // HACK: Add to mapping names for toplevel structs in storage that contain storage mappings
@@ -171,7 +171,7 @@ pub fn translate_state_variable(
                             let Some(storage_key_type) = option_type.storage_key_type() else { continue };
                             let Some(_) = storage_key_type.storage_map_type() else { continue };
 
-                            let struct_name = crate::translate_naming_convention(struct_definition.borrow().name.as_str(), Case::Snake);
+                            let struct_name = crate::translate::translate_naming_convention(struct_definition.borrow().name.as_str(), Case::Snake);
 
                             if !translated_definition.mapping_names.iter().any(|(n, _)| *n == struct_name) {
                                 translated_definition.mapping_names.push((struct_name.clone(), vec![]));
@@ -180,15 +180,13 @@ pub fn translate_state_variable(
                             let mapping_names = translated_definition.mapping_names.iter_mut().find(|m| m.0 == struct_name).unwrap();
                             mapping_names.1.push(field.name.clone());
 
-                            let instance_field_name = format!("{}_instance_count", struct_name);
-                            let mapping_field_name = format!("{}_{}s", struct_name, field.name);
+                            let instance_field_name = format!("{struct_name}_instance_count");
+                            let mapping_field_name = format!("{struct_name}_{}s", field.name);
 
                             let storage = translated_definition.get_storage();
 
                             if let Some(field) = storage.fields.iter().find(|f| f.name == instance_field_name) {
-                                if !field.type_name.is_u64() {
-                                    panic!("Instance count field already exists : {field:#?}");
-                                }
+                                assert!(field.type_name.is_u64(), "Instance count field already exists : {field:#?}");
                             } else {
                                 storage.fields.push(
                                     sway::StorageField { 
@@ -204,9 +202,7 @@ pub fn translate_state_variable(
 
                             if let Some(field) = storage.fields.iter().find(|f| f.name == mapping_field_name) {
                                 if let Some((k, v)) = field.type_name.storage_map_type() {
-                                    if !k.is_u64() && !v.is_compatible_with(&storage_key_type) {
-                                        panic!("Instance mapping field already exists : {field:#?}");
-                                    }
+                                    assert!(k.is_u64() && v.is_compatible_with(&storage_key_type), "Instance mapping field already exists : {field:#?}");
                                 } else {
                                     panic!("Instance mapping field already exists : {field:#?}");
                                 }
@@ -251,7 +247,7 @@ pub fn translate_state_variable(
         }
 
         sway::TypeName::StringSlice if is_constant || is_configurable => {
-            let initializer = translate_expression(project, translated_definition, value_scope.clone(), &variable_definition.initializer.as_ref().unwrap())?;
+            let initializer = translate_expression(project, translated_definition, &value_scope, variable_definition.initializer.as_ref().unwrap())?;
             
             let sway::Expression::Literal(sway::Literal::String(value)) = initializer else { panic!("Expected a string literal") };
         
@@ -263,7 +259,7 @@ pub fn translate_state_variable(
         }
         
         _ => if let Some(x) = variable_definition.initializer.as_ref() {
-            let value = translate_expression(project, translated_definition, value_scope.clone(), x)?;
+            let value = translate_expression(project, translated_definition, &value_scope, x)?;
             create_value_expression(translated_definition, value_scope.clone(), &variable_type_name, Some(&value))
         } else {
             create_value_expression(translated_definition, value_scope.clone(), &variable_type_name, None)
@@ -327,7 +323,7 @@ pub fn translate_state_variable(
 
     // Generate parameters and return type for the public getter function
     let mut parameters = vec![];
-    let mut return_type = super::translate_return_type_name(project, translated_definition, variable_type_name.clone());
+    let mut return_type = super::translate_return_type_name(project, translated_definition, &variable_type_name);
 
     if let Some((inner_parameters, inner_return_type)) = variable_type_name.getter_function_parameters_and_return_type() {
         parameters = inner_parameters;

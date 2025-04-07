@@ -37,7 +37,7 @@ pub fn translate_enum_definition(
     for (i, value) in enum_definition.values.iter().enumerate() {
         variants_impl.items.push(sway::ImplItem::Constant(sway::Constant {
             is_public: false,
-            name: crate::translate_naming_convention(value.as_ref().unwrap().name.as_str(), Case::Constant),
+            name: crate::translate::translate_naming_convention(value.as_ref().unwrap().name.as_str(), Case::Constant),
             type_name: type_definition.name.clone(),
             value: Some(sway::Expression::from(sway::Literal::DecInt(BigUint::from(i), None))),
         }));
@@ -182,8 +182,8 @@ pub fn translate_error_definition(
 pub fn generate_enum_abi_encode_function(
     _project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    sway_enum: Rc<RefCell<sway::Enum>>,
-    abi_encode_impl: Rc<RefCell<sway::Impl>>,
+    sway_enum: &Rc<RefCell<sway::Enum>>,
+    abi_encode_impl: &Rc<RefCell<sway::Impl>>,
 ) -> Result<(), Error> {
     let mut match_expr = sway::Match {
         expression: sway::Expression::Identifier("self".into()),
@@ -343,7 +343,7 @@ pub fn generate_enum_abi_encode_function(
     abi_encode_impl.borrow_mut().items.push(sway::ImplItem::Function(sway::Function {
         attributes: None,
         is_public: false,
-        old_name: "".into(),
+        old_name: String::new(),
         name: "abi_encode".into(),
         generic_parameters: None,
         parameters: sway::ParameterList {

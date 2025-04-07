@@ -12,7 +12,7 @@ use std::{cell::RefCell, rc::Rc};
 pub fn translate_emit_statement(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    scope: Rc<RefCell<TranslationScope>>,
+    scope: &Rc<RefCell<TranslationScope>>,
     expression: &solidity::Expression,
 ) -> Result<sway::Statement, Error> {
     match expression {
@@ -26,7 +26,7 @@ pub fn translate_emit_statement(
                     };
 
                     let event_variant_name =
-                        crate::translate_naming_convention(&member.name, Case::Pascal);
+                        crate::translate::translate_naming_convention(&member.name, Case::Pascal);
 
                     // Check if container is contained in an external definition
                     if let Some(external_definition) = project
@@ -63,11 +63,11 @@ pub fn translate_emit_statement(
                                                             let argument = translate_expression(
                                                                 project,
                                                                 translated_definition,
-                                                                scope.clone(),
+                                                                scope,
                                                                 &arguments[0],
                                                             )?;
                                                             
-                                                            let argument_type = translated_definition.get_expression_type(scope.clone(), &argument)?;
+                                                            let argument_type = translated_definition.get_expression_type(scope, &argument)?;
                                                             
                                                             coerce_expression(&argument, &argument_type, &variant.type_name).unwrap()
                                                         } else {
@@ -77,20 +77,20 @@ pub fn translate_emit_statement(
                                                                     translate_expression(
                                                                         project,
                                                                         translated_definition,
-                                                                        scope.clone(),
+                                                                        scope,
                                                                         p,
                                                                     )
                                                                 })
                                                                 .collect::<Result<Vec<_>, _>>()?;
 
-                                                            let mut arguments_types = arguments.iter().map(|a| translated_definition.get_expression_type(scope.clone(), a).unwrap()).collect::<Vec<_>>();
+                                                            let mut arguments_types = arguments.iter().map(|a| translated_definition.get_expression_type(scope, a).unwrap()).collect::<Vec<_>>();
 
                                                             let sway::TypeName::Tuple { ref type_names } = variant.type_name else { panic!("Expected a tuple") };
 
                                                             let coerced: Vec<sway::Expression> = arguments
                                                                 .iter_mut().zip(arguments_types.iter_mut().zip(type_names))
                                                                 .map(|(expr, (from_type_name, to_type_name))| {                                        
-                                                                    coerce_expression(expr, from_type_name, &to_type_name).unwrap()
+                                                                    coerce_expression(expr, from_type_name, to_type_name).unwrap()
                                                                 })
                                                                 .collect();
                                                             
@@ -155,11 +155,11 @@ pub fn translate_emit_statement(
                                     let argument = translate_expression(
                                         project,
                                         translated_definition,
-                                        scope.clone(),
+                                        scope,
                                         &arguments[0],
                                     )?;
                                     
-                                    let argument_type = translated_definition.get_expression_type(scope.clone(), &argument)?;
+                                    let argument_type = translated_definition.get_expression_type(scope, &argument)?;
                                     
                                     coerce_expression(&argument, &argument_type, &event_variant.type_name).unwrap()
                                 } else {
@@ -169,20 +169,20 @@ pub fn translate_emit_statement(
                                             translate_expression(
                                                 project,
                                                 translated_definition,
-                                                scope.clone(),
+                                                scope,
                                                 p,
                                             )
                                         })
                                         .collect::<Result<Vec<_>, _>>()?;
 
-                                    let mut arguments_types = arguments.iter().map(|a| translated_definition.get_expression_type(scope.clone(), a).unwrap()).collect::<Vec<_>>();
+                                    let mut arguments_types = arguments.iter().map(|a| translated_definition.get_expression_type(scope, a).unwrap()).collect::<Vec<_>>();
 
                                     let sway::TypeName::Tuple { ref type_names } = event_variant.type_name else { panic!("Expected a tuple") };
 
                                     let coerced: Vec<sway::Expression> = arguments
                                         .iter_mut().zip(arguments_types.iter_mut().zip(type_names))
                                         .map(|(expr, (from_type_name, to_type_name))| {                                        
-                                            coerce_expression(expr, from_type_name, &to_type_name).unwrap()
+                                            coerce_expression(expr, from_type_name, to_type_name).unwrap()
                                         })
                                         .collect();
                                     

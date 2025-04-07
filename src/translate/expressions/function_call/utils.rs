@@ -12,7 +12,7 @@ use std::{cell::RefCell, rc::Rc};
 pub fn resolve_abi_function_call(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    scope: Rc<RefCell<TranslationScope>>,
+    scope: &Rc<RefCell<TranslationScope>>,
     abi: &sway::Abi,
     container: &sway::Expression,
     function_name: &str,
@@ -27,8 +27,8 @@ pub fn resolve_abi_function_call(
 
         for arg in named_arguments {
             named_parameters.push((
-                crate::translate_naming_convention(&arg.name.name, Case::Snake),
-                translate_expression(project, translated_definition, scope.clone(), &arg.expr)?,
+                crate::translate::translate_naming_convention(&arg.name.name, Case::Snake),
+                translate_expression(project, translated_definition, scope, &arg.expr)?,
             ));
         }
 
@@ -46,13 +46,13 @@ pub fn resolve_abi_function_call(
                 let arg = named_arguments.iter()
                     .find(|a| {
                         let new_name =
-                            crate::translate_naming_convention(&a.name.name, Case::Snake);
+                            crate::translate::translate_naming_convention(&a.name.name, Case::Snake);
                         new_name == parameter.name
                     })
                     .unwrap();
 
-                let parameter = translate_expression(project, translated_definition, scope.clone(), &arg.expr)?;
-                let parameter_type = translated_definition.get_expression_type(scope.clone(), &parameter)?;
+                let parameter = translate_expression(project, translated_definition, scope, &arg.expr)?;
+                let parameter_type = translated_definition.get_expression_type(scope, &parameter)?;
 
                 parameters.push(parameter);
                 parameter_types.push(parameter_type);
@@ -196,7 +196,7 @@ pub fn resolve_abi_function_call(
                             return true;
                         }
     
-                        if value_element_type.is_compatible_with(&parameter_element_type) {
+                        if value_element_type.is_compatible_with(parameter_element_type) {
                             return true;
                         }
                     }
@@ -227,7 +227,7 @@ pub fn resolve_abi_function_call(
                 .cloned()
                 .unwrap(),
         )
-        .or_insert_with(|| vec![])
+        .or_insert_with(|| Vec::new())
         .push(function.name.clone());
 
     let parameters = parameters_cell.borrow().clone();
@@ -254,8 +254,8 @@ pub fn resolve_abi_function_call(
 pub fn resolve_function_call(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    scope: Rc<RefCell<TranslationScope>>,
-    external_scope: Rc<RefCell<TranslationScope>>,
+    scope: &Rc<RefCell<TranslationScope>>,
+    external_scope: &Rc<RefCell<TranslationScope>>,
     function_name: &str,
     named_arguments: Option<&[solidity::NamedArgument]>,
     mut parameters: Vec<sway::Expression>,
@@ -266,8 +266,8 @@ pub fn resolve_function_call(
 
         for arg in named_arguments {
             named_parameters.push((
-                crate::translate_naming_convention(&arg.name.name, Case::Snake),
-                translate_expression(project, translated_definition, scope.clone(), &arg.expr)?,
+                crate::translate::translate_naming_convention(&arg.name.name, Case::Snake),
+                translate_expression(project, translated_definition, scope, &arg.expr)?,
             ));
         }
 
@@ -313,13 +313,13 @@ pub fn resolve_function_call(
                     .iter()
                     .find(|a| {
                         let new_name =
-                            crate::translate_naming_convention(&a.name.name, Case::Snake);
+                            crate::translate::translate_naming_convention(&a.name.name, Case::Snake);
                         new_name == parameter.name
                     })
                     .unwrap();
 
-                let parameter = translate_expression(project, translated_definition, scope.clone(), &arg.expr)?;
-                let parameter_type = translated_definition.get_expression_type(scope.clone(), &parameter)?;
+                let parameter = translate_expression(project, translated_definition, scope, &arg.expr)?;
+                let parameter_type = translated_definition.get_expression_type(scope, &parameter)?;
 
                 parameters.push(parameter);
                 parameter_types.push(parameter_type);
@@ -352,13 +352,13 @@ pub fn resolve_function_call(
                     .iter()
                     .find(|a| {
                         let new_name =
-                            crate::translate_naming_convention(&a.name.name, Case::Snake);
+                            crate::translate::translate_naming_convention(&a.name.name, Case::Snake);
                         new_name == parameter.name
                     })
                     .unwrap();
 
-                let parameter = translate_expression(project, translated_definition, scope.clone(), &arg.expr)?;
-                let parameter_type = translated_definition.get_expression_type(scope.clone(), &parameter)?;
+                let parameter = translate_expression(project, translated_definition, scope, &arg.expr)?;
+                let parameter_type = translated_definition.get_expression_type(scope, &parameter)?;
 
                 parameters.push(parameter);
                 parameter_types.push(parameter_type);
@@ -509,13 +509,13 @@ pub fn resolve_function_call(
                         return true;
                     }
 
-                    if value_element_type.is_compatible_with(&parameter_element_type) {
+                    if value_element_type.is_compatible_with(parameter_element_type) {
                         return true;
                     }
                 }
             }
 
-            if let Some(expr) = coerce_expression(&parameters[i], &value_type_name, parameter_type_name) {
+            if let Some(expr) = coerce_expression(&parameters[i], value_type_name, parameter_type_name) {
                 parameters[i] = expr;
                 continue;
             } 
@@ -542,7 +542,7 @@ pub fn resolve_function_call(
                     .cloned()
                     .unwrap(),
             )
-            .or_insert_with(|| vec![])
+            .or_insert_with(|| Vec::new())
             .push(function.new_name.clone());
 
         return Ok(Some(sway::Expression::create_function_calls(
@@ -683,7 +683,7 @@ pub fn resolve_function_call(
                 }
             }
 
-            if let Some(expr) = coerce_expression(&parameters[i], &value_type_name, parameter_type_name) {
+            if let Some(expr) = coerce_expression(&parameters[i], value_type_name, parameter_type_name) {
                 parameters[i] = expr;
                 continue;
             } 
@@ -710,7 +710,7 @@ pub fn resolve_function_call(
                     .cloned()
                     .unwrap(),
             )
-            .or_insert_with(|| vec![])
+            .or_insert_with(|| Vec::new())
             .push(variable.new_name.clone());
 
         return Ok(Some(sway::Expression::create_function_calls(
@@ -729,7 +729,7 @@ pub fn resolve_function_call(
 pub fn resolve_struct_constructor(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    scope: Rc<RefCell<TranslationScope>>,
+    scope: &Rc<RefCell<TranslationScope>>,
     structs: &[Rc<RefCell<sway::Struct>>],
     struct_name: &str,
     named_arguments: Option<&[solidity::NamedArgument]>,
@@ -753,7 +753,7 @@ pub fn resolve_struct_constructor(
                         .iter()
                         .find(|a| {
                             let new_name =
-                                crate::translate_naming_convention(&a.name.name, Case::Snake);
+                                crate::translate::translate_naming_convention(&a.name.name, Case::Snake);
                             new_name == field.name
                         })
                         .unwrap();
@@ -761,11 +761,11 @@ pub fn resolve_struct_constructor(
                     let parameter = translate_expression(
                         project,
                         translated_definition,
-                        scope.clone(),
+                        scope,
                         &arg.expr,
                     )?;
                     let parameter_type =
-                        translated_definition.get_expression_type(scope.clone(), &parameter)?;
+                        translated_definition.get_expression_type(scope, &parameter)?;
 
                     parameters.push(parameter);
                     parameter_types.push(parameter_type);
@@ -788,7 +788,7 @@ pub fn resolve_struct_constructor(
         }
     }
 
-    translated_definition.ensure_struct_included(project, struct_definition.clone());
+    translated_definition.ensure_struct_included(project, &struct_definition.clone());
 
     Ok(Some(sway::Expression::from(sway::Constructor {
         type_name: sway::TypeName::Identifier {
@@ -964,8 +964,8 @@ pub fn coerce_expression(
             // From uint to int
             if from_type_name.is_uint() && !to_type_name.is_uint() {
                 if to_type_name.is_int() {
-                    let lhs_bits: usize = lhs_name.trim_start_matches("u").trim_start_matches("U").trim_start_matches("I").parse().unwrap();
-                    let rhs_bits: usize = rhs_name.trim_start_matches("u").trim_start_matches("U").trim_start_matches("I").parse().unwrap();
+                    let lhs_bits: usize = lhs_name.trim_start_matches('u').trim_start_matches('U').trim_start_matches('I').parse().unwrap();
+                    let rhs_bits: usize = rhs_name.trim_start_matches('u').trim_start_matches('U').trim_start_matches('I').parse().unwrap();
                     
                     if lhs_bits > rhs_bits {
                         expression = sway::Expression::create_function_calls(None, &[
@@ -990,8 +990,8 @@ pub fn coerce_expression(
             // From int to uint
             if is_int && !to_type_name.is_int() {
                 if to_type_name.is_uint() {
-                    let lhs_bits: usize = lhs_name.trim_start_matches("u").trim_start_matches("U").trim_start_matches("I").parse().unwrap();
-                    let rhs_bits: usize = rhs_name.trim_start_matches("u").trim_start_matches("U").trim_start_matches("I").parse().unwrap();
+                    let lhs_bits: usize = lhs_name.trim_start_matches('u').trim_start_matches('U').trim_start_matches('I').parse().unwrap();
+                    let rhs_bits: usize = rhs_name.trim_start_matches('u').trim_start_matches('U').trim_start_matches('I').parse().unwrap();
                     
                     
                     if lhs_bits > rhs_bits {
@@ -1019,8 +1019,8 @@ pub fn coerce_expression(
             
             // From uint/int of different bit lengths
             if (is_uint && to_type_name.is_uint()) || (is_int && to_type_name.is_int()) {
-                let lhs_bits: usize = lhs_name.trim_start_matches("u").trim_start_matches("U").trim_start_matches("I").parse().unwrap();
-                let rhs_bits: usize = rhs_name.trim_start_matches("u").trim_start_matches("U").trim_start_matches("I").parse().unwrap();
+                let lhs_bits: usize = lhs_name.trim_start_matches('u').trim_start_matches('U').trim_start_matches('I').parse().unwrap();
+                let rhs_bits: usize = rhs_name.trim_start_matches('u').trim_start_matches('U').trim_start_matches('I').parse().unwrap();
 
                 match &expression {
                     sway::Expression::Literal(sway::Literal::DecInt(i, suffix)) => {
@@ -1067,7 +1067,7 @@ pub fn coerce_expression(
             type_name: rhs_type_name,
             length: rhs_len,
         }) => {
-            if lhs_len != rhs_len || !lhs_type_name.is_compatible_with(&rhs_type_name) {
+            if lhs_len != rhs_len || !lhs_type_name.is_compatible_with(rhs_type_name) {
                 todo!("Handle conversion from {from_type_name} to {to_type_name}")
             }
 
@@ -1075,7 +1075,7 @@ pub fn coerce_expression(
                 sway::Expression::Array(array) => {
                     expression = sway::Expression::from(sway::Array {
                         elements: array.elements.iter().map(|e| {
-                            coerce_expression(e, &lhs_type_name, &rhs_type_name).unwrap()
+                            coerce_expression(e, lhs_type_name, rhs_type_name).unwrap()
                         }).collect(),
                     });
                 }
@@ -1088,8 +1088,8 @@ pub fn coerce_expression(
                                     expression: expression.clone(),
                                     index: sway::Expression::from(sway::Literal::DecInt(i.into(), None)),
                                 }),
-                                &lhs_type_name,
-                                &rhs_type_name,
+                                lhs_type_name,
+                                rhs_type_name,
                             ).unwrap()
                         }).collect()
                     });
@@ -1141,7 +1141,7 @@ pub fn coerce_expression(
                     }
                     
                     for (i, (lhs, rhs)) in lhs_type_names.iter().zip(rhs_type_names).enumerate() {
-                        match coerce_expression(&expressions[i], lhs, &rhs) {
+                        match coerce_expression(&expressions[i], lhs, rhs) {
                             Some(expr) => expressions[i] = expr,
                             None => return None,
                         }

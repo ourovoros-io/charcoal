@@ -10,7 +10,7 @@ use super::{function_call::utils::coerce_expression, translate_expression};
 pub fn translate_variable_expression(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    scope: Rc<RefCell<TranslationScope>>,
+    scope: &Rc<RefCell<TranslationScope>>,
     expression: &solidity::Expression,
 ) -> Result<sway::Expression, Error> {
     //
@@ -36,7 +36,7 @@ pub fn translate_variable_expression(
         _ => {}
     }
 
-    let Ok((variable, expression)) = translate_variable_access_expression(project, translated_definition, scope.clone(), expression) else {
+    let Ok((variable, expression)) = translate_variable_access_expression(project, translated_definition, scope, expression) else {
         panic!(
             "{}ERROR: Variable not found in scope: \"{}\"",
             match project.loc_to_line_and_column(&translated_definition.path, &expression.loc()) {
@@ -76,7 +76,7 @@ pub fn translate_variable_expression(
 pub fn translate_variable_access_expression(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    scope: Rc<RefCell<TranslationScope>>,
+    scope: &Rc<RefCell<TranslationScope>>,
     solidity_expression: &solidity::Expression,
 ) -> Result<(Option<Rc<RefCell<TranslatedVariable>>>, sway::Expression), Error> {
     // println!(
@@ -123,9 +123,9 @@ pub fn translate_variable_access_expression(
         }
 
         solidity::Expression::ArraySubscript(_, array_expression, Some(index)) => {
-            let mut index = translate_expression(project, translated_definition, scope.clone(), index.as_ref())?;
+            let mut index = translate_expression(project, translated_definition, scope, index.as_ref())?;
             
-            let (variable, expression) = translate_variable_access_expression(project, translated_definition, scope.clone(), array_expression)?;
+            let (variable, expression) = translate_variable_access_expression(project, translated_definition, scope, array_expression)?;
 
             if variable.is_none() {
                 return Ok((None, sway::Expression::from(sway::ArrayAccess {
@@ -135,7 +135,7 @@ pub fn translate_variable_access_expression(
             }
 
             let variable = variable.unwrap();
-            let type_name = translated_definition.get_expression_type(scope.clone(), &expression)?;
+            let type_name = translated_definition.get_expression_type(scope, &expression)?;
             let is_storage = variable.borrow().is_storage;
 
             Ok((
@@ -171,7 +171,7 @@ pub fn translate_variable_access_expression(
                                     ]),
             
                                     ("StorageVec", Some(_)) => {
-                                        let index_type_name = translated_definition.get_expression_type(scope.clone(), &index)?;
+                                        let index_type_name = translated_definition.get_expression_type(scope, &index)?;
                                         let u64_type = sway::TypeName::Identifier { name: "u64".to_string(), generic_parameters: None };
                                         index = coerce_expression(&index, &index_type_name, &u64_type).unwrap();
                                         
@@ -203,7 +203,7 @@ pub fn translate_variable_access_expression(
                         }
 
                         ("Vec", Some(generic_parameters)) if generic_parameters.entries.len() == 1 => {
-                            let index_type_name = translated_definition.get_expression_type(scope.clone(), &index)?;
+                            let index_type_name = translated_definition.get_expression_type(scope, &index)?;
                             let u64_type = sway::TypeName::Identifier { name: "u64".to_string(), generic_parameters: None };
                             index = coerce_expression(&index, &index_type_name, &u64_type).unwrap();
                             
@@ -248,13 +248,13 @@ pub fn translate_variable_access_expression(
                         continue;
                     }
 
-                    let member_name = crate::translate_naming_convention(&member.name, Case::Snake);
-                    let new_name = format!("{}_{}", crate::translate_naming_convention(&external_definition.name, Case::Snake), member_name);
+                    let member_name = crate::translate::translate_naming_convention(&member.name, Case::Snake);
+                    let new_name = format!("{}_{}", crate::translate::translate_naming_convention(&external_definition.name, Case::Snake), member_name);
                     
                     if translated_definition.toplevel_scope.borrow().find_function(|f| f.borrow().new_name == new_name).is_none() {
                         // Get the scope entry for the library function
                         let Some(scope_entry) = external_definition.toplevel_scope.borrow().find_function(|f| f.borrow().new_name == new_name) else {
-                            panic!("Failed to find function in scope: \"{}\"", new_name);
+                            panic!("Failed to find function in scope: \"{new_name}\"");
                         };
 
                         let scope_entry = scope_entry.borrow();
@@ -314,9 +314,9 @@ pub fn translate_variable_access_expression(
                 }
             }
             
-            let mut translated_container = translate_expression(project, translated_definition, scope.clone(), container)?;
+            let mut translated_container = translate_expression(project, translated_definition, scope, container)?;
         
-            let mut container_type_name = translated_definition.get_expression_type(scope.clone(), &translated_container)?;
+            let mut container_type_name = translated_definition.get_expression_type(scope, &translated_container)?;
             let mut container_type_name_string = container_type_name.to_string();
 
             // HACK: tack `.read()` onto the end if the container is a StorageKey
@@ -329,11 +329,11 @@ pub fn translate_variable_access_expression(
                 container_type_name_string = container_type_name.to_string();
             }
 
-            let (variable, _) = translate_variable_access_expression(project, translated_definition, scope.clone(), container)?;
+            let (variable, _) = translate_variable_access_expression(project, translated_definition, scope, container)?;
         
             // Check if container is a struct
             if let Some(struct_definition) = translated_definition.structs.iter().find(|s| s.borrow().name == container_type_name_string) {
-                let field_name = crate::translate_naming_convention(member.name.as_str(), Case::Snake);
+                let field_name = crate::translate::translate_naming_convention(member.name.as_str(), Case::Snake);
         
                 if struct_definition.borrow().fields.iter().any(|f| f.name == field_name) {
                     return Ok((
@@ -357,10 +357,10 @@ pub fn translate_variable_access_expression(
 
         solidity::Expression::FunctionCall(_, function, arguments) => {
             let arguments = arguments.iter()
-                .map(|a| translate_expression(project, translated_definition, scope.clone(), a))
+                .map(|a| translate_expression(project, translated_definition, scope, a))
                 .collect::<Result<Vec<_>, _>>()?;
 
-            match translate_variable_access_expression(project, translated_definition, scope.clone(), function) {
+            match translate_variable_access_expression(project, translated_definition, scope, function) {
                 Ok((variable, expression)) => Ok((
                     variable,
                     sway::Expression::from(sway::FunctionCall {

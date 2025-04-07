@@ -7,7 +7,7 @@ use super::translate_expression;
 pub fn translate_list_expression(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    scope: Rc<RefCell<TranslationScope>>,
+    scope: &Rc<RefCell<TranslationScope>>,
     parameters: &[(solidity::Loc, Option<solidity::Parameter>)],
 ) -> Result<sway::Expression, Error> {
     //
@@ -23,7 +23,7 @@ pub fn translate_list_expression(
     // Create a tuple expression
     Ok(sway::Expression::Tuple(
         parameters.iter()
-            .map(|(_, p)| translate_expression(project, translated_definition, scope.clone(), &p.as_ref().unwrap().ty))
+            .map(|(_, p)| translate_expression(project, translated_definition, scope, &p.as_ref().unwrap().ty))
             .collect::<Result<Vec<_>, _>>()?
     ))
 }

@@ -9,10 +9,10 @@ use super::translate_expression;
 pub fn translate_parenthesis_expression(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    scope: Rc<RefCell<TranslationScope>>,
+    scope: &Rc<RefCell<TranslationScope>>,
     expression: &solidity::Expression,
 ) -> Result<sway::Expression, Error> {
-    let sway_expr = translate_expression(project, translated_definition, scope.clone(), expression)?;
+    let sway_expr = translate_expression(project, translated_definition, scope, expression)?;
     
     match &expression {
         solidity::Expression::Assign(_, lhs, _) => {
@@ -26,7 +26,7 @@ pub fn translate_parenthesis_expression(
             //    z
             // }
             //
-            let sway_lhs = translate_expression(project, translated_definition, scope.clone(), lhs)?;
+            let sway_lhs = translate_expression(project, translated_definition, scope, lhs)?;
             
             Ok(sway::Expression::from(sway::Block {
                 statements: vec![

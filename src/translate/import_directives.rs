@@ -44,7 +44,7 @@ fn process_import(
     import_path: &Path,
 ) -> Result<bool, Error> {
     if !project.translated_definitions.iter().any(|t| t.path == import_path) {
-        project.translate(None, &import_path)?;
+        project.translate(None, import_path)?;
     }
 
     let mut found = false;
@@ -126,7 +126,7 @@ fn process_import(
         for event_definition in external_definition.events_enums.iter() {
             
             if let Some(symbol) = symbol {
-                if !include_all && symbol != event_definition.0.borrow().name.to_string() {
+                if !include_all && symbol != event_definition.0.borrow().name {
                     continue;
                 }
             }
@@ -142,7 +142,7 @@ fn process_import(
         for error_definition in external_definition.errors_enums.iter() {
             
             if let Some(symbol) = symbol {
-                if !include_all && symbol != error_definition.0.borrow().name.to_string() {
+                if !include_all && symbol != error_definition.0.borrow().name {
                     continue;
                 }
             }
@@ -257,7 +257,7 @@ fn process_import(
 
         // Extend the abis
         if let Some(abi) = external_definition.abi.as_ref() {
-            if (!include_all && symbol.is_none()) || symbol.as_ref().map(|s| *s == abi.name).unwrap_or(false) {
+            if (!include_all && symbol.is_none()) || symbol.as_ref().is_some_and(|s| *s == abi.name) {
                 found = true;
         
                 if !translated_definition.abis.contains(abi) {

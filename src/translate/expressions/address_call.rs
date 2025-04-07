@@ -7,8 +7,8 @@ use crate::{errors::Error, project::Project, sway, translate::{TranslatedDefinit
 pub fn translate_address_call_expression(
     _project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    scope: Rc<RefCell<TranslationScope>>,
-    payload: sway::Expression,
+    scope: &Rc<RefCell<TranslationScope>>,
+    payload: &sway::Expression,
     coins: Option<sway::Expression>,
     asset_id: Option<sway::Expression>,
     gas: Option<sway::Expression>,
@@ -39,7 +39,7 @@ pub fn translate_address_call_expression(
     let return_length_name = scope.borrow_mut().generate_unique_variable_name("return_length");
     let result_ptr_name = scope.borrow_mut().generate_unique_variable_name("result_ptr");
 
-    let payload_type = translated_definition.get_expression_type(scope.clone(), &payload)?;
+    let payload_type = translated_definition.get_expression_type(scope, payload)?;
 
     Ok(sway::Expression::from(sway::Block {
         statements: vec![

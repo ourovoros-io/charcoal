@@ -9,12 +9,12 @@ use crate::{errors::Error, project::Project, sway, translate::{create_value_expr
 pub fn translate_variable_definition_statement(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    scope: Rc<RefCell<TranslationScope>>,
+    scope: &Rc<RefCell<TranslationScope>>,
     variable_declaration: &solidity::VariableDeclaration,
-    initializer: &Option<solidity::Expression>,
+    initializer: Option<&solidity::Expression>,
 ) -> Result<sway::Statement, Error> {
     let old_name = variable_declaration.name.as_ref().unwrap().name.clone();
-    let new_name = crate::translate_naming_convention(old_name.as_str(), Case::Snake);
+    let new_name = crate::translate::translate_naming_convention(old_name.as_str(), Case::Snake);
     let mut type_name = translate_type_name(project, translated_definition, &variable_declaration.ty, false, false);
     let mut abi_type_name = None;
 
@@ -34,7 +34,7 @@ pub fn translate_variable_definition_statement(
 
     if let Some(solidity::Expression::New(_, new_expression)) = initializer.as_ref() {
         let solidity::Expression::FunctionCall(_, ty, args) = new_expression.as_ref() else {
-            panic!("Unexpected new expression: {} - {new_expression:#?}", new_expression);
+            panic!("Unexpected new expression: {new_expression} - {new_expression:#?}", );
         };
 
         let new_type_name = translate_type_name(project, translated_definition, ty, false, false);
@@ -60,7 +60,7 @@ pub fn translate_variable_definition_statement(
                 }
 
                 let element_type_name = &generic_parameters.entries.first().unwrap().type_name;
-                let length = translate_expression(project, translated_definition, scope.clone(), &args[0])?;
+                let length = translate_expression(project, translated_definition, scope, &args[0])?;
 
                 value = Some(sway::Expression::from(sway::Block {
                     statements: vec![
@@ -134,11 +134,11 @@ pub fn translate_variable_definition_statement(
     }
 
     let value = if let Some(value) = value {
-        let value_type = translated_definition.get_expression_type(scope.clone(), &value)?;
+        let value_type = translated_definition.get_expression_type(scope, &value)?;
         coerce_expression(&value, &value_type, &type_name).unwrap()
     } else if let Some(x) = initializer.as_ref() {
-        let x = translate_pre_or_post_operator_value_expression(project, translated_definition, scope.clone(), x)?;
-        let value_type = translated_definition.get_expression_type(scope.clone(), &x)?;
+        let x = translate_pre_or_post_operator_value_expression(project, translated_definition, scope, x)?;
+        let value_type = translated_definition.get_expression_type(scope, &x)?;
         coerce_expression(&x, &value_type, &type_name).unwrap()
     } else {
         create_value_expression(translated_definition, scope.clone(), &type_name, None)
