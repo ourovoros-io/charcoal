@@ -363,20 +363,105 @@ pub fn translate_uint_types_cast_function_call(
 
     match &value_type_name {
         sway::TypeName::Identifier { name, .. } => match (name.as_str(), bits) {
-            ("u8", 8 | 16 | 32 | 64 | 256) => {
-                create_uint_try_from_unwrap_expression(8, bits, value_expression)
-            }
-            ("u16", 8 | 16 | 32 | 64 | 256) => {
-                create_uint_try_from_unwrap_expression(16, bits, value_expression)
-            }
-            ("u32", 8 | 16 | 32 | 64 | 256) => {
-                create_uint_try_from_unwrap_expression(32, bits, value_expression)
-            }
-            ("u64", 8 | 16 | 32 | 64 | 256) => {
-                create_uint_try_from_unwrap_expression(64, bits, value_expression)
-            }
-            ("u256", 8 | 16 | 32 | 64 | 256) => {
-                create_uint_try_from_unwrap_expression(256, bits, value_expression)
+            ("u8", 8 | 16 | 32 | 64 | 256) => create_uint_try_from_unwrap_expression(8, bits, value_expression),
+            
+            ("u16", 8 | 16 | 32 | 64 | 256) => create_uint_try_from_unwrap_expression(16, bits, value_expression),
+            
+            ("u32", 8 | 16 | 32 | 64 | 256) => create_uint_try_from_unwrap_expression(32, bits, value_expression),
+            
+            ("u64", 8 | 16 | 32 | 64 | 256) => create_uint_try_from_unwrap_expression(64, bits, value_expression),
+            
+            ("u256", 8 | 16 | 32 | 64 | 256) => create_uint_try_from_unwrap_expression(256, bits, value_expression),
+
+            ("u256", 128) => {
+                // use std::u128::U128;
+                // {
+                //     let parts = asm(r1: value) {
+                //         r1: (u64, u64, u64, u64)
+                //     };
+                //     
+                //     if parts.0 != 0 || parts.1 != 0 {
+                //         revert();
+                //     } 
+                // 
+                //     U128::from((parts.2, parts.3))
+                // }
+
+                translated_definition.ensure_use_declared("std::u128::U128");
+                
+                let unique_variable_name = scope.borrow().generate_unique_variable_name("parts");
+            
+                Ok(sway::Expression::from(sway::Block { 
+                    statements: vec![
+                        sway::Statement::from(sway::Let { 
+                            pattern: sway::LetPattern::Identifier(sway::LetIdentifier { 
+                                is_mutable: false, 
+                                name: unique_variable_name.clone() 
+                            }), 
+                            type_name: None, 
+                            value: sway::Expression::from(sway::AsmBlock { 
+                                registers: vec![
+                                    sway::AsmRegister { 
+                                        name: "r1".to_string(), 
+                                        value: Some(value_expression) 
+                                    }
+                                ], 
+                                instructions: vec![], 
+                                final_expression: Some(sway::AsmFinalExpression { 
+                                    register: "r1".to_string(), 
+                                    type_name: Some(sway::TypeName::Tuple { 
+                                        type_names: vec![
+                                            sway::TypeName::Identifier { name: "u64".to_string(), generic_parameters: None },
+                                            sway::TypeName::Identifier { name: "u64".to_string(), generic_parameters: None },
+                                            sway::TypeName::Identifier { name: "u64".to_string(), generic_parameters: None },
+                                            sway::TypeName::Identifier { name: "u64".to_string(), generic_parameters: None }
+                                        ] 
+                                    }) 
+                                })
+                            }) 
+                        }),
+                        sway::Statement::from(sway::Expression::from(sway::If { 
+                            condition: Some(sway::Expression::from(sway::BinaryExpression { 
+                                operator: "||".to_string(), 
+                                lhs: sway::Expression::from(sway::BinaryExpression { 
+                                    operator: "!=".to_string(), 
+                                    lhs: sway::Expression::from(sway::MemberAccess { 
+                                        expression: sway::Expression::Identifier(unique_variable_name.clone()), 
+                                        member: "0".to_string() 
+                                    }), 
+                                    rhs: sway::Expression::from(sway::Literal::DecInt(BigUint::zero(), None)) 
+                                }), 
+                                rhs: sway::Expression::from(sway::BinaryExpression { 
+                                    operator: "!=".to_string(), 
+                                    lhs: sway::Expression::from(sway::MemberAccess { 
+                                        expression: sway::Expression::Identifier(unique_variable_name.clone()), 
+                                        member: "1".to_string() 
+                                    }), 
+                                    rhs: sway::Expression::from(sway::Literal::DecInt(BigUint::zero(), None)) 
+                                }),
+                            })), 
+                            then_body: sway::Block { 
+                                statements: vec![sway::Statement::from(sway::Expression::create_function_calls(None, &[
+                                    ("revert", Some((None, vec![])))
+                                ]))], 
+                                final_expr: None 
+                            }, 
+                            else_if: None, 
+                        }))
+                    ], 
+                    final_expr: Some(sway::Expression::create_function_calls(None, &[
+                        ("U128::from", Some((None, vec![sway::Expression::Tuple(vec![
+                            sway::Expression::from(sway::MemberAccess { 
+                                expression: sway::Expression::Identifier(unique_variable_name.clone()), 
+                                member: "2".to_string() 
+                            }),
+                            sway::Expression::from(sway::MemberAccess { 
+                                expression: sway::Expression::Identifier(unique_variable_name.clone()), 
+                                member: "3".to_string() 
+                            })
+                        ])])))
+                    ]))
+                }))
             }
 
             // Direct signed-to-unsigned conversion
@@ -878,12 +963,20 @@ pub fn translate_dynamic_bytes_type_cast_function_call(
             _ => todo!("translate from {value_type_name} to bytes"),
         },
 
-        sway::TypeName::StringSlice => {
+        sway::TypeName::StringSlice | sway::TypeName::StringArray { .. } => {
             // Ensure `std::bytes::Bytes` is imported
             translated_definition.ensure_use_declared("std::bytes::Bytes");
 
             // Generate a unique name for our variable
             let variable_name = scope.borrow_mut().generate_unique_variable_name("s");
+
+            let value_expression = match &value_type_name {
+                sway::TypeName::StringArray { .. } => sway::Expression::create_function_calls(None, &[
+                    ("from_str_array", Some((None, vec![value_expression])))
+                ]),
+
+                _ => value_expression
+            };
 
             if let sway::Expression::Identifier(variable_name) = &value_expression {
                 return Ok(sway::Expression::create_function_calls(

@@ -2262,7 +2262,14 @@ impl TranslatedDefinition {
                                 length: 32,
                             }),
 
-                            _ => todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression)),
+                            name => {
+                                // Check to see if we are using a function from the using library
+                                if translated_definition.using_directives.iter().any(|using| using.functions.iter().any(|fnc| fnc.new_name == name)) {
+                                    return Ok(sway::TypeName::Identifier { name: "u256".into(), generic_parameters: None })
+                                }
+                                
+                                todo!("get type of function call expression: {} - {expression:#?}", sway::TabbedDisplayer(expression))
+                            }
                         }
 
                         ("Vec", Some(generic_parameters)) if generic_parameters.entries.len() == 1 => match member_access.member.as_str() {

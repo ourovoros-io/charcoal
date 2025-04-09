@@ -1,10 +1,6 @@
 #![warn(clippy::all, clippy::pedantic)]
 #![allow(clippy::single_match)]
 
-
-
-
-
 pub mod errors;
 pub mod project;
 pub mod sway;
