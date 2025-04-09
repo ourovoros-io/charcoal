@@ -323,14 +323,20 @@ pub fn translate_function_call_expression(
                             let abi_type_name = variable.borrow().abi_type_name.clone();
 
                             if let Some(abi_type_name) = abi_type_name.as_ref() {
-                                if let Some(external_definition) = project.find_definition_with_abi(&abi_type_name.to_string()).cloned() {
+                                let found_abi = if let Some(external_definition) = project.find_definition_with_abi(&abi_type_name.to_string()) {
+                                    external_definition.find_abi(|a| a.name == abi_type_name.to_string()).cloned()
+                                } else {
+                                    translated_definition.find_abi(|a| a.name == abi_type_name.to_string()).cloned()
+                                };
+                                
+                                if let Some(abi) = found_abi {
                                     let container = translate_expression(project, translated_definition, scope, container)?;
                                     
                                     if let Some(result) = resolve_abi_function_call(
                                         project,
                                         translated_definition,
                                         scope,
-                                        external_definition.find_abi(|a| a.name == abi_type_name.to_string()).unwrap(),
+                                        &abi,
                                         &container,
                                         member.name.as_str(),
                                         named_arguments,
@@ -339,7 +345,7 @@ pub fn translate_function_call_expression(
                                     )? {
                                         return Ok(result);
                                     }
-                                }
+                                } 
                             }
 
                             // Check if variable is a storage vector
@@ -399,6 +405,13 @@ pub fn translate_function_call_expression(
                                     
                                     _ => {}
                                 }
+                            }
+
+                            // Check to see if the function is from using library
+                            if let Some(f) =  translated_definition.using_directives.iter().find_map(|using| using.functions.iter().find(|fnc| fnc.old_name == member.name)) {
+                                return Ok(sway::Expression::create_function_calls(Some(container), &[
+                                    (&f.new_name, Some((None, parameters)))
+                                ]))
                             }
                         }
 

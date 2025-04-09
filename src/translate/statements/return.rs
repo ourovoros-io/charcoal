@@ -27,12 +27,16 @@ pub fn translate_return_statement(
     let sway::TypeName::Function { return_type, .. } = function.borrow().type_name.clone() else {
         panic!("Invalid function type name: {:#?}", function.borrow().type_name)
     };
-    
-    let return_type = return_type.unwrap();
 
     let mut expression = translate_expression(project, translated_definition, scope, expression)?;
     let expression_type = translated_definition.get_expression_type(scope, &expression)?;
+        
+    if return_type.is_none() {
+        return Ok(sway::Statement::from(expression));
+    }
     
+    let return_type = return_type.unwrap();
+
     expression = coerce_expression(&expression, &expression_type, &return_type).unwrap();
 
     Ok(sway::Statement::from(sway::Expression::Return(Some(Box::new(expression)))))
