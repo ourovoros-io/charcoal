@@ -1,7 +1,5 @@
 use super::{
-    create_value_expression, evaluate_expression, translate_expression, translate_type_name,
-    DeferredInitialization, TranslatedDefinition, TranslatedFunction, TranslatedVariable,
-    TranslationScope,
+    expressions::{create_value_expression, evaluate_expression, translate_expression}, type_names::{translate_return_type_name, translate_type_name}, DeferredInitialization, TranslatedDefinition, TranslatedFunction, TranslatedVariable, TranslationScope
 };
 use crate::{project::Project, sway, Error};
 use convert_case::Case;
@@ -308,7 +306,21 @@ pub fn translate_state_variable(
     translated_definition.toplevel_scope.borrow_mut().variables.push(Rc::new(RefCell::new(TranslatedVariable {
         old_name: old_name.clone(),
         new_name: new_name.clone(),
-        type_name: variable_type_name.clone(),
+        type_name: if is_storage {
+            sway::TypeName::Identifier { 
+                name: "StorageKey".to_string(), 
+                generic_parameters: Some(sway::GenericParameterList { 
+                    entries: vec![
+                        sway::GenericParameter { 
+                            type_name: variable_type_name.clone(), 
+                            implements: None 
+                        }
+                    ] 
+                }) 
+            }
+        } else {
+            variable_type_name.clone()
+        },
         abi_type_name,
         is_storage,
         is_configurable,
@@ -323,7 +335,7 @@ pub fn translate_state_variable(
 
     // Generate parameters and return type for the public getter function
     let mut parameters = vec![];
-    let mut return_type = super::translate_return_type_name(project, translated_definition, &variable_type_name);
+    let mut return_type = translate_return_type_name(project, translated_definition, &variable_type_name);
 
     if let Some((inner_parameters, inner_return_type)) = variable_type_name.getter_function_parameters_and_return_type() {
         parameters = inner_parameters;

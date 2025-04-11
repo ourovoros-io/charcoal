@@ -1,9 +1,6 @@
 use crate::{
     errors::Error,
-    sway::{self, AttributeList},
-    translate::{
-        translate_contract_definition, translate_enum_definition, translate_error_definition, translate_event_definition, translate_function_declaration, translate_function_definition, translate_import_directives, translate_storage_name, translate_struct_definition, translate_type_definition, translate_using_directive, TranslatedDefinition
-    },
+    sway::{self, AttributeList}, translate::{contracts::{translate_contract_definition, translate_using_directive}, enums::{translate_enum_definition, translate_error_definition, translate_event_definition}, functions::{translate_function_declaration, translate_function_definition}, import_directives::translate_import_directives, storage::translate_storage_name, structs::translate_struct_definition, type_definitions::translate_type_definition, TranslatedDefinition},
 };
 use convert_case::Case;
 use num_bigint::BigUint;

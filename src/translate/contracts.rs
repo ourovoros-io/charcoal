@@ -1,14 +1,10 @@
-use super::{
-    assignment::create_assignment_expression, generate_enum_abi_encode_function, resolve_import,
-    translate_enum_definition, translate_error_definition, translate_event_definition,
-    translate_function_declaration, translate_function_definition, translate_modifier_definition,
-    translate_state_variable, translate_storage_name, translate_struct_definition,
-    translate_type_definition, translate_type_name, TranslatedDefinition, TranslatedUsingDirective,
-};
+
 use crate::{project::Project, sway, Error};
 use convert_case::Case;
 use solang_parser::pt as solidity;
 use std::{cell::RefCell, path::PathBuf, rc::Rc};
+
+use super::{enums::{generate_enum_abi_encode_function, translate_enum_definition, translate_error_definition, translate_event_definition}, expressions::assignment::create_assignment_expression, functions::{translate_function_declaration, translate_function_definition, translate_modifier_definition}, import_directives::resolve_import, storage::{translate_state_variable, translate_storage_name}, structs::translate_struct_definition, type_definitions::translate_type_definition, type_names::translate_type_name, TranslatedDefinition, TranslatedUsingDirective};
 
 #[inline]
 pub fn translate_using_directive(

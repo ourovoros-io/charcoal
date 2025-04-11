@@ -3,7 +3,7 @@ use convert_case::Case;
 use num_bigint::BigUint;
 use num_traits::Zero;
 use solang_parser::{helpers::CodeLocation, pt as solidity};
-use crate::{errors::Error, project::Project, sway, translate::{translate_type_name, TranslatedDefinition, TranslationScope}};
+use crate::{errors::Error, project::Project, sway, translate::{type_names::translate_type_name, TranslatedDefinition, TranslationScope}};
 use super::translate_expression;
 
 #[inline]
@@ -335,8 +335,29 @@ pub fn translate_member_access_expression(
                     let variable = variable.borrow();
 
                     match &variable.type_name {
-                        sway::TypeName::Identifier { name: type_name, generic_parameters } => match type_name.as_str() {
-                            "StorageVec" | "Vec" if generic_parameters.is_some() => match member {
+                        sway::TypeName::Identifier { name: type_name, generic_parameters } => match (type_name.as_str(), generic_parameters.as_ref()) {
+                            ("StorageKey", Some(generic_parameters)) if generic_parameters.entries.len() == 1 => match &generic_parameters.entries[0].type_name {
+                                sway::TypeName::Identifier { name, generic_parameters } => match (name.as_str(), generic_parameters.as_ref()) {
+                                    ("StorageVec", Some(generic_parameters)) if generic_parameters.entries.len() == 1 => {
+                                        return Ok(sway::Expression::create_function_calls(
+                                            Some(if variable.is_storage {
+                                                sway::Expression::from(sway::MemberAccess {
+                                                    expression: sway::Expression::Identifier("storage".into()),
+                                                    member: variable.new_name.clone(),
+                                                })
+                                            } else {
+                                                sway::Expression::Identifier(variable.new_name.clone())
+                                            }),
+                                            &[("len", Some((None, vec![])))],
+                                        ));
+                                    }
+
+                                    _ => {}
+                                }
+                                
+                                _ => {}
+                            }
+                            ("Vec", Some(generic_parameters)) if generic_parameters.entries.len() == 1 => match member {
                                 "length" => {
                                     return Ok(sway::Expression::create_function_calls(
                                         Some(if variable.is_storage {

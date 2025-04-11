@@ -1,6 +1,7 @@
-use super::{translate_type_name, TranslatedDefinition};
 use crate::{project::Project, sway, Error};
 use solang_parser::pt as solidity;
+
+use super::{type_names::translate_type_name, TranslatedDefinition};
 
 #[inline]
 pub fn translate_type_definition(

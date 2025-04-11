@@ -6,10 +6,7 @@ pub mod member_access;
 use crate::{
     errors::Error,
     project::Project,
-    sway,
-    translate::{
-        address_call::translate_address_call_expression, TranslatedDefinition, TranslationScope
-    },
+    sway, translate::{expressions::address_call::translate_address_call_expression, TranslatedDefinition, TranslationScope},
 };
 use build_ins::translate_builtin_function_call;
 use casting::{translate_address_type_cast_function_call, translate_bytes_type_cast_function_call, translate_dynamic_bytes_type_cast_function_call, translate_int_types_cast_function_call, translate_payable_type_cast_function_call, translate_string_type_cast_function_call, translate_uint_types_cast_function_call};
@@ -350,27 +347,29 @@ pub fn translate_function_call_expression(
 
                             // Check if variable is a storage vector
                             if variable.borrow().is_storage {
-                                if variable.borrow().type_name.is_storage_vec() {
-                                    match member.name.as_str() {
-                                        "push" => {
-                                            return Ok(sway::Expression::create_function_calls(None, &[
-                                                ("storage", None),
-                                                (variable.borrow().new_name.as_str(), None),
-                                                ("push", Some((None, parameters)))
-                                            ]))
+                                if let Some(storage_key_type) = variable.borrow().type_name.storage_key_type() {
+                                    if storage_key_type.is_storage_vec() {
+                                        match member.name.as_str() {
+                                            "push" => {
+                                                return Ok(sway::Expression::create_function_calls(None, &[
+                                                    ("storage", None),
+                                                    (variable.borrow().new_name.as_str(), None),
+                                                    ("push", Some((None, parameters)))
+                                                ]))
+                                            }
+                                            "pop" => {
+                                                return Ok(sway::Expression::create_function_calls(None, &[
+                                                    ("storage", None),
+                                                    (variable.borrow().new_name.as_str(), None),
+                                                    ("pop", Some((None, parameters)))
+                                                ]))
+                                            }
+                                            _ => {}
                                         }
-                                        "pop" => {
-                                            return Ok(sway::Expression::create_function_calls(None, &[
-                                                ("storage", None),
-                                                (variable.borrow().new_name.as_str(), None),
-                                                ("pop", Some((None, parameters)))
-                                            ]))
-                                        }
-                                        _ => {}
                                     }
                                 }
                             }
-
+                            
                             let container = translate_expression(
                                 project,
                                 translated_definition,
@@ -415,7 +414,7 @@ pub fn translate_function_call_expression(
                             }
                         }
 
-                        panic!("Failed to resolve function call : {}({})", member.name, parameter_types.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(", "));
+                        panic!("Failed to resolve function call : {}.{}({})", container, member, parameter_types.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(", "));
                     }
                 },
 

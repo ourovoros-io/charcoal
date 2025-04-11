@@ -2,7 +2,7 @@ use std::{cell::RefCell, rc::Rc};
 use num_bigint::BigUint;
 use num_traits::Zero;
 use solang_parser::pt as solidity;
-use crate::{errors::Error, project::Project, sway, translate::{function_call::utils::coerce_expression, translate_expression, TranslatedDefinition, TranslationScope}};
+use crate::{errors::Error, project::Project, sway, translate::{expressions::{function_call::utils::coerce_expression, translate_expression}, TranslatedDefinition, TranslationScope}};
 
 #[inline]
 pub fn translate_revert_statement(

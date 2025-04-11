@@ -2,9 +2,11 @@ use crate::{
     errors::Error,
     project::Project,
     sway,
-    translate::{translate_expression, TranslatedDefinition, TranslationScope},
+    translate::{expressions::translate_expression, TranslatedDefinition, TranslationScope},
 };
 use convert_case::Case;
+use num_bigint::BigUint;
+use num_traits::{One, Zero};
 use solang_parser::pt as solidity;
 use std::{cell::RefCell, rc::Rc};
 
@@ -880,6 +882,7 @@ pub fn coerce_expression(
     from_type_name: &sway::TypeName,
     to_type_name: &sway::TypeName,
 ) -> Option<sway::Expression> {
+    // println!("Translating from : {}, to : {} with expression : {}", from_type_name, to_type_name, sway::TabbedDisplayer(expression));
     if from_type_name.is_compatible_with(to_type_name) {
         return Some(expression.clone());
     }
@@ -926,7 +929,7 @@ pub fn coerce_expression(
 
                 _ => {},
             }
-
+            ("StorageVec", Some(sway::GenericParameterList { entries })) => todo!("REKT"),
             _ => {}
         }
     }
@@ -947,10 +950,10 @@ pub fn coerce_expression(
                     if !storage_key_type.is_compatible_with(to_type_name) {
                         return None;
                     }
-                    
-                    expression = sway::Expression::create_function_calls(Some(expression.clone()), &[
+
+                    return Some(sway::Expression::create_function_calls(Some(expression.clone()), &[
                         ("read", Some((None, vec![]))),
-                    ]);
+                    ]));
                 } else {
                     return None;
                 }
@@ -965,6 +968,85 @@ pub fn coerce_expression(
             if lhs_name == rhs_name {
                 return Some(expression.clone());
             }
+
+            // {
+            //     let mut v = Vec::new();
+            //     let len = storage.storageVec.len();
+            //     let mut i = 0;
+            //     while i < len {
+            //         v.push(storage.storageVec.get(i).unwrap().read())
+            //         i += 1;
+            //     }
+            //     v
+            // }
+            if let Some(storage_key_type) = from_type_name.storage_key_type() {
+                if let Some(storage_vec_type) = storage_key_type.storage_vec_type() {
+                    if let Some(vec_type) = to_type_name.vec_type() {
+                        // let unique_variable_name = 
+                        let get_expression = sway::Expression::create_function_calls(Some(expression.clone()), &[
+                            ("get", Some((None, vec![sway::Expression::Identifier("i".to_string())]))),
+                            ("unwrap", Some((None, vec![]))),
+                            ("read", Some((None, vec![])))
+                        ]);
+                        let element_expression = coerce_expression(&get_expression, &storage_vec_type, &vec_type).unwrap();
+
+                        return Some(sway::Expression::from(sway::Block { 
+                            statements: vec![
+                                sway::Statement::from(sway::Let { 
+                                    pattern: sway::LetPattern::Identifier(sway::LetIdentifier { 
+                                        is_mutable: false, 
+                                        name: "len".to_string() 
+                                    }), 
+                                    type_name: None, 
+                                    value: sway::Expression::create_function_calls(Some(expression.clone()), &[
+                                        ("len", Some((None, vec![])))
+                                    ]),
+                                }),
+                                sway::Statement::from(sway::Let { 
+                                    pattern: sway::LetPattern::Identifier(sway::LetIdentifier { 
+                                        is_mutable: true, 
+                                        name: "v".to_string() 
+                                    }), 
+                                    type_name: None, 
+                                    value: sway::Expression::create_function_calls(None, &[
+                                        ("Vec::with_capacity", Some((None, vec![sway::Expression::Identifier("len".to_string())])))
+                                    ]),
+                                }),
+                                sway::Statement::from(sway::Let { 
+                                    pattern: sway::LetPattern::Identifier(sway::LetIdentifier { 
+                                        is_mutable: true, 
+                                        name: "i".to_string() 
+                                    }), 
+                                    type_name: None, 
+                                    value: sway::Expression::from(sway::Literal::DecInt(BigUint::zero(), None)),
+                                }),
+                                sway::Statement::from(sway::Expression::from(sway::While { 
+                                    condition: sway::Expression::from(sway::BinaryExpression { 
+                                        operator: "<".to_string(), 
+                                        lhs: sway::Expression::Identifier("i".to_string()), 
+                                        rhs: sway::Expression::Identifier("len".to_string()),
+                                    }), 
+                                    body: sway::Block { 
+                                        statements: vec![
+                                            sway::Statement::from(sway::Expression::create_function_calls(None, &[
+                                                ("v", None),
+                                                ("push", Some((None, vec![element_expression.clone()])))
+                                            ])),
+                                            sway::Statement::from(sway::Expression::from(sway::BinaryExpression { 
+                                                operator: "+=".to_string(), 
+                                                lhs: sway::Expression::Identifier("i".to_string()), 
+                                                rhs: sway::Expression::from(sway::Literal::DecInt(BigUint::one(), None)) 
+                                            }))
+                                        ], 
+                                        final_expr: None, 
+                                    }
+                                }))
+                            ], 
+                            final_expr: Some(sway::Expression::Identifier("v".to_string())) 
+                        }))
+                    }
+                }
+            } 
 
             // From uint to int
             if from_type_name.is_uint() && !to_type_name.is_uint() {
@@ -991,9 +1073,8 @@ pub fn coerce_expression(
                     return None;
                 }
             }
-            
             // From int to uint
-            if is_int && !to_type_name.is_int() {
+            else if is_int && !to_type_name.is_int() {
                 if to_type_name.is_uint() {
                     let lhs_bits: usize = lhs_name.trim_start_matches('u').trim_start_matches('U').trim_start_matches('I').parse().unwrap();
                     let rhs_bits: usize = rhs_name.trim_start_matches('u').trim_start_matches('U').trim_start_matches('I').parse().unwrap();
@@ -1021,9 +1102,8 @@ pub fn coerce_expression(
                     return None;
                 }
             }
-            
             // From uint/int of different bit lengths
-            if (is_uint && to_type_name.is_uint()) || (is_int && to_type_name.is_int()) {
+            else if (is_uint && to_type_name.is_uint()) || (is_int && to_type_name.is_int()) {
                 let lhs_bits: usize = lhs_name.trim_start_matches('u').trim_start_matches('U').trim_start_matches('I').parse().unwrap();
                 let rhs_bits: usize = rhs_name.trim_start_matches('u').trim_start_matches('U').trim_start_matches('I').parse().unwrap();
 
@@ -1062,6 +1142,10 @@ pub fn coerce_expression(
                         ]);
                     }
                 }
+            }
+            // Do not allow incompatible types
+            else if !from_type_name.is_compatible_with(to_type_name) {
+                return None;
             }
         },
 
@@ -1255,7 +1339,7 @@ pub fn coerce_expression(
                 
                 _ => todo!("{}", sway::TabbedDisplayer(&to_type_name)),
             }
-            
+
             _ => return None,
         }
         

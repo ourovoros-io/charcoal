@@ -1,6 +1,6 @@
 use std::{cell::RefCell, rc::Rc};
 
-use super::{translate_type_name, TranslatedDefinition, TranslatedEnum};
+use super::{type_names::translate_type_name, TranslatedDefinition, TranslatedEnum};
 use crate::{project::Project, sway, Error};
 use convert_case::Case;
 use num_bigint::BigUint;

@@ -2,10 +2,7 @@ use crate::{
     errors::Error,
     project::Project,
     sway,
-    translate::{
-        function_call::utils::coerce_expression, translate_expression, TranslatedDefinition,
-        TranslationScope,
-    },
+    translate::{ expressions::{function_call::utils::coerce_expression, translate_expression}, TranslatedDefinition, TranslationScope},
 };
 use solang_parser::pt as solidity;
 use std::{cell::RefCell, rc::Rc};
@@ -29,8 +26,30 @@ pub fn translate_return_statement(
     };
 
     let mut expression = translate_expression(project, translated_definition, scope, expression)?;
-    let expression_type = translated_definition.get_expression_type(scope, &expression)?;
-        
+    let mut expression_type = translated_definition.get_expression_type(scope, &expression)?;
+    
+    // HACK: remove `.read()` is underlying expression type is StorageVec or StorageMap
+    if let sway::Expression::FunctionCall(f) = &expression {
+        if let sway::Expression::MemberAccess(m) = &f.function {
+            if m.member == "read" && f.parameters.is_empty() {
+                if expression_type.is_storage_map() || expression_type.is_storage_vec() {
+                    expression = m.expression.clone();
+                    expression_type = sway::TypeName::Identifier { 
+                        name: "StorageKey".to_string(), 
+                        generic_parameters: Some(sway::GenericParameterList { 
+                            entries: vec![
+                                sway::GenericParameter { 
+                                    type_name: expression_type, 
+                                    implements: None 
+                                }
+                            ] 
+                        }) 
+                    }
+                }
+            }
+        }
+    }
+
     if return_type.is_none() {
         return Ok(sway::Statement::from(expression));
     }

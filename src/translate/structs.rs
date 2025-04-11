@@ -1,8 +1,9 @@
-use super::{translate_type_name, TranslatedDefinition};
 use crate::{project::Project, sway, Error};
 use convert_case::Case;
 use solang_parser::pt as solidity;
 use std::{cell::RefCell, rc::Rc};
+
+use super::{type_names::translate_type_name, TranslatedDefinition};
 
 #[inline]
 pub fn translate_struct_definition(

@@ -149,9 +149,17 @@ pub fn create_assignment_expression(
 
         let member = match (&type_name, &rhs_type_name) {
             (
-                sway::TypeName::Identifier { name: lhs_name, .. },
+                sway::TypeName::Identifier { name: lhs_name, generic_parameters },
                 sway::TypeName::StringSlice
-            ) if lhs_name == "StorageString" => "write_slice",
+            ) => match (lhs_name.as_str(), generic_parameters.as_ref()) {
+                ("StorageKey", Some(generic_parameters)) 
+                if generic_parameters.entries.len() == 1 
+                && generic_parameters.entries[0].type_name.is_storage_string() => {
+                   "write_slice"
+                }
+
+                _ => "write",
+            }
 
             _ => "write",
         };
@@ -161,15 +169,31 @@ pub fn create_assignment_expression(
                 match operator {
                     "=" => match (&type_name, &rhs_type_name) {
                         (
-                            sway::TypeName::Identifier { name: lhs_name, .. },
+                            sway::TypeName::Identifier { name: lhs_name, generic_parameters },
                             sway::TypeName::StringSlice
-                        ) if lhs_name == "StorageString" => {
-                            // Ensure `std::string::*` is imported
-                            translated_definition.ensure_use_declared("std::string::*");
-                            
-                            sway::Expression::create_function_calls(None, &[
-                                ("String::from_ascii_str", Some((None, vec![rhs.clone()]))),
-                            ])
+                        ) => match (lhs_name.as_str(), generic_parameters.as_ref()) {
+                            ("StorageKey", Some(generic_parameters)) if generic_parameters.entries.len() == 1 => {
+                                match &generic_parameters.entries[0].type_name {
+                                    sway::TypeName::Identifier { name, generic_parameters } => {
+                                        match (name.as_str(), generic_parameters.as_ref()) {
+                                            ("StorageString", None) => {
+                                                // Ensure `std::string::*` is imported
+                                                translated_definition.ensure_use_declared("std::string::*");
+                                                
+                                                sway::Expression::create_function_calls(None, &[
+                                                    ("String::from_ascii_str", Some((None, vec![rhs.clone()]))),
+                                                ])
+                                            }
+
+                                            _ => coerce_expression(rhs, rhs_type_name, &storage_key_type).unwrap()
+                                        }
+                                    }
+
+                                    _ => coerce_expression(rhs, rhs_type_name, &storage_key_type).unwrap()
+                                }
+                            }
+
+                            _ => coerce_expression(rhs, rhs_type_name, &storage_key_type).unwrap()
                         }
 
                         _ => {

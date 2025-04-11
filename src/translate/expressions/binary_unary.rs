@@ -42,7 +42,7 @@ pub fn translate_binary_expression(
 
     let mut rhs = translate_expression(project, translated_definition, scope, rhs)?;
     let mut rhs_type = translated_definition.get_expression_type(scope, &rhs)?;
-
+    
     if let Some(value_type) = lhs_type.storage_key_type() {
         lhs_type = value_type;
         lhs = sway::Expression::create_function_calls(Some(lhs), &[
@@ -58,7 +58,7 @@ pub fn translate_binary_expression(
     }
 
     // HACK: de-cast identity abi cast comparisons
-    let abi_check = |lhs_type: &sway::TypeName, rhs: &mut sway::Expression| -> bool {
+    let mut abi_check = |lhs_type: &sway::TypeName, rhs: &mut sway::Expression, rhs_type: &mut sway::TypeName| -> bool {
         if lhs_type.is_identity() {
             if let sway::Expression::FunctionCall(expr) = &rhs {
                 if let sway::Expression::Identifier(ident) = &expr.function {
@@ -83,6 +83,7 @@ pub fn translate_binary_expression(
                                 }
                             }
                         }
+                        *rhs_type = translated_definition.get_expression_type(scope, rhs).unwrap();
                         return true;
                     }
                 }
@@ -91,8 +92,8 @@ pub fn translate_binary_expression(
         false
     };
     
-    if !abi_check(&lhs_type, &mut rhs) {
-        abi_check(&rhs_type, &mut lhs);
+    if !abi_check(&lhs_type, &mut rhs, &mut rhs_type) {
+        abi_check(&rhs_type, &mut lhs, &mut lhs_type);
     }
 
     rhs = coerce_expression(&rhs, &rhs_type, &lhs_type).unwrap();

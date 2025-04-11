@@ -319,18 +319,20 @@ pub fn translate_variable_access_expression(
             let mut container_type_name = translated_definition.get_expression_type(scope, &translated_container)?;
             let mut container_type_name_string = container_type_name.to_string();
 
-            // HACK: tack `.read()` onto the end if the container is a StorageKey
-            if let Some(storage_key_type) = container_type_name.storage_key_type() {
-                translated_container = sway::Expression::create_function_calls(Some(translated_container), &[
-                    ("read", Some((None, vec![]))),
-                ]);
+            let (variable, _) = translate_variable_access_expression(project, translated_definition, scope, container)?;
 
-                container_type_name = storage_key_type;
-                container_type_name_string = container_type_name.to_string();
+            // HACK: tack `.read()` onto the end if the container is a StorageKey
+            if !variable.as_ref().map(|v| v.borrow().is_storage).unwrap_or(false) {
+                if let Some(storage_key_type) = container_type_name.storage_key_type() {
+                    translated_container = sway::Expression::create_function_calls(Some(translated_container), &[
+                        ("read", Some((None, vec![]))),
+                    ]);
+    
+                    container_type_name = storage_key_type;
+                    container_type_name_string = container_type_name.to_string();
+                }
             }
 
-            let (variable, _) = translate_variable_access_expression(project, translated_definition, scope, container)?;
-        
             // Check if container is a struct
             if let Some(struct_definition) = translated_definition.structs.iter().find(|s| s.borrow().name == container_type_name_string) {
                 let field_name = crate::translate::translate_naming_convention(member.name.as_str(), Case::Snake);

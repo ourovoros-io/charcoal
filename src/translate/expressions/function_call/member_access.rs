@@ -6,13 +6,7 @@ use solang_parser::{helpers::CodeLocation, pt as solidity};
 use crate::{
     errors::Error,
     project::Project,
-    sway,
-    translate::{
-        address_call::translate_address_call_expression,
-        expressions::variable::translate_variable_access_expression,
-        function_call::utils::{coerce_expression, resolve_function_call},
-        translate_expression, translate_type_name, TranslatedDefinition, TranslationScope,
-    },
+    sway, translate::{expressions::{address_call::translate_address_call_expression, function_call::utils::{coerce_expression, resolve_function_call}, translate_expression, variable::translate_variable_access_expression}, type_names::translate_type_name, TranslatedDefinition, TranslationScope}
 };
 
 pub fn translate_member_access_function_call(

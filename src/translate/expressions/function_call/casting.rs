@@ -2,7 +2,7 @@ use std::{cell::RefCell, rc::Rc};
 use num_bigint::BigUint;
 use solang_parser::{helpers::CodeLocation, pt as solidity};
 use num_traits::{Num, One, Zero};
-use crate::{errors::Error, project::Project, sway, translate::{translate_expression, TranslatedDefinition, TranslationScope}};
+use crate::{errors::Error, project::Project, sway, translate::{expressions::translate_expression, TranslatedDefinition, TranslationScope}};
 use super::utils::match_bits;
 
 pub fn translate_address_type_cast_function_call(

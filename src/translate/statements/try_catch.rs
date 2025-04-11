@@ -1,7 +1,7 @@
 use std::{cell::RefCell, rc::Rc};
 use convert_case::Case;
 use solang_parser::pt as solidity;
-use crate::{errors::Error, project::Project, sway, translate::{translate_expression, translate_type_name, TranslatedDefinition, TranslatedVariable, TranslationScope}, translate::translate_naming_convention};
+use crate::{errors::Error, project::Project, sway, translate::{expressions::translate_expression, translate_naming_convention, type_names::translate_type_name, TranslatedDefinition, TranslatedVariable, TranslationScope}};
 use super::translate_statement;
 
 #[allow(clippy::type_complexity)]

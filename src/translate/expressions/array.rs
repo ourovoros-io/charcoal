@@ -3,7 +3,7 @@ use crate::{
     errors::Error,
     project::Project,
     sway,
-    translate::{function_call::utils::coerce_expression, TranslatedDefinition, TranslationScope},
+    translate::{expressions::function_call::utils::coerce_expression, TranslatedDefinition, TranslationScope},
 };
 use solang_parser::pt as solidity;
 use std::{cell::RefCell, rc::Rc};

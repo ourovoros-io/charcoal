@@ -2,7 +2,7 @@ use crate::{
     errors::Error,
     project::Project,
     sway,
-    translate::{function_call::utils::coerce_expression, translate_expression, TranslatedDefinition, TranslationScope},
+    translate::{expressions::{function_call::utils::coerce_expression, translate_expression}, TranslatedDefinition, TranslationScope},
 };
 use convert_case::Case;
 use solang_parser::{helpers::CodeLocation, pt as solidity};
