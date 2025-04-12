@@ -34,7 +34,6 @@ pub fn get_canonical_path<P: AsRef<Path>>(path: P, is_dir: bool, create_if_neces
     path.canonicalize()
 }
 
-
 pub fn generate_forc_project<P1: AsRef<Path>, P2: AsRef<Path>>(
     project: &mut Project,
     output_directory: P1,
