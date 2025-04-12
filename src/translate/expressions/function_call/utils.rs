@@ -882,7 +882,6 @@ pub fn coerce_expression(
     from_type_name: &sway::TypeName,
     to_type_name: &sway::TypeName,
 ) -> Option<sway::Expression> {
-    // println!("Translating from : {}, to : {} with expression : {}", from_type_name, to_type_name, sway::TabbedDisplayer(expression));
     if from_type_name.is_compatible_with(to_type_name) {
         return Some(expression.clone());
     }
@@ -929,7 +928,7 @@ pub fn coerce_expression(
 
                 _ => {},
             }
-            ("StorageVec", Some(sway::GenericParameterList { entries })) => todo!("REKT"),
+
             _ => {}
         }
     }
