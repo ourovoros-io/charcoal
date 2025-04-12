@@ -425,7 +425,7 @@ pub fn translate_type_name(
                     if let Some(translated_enum) = translated_enum {
                         translated_definition.add_enum(&translated_enum);
                     } else if let Some(translated_struct) = translated_struct {
-                        translated_definition.ensure_struct_included(project, &translated_struct.clone());
+                        translated_definition.ensure_struct_included(project, &translated_struct);
                     } else if let Some(translated_type) = translated_type {
                         if !translated_definition.type_definitions.contains(&translated_type) {
                             translated_definition.type_definitions.push(translated_type);

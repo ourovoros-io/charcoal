@@ -594,7 +594,7 @@ pub fn propagate_inherited_definitions(
 
         // Extend the structs
         for inherited_struct in inherited_definition.structs.iter() {
-            translated_definition.ensure_struct_included(project, &inherited_struct.clone());
+            translated_definition.ensure_struct_included(project, inherited_struct);
         }
 
         // Extend the struct names

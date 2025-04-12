@@ -42,7 +42,7 @@ pub fn translate_struct_definition(
                             // Check if the field type is a struct
                             for external_struct in external_definition.structs.iter() {
                                 if external_struct.borrow().name == *name {
-                                    translated_definition.ensure_struct_included(project, &external_struct.clone());
+                                    translated_definition.ensure_struct_included(project, external_struct);
                                     break 'lookup;
                                 }
                             }

@@ -390,16 +390,50 @@ impl TypeName {
     /// Checks if the type name is an unsigned integer type
     pub fn is_uint(&self) -> bool {
         match self {
-            TypeName::Identifier { name, generic_parameters: None } => matches!(name.as_str(), "u8" | "u16" | "u32" | "u64" | "u256" | "U128" | "U256"),
+            TypeName::Identifier { name, generic_parameters: None } => {
+                matches!(name.as_str(), "u8" | "u16" | "u32" | "u64" | "u256" | "U128" | "U256")
+            }
+
             _ => false,
+        }
+    }
+
+    pub fn uint_bits(&self) -> Option<usize> {
+        match self {
+            TypeName::Identifier { name, generic_parameters: None } => match name.as_str() {
+                "u8" | "u16" | "u32" | "u64" | "u256" | "U128" | "U256" => {
+                    Some(name.trim_start_matches("u").trim_start_matches("U").parse().unwrap())
+                }
+
+                _ => None,
+            }
+            
+            _ => None,
         }
     }
 
     /// Checks if the type name is a signed integer type
     pub fn is_int(&self) -> bool {
         match self {
-            TypeName::Identifier { name, generic_parameters: None } => matches!(name.as_str(), "I8" | "I16" | "I32" | "I64" | "I128" | "I256"),
+            TypeName::Identifier { name, generic_parameters: None } => {
+                matches!(name.as_str(), "I8" | "I16" | "I32" | "I64" | "I128" | "I256")
+            }
+
             _ => false,
+        }
+    }
+
+    pub fn int_bits(&self) -> Option<usize> {
+        match self {
+            TypeName::Identifier { name, generic_parameters: None } => match name.as_str() {
+                "I8" | "I16" | "I32" | "I64" | "I128" | "I256" => {
+                    Some(name.trim_start_matches("I").parse().unwrap())
+                }
+
+                _ => None,
+            }
+
+            _ => None,
         }
     }
 

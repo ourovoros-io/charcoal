@@ -795,7 +795,7 @@ pub fn resolve_struct_constructor(
         }
     }
 
-    translated_definition.ensure_struct_included(project, &struct_definition.clone());
+    translated_definition.ensure_struct_included(project, struct_definition);
 
     Ok(Some(sway::Expression::from(sway::Constructor {
         type_name: sway::TypeName::Identifier {

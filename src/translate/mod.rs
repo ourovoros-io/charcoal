@@ -575,8 +575,7 @@ impl TranslatedDefinition {
         struct_definition: &Rc<RefCell<sway::Struct>>,
     ) {
         if !self.struct_names.contains(&struct_definition.borrow().name) {
-            self.struct_names
-                .push(struct_definition.borrow().name.clone());
+            self.struct_names.push(struct_definition.borrow().name.clone());
         }
 
         if self.structs.contains(struct_definition) {
@@ -587,8 +586,7 @@ impl TranslatedDefinition {
             if let sway::TypeName::Identifier {
                 name,
                 generic_parameters: None,
-            } = &field.type_name
-            {
+            } = &field.type_name {
                 if !self.structs.iter().any(|s| s.borrow().name == *name) {
                     'lookup: for external_definition in project.translated_definitions.iter() {
                         for external_struct in external_definition.structs.iter() {
@@ -614,8 +612,7 @@ impl TranslatedDefinition {
         let sway::TypeName::Identifier {
             name,
             generic_parameters: None,
-        } = &translated_enum.type_definition.name
-        else {
+        } = &translated_enum.type_definition.name else {
             panic!(
                 "Expected Identifier type name, found {:#?}",
                 translated_enum.type_definition.name
@@ -979,10 +976,7 @@ impl TranslatedDefinition {
             return variable.type_name.clone();
         }
 
-        if let Some(function) = scope
-            .borrow()
-            .find_function(|f| f.borrow().new_name == *name)
-        {
+        if let Some(function) = scope.borrow().find_function(|f| f.borrow().new_name == *name) {
             return function.borrow().type_name.clone();
         }
 
@@ -994,7 +988,6 @@ impl TranslatedDefinition {
         scope: &Rc<RefCell<TranslationScope>>, 
         expression: &sway::Expression
     ) -> Result<sway::TypeName, Error> {
-
         let (function, function_generic_parameters, parameters) = match expression {
             sway::Expression::FunctionCall(f) => {
                 (&f.function, f.generic_parameters.as_ref(), &f.parameters)
@@ -2332,7 +2325,6 @@ impl TranslatedDefinition {
         scope: &Rc<RefCell<TranslationScope>>, 
         block: &sway::Block
     ) -> Result<sway::TypeName, Error> {
-
         let Some(expression) = block.final_expr.as_ref() else {
             return Ok(sway::TypeName::Tuple { type_names: vec![] });
         };
@@ -2347,10 +2339,7 @@ impl TranslatedDefinition {
                 pattern,
                 type_name,
                 value,
-            }) = statement
-            else {
-                continue;
-            };
+            }) = statement else { continue };
 
             let type_name = match type_name.as_ref() {
                 Some(type_name) => type_name.clone(),
@@ -2418,8 +2407,7 @@ impl TranslatedDefinition {
         scope: &Rc<RefCell<TranslationScope>>, 
         array_access: &sway::ArrayAccess,
     ) -> Result<sway::TypeName, Error> { 
-        let element_type_name =
-        translated_definition.get_expression_type(scope, &array_access.expression)?;
+        let element_type_name = translated_definition.get_expression_type(scope, &array_access.expression)?;
 
         let type_name = match &element_type_name {
             sway::TypeName::Identifier {
@@ -2441,153 +2429,61 @@ impl TranslatedDefinition {
         member_access: &sway::MemberAccess,
         expression: &sway::Expression,
     ) -> Result<sway::TypeName, Error> {
-        match &member_access.expression {
-            sway::Expression::Identifier(name) => match name.as_str() {
-                "storage" => {
-                    let Some(variable) = scope.borrow().find_variable(|v| {
-                        v.borrow().is_storage && v.borrow().new_name == member_access.member
-                    }) else {
-                        panic!(
-                            "Failed to find storage variable in scope: `{}`",
-                            member_access.member
-                        );
-                    };
+        if let sway::Expression::Identifier(name) = &member_access.expression {
+            if name == "storage" {
+                let Some(storage_field) = translated_definition.storage.as_ref()
+                    .map(|s| s.fields.iter().find(|f| f.name == member_access.member))
+                    .flatten()
+                else {
+                    panic!("Failed to find storage variable in scope: `{}`", member_access.member)
+                };
 
-                    let variable = variable.borrow();
-
-                    Ok(variable.type_name.clone())
-                }
-
-                _ => {
-                    let container_type =
-                        translated_definition.get_expression_type(scope, &member_access.expression)?;
-
-                    match &container_type {
-                        sway::TypeName::Identifier { name, generic_parameters } => match (name.as_str(), generic_parameters.as_ref()) {
-                            ("I8", None) => match member_access.member.as_str() {
-                                "underlying" => Ok(sway::TypeName::Identifier {
-                                    name: "u8".into(),
-                                    generic_parameters: None,
-                                }),
-
-                                _ => todo!("get type of {container_type} member access expression: {expression:#?}"),
-                            }
-
-                            ("I16", None) => match member_access.member.as_str() {
-                                "underlying" => Ok(sway::TypeName::Identifier {
-                                    name: "u16".into(),
-                                    generic_parameters: None,
-                                }),
-
-                                _ => todo!("get type of {container_type} member access expression: {expression:#?}"),
-                            }
-
-                            ("I32", None) => match member_access.member.as_str() {
-                                "underlying" => Ok(sway::TypeName::Identifier {
-                                    name: "u32".into(),
-                                    generic_parameters: None,
-                                }),
-
-                                _ => todo!("get type of {container_type} member access expression: {expression:#?}"),
-                            }
-
-                            ("I64", None) => match member_access.member.as_str() {
-                                "underlying" => Ok(sway::TypeName::Identifier {
-                                    name: "u64".into(),
-                                    generic_parameters: None,
-                                }),
-
-                                _ => todo!("get type of {container_type} member access expression: {expression:#?}"),
-                            }
-
-                            ("I128", None) => match member_access.member.as_str() {
-                                "underlying" => Ok(sway::TypeName::Identifier {
-                                    name: "U128".into(),
-                                    generic_parameters: None,
-                                }),
-
-                                _ => todo!("get type of {container_type} member access expression: {expression:#?}"),
-                            }
-
-                            ("I256", None) => match member_access.member.as_str() {
-                                "underlying" => Ok(sway::TypeName::Identifier {
-                                    name: "u256".into(),
-                                    generic_parameters: None,
-                                }),
-
-                                _ => todo!("get type of {container_type} member access expression: {expression:#?}"),
-                            }
-
-                            _ => {
-                                // Check if container is a struct
-                                if let Some(struct_definition) = translated_definition.structs.iter().find(|s| s.borrow().name == *name) {
-                                    if let Some(field) = struct_definition.borrow().fields.iter().find(|f| f.name == member_access.member) {
-                                        return Ok(field.type_name.clone());
-                                    }
-                                }
-
-                                todo!("get type of {container_type} member access expression: {expression:#?}")
-                            }
-                        }
-
-                        _ => todo!("get type of {container_type} member access expression: {expression:#?}"),
-                    }
-                }
-            },
-
-            _ => {
-                let type_name =
-                    translated_definition.get_expression_type(scope, &member_access.expression)?;
-                let type_name_string = type_name.to_string();
-
-                // Check to see if container is a built-in type
-                match &type_name {
-                    sway::TypeName::Identifier {
-                        name,
-                        generic_parameters,
-                    } => match (name.as_str(), generic_parameters.as_ref()) {
-                        ("I256", None) => match member_access.member.as_str() {
-                            "underlying" => {
-                                return Ok(sway::TypeName::Identifier {
-                                    name: "u256".into(),
-                                    generic_parameters: None,
-                                })
-                            }
-
-                            _ => {}
-                        },
-
-                        _ => {}
-                    },
-
-                    _ => {}
-                }
-
-                // Check to see if container is a struct
-                if let Some(struct_definition) = translated_definition
-                    .structs
-                    .iter()
-                    .find(|s| s.borrow().name == type_name_string)
-                {
-                    let struct_definition = struct_definition.borrow();
-
-                    let Some(field) = struct_definition
-                        .fields
-                        .iter()
-                        .find(|f| f.name == member_access.member)
-                    else {
-                        panic!("{type_name} does not contain a field named \"{}\" - member access expression: {:#?}", member_access.member, member_access.expression)
-                    };
-
-                    return Ok(field.type_name.clone());
-                }
-
-                todo!(
-                    "get type of {type_name} member access expression: {:#?}",
-                    expression
-                )
+                return Ok(sway::TypeName::Identifier {
+                    name: "StorageKey".into(),
+                    generic_parameters: Some(sway::GenericParameterList {
+                        entries: vec![
+                            sway::GenericParameter {
+                                type_name: storage_field.type_name.clone(),
+                                implements: None,
+                            },
+                        ],
+                    }),
+                });
             }
         }
+
+        let container_type = translated_definition.get_expression_type(scope, &member_access.expression)?;
+
+        // Check if field is a signed integer
+        if let Some(bits) = container_type.int_bits() {
+            match member_access.member.as_str() {
+                "underlying" => return Ok(sway::TypeName::Identifier {
+                    name: match bits {
+                        8 => "u8",
+                        16 => "u16",
+                        32 => "u32",
+                        64 => "u64",
+                        128 => "U128",
+                        256 => "u256",
+                        _ => unimplemented!("I{bits}"),
+                    }.into(),
+                    generic_parameters: None,
+                }),
+
+                _ => {}
+            }
+        }
+
+        // Check if container is a struct
+        if let sway::TypeName::Identifier { name, generic_parameters: None } = &container_type {
+            if let Some(struct_definition) = translated_definition.structs.iter().find(|s| s.borrow().name == *name) {
+                if let Some(field) = struct_definition.borrow().fields.iter().find(|f| f.name == member_access.member) {
+                    return Ok(field.type_name.clone());
+                }
+            }
+        }
+
+        todo!("get type of {container_type} member access expression: {expression:#?}")
     }
 
     fn handle_type_tuple(
