@@ -1142,6 +1142,26 @@ pub fn coerce_expression(
                     }
                 }
             }
+            // From StorageString to String
+            else if lhs_name == "StorageString" && rhs_name == "String" {
+                if let sway::Expression::FunctionCall(f) = expression {
+                    if let sway::Expression::MemberAccess(member_access) = f.function {
+                        if member_access.member == "read" {
+                            expression = sway::Expression::create_function_calls(Some(member_access.expression), &[
+                                ("read_slice", Some((None, vec![]))),
+                                ("unwrap", Some((None, vec![])))
+                            ])
+                            
+                        } else {
+                            return None;
+                        }
+                    } else {
+                        return None;
+                    }
+                } else {
+                    return None;
+                }
+            }
             // Do not allow incompatible types
             else if !from_type_name.is_compatible_with(to_type_name) {
                 return None;

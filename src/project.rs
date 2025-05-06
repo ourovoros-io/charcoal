@@ -49,7 +49,7 @@ pub struct Project {
 impl Project {
     /// Attempts to parse the file from the supplied `path`.
     #[inline]
-    fn parse_solidity_source_unit<P: AsRef<Path>>(&mut self, path: P) -> Result<(), Error> {
+    pub fn parse_solidity_source_unit<P: AsRef<Path>>(&mut self, path: P) -> Result<(), Error> {
         if !path.as_ref().exists() {
             return Err(Error::Wrapped(Box::new(
                 std::io::Error::new(

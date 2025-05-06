@@ -2,6 +2,8 @@ use std::path::{Path, PathBuf};
 use convert_case::Case;
 use crate::{errors::Error, project::{Project, ProjectKind}, sway};
 
+use solang_parser::pt as solidity;
+
 /// Returns a canonical path in the `path` location as a [`PathBuf`]
 #[inline]
 pub fn get_canonical_path<P: AsRef<Path>>(path: P, is_dir: bool, create_if_necessary: bool) -> std::io::Result<PathBuf> {
@@ -133,4 +135,137 @@ pub fn collect_source_unit_paths(
     }
 
     Ok(source_unit_paths)
+}
+
+
+
+pub fn create_usage_queue(
+    project: &mut crate::project::Project,
+    mut paths: Vec<PathBuf>,
+) -> Result<Vec<PathBuf>, Error> {
+    let mut results = vec![];
+
+    while let Some(source_unit_path) = paths.pop() {
+        project.parse_solidity_source_unit(&source_unit_path)?;
+
+        let ast = project.solidity_source_units.borrow()
+            .get(&source_unit_path).cloned()
+            .unwrap();
+        let import_paths = get_import_paths(project, &ast, &source_unit_path)?;
+
+        for import_path in import_paths.iter() {
+            if !paths.contains(import_path) && !results.iter().any(|(r, _)| r == import_path) {
+                paths.push(import_path.clone());
+            }
+        }
+
+        results.push((source_unit_path.clone(), import_paths));
+    }
+
+    results.sort_by(|a, b| a.1.len().cmp(&b.1.len()));
+
+    let mut new_results: Vec<PathBuf> = vec![];
+
+    while !results.is_empty() {
+        let mut queue = vec![];
+
+        let import_count = results[0].1.len();
+
+        while !results.is_empty() && results[0].1.len() == import_count {
+            let item = results[0].clone();
+            results.remove(0);
+            queue.push(item);
+        }
+
+        for item in queue {
+            if !new_results.iter().any(|r| r == &item.0) {
+                new_results.push(item.0.clone());
+            }
+
+            for item_import_path in item.1 {
+                let mut depends = vec![];
+
+                for result in results.iter() {
+                    if result.0 == item_import_path {
+                        depends.push(result.0.clone());
+                    }
+                }
+                new_results.extend(depends);
+            }
+        }
+    }
+
+    Ok(new_results)
+}
+
+pub fn get_import_paths(
+    project: &mut Project,
+    ast: &solidity::SourceUnit,
+    source_unit_path: &Path,
+) -> Result<Vec<PathBuf>, Error> {
+    let mut import_paths = Vec::new();
+    if let Some(import_directives) = get_contract_imports(&ast) {
+        for import_directive in &import_directives {
+            let import_path = match import_directive {
+                solang_parser::pt::Import::Plain(import_path, _) => import_path,
+                solang_parser::pt::Import::GlobalSymbol(import_path, identifier, _) => import_path,
+                solang_parser::pt::Import::Rename(import_path, identifiers, _) => import_path,
+            };
+
+            let import_path = match import_path {
+                solang_parser::pt::ImportPath::Filename(path) => {
+                    std::path::PathBuf::from(path.to_string())
+                }
+                solang_parser::pt::ImportPath::Path(path) => {
+                    std::path::PathBuf::from(path.to_string())
+                }
+            };
+
+            // Clean the import path and remove quotes
+            let mut import_path = import_path.to_str().unwrap().replace('\"', "");
+
+            if let ProjectKind::Unknown = project.kind {
+                // Join the import path with the source unit path
+                import_path = source_unit_path
+                    .parent()
+                    .unwrap()
+                    .join(import_path)
+                    .to_str()
+                    .unwrap()
+                    .to_string();
+            } else {
+                
+                // If we have detected a framework we need to resolve the path based on the remappings if found
+                import_path = project.get_project_type_path(
+                    source_unit_path.parent().unwrap(),
+                    &import_path,
+                )?
+                .to_str()
+                .unwrap()
+                .to_string();
+            }
+
+            // Normalize the import path
+            let import_path = std::fs::canonicalize(import_path).map_err(|e| Error::Wrapped(Box::new(e)))?;
+
+            import_paths.push(import_path);
+        }
+    }
+    Ok(import_paths)
+}
+
+
+/// Returns all the contract imports
+pub fn get_contract_imports(source_unit: &solidity::SourceUnit) -> Option<Vec<solidity::Import>> {
+    let imports: Vec<solidity::Import> = source_unit
+        .0
+        .iter()
+        .filter_map(|part| match part {
+            solidity::SourceUnitPart::ImportDirective(import) => Some(import),
+            _ => None,
+        })
+        .cloned()
+        .collect();
+
+    (!imports.is_empty()).then_some(imports)
 }

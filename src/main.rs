@@ -42,8 +42,11 @@ fn translate_project() -> Result<(), Error> {
     
     let source_unit_paths = collect_source_unit_paths(&options.target, &project.kind)
         .map_err(|e| Error::Wrapped(Box::new(e)))?;
+
+    let usage_queue = utils::create_usage_queue(&mut project, source_unit_paths)?;
+
     
-    for source_unit_path in &source_unit_paths {
+    for source_unit_path in &usage_queue {
         project.translate(options.definition_name.as_ref(), source_unit_path)?;
 
         match options.output_directory.as_ref() {
