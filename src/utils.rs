@@ -7,7 +7,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-/// Recursively collect .sol file paths, excluding node_modules
+/// Recursively collect .sol file paths, excluding `node_modules`
 pub fn collect_source_unit_paths(path: &Path) -> Result<Vec<PathBuf>> {
     let mut paths = Vec::new();
 
@@ -114,7 +114,7 @@ pub fn parse_ast_from_source_unit_path(
 
 pub fn get_import_paths(
     ast: Vec<solidity::SourceUnitPart>,
-    source_unit_path: &PathBuf,
+    source_unit_path: &Path,
     framework: Option<&framework::Framework>,
 ) -> Result<Vec<PathBuf>> {
     let mut import_paths = Vec::new();
@@ -136,14 +136,27 @@ pub fn get_import_paths(
             };
 
             // Clean the import path and remove quotes
-            let mut import_path = import_path.to_str().unwrap().replace("\"", "");
+            let mut import_path = import_path.to_str().unwrap().replace('\"', "");
 
             if let Some(framework) = framework {
                 // If we have detected a framework we need to resolve the path based on the remappings if found
-                import_path = crate::framework::resolve_framework_path(framework, &source_unit_path.parent().unwrap(), &import_path)?.to_str().unwrap().to_string();
+                import_path = crate::framework::resolve_framework_path(
+                    framework,
+                    source_unit_path.parent().unwrap(),
+                    &import_path,
+                )?
+                .to_str()
+                .unwrap()
+                .to_string();
             } else {
                 // Join the import path with the source unit path
-                import_path = source_unit_path.parent().unwrap().join(import_path).to_str().unwrap().to_string();
+                import_path = source_unit_path
+                    .parent()
+                    .unwrap()
+                    .join(import_path)
+                    .to_str()
+                    .unwrap()
+                    .to_string();
             }
 
             // Normalize the import path
@@ -155,7 +168,7 @@ pub fn get_import_paths(
     Ok(import_paths)
 }
 
-pub fn create_import_usage_queue(results: HashMap<PathBuf, Vec<PathBuf>>) -> Vec<PathBuf> {
+pub fn create_import_usage_queue(results: &HashMap<PathBuf, Vec<PathBuf>>) -> Vec<PathBuf> {
     // Step 1: Count the usage of each contract
     let mut usage_count: HashMap<&PathBuf, usize> = HashMap::new();
 

@@ -1,9 +1,9 @@
-use std::collections::HashMap;
-use std::path::{Component, Path, PathBuf};
 use crate::error::Result;
 use crate::utils::find_project_root_folder;
+use std::collections::HashMap;
+use std::path::{Component, Path, PathBuf};
 
-/// Represents the type of project as [Framework] default is [Framework::Unknown]
+/// Represents the type of project as [`Framework`] default is [`Framework::Unknown`]
 #[derive(Clone, Debug, Default)]
 pub enum Framework {
     Foundry {
@@ -29,10 +29,13 @@ impl Framework {
     pub const DAPP_CONFIG_FILE: &'static str = "Dappfile";
 }
 
-
 /// Get the project type from the [`PathBuf`] and return a [`Framework`]
 pub(crate) fn detect_framework<P: AsRef<Path>>(path: P) -> Result<Framework> {
     let path = path.as_ref();
+
+    if !path.exists() {
+        return Err("Path does not exist".into());
+    }
 
     let Some(path) = find_project_root_folder(path) else {
         return Ok(Framework::Unknown);
@@ -48,9 +51,7 @@ pub(crate) fn detect_framework<P: AsRef<Path>>(path: P) -> Result<Framework> {
             )?,
         })
     } else if path.join(Framework::HARDHAT_CONFIG_FILE).exists()
-        || path
-            .join(Framework::HARDHAT_TS_CONFIG_FILE)
-            .exists()
+        || path.join(Framework::HARDHAT_TS_CONFIG_FILE).exists()
     {
         Ok(Framework::Hardhat)
     } else if path.join(Framework::BROWNIE_CONFIG_FILE).exists() {
@@ -117,9 +118,7 @@ pub(crate) fn resolve_framework_path(
             let mut components: Vec<_> = filename.components().collect();
 
             if components.len() <= 1 {
-                return Err(
-                    "Dapp filename should have more than one component".into(),
-                );
+                return Err("Dapp filename should have more than one component".into());
             }
 
             match &components[0] {
@@ -156,19 +155,16 @@ fn get_remappings(
             let lines: Vec<String> = if project_root_folder.join(remappings_filename).exists() {
                 // Get the remappings.txt file from the root of the project folder
                 let remappings_content =
-                    std::fs::read_to_string(project_root_folder.join(remappings_filename))
-                        ?;
+                    std::fs::read_to_string(project_root_folder.join(remappings_filename))?;
 
                 remappings_content.lines().map(str::to_string).collect()
             } else {
                 // Get foundry toml file from the root of the project folder
                 let remappings_from_toml_str = std::fs::read_to_string(
                     project_root_folder.join(Framework::FOUNDRY_CONFIG_FILE),
-                )
-                ?;
+                )?;
 
-                let remappings_from_toml: toml::Value =
-                    toml::from_str(&remappings_from_toml_str)?;
+                let remappings_from_toml: toml::Value = toml::from_str(&remappings_from_toml_str)?;
 
                 let value = find_in_toml_value(
                     &remappings_from_toml,
@@ -201,10 +197,8 @@ fn get_remappings(
         }
 
         Framework::Brownie { .. } => {
-            let remappings_from_yaml_str = std::fs::read_to_string(
-                project_root_folder.join(Framework::BROWNIE_CONFIG_FILE),
-            )
-            ?;
+            let remappings_from_yaml_str =
+                std::fs::read_to_string(project_root_folder.join(Framework::BROWNIE_CONFIG_FILE))?;
 
             let remappings_from_yaml: serde_yaml::Value =
                 serde_yaml::from_str(&remappings_from_yaml_str)?;
@@ -262,13 +256,14 @@ fn find_in_toml_value(value: &toml::Value, key: &str) -> Option<toml::Value> {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
 
     #[test]
     fn test_foundry_detection_from_file() {
-        let framework = super::detect_framework("./test_data/imports/framework/foundry/mytoken/src/MyToken.sol");
+        let framework = super::detect_framework(
+            "./test_data/imports/frameworks/foundry/mytoken/src/MyToken.sol",
+        );
         assert!(framework.is_ok());
         println!("Framework : {framework:#?}");
     }
