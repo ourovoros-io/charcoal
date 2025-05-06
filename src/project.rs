@@ -414,25 +414,25 @@ impl Project {
                 constructor_body.statements.insert(i, sway::Statement::from(sway::Expression::create_function_calls(None, &[
                     ("storage", None),
                     (format!("{mapping_name}_instance_count").as_str(), None),
-                    ("write", Some((None, vec![sway::Expression::from(sway::BinaryExpression{ 
-                        operator: "+".into(), 
-                        lhs: sway::Expression::Identifier("i".to_string()), 
-                        rhs: sway::Expression::from(sway::Literal::DecInt(BigUint::one(), None)) 
+                    ("write", Some((None, vec![sway::Expression::from(sway::BinaryExpression { 
+                        operator: "+".into(),
+                        lhs: sway::Expression::Identifier("i".to_string()),
+                        rhs: sway::Expression::from(sway::Literal::DecInt(BigUint::one(), None))
                     })])))
                 ])));   
 
                 // let i = storage.x_instance_count.read();
                 constructor_body.statements.insert(i, sway::Statement::from(sway::Let { 
                     pattern: sway::LetPattern::Identifier(sway::LetIdentifier { 
-                        is_mutable: false, 
-                        name: "i".to_string() 
-                    }), 
-                    type_name: None, 
+                        is_mutable: false,
+                        name: "i".to_string()
+                    }),
+                    type_name: None,
                     value: sway::Expression::create_function_calls(None, &[
                         ("storage", None),
                         (format!("{mapping_name}_instance_count").as_str(), None),
                         ("read", Some((None, vec![])))
-                    ]) 
+                    ])
                 }));
 
                 // HACK: Skip forward two statements
@@ -453,17 +453,17 @@ impl Project {
 
                     // let my_mapping = storage.my_struct_mappings.get(i);
                     constructor_body.statements.insert(i, sway::Statement::from(
-                        sway::Let{ 
-                            pattern: sway::LetPattern::Identifier(sway::LetIdentifier{ 
-                                is_mutable: false, 
-                                name: field_name.clone() 
-                            }), 
-                            type_name: None, 
+                        sway::Let { 
+                            pattern: sway::LetPattern::Identifier(sway::LetIdentifier { 
+                                is_mutable: false,
+                                name: field_name.clone()
+                            }),
+                            type_name: None,
                             value: sway::Expression::create_function_calls(None, &[
                                 ("storage", None),
                                 (format!("{mapping_name}_{field_name}s").as_str(), None),
                                 ("get", Some((None, vec![sway::Expression::Identifier("i".to_string())])))
-                            ]) 
+                            ])
                         }
                     ));
                 }
@@ -482,8 +482,8 @@ impl Project {
                 let Some(attributes) = constructor_fn.attributes.as_mut() else { unreachable!() };
 
                 if !attributes.attributes.iter().any(|a| a.name == "storage") {
-                    attributes.attributes.push(sway::Attribute{ 
-                        name: "storage".to_string(), 
+                    attributes.attributes.push(sway::Attribute { 
+                        name: "storage".to_string(),
                         parameters: None
                     });
                 }

@@ -152,7 +152,7 @@ pub fn create_assignment_expression(
                 sway::TypeName::Identifier { name: lhs_name, generic_parameters },
                 sway::TypeName::StringSlice
             ) => match (lhs_name.as_str(), generic_parameters.as_ref()) {
-                ("StorageKey", Some(generic_parameters)) 
+                ("StorageKey", Some(generic_parameters))
                 if generic_parameters.entries.len() == 1 
                 && generic_parameters.entries[0].type_name.is_storage_string() => {
                    "write_slice"
@@ -204,7 +204,7 @@ pub fn create_assignment_expression(
                     _ => {
                         variable.borrow_mut().read_count += 1;
                         
-                        sway::Expression::from(sway::BinaryExpression{
+                        sway::Expression::from(sway::BinaryExpression {
                             operator: operator.trim_end_matches('=').into(),
                             lhs: sway::Expression::create_function_calls(Some(expression.clone()), &[
                                 ("read", Some((None, vec![]))),
@@ -430,7 +430,7 @@ pub fn translate_assignment_expression(
     // HACK: struct field lookup
     if variable.is_none() {
         if let sway::Expression::MemberAccess(member_access) = &expression {
-            if let sway::TypeName::Identifier{ name, .. } = translated_definition.get_expression_type(scope, &member_access.expression)? {
+            if let sway::TypeName::Identifier { name, .. } = translated_definition.get_expression_type(scope, &member_access.expression)? {
                 if let Some(struct_definition) = translated_definition.structs.iter().find(|s| s.borrow().name == name) {
                     if struct_definition.borrow().fields.iter().any(|f| f.name == member_access.member) {
                         return Ok(expression);

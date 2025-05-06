@@ -342,7 +342,7 @@ pub fn translate_function_call_expression(
                                     )? {
                                         return Ok(result);
                                     }
-                                } 
+                                }
                             }
 
                             // Check if variable is a storage vector

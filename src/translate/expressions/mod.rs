@@ -68,6 +68,10 @@ pub fn evaluate_expression(
 
             todo!("evaluate identifier: {expression:#?} - {variable:#?}")
         }
+
+        sway::Expression::Path(_) => {
+            todo!("evaluate path expr: {expression:#?}")
+        }
         
         sway::Expression::FunctionCall(function_call) => match &function_call.function {
             sway::Expression::Identifier(identifier) => match identifier.as_str() {
@@ -654,13 +658,11 @@ pub fn create_value_expression(
                     value.push(' ');
                 }
 
-                sway::Expression::FunctionCall(Box::new(sway::FunctionCall {
-                    function: sway::Expression::Identifier("__to_str_array".into()),
-                    generic_parameters: None,
-                    parameters: vec![
+                sway::Expression::create_function_calls(None, &[
+                    ("__to_str_array", Some((None, vec![
                         sway::Expression::Literal(sway::Literal::String(value)),
-                    ],
-                }))
+                    ]))),
+                ])
             }
 
             Some(sway::Expression::FunctionCall(f)) => {
@@ -690,13 +692,11 @@ pub fn create_value_expression(
                     value.push(' ');
                 }
 
-                sway::Expression::FunctionCall(Box::new(sway::FunctionCall {
-                    function: sway::Expression::Identifier("__to_str_array".into()),
-                    generic_parameters: None,
-                    parameters: vec![
+                sway::Expression::create_function_calls(None, &[
+                    ("__to_str_array", Some((None, vec![
                         sway::Expression::Literal(sway::Literal::String(value)),
-                    ],
-                }))
+                    ]))),
+                ])
             }
 
             Some(value) => panic!("Invalid string array value expression: {value:#?}"),

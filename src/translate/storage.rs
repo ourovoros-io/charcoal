@@ -188,12 +188,12 @@ pub fn translate_state_variable(
                             } else {
                                 storage.fields.push(
                                     sway::StorageField { 
-                                        name: instance_field_name, 
+                                        name: instance_field_name,
                                         type_name: sway::TypeName::Identifier { 
-                                            name: "u64".into(), 
+                                            name: "u64".into(),
                                             generic_parameters: None 
-                                        }, 
-                                        value: sway::Expression::Literal(sway::Literal::DecInt(BigUint::zero(), None)) 
+                                        },
+                                        value: sway::Expression::Literal(sway::Literal::DecInt(BigUint::zero(), None))
                                     }
                                 );
                             }
@@ -207,30 +207,30 @@ pub fn translate_state_variable(
                             } else {
                                 storage.fields.push(
                                     sway::StorageField { 
-                                        name: mapping_field_name, 
+                                        name: mapping_field_name,
                                         type_name: sway::TypeName::Identifier { 
-                                            name: "StorageMap".into(), 
-                                            generic_parameters: Some(sway::GenericParameterList{ 
+                                            name: "StorageMap".into(),
+                                            generic_parameters: Some(sway::GenericParameterList { 
                                                 entries: vec![
                                                     sway::GenericParameter { 
                                                         type_name: sway::TypeName::Identifier { 
-                                                            name: "u64".into(), 
-                                                            generic_parameters: None, 
-                                                        }, 
+                                                            name: "u64".into(),
+                                                            generic_parameters: None,
+                                                        },
                                                         implements: None,
                                                     },
                                                     sway::GenericParameter { 
                                                         type_name: storage_key_type.clone(),
-                                                        implements: None, 
+                                                        implements: None,
                                                     }
                                                 ] 
                                             })
-                                        }, 
+                                        },
                                         value: sway::Expression::from(sway::Constructor { 
                                             type_name: sway::TypeName::Identifier { 
-                                                name: "StorageMap".into(), 
+                                                name: "StorageMap".into(),
                                                 generic_parameters: None,
-                                            }, 
+                                            },
                                             fields: vec![] 
                                         })
                                     }
@@ -308,15 +308,15 @@ pub fn translate_state_variable(
         new_name: new_name.clone(),
         type_name: if is_storage {
             sway::TypeName::Identifier { 
-                name: "StorageKey".to_string(), 
+                name: "StorageKey".to_string(),
                 generic_parameters: Some(sway::GenericParameterList { 
                     entries: vec![
                         sway::GenericParameter { 
-                            type_name: variable_type_name.clone(), 
+                            type_name: variable_type_name.clone(),
                             implements: None 
                         }
                     ] 
-                }) 
+                })
             }
         } else {
             variable_type_name.clone()

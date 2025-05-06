@@ -213,10 +213,10 @@ pub fn translate_builtin_function_call(
             let parameter_type = translated_definition.get_expression_type(scope, &parameters[0])?;
             
             parameters[0] = coerce_expression(
-                &parameters[0], 
-                &parameter_type, 
+                &parameters[0],
+                &parameter_type,
                 &sway::TypeName::Identifier { 
-                    name: "bool".into(), 
+                    name: "bool".into(),
                     generic_parameters: None 
                 }
             ).unwrap();

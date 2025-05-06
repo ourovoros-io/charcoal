@@ -35,15 +35,15 @@ pub fn translate_return_statement(
                 if expression_type.is_storage_map() || expression_type.is_storage_vec() {
                     expression = m.expression.clone();
                     expression_type = sway::TypeName::Identifier { 
-                        name: "StorageKey".to_string(), 
+                        name: "StorageKey".to_string(),
                         generic_parameters: Some(sway::GenericParameterList { 
                             entries: vec![
                                 sway::GenericParameter { 
-                                    type_name: expression_type, 
+                                    type_name: expression_type,
                                     implements: None 
                                 }
                             ] 
-                        }) 
+                        })
                     }
                 }
             }

@@ -702,7 +702,7 @@ pub fn translate_function_definition(
                     abi.functions.push(abi_function.clone());
                 }
             }
-        } 
+        }
 
         if use_string {
             translated_definition.ensure_use_declared("std::string::String");
@@ -976,9 +976,9 @@ pub fn translate_function_definition(
             if p.type_name == Some(sway::TypeName::StringSlice) {
                 translated_definition.ensure_use_declared("std::string::String");
                 p.type_name = Some(sway::TypeName::Identifier { name: "String".into(), generic_parameters: None });
-                statements.push(sway::Statement::from(sway::Let{ 
-                    pattern: sway::LetPattern::Identifier(sway::LetIdentifier{ is_mutable: true, name: p.name.clone() }), 
-                    type_name: None, 
+                statements.push(sway::Statement::from(sway::Let { 
+                    pattern: sway::LetPattern::Identifier(sway::LetIdentifier { is_mutable: true, name: p.name.clone() }),
+                    type_name: None,
                     value: sway::Expression::from(sway::Block {
                         // let bytes = x.as_bytes();
                         // let ptr = bytes.ptr();
@@ -988,44 +988,44 @@ pub fn translate_function_definition(
                         // }
                         statements: vec![
                             sway::Statement::from(sway::Let { 
-                                pattern: sway::LetPattern::Identifier(sway::LetIdentifier{ is_mutable: false, name: "bytes".into() }),  
-                                type_name: None, 
+                                pattern: sway::LetPattern::Identifier(sway::LetIdentifier { is_mutable: false, name: "bytes".into() }),  
+                                type_name: None,
                                 value: sway::Expression::create_function_calls(Some(sway::Expression::Identifier(p.name.clone())), &[
                                     ("as_bytes", Some((None, vec![])))
-                                ]), 
+                                ]),
                             }),
                             sway::Statement::from(sway::Let { 
-                                pattern: sway::LetPattern::Identifier(sway::LetIdentifier{ is_mutable: false, name: "ptr".into() }),  
-                                type_name: None, 
+                                pattern: sway::LetPattern::Identifier(sway::LetIdentifier { is_mutable: false, name: "ptr".into() }),  
+                                type_name: None,
                                 value: sway::Expression::create_function_calls(Some(sway::Expression::Identifier("bytes".into())), &[
                                     ("ptr", Some((None, vec![])))
-                                ]), 
+                                ]),
                             }),
                             sway::Statement::from(sway::Let { 
-                                pattern: sway::LetPattern::Identifier(sway::LetIdentifier{ is_mutable: false, name: "str_size".into() }),  
-                                type_name: None, 
+                                pattern: sway::LetPattern::Identifier(sway::LetIdentifier { is_mutable: false, name: "str_size".into() }),  
+                                type_name: None,
                                 value: sway::Expression::create_function_calls(Some(sway::Expression::Identifier("bytes".into())), &[
                                     ("len", Some((None, vec![])))
-                                ]), 
+                                ]),
                             }),
                         ],
                         final_expr: Some(sway::Expression::from(sway::AsmBlock {
                             registers: vec![
                                 sway::AsmRegister { 
-                                    name: "s".into(), 
+                                    name: "s".into(),
                                     value: Some(sway::Expression::Tuple(vec![
-                                        sway::Expression::Identifier("ptr".into()), 
+                                        sway::Expression::Identifier("ptr".into()),
                                         sway::Expression::Identifier("str_size".into())
-                                    ])) 
+                                    ]))
                                 }
                             ],
                             instructions: vec![],
                             final_expression: Some(sway::AsmFinalExpression { 
-                                register: "s".into(), 
-                                type_name: Some(sway::TypeName::StringSlice) 
+                                register: "s".into(),
+                                type_name: Some(sway::TypeName::StringSlice)
                             }),
                         })),
-                    }) 
+                    })
                 }))
             }
         }

@@ -1131,7 +1131,6 @@ pub fn translate_abi_member_access_function_call(
     }
 }
 
-
 pub fn translate_super_member_access_function_call(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
@@ -1188,7 +1187,6 @@ pub fn translate_super_member_access_function_call(
         },
     )
 }
-
 
 pub fn translate_this_member_access_function_call(
     project: &mut Project,

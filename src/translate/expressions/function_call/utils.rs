@@ -207,7 +207,7 @@ pub fn resolve_abi_function_call(
                 if let Some(expr) = coerce_expression(&parameters[i], value_type_name, parameter_type_name) {
                     parameters[i] = expr;
                     continue;
-                } 
+                }
 
                 if !value_type_name.is_compatible_with(parameter_type_name) {
                     return false;
@@ -525,7 +525,7 @@ pub fn resolve_function_call(
             if let Some(expr) = coerce_expression(&parameters[i], value_type_name, parameter_type_name) {
                 parameters[i] = expr;
                 continue;
-            } 
+            }
 
             if !value_type_name.is_compatible_with(parameter_type_name) {
                 return false;
@@ -693,7 +693,7 @@ pub fn resolve_function_call(
             if let Some(expr) = coerce_expression(&parameters[i], value_type_name, parameter_type_name) {
                 parameters[i] = expr;
                 continue;
-            } 
+            }
 
             if !value_type_name.is_compatible_with(parameter_type_name) {
                 return false;
@@ -993,38 +993,38 @@ pub fn coerce_expression(
                             statements: vec![
                                 sway::Statement::from(sway::Let { 
                                     pattern: sway::LetPattern::Identifier(sway::LetIdentifier { 
-                                        is_mutable: false, 
-                                        name: "len".to_string() 
-                                    }), 
-                                    type_name: None, 
+                                        is_mutable: false,
+                                        name: "len".to_string()
+                                    }),
+                                    type_name: None,
                                     value: sway::Expression::create_function_calls(Some(expression.clone()), &[
                                         ("len", Some((None, vec![])))
                                     ]),
                                 }),
                                 sway::Statement::from(sway::Let { 
                                     pattern: sway::LetPattern::Identifier(sway::LetIdentifier { 
-                                        is_mutable: true, 
-                                        name: "v".to_string() 
-                                    }), 
-                                    type_name: None, 
+                                        is_mutable: true,
+                                        name: "v".to_string()
+                                    }),
+                                    type_name: None,
                                     value: sway::Expression::create_function_calls(None, &[
                                         ("Vec::with_capacity", Some((None, vec![sway::Expression::Identifier("len".to_string())])))
                                     ]),
                                 }),
                                 sway::Statement::from(sway::Let { 
                                     pattern: sway::LetPattern::Identifier(sway::LetIdentifier { 
-                                        is_mutable: true, 
-                                        name: "i".to_string() 
-                                    }), 
-                                    type_name: None, 
+                                        is_mutable: true,
+                                        name: "i".to_string()
+                                    }),
+                                    type_name: None,
                                     value: sway::Expression::from(sway::Literal::DecInt(BigUint::zero(), None)),
                                 }),
                                 sway::Statement::from(sway::Expression::from(sway::While { 
                                     condition: sway::Expression::from(sway::BinaryExpression { 
-                                        operator: "<".to_string(), 
-                                        lhs: sway::Expression::Identifier("i".to_string()), 
+                                        operator: "<".to_string(),
+                                        lhs: sway::Expression::Identifier("i".to_string()),
                                         rhs: sway::Expression::Identifier("len".to_string()),
-                                    }), 
+                                    }),
                                     body: sway::Block { 
                                         statements: vec![
                                             sway::Statement::from(sway::Expression::create_function_calls(None, &[
@@ -1032,20 +1032,20 @@ pub fn coerce_expression(
                                                 ("push", Some((None, vec![element_expression.clone()])))
                                             ])),
                                             sway::Statement::from(sway::Expression::from(sway::BinaryExpression { 
-                                                operator: "+=".to_string(), 
-                                                lhs: sway::Expression::Identifier("i".to_string()), 
-                                                rhs: sway::Expression::from(sway::Literal::DecInt(BigUint::one(), None)) 
+                                                operator: "+=".to_string(),
+                                                lhs: sway::Expression::Identifier("i".to_string()),
+                                                rhs: sway::Expression::from(sway::Literal::DecInt(BigUint::one(), None))
                                             }))
-                                        ], 
-                                        final_expr: None, 
+                                        ],
+                                        final_expr: None,
                                     }
                                 }))
-                            ], 
-                            final_expr: Some(sway::Expression::Identifier("v".to_string())) 
+                            ],
+                            final_expr: Some(sway::Expression::Identifier("v".to_string()))
                         }))
                     }
                 }
-            } 
+            }
 
             // From uint to int
             if from_type_name.is_uint() && !to_type_name.is_uint() {
@@ -1082,7 +1082,7 @@ pub fn coerce_expression(
                     if lhs_bits > rhs_bits {
                         expression = sway::Expression::create_function_calls(None, &[
                             (format!("u{rhs_bits}::try_from").as_str(), Some((None, vec![
-                                sway::Expression::from(sway::MemberAccess{ expression: expression.clone(), member: "underlying".to_string() })
+                                sway::Expression::from(sway::MemberAccess { expression: expression.clone(), member: "underlying".to_string() })
                             ]))),
                             ("unwrap", Some((None, vec![])))
                         ]);
@@ -1110,7 +1110,7 @@ pub fn coerce_expression(
                     sway::Expression::Literal(sway::Literal::DecInt(i, suffix)) => {
                         if suffix.is_none() {
                             expression = sway::Expression::Literal(sway::Literal::DecInt(
-                                i.clone(), 
+                                i.clone(),
                                 Some(format!("{}{}", rhs_name.chars().nth(0).unwrap(), rhs_bits))
                             ));
                         } else {
@@ -1215,7 +1215,7 @@ pub fn coerce_expression(
                     let component_names = ('a'..='z')
                         .enumerate()
                         .take_while(|(i, _)| *i < lhs_type_names.len())
-                        .map(|(_, c)| sway::LetIdentifier{ is_mutable: false, name: c.to_string() })
+                        .map(|(_, c)| sway::LetIdentifier { is_mutable: false, name: c.to_string() })
                         .collect::<Vec<_>>();
                     
                     let let_stmt = sway::Statement::from(sway::Let {
@@ -1239,7 +1239,7 @@ pub fn coerce_expression(
                         statements: vec![let_stmt],
                         final_expr: Some(sway::Expression::Tuple(exprs.iter().flatten().cloned().collect())),
                     });
-                }, 
+                },
 
                 sway::Expression::Tuple(expressions) => {
                     let mut expressions = expressions.clone();
@@ -1295,13 +1295,13 @@ pub fn coerce_expression(
                     expression = sway::Expression::create_function_calls(None, &[
                         ("Bytes::from", Some((None, vec![
                             sway::Expression::create_function_calls(None, &[
-                                ("raw_slice::from_parts", Some((Some(sway::GenericParameterList{ 
+                                ("raw_slice::from_parts", Some((Some(sway::GenericParameterList { 
                                     entries: vec![
                                         sway::GenericParameter { 
                                             type_name: sway::TypeName::Identifier { 
-                                                name: "u8".into(), 
-                                                generic_parameters: None, 
-                                            }, 
+                                                name: "u8".into(),
+                                                generic_parameters: None,
+                                            },
                                             implements: None 
                                         }
                                     ] 
@@ -1330,30 +1330,24 @@ pub fn coerce_expression(
                 
                 // String::from_ascii_str(x)
                 sway::TypeName::StringSlice => {
-                    expression = sway::Expression::from(sway::FunctionCall{
-                        function: sway::Expression::Identifier("String::from_ascii_str".into()),
-                        generic_parameters: None,
-                        parameters: vec![
+                    expression = sway::Expression::create_function_calls(None, &[
+                        ("String::from_ascii_str", Some((None, vec![
                             expression.clone(),
-                        ],
-                    });
+                        ]))),
+                    ]);
                 }
                 
                 // String::from_ascii_str(from_str_array(x))
                 sway::TypeName::StringArray { .. } => {
-                    expression = sway::Expression::from(sway::FunctionCall{
-                        function: sway::Expression::Identifier("String::from_ascii_str".into()),
-                        generic_parameters: None,
-                        parameters: vec![
-                            sway::Expression::from(sway::FunctionCall {
-                                function: sway::Expression::Identifier("from_str_array".into()),
-                                generic_parameters: None,
-                                parameters: vec![
+                    expression = sway::Expression::create_function_calls(None, &[
+                        ("String::from_ascii_str", Some((None, vec![
+                            sway::Expression::create_function_calls(None, &[
+                                ("from_str_array", Some((None, vec![
                                     expression.clone(),
-                                ],
-                            }),
-                        ],
-                    });
+                                ]))),
+                            ]),
+                        ]))),
+                    ]);
                 }
                 
                 _ => todo!("{}", sway::TabbedDisplayer(&to_type_name)),

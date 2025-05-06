@@ -1446,9 +1446,66 @@ impl Display for LetIdentifier {
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 #[derive(Clone, Debug, PartialEq)]
+pub enum PathExprRoot {
+    Identifier(String),
+    Cast {
+        from_type: TypeName,
+        to_type: TypeName,
+    },
+}
+
+impl Display for PathExprRoot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PathExprRoot::Identifier(name) => write!(f, "{name}"),
+            PathExprRoot::Cast { from_type, to_type } => write!(f, "<{from_type} as {to_type}>"),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct PathExprSegment {
+    pub name: String,
+    pub generic_parameters: Option<GenericParameterList>,
+}
+
+impl Display for PathExprSegment {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name)?;
+
+        if let Some(generic_parameters) = self.generic_parameters.as_ref() {
+            write!(f, "::{generic_parameters}")?;
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct PathExpr {
+    pub root: PathExprRoot,
+    pub segments: Vec<PathExprSegment>,
+}
+
+impl Display for PathExpr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.root)?;
+
+        for segment in self.segments.iter() {
+            write!(f, "::{segment}")?;
+        }
+
+        Ok(())
+    }
+}
+
+// -------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum Expression {
     Literal(Literal),
     Identifier(String),
+    Path(PathExpr),
     FunctionCall(Box<FunctionCall>),
     FunctionCallBlock(Box<FunctionCallBlock>),
     Block(Box<Block>),
@@ -1475,6 +1532,7 @@ impl TabbedDisplay for Expression {
         match self {
             Expression::Literal(x) => x.tabbed_fmt(depth, f),
             Expression::Identifier(x) => write!(f, "{x}"),
+            Expression::Path(x) => write!(f, "{x}"),
             Expression::FunctionCall(x) => x.tabbed_fmt(depth, f),
             Expression::FunctionCallBlock(x) => x.tabbed_fmt(depth, f),
             Expression::Block(x) => x.tabbed_fmt(depth, f),
@@ -1552,32 +1610,40 @@ impl_expr_box_from!(Constructor);
 impl_expr_box_from!(AsmBlock);
 
 impl Expression {
+    #[inline(always)]
     pub fn create_todo(msg: Option<String>) -> Expression {
-        Expression::FunctionCall(Box::new(FunctionCall {
-            function: Expression::Identifier("todo!".into()),
-            generic_parameters: None,
-            parameters: if let Some(msg) = msg {
+        Expression::create_function_calls(None, &[
+            ("todo!", Some((None, if let Some(msg) = msg {
                 vec![
                     Expression::Literal(Literal::String(msg.replace('\\', "\\\\").replace('\"', "\\\""))),
                 ]
             } else {
                 vec![]
-            },
-        }))
+            }))),
+        ])
     }
 
+    #[inline(always)]
     pub fn create_unimplemented(msg: Option<String>) -> Expression {
-        Expression::FunctionCall(Box::new(FunctionCall {
-            function: Expression::Identifier("unimplemented!".into()),
-            generic_parameters: None,
-            parameters: if let Some(msg) = msg {
+        Expression::create_function_calls(None, &[
+            ("unimplemented!", Some((None, if let Some(msg) = msg {
                 vec![
                     Expression::Literal(Literal::String(msg)),
                 ]
             } else {
                 vec![]
-            },
-        }))
+            }))),
+        ])
+    }
+
+    #[inline(always)]
+    pub fn create_identifier(name: String) -> Expression {
+        assert!(!name.is_empty());
+        
+        Expression::Path(PathExpr {
+            root: PathExprRoot::Identifier(name),
+            segments: vec![],
+        })
     }
 
     pub fn create_member_access(container: Expression, members: &[&str]) -> Expression {

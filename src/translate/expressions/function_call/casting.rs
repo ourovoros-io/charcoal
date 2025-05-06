@@ -382,7 +382,7 @@ pub fn translate_uint_types_cast_function_call(
                 //     
                 //     if parts.0 != 0 || parts.1 != 0 {
                 //         revert();
-                //     } 
+                //     }
                 // 
                 //     U128::from((parts.2, parts.3))
                 // }
@@ -395,20 +395,20 @@ pub fn translate_uint_types_cast_function_call(
                     statements: vec![
                         sway::Statement::from(sway::Let { 
                             pattern: sway::LetPattern::Identifier(sway::LetIdentifier { 
-                                is_mutable: false, 
-                                name: unique_variable_name.clone() 
-                            }), 
-                            type_name: None, 
+                                is_mutable: false,
+                                name: unique_variable_name.clone()
+                            }),
+                            type_name: None,
                             value: sway::Expression::from(sway::AsmBlock { 
                                 registers: vec![
                                     sway::AsmRegister { 
-                                        name: "r1".to_string(), 
-                                        value: Some(value_expression) 
+                                        name: "r1".to_string(),
+                                        value: Some(value_expression)
                                     }
-                                ], 
-                                instructions: vec![], 
+                                ],
+                                instructions: vec![],
                                 final_expression: Some(sway::AsmFinalExpression { 
-                                    register: "r1".to_string(), 
+                                    register: "r1".to_string(),
                                     type_name: Some(sway::TypeName::Tuple { 
                                         type_names: vec![
                                             sway::TypeName::Identifier { name: "u64".to_string(), generic_parameters: None },
@@ -416,48 +416,48 @@ pub fn translate_uint_types_cast_function_call(
                                             sway::TypeName::Identifier { name: "u64".to_string(), generic_parameters: None },
                                             sway::TypeName::Identifier { name: "u64".to_string(), generic_parameters: None }
                                         ] 
-                                    }) 
+                                    })
                                 })
-                            }) 
+                            })
                         }),
                         sway::Statement::from(sway::Expression::from(sway::If { 
                             condition: Some(sway::Expression::from(sway::BinaryExpression { 
-                                operator: "||".to_string(), 
+                                operator: "||".to_string(),
                                 lhs: sway::Expression::from(sway::BinaryExpression { 
-                                    operator: "!=".to_string(), 
+                                    operator: "!=".to_string(),
                                     lhs: sway::Expression::from(sway::MemberAccess { 
-                                        expression: sway::Expression::Identifier(unique_variable_name.clone()), 
-                                        member: "0".to_string() 
-                                    }), 
-                                    rhs: sway::Expression::from(sway::Literal::DecInt(BigUint::zero(), None)) 
-                                }), 
-                                rhs: sway::Expression::from(sway::BinaryExpression { 
-                                    operator: "!=".to_string(), 
-                                    lhs: sway::Expression::from(sway::MemberAccess { 
-                                        expression: sway::Expression::Identifier(unique_variable_name.clone()), 
-                                        member: "1".to_string() 
-                                    }), 
-                                    rhs: sway::Expression::from(sway::Literal::DecInt(BigUint::zero(), None)) 
+                                        expression: sway::Expression::Identifier(unique_variable_name.clone()),
+                                        member: "0".to_string()
+                                    }),
+                                    rhs: sway::Expression::from(sway::Literal::DecInt(BigUint::zero(), None))
                                 }),
-                            })), 
+                                rhs: sway::Expression::from(sway::BinaryExpression { 
+                                    operator: "!=".to_string(),
+                                    lhs: sway::Expression::from(sway::MemberAccess { 
+                                        expression: sway::Expression::Identifier(unique_variable_name.clone()),
+                                        member: "1".to_string()
+                                    }),
+                                    rhs: sway::Expression::from(sway::Literal::DecInt(BigUint::zero(), None))
+                                }),
+                            })),
                             then_body: sway::Block { 
                                 statements: vec![sway::Statement::from(sway::Expression::create_function_calls(None, &[
                                     ("revert", Some((None, vec![])))
-                                ]))], 
+                                ]))],
                                 final_expr: None 
-                            }, 
-                            else_if: None, 
+                            },
+                            else_if: None,
                         }))
-                    ], 
+                    ],
                     final_expr: Some(sway::Expression::create_function_calls(None, &[
                         ("U128::from", Some((None, vec![sway::Expression::Tuple(vec![
                             sway::Expression::from(sway::MemberAccess { 
-                                expression: sway::Expression::Identifier(unique_variable_name.clone()), 
-                                member: "2".to_string() 
+                                expression: sway::Expression::Identifier(unique_variable_name.clone()),
+                                member: "2".to_string()
                             }),
                             sway::Expression::from(sway::MemberAccess { 
-                                expression: sway::Expression::Identifier(unique_variable_name.clone()), 
-                                member: "3".to_string() 
+                                expression: sway::Expression::Identifier(unique_variable_name.clone()),
+                                member: "3".to_string()
                             })
                         ])])))
                     ]))

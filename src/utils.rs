@@ -137,8 +137,6 @@ pub fn collect_source_unit_paths(
     Ok(source_unit_paths)
 }
 
-
-
 pub fn create_usage_queue(
     project: &mut crate::project::Project,
     mut paths: Vec<PathBuf>,
@@ -208,8 +206,8 @@ pub fn get_import_paths(
         for import_directive in &import_directives {
             let import_path = match import_directive {
                 solang_parser::pt::Import::Plain(import_path, _) => import_path,
-                solang_parser::pt::Import::GlobalSymbol(import_path, identifier, _) => import_path,
-                solang_parser::pt::Import::Rename(import_path, identifiers, _) => import_path,
+                solang_parser::pt::Import::GlobalSymbol(import_path, _, _) => import_path,
+                solang_parser::pt::Import::Rename(import_path, _, _) => import_path,
             };
 
             let import_path = match import_path {
@@ -253,7 +251,6 @@ pub fn get_import_paths(
     }
     Ok(import_paths)
 }
-
 
 /// Returns all the contract imports
 pub fn get_contract_imports(source_unit: &solidity::SourceUnit) -> Option<Vec<solidity::Import>> {

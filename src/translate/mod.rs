@@ -687,19 +687,18 @@ impl TranslatedDefinition {
         self.storage.as_mut().unwrap()
     }
 
-
     #[inline]
     pub fn get_constructor_fn(&mut self) -> &mut sway::Function {
         let abi = self.get_abi();
         if !abi.functions.iter().any(|f| f.name == "constructor") {
-            abi.functions.push(sway::Function{ 
-                attributes: None, 
-                is_public: false, 
-                old_name: String::new(), 
-                name: "constructor".into(), 
-                generic_parameters: None, 
-                parameters: sway::ParameterList{ entries: vec![] }, 
-                return_type: None, 
+            abi.functions.push(sway::Function { 
+                attributes: None,
+                is_public: false,
+                old_name: String::new(),
+                name: "constructor".into(),
+                generic_parameters: None,
+                parameters: sway::ParameterList { entries: vec![] },
+                return_type: None,
                 body: None,
             });
         }
@@ -711,17 +710,17 @@ impl TranslatedDefinition {
                 _ => false
             }
         }) {
-            contract_impl.items.push(sway::ImplItem::Function(sway::Function{ 
-                attributes: None, 
-                is_public: false, 
-                old_name: String::new(), 
-                name: "constructor".into(), 
-                generic_parameters: None, 
-                parameters: sway::ParameterList{ entries: vec![] }, 
-                return_type: None, 
+            contract_impl.items.push(sway::ImplItem::Function(sway::Function { 
+                attributes: None,
+                is_public: false,
+                old_name: String::new(),
+                name: "constructor".into(),
+                generic_parameters: None,
+                parameters: sway::ParameterList { entries: vec![] },
+                return_type: None,
                 body: Some(sway::Block { 
-                    statements: vec![], 
-                    final_expr: None, 
+                    statements: vec![],
+                    final_expr: None,
                 }),
             }));
         }
@@ -732,7 +731,7 @@ impl TranslatedDefinition {
                 _ => false,
             }
         }) else { 
-            unreachable!() 
+            unreachable!()
         };
 
         item
@@ -835,6 +834,7 @@ impl TranslatedDefinition {
         match expression {
             sway::Expression::Literal(literal) => Ok(self.get_literal_type(literal)),
             sway::Expression::Identifier(name) => Ok(self.get_identifier_type(scope, name)),
+            sway::Expression::Path(path_expr) => todo!("get type of path expr: {path_expr} - {path_expr:#?}"),
             sway::Expression::FunctionCall(_) | sway::Expression::FunctionCallBlock(_) => self.get_function_call_type(scope, expression),
             sway::Expression::Block(block) => self.get_block_type(scope, block),
             sway::Expression::Return(value) => self.get_return_type(scope, value.as_deref()),
@@ -921,7 +921,7 @@ impl TranslatedDefinition {
     #[inline(always)]
     fn get_identifier_type(
         &mut self,
-        scope: &Rc<RefCell<TranslationScope>>, 
+        scope: &Rc<RefCell<TranslationScope>>,
         name: &str,
     ) -> sway::TypeName {
         // HACK: Check if the identifier is a translated enum variant
@@ -976,7 +976,7 @@ impl TranslatedDefinition {
     #[inline(always)]
     fn get_block_type(
         &mut self,
-        scope: &Rc<RefCell<TranslationScope>>, 
+        scope: &Rc<RefCell<TranslationScope>>,
         block: &sway::Block
     ) -> Result<sway::TypeName, Error> {
         let Some(expression) = block.final_expr.as_ref() else {
@@ -1033,7 +1033,7 @@ impl TranslatedDefinition {
     #[inline(always)]
     fn get_return_type(
         &mut self,
-        scope: &Rc<RefCell<TranslationScope>>, 
+        scope: &Rc<RefCell<TranslationScope>>,
         value: Option<&sway::Expression>
     ) -> Result<sway::TypeName, Error> {
         if let Some(value) = value.as_ref() {
@@ -1046,7 +1046,7 @@ impl TranslatedDefinition {
     #[inline(always)]
     fn get_array_type(
         &mut self,
-        scope: &Rc<RefCell<TranslationScope>>, 
+        scope: &Rc<RefCell<TranslationScope>>,
         array: &sway::Array,
     ) -> Result<sway::TypeName, Error> {
         Ok(sway::TypeName::Array {
@@ -1062,7 +1062,7 @@ impl TranslatedDefinition {
     #[inline(always)]
     fn get_array_access_type(
         &mut self,
-        scope: &Rc<RefCell<TranslationScope>>, 
+        scope: &Rc<RefCell<TranslationScope>>,
         array_access: &sway::ArrayAccess,
     ) -> Result<sway::TypeName, Error> { 
         let element_type_name = self.get_expression_type(scope, &array_access.expression)?;
@@ -1084,7 +1084,7 @@ impl TranslatedDefinition {
     #[inline(always)]
     fn get_member_access_type(
         &mut self,
-        scope: &Rc<RefCell<TranslationScope>>, 
+        scope: &Rc<RefCell<TranslationScope>>,
         member_access: &sway::MemberAccess,
         expression: &sway::Expression,
     ) -> Result<sway::TypeName, Error> {
@@ -1148,7 +1148,7 @@ impl TranslatedDefinition {
     #[inline(always)]
     fn get_tuple_type(
         &mut self,
-        scope: &Rc<RefCell<TranslationScope>>, 
+        scope: &Rc<RefCell<TranslationScope>>,
         tuple: &[sway::Expression],
     ) -> Result<sway::TypeName, Error> {
         if tuple.len() == 1 {
@@ -1166,7 +1166,7 @@ impl TranslatedDefinition {
     #[inline(always)]
     fn get_if_type(
         &mut self,
-        scope: &Rc<RefCell<TranslationScope>>, 
+        scope: &Rc<RefCell<TranslationScope>>,
         if_expr: &sway::If,
     ) -> Result<sway::TypeName, Error> {
         if let Some(expression) = if_expr.then_body.final_expr.as_ref() {
@@ -1179,7 +1179,7 @@ impl TranslatedDefinition {
     #[inline(always)]
     fn get_match_type(
         &mut self,
-        scope: &Rc<RefCell<TranslationScope>>, 
+        scope: &Rc<RefCell<TranslationScope>>,
         match_expr: &sway::Match,
     ) -> Result<sway::TypeName, Error> {
         if let Some(branch) = match_expr.branches.first() {
@@ -1192,7 +1192,7 @@ impl TranslatedDefinition {
     #[inline(always)]
     fn get_unary_expression_type(
         &mut self,
-        scope: &Rc<RefCell<TranslationScope>>, 
+        scope: &Rc<RefCell<TranslationScope>>,
         unary_expression: &sway::UnaryExpression,
     ) -> Result<sway::TypeName, Error> {
         self.get_expression_type(scope, &unary_expression.expression)
@@ -1201,7 +1201,7 @@ impl TranslatedDefinition {
     #[inline(always)]
     fn get_binary_expression_type(
         &mut self,
-        scope: &Rc<RefCell<TranslationScope>>, 
+        scope: &Rc<RefCell<TranslationScope>>,
         binary_expression: &sway::BinaryExpression,
     ) -> Result<sway::TypeName, Error> {
         match binary_expression.operator.as_str() {
@@ -1230,7 +1230,7 @@ impl TranslatedDefinition {
     #[inline(always)]
     fn get_function_call_type(
         &mut self,
-        scope: &Rc<RefCell<TranslationScope>>, 
+        scope: &Rc<RefCell<TranslationScope>>,
         expression: &sway::Expression,
     ) -> Result<sway::TypeName, Error> {
         let (function, function_generic_parameters, parameters) = match expression {
@@ -1264,7 +1264,7 @@ impl TranslatedDefinition {
     #[inline(always)]
     fn get_identifier_function_call_type(
         &mut self,
-        scope: &Rc<RefCell<TranslationScope>>, 
+        scope: &Rc<RefCell<TranslationScope>>,
         name: &str,
         generic_parameters: Option<&sway::GenericParameterList>,
         parameters: &[sway::Expression],

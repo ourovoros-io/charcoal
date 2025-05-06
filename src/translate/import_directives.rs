@@ -176,8 +176,8 @@ fn process_import(
                             constructor_calls: vec![],
                             modifiers: vec![],
                             type_name: sway::TypeName::Function { 
-                                generic_parameters: function_definition.generic_parameters.clone(), 
-                                parameters: function_definition.parameters.clone(), 
+                                generic_parameters: function_definition.generic_parameters.clone(),
+                                parameters: function_definition.parameters.clone(),
                                 return_type: function_definition.return_type.as_ref().map(|r| Box::new(r.clone()))
                             },
                         })));
