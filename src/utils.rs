@@ -64,6 +64,10 @@ pub fn get_canonical_path<P: AsRef<Path>>(
 pub fn find_project_root_folder<P: AsRef<Path>>(path: P) -> Option<PathBuf> {
     let path = path.as_ref();
 
+    if !path.exists() {
+        return None;
+    }
+
     static CONFIG_FILES: &[&str] = &[
         framework::Framework::FOUNDRY_CONFIG_FILE,
         framework::Framework::HARDHAT_CONFIG_FILE,
@@ -135,7 +139,8 @@ pub fn get_import_paths(
             let mut import_path = import_path.to_str().unwrap().replace("\"", "");
 
             if let Some(framework) = framework {
-                import_path = crate::framework::resolve_framework_path(framework, &source_unit_path.parent().unwrap(), source_unit_path.to_str().unwrap())?.to_str().unwrap().to_string();
+                // If we have detected a framework we need to resolve the path based on the remappings if found
+                import_path = crate::framework::resolve_framework_path(framework, &source_unit_path.parent().unwrap(), &import_path)?.to_str().unwrap().to_string();
             } else {
                 // Join the import path with the source unit path
                 import_path = source_unit_path.parent().unwrap().join(import_path).to_str().unwrap().to_string();
@@ -268,7 +273,7 @@ mod tests {
 
     #[test]
     fn test_collect_source_unit_custom_paths() {
-        let path = Path::new("./tests/paths/contracts");
+        let path = Path::new("./test_data/paths/contracts");
         let paths = collect_source_unit_paths(path).unwrap();
         assert_eq!(paths.len(), 4);
     }

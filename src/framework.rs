@@ -261,3 +261,22 @@ fn find_in_toml_value(value: &toml::Value, key: &str) -> Option<toml::Value> {
         _ => None,
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+
+    #[test]
+    fn test_foundry_detection_from_file() {
+        let framework = super::detect_framework("./test_data/imports/framework/foundry/mytoken/src/MyToken.sol");
+        assert!(framework.is_ok());
+        println!("Framework : {framework:#?}");
+    }
+
+    #[test]
+    fn test_foundry_detection_from_folder() {
+        let framework = super::detect_framework("./test_data/imports/frameworks/foundry/mytoken/");
+        assert!(framework.is_ok());
+        println!("Framework : {framework:#?}");
+    }
+}
