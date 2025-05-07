@@ -126,6 +126,6 @@ pub fn translate_post_operator_expression(
             }),
             assignment,
         ],
-        final_expr: Some(sway::Expression::Identifier(variable_name)),
+        final_expr: Some(sway::Expression::create_identifier(variable_name)),
     }))
 }

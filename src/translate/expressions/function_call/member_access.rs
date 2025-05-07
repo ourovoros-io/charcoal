@@ -112,7 +112,7 @@ pub fn translate_member_access_function_call(
                                             // abi(T, x.as_contract_id().unwrap().into())
                                             container = sway::Expression::create_function_calls(None, &[
                                                 ("abi", Some((None, vec![
-                                                    sway::Expression::Identifier(abi_type_name.clone()),
+                                                    sway::Expression::create_identifier(abi_type_name.clone()),
                                                     sway::Expression::create_function_calls(Some(container), &[
                                                         ("as_contract_id", Some((None, vec![]))),
                                                         ("unwrap", Some((None, vec![]))),
@@ -308,9 +308,7 @@ pub fn translate_function_call_block_member_access(
                                     Some((
                                         None,
                                         vec![
-                                            sway::Expression::Identifier(
-                                                abi_type_name.clone(),
-                                            ),
+                                            sway::Expression::create_identifier(abi_type_name.clone()),
                                             sway::Expression::create_function_calls(
                                                 Some(container),
                                                 &[
@@ -566,7 +564,7 @@ pub fn translate_identity_member_access_function_call(
             // abi(T, x.as_contract_id().unwrap().into())
             container = sway::Expression::create_function_calls(None, &[
                 ("abi", Some((None, vec![
-                    sway::Expression::Identifier(abi_type_name.clone()),
+                    sway::Expression::create_identifier(abi_type_name.clone()),
                     sway::Expression::create_function_calls(Some(container), &[
                         ("as_contract_id", Some((None, vec![]))),
                         ("unwrap", Some((None, vec![]))),
@@ -911,7 +909,7 @@ pub fn translate_abi_member_access_function_call(
                 final_expr: Some(sway::Expression::Tuple(
                     parameter_names
                         .iter()
-                        .map(|p| sway::Expression::Identifier(p.clone()))
+                        .map(|p| sway::Expression::create_identifier(p.clone()))
                         .collect(),
                 )),
             };
@@ -956,7 +954,7 @@ pub fn translate_abi_member_access_function_call(
                         .push(sway::Statement::from(sway::Expression::from(
                             sway::BinaryExpression {
                                 operator: "=".into(),
-                                lhs: sway::Expression::Identifier("ptr".into()),
+                                lhs: sway::Expression::create_identifier("ptr".into()),
                                 rhs: sway::Expression::create_function_calls(
                                     None,
                                     &[
@@ -1018,7 +1016,7 @@ pub fn translate_abi_member_access_function_call(
                         &[("Bytes::new", Some((None, vec![])))],
                     ),
                 })],
-                final_expr: Some(sway::Expression::Identifier(variable_name.clone())),
+                final_expr: Some(sway::Expression::create_identifier(variable_name.clone())),
             };
 
             // Add the encoding statements to the block
@@ -1051,7 +1049,7 @@ pub fn translate_abi_member_access_function_call(
                                                                                 sway::MatchBranch {
                                                                                     pattern: sway::Expression::create_function_calls(None, &[
                                                                                         (format!("Identity::{name}").as_str(), Some((None, vec![
-                                                                                            sway::Expression::Identifier("x".into()),
+                                                                                            sway::Expression::create_identifier("x".into()),
                                                                                         ]))),
                                                                                     ]),
                                                                                     value: sway::Expression::create_function_calls(None, &[

@@ -118,7 +118,7 @@ pub fn translate_yul_assign_statement(
         .collect::<Result<Vec<_>, _>>()?;
 
     for (i, identifier) in translated_identifiers.iter().enumerate() {
-        let sway::Expression::Identifier(name) = identifier else { continue };
+        let Some(name) = identifier.as_identifier() else { continue };
 
         let Some(variable) = scope.borrow().get_variable_from_new_name(name) else {
             panic!(
@@ -331,7 +331,7 @@ pub fn translate_yul_switch_statement(
             }
 
             solidity::YulSwitchOptions::Default(_, body) => {
-                let pattern = sway::Expression::Identifier("_".into());
+                let pattern = sway::Expression::create_identifier("_".into());
                 let value = sway::Expression::from(translate_yul_block(project, translated_definition, scope, body)?);
                 branches.push(sway::MatchBranch { pattern, value });
             }
@@ -459,7 +459,7 @@ pub fn translate_yul_variable_expression(
             ("read", Some((None, vec![]))),
         ]))
     } else {
-        Ok(sway::Expression::Identifier(variable.new_name.clone()))
+        Ok(sway::Expression::create_identifier(variable.new_name.clone()))
     }
 }
 
@@ -1240,7 +1240,7 @@ pub fn translate_yul_function_call_expression(
                         registers: vec![
                             sway::AsmRegister {
                                 name: "r1".into(),
-                                value: Some(sway::Expression::Identifier("ptr".into())),
+                                value: Some(sway::Expression::create_identifier("ptr".into())),
                             },
                         ],
                         instructions: vec![

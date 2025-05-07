@@ -186,7 +186,7 @@ pub fn generate_enum_abi_encode_function(
     abi_encode_impl: &Rc<RefCell<sway::Impl>>,
 ) -> Result<(), Error> {
     let mut match_expr = sway::Match {
-        expression: sway::Expression::Identifier("self".into()),
+        expression: sway::Expression::create_identifier("self".into()),
         branches: vec![],
     };
 
@@ -206,7 +206,7 @@ pub fn generate_enum_abi_encode_function(
                             sway::Expression::create_function_calls(None, &[
                                 (name, None),
                                 ("abi_encode", Some((None, vec![
-                                    sway::Expression::Identifier("buffer".into()),
+                                    sway::Expression::create_identifier("buffer".into()),
                                 ]))),
                             ])
                         }
@@ -216,7 +216,7 @@ pub fn generate_enum_abi_encode_function(
                                 (name, None),
                                 ("underlying", Some((None, vec![]))),
                                 ("abi_encode", Some((None, vec![
-                                    sway::Expression::Identifier("buffer".into()),
+                                    sway::Expression::create_identifier("buffer".into()),
                                 ]))),
                             ])
                         }
@@ -226,21 +226,21 @@ pub fn generate_enum_abi_encode_function(
                                 sway::MatchBranch {
                                     pattern: sway::Expression::create_function_calls(None, &[
                                         (format!("Identity::{name}").as_str(), Some((None, vec![
-                                            sway::Expression::Identifier("x".into()),
+                                            sway::Expression::create_identifier("x".into()),
                                         ]))),
                                     ]),
                                     value: sway::Expression::create_function_calls(None, &[
                                         ("x", None),
                                         ("bits", Some((None, vec![]))),
                                         ("abi_encode", Some((None, vec![
-                                            sway::Expression::Identifier("buffer".into()),
+                                            sway::Expression::create_identifier("buffer".into()),
                                         ]))),
                                     ]),
                                 }
                             };
     
                             sway::Expression::from(sway::Match {
-                                expression: sway::Expression::Identifier(name.into()),
+                                expression: sway::Expression::create_identifier(name.into()),
                                 branches: vec![
                                     identity_variant_branch("Address"),
                                     identity_variant_branch("ContractId"),
@@ -255,7 +255,7 @@ pub fn generate_enum_abi_encode_function(
                         sway::Expression::create_function_calls(None, &[
                             (name, None),
                             ("abi_encode", Some((None, vec![
-                                sway::Expression::Identifier("buffer".into()),
+                                sway::Expression::create_identifier("buffer".into()),
                             ]))),
                         ])
                     }
@@ -307,7 +307,7 @@ pub fn generate_enum_abi_encode_function(
             let Some(sway::Statement::Let(let_stmt)) = block.statements.pop() else { unreachable!() };
             block.final_expr = Some(let_stmt.value);
         } else {
-            block.final_expr = Some(sway::Expression::Identifier("buffer".into()));
+            block.final_expr = Some(sway::Expression::create_identifier("buffer".into()));
         }
         
         block.statements.insert(0, sway::Statement::from(sway::Let {
@@ -318,12 +318,12 @@ pub fn generate_enum_abi_encode_function(
             type_name: None,
             value: sway::Expression::create_function_calls(
                 Some(sway::Expression::from(sway::Literal::String(variant.name.clone()))),
-                &[("abi_encode", Some((None, vec![sway::Expression::Identifier("buffer".into())])))],
+                &[("abi_encode", Some((None, vec![sway::Expression::create_identifier("buffer".into())])))],
             ),
         }));
 
         match_expr.branches.push(sway::MatchBranch {
-            pattern: sway::Expression::Identifier(format!(
+            pattern: sway::Expression::create_identifier(format!(
                 "{}::{}{}",
                 sway_enum.borrow().name,
                 variant.name,
@@ -379,7 +379,7 @@ pub fn generate_enum_abi_encode_function(
                     value: sway::Expression::from(match_expr),
                 }),
             ],
-            final_expr: Some(sway::Expression::Identifier("buffer".into())),
+            final_expr: Some(sway::Expression::create_identifier("buffer".into())),
         }),
     }));
 

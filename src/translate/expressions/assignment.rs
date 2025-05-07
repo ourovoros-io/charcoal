@@ -36,7 +36,7 @@ pub fn create_assignment_expression(
     // Check for assignments to fields of struct variables defined in scope
     if !type_name.is_compatible_with(&expr_type_name) {
         if let sway::Expression::MemberAccess(member_access) = expression {
-            if member_access.expression != sway::Expression::Identifier("storage".into()) {
+            if member_access.expression != sway::Expression::create_identifier("storage".into()) {
                 let type_name = translated_definition.get_expression_type(scope, &member_access.expression)?;
 
                 if let Some(struct_definition) = translated_definition.structs.iter().find(|s| {
@@ -107,7 +107,7 @@ pub fn create_assignment_expression(
                                 sway::Statement::from(sway::Expression::from(sway::BinaryExpression {
                                     operator: "=".into(),
                                     lhs: sway::Expression::from(sway::MemberAccess {
-                                        expression: sway::Expression::Identifier(variable_name.clone()),
+                                        expression: sway::Expression::create_identifier(variable_name.clone()),
                                         member: field.name.clone(),
                                     }),
                                     rhs: coerce_expression(rhs, rhs_type_name, &field.type_name).unwrap(),
@@ -115,7 +115,7 @@ pub fn create_assignment_expression(
                                 // blah.write(x);
                                 sway::Statement::from(sway::Expression::create_function_calls(Some(expression.clone()), &[
                                     ("write", Some((None, vec![
-                                        sway::Expression::Identifier(variable_name),
+                                        sway::Expression::create_identifier(variable_name),
                                     ]))),
                                 ])),
                             ],
@@ -286,7 +286,7 @@ pub fn create_assignment_expression(
                                     sway::Statement::from(sway::Expression::from(sway::BinaryExpression {
                                         operator: "=".into(),
                                         lhs: sway::Expression::from(sway::MemberAccess {
-                                            expression: sway::Expression::Identifier(variable_name.clone()),
+                                            expression: sway::Expression::create_identifier(variable_name.clone()),
                                             member: member_access.member.clone(),
                                         }),
                                         rhs: rhs.clone(),
@@ -295,7 +295,7 @@ pub fn create_assignment_expression(
                                     sway::Statement::from(sway::Expression::create_function_calls(
                                         Some(array_access.expression.clone()), &[
                                             ("set", Some((None, vec![
-                                                sway::Expression::Identifier(variable_name.clone()),
+                                                sway::Expression::create_identifier(variable_name.clone()),
                                             ]))),
                                         ],
                                     )),
@@ -307,11 +307,15 @@ pub fn create_assignment_expression(
                         _ => todo!("translation assignment expression: {}", sway::TabbedDisplayer(expression)),
                     }
                     
-                    sway::Expression::Identifier(ident) if operator == "=" => {
+                    sway::Expression::PathExpr(path_expr) => {
+                        let Some(ident) = path_expr.as_identifier() else {
+                            todo!("translation non-identifier assignment expression: {}", sway::TabbedDisplayer(expression))
+                        };
+
                         return Ok(sway::Expression::from(sway::BinaryExpression {
                             operator: "=".into(),
                             lhs: expression.clone(),
-                            rhs: sway::Expression::Identifier(ident.clone())
+                            rhs: sway::Expression::create_identifier(ident.into())
                         }));
                     }
         

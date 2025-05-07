@@ -72,7 +72,7 @@ pub fn translate_variable_definition_statement(
                             }),
                             type_name: Some(type_name.clone()),
                             value: sway::Expression::from(sway::FunctionCall {
-                                function: sway::Expression::Identifier("Vec::with_capacity".into()),
+                                function: sway::Expression::create_identifier("Vec::with_capacity".into()),
                                 generic_parameters: None,
                                 parameters: vec![
                                     length.clone(),
@@ -98,7 +98,7 @@ pub fn translate_variable_definition_statement(
                             // i < length
                             condition: sway::Expression::from(sway::BinaryExpression {
                                 operator: "<".into(),
-                                lhs: sway::Expression::Identifier("i".into()),
+                                lhs: sway::Expression::create_identifier("i".into()),
                                 rhs: length.clone(),
                             }),
 
@@ -115,7 +115,7 @@ pub fn translate_variable_definition_statement(
                                     // i += 1;
                                     sway::Statement::from(sway::Expression::from(sway::BinaryExpression {
                                         operator: "+=".into(),
-                                        lhs: sway::Expression::Identifier("i".into()),
+                                        lhs: sway::Expression::create_identifier("i".into()),
                                         rhs: sway::Expression::from(sway::Literal::DecInt(BigUint::one(), None)),
                                     })),
                                 ],
@@ -125,7 +125,7 @@ pub fn translate_variable_definition_statement(
                     ],
 
                     // v
-                    final_expr: Some(sway::Expression::Identifier("v".into())),
+                    final_expr: Some(sway::Expression::create_identifier("v".into())),
                 }));
             }
 

@@ -143,11 +143,8 @@ pub fn resolve_abi_function_call(
                         },
     
                         "Identity" => {
-                            if let sway::Expression::FunctionCall(function_call) = parameters[i].clone()
-                            {
-                                if let sway::Expression::Identifier(function_name) =
-                                    &function_call.function
-                                {
+                            if let sway::Expression::FunctionCall(function_call) = parameters[i].clone() {
+                                if let Some(function_name) = function_call.function.as_identifier() {
                                     if function_name == "abi" {
                                         parameters[i] = function_call.parameters[1].clone();
                                         continue;
@@ -242,7 +239,7 @@ pub fn resolve_abi_function_call(
     Ok(Some(sway::Expression::create_function_calls(
         Some(sway::Expression::create_function_calls(None, &[
             ("abi", Some((None, vec![
-                sway::Expression::Identifier(abi.name.clone()),
+                sway::Expression::create_identifier(abi.name.clone()),
                 sway::Expression::create_function_calls(Some(container.clone()), &[
                     ("as_contract_id", Some((None, vec![]))),
                     ("unwrap", Some((None, vec![]))),
@@ -461,11 +458,8 @@ pub fn resolve_function_call(
                     },
 
                     "Identity" => {
-                        if let sway::Expression::FunctionCall(function_call) = parameters[i].clone()
-                        {
-                            if let sway::Expression::Identifier(function_name) =
-                                &function_call.function
-                            {
+                        if let sway::Expression::FunctionCall(function_call) = parameters[i].clone() {
+                            if let Some(function_name) = function_call.function.as_identifier() {
                                 if function_name == "abi" {
                                     parameters[i] = function_call.parameters[1].clone();
                                     continue;
@@ -646,11 +640,8 @@ pub fn resolve_function_call(
                     },
 
                     "Identity" => {
-                        if let sway::Expression::FunctionCall(function_call) = parameters[i].clone()
-                        {
-                            if let sway::Expression::Identifier(function_name) =
-                                &function_call.function
-                            {
+                        if let sway::Expression::FunctionCall(function_call) = parameters[i].clone() {
+                            if let Some(function_name) = function_call.function.as_identifier() {
                                 if function_name == "abi" {
                                     parameters[i] = function_call.parameters[1].clone();
                                     continue;
@@ -900,7 +891,7 @@ pub fn coerce_expression(
         match (name.as_str(), generic_parameters.as_ref()) {
             ("Identity", None) => match &expression {
                 sway::Expression::FunctionCall(f) => {
-                    if let sway::Expression::Identifier(ident) = &f.function {
+                    if let Some(ident) = f.function.as_identifier() {
                         if ident == "abi" && f.parameters.len() == 2 {
                             let rhs = f.parameters[1].clone();
                             if let sway::Expression::FunctionCall(f) = &rhs {
@@ -983,7 +974,7 @@ pub fn coerce_expression(
                     if let Some(vec_type) = to_type_name.vec_type() {
                         // let unique_variable_name = 
                         let get_expression = sway::Expression::create_function_calls(Some(expression.clone()), &[
-                            ("get", Some((None, vec![sway::Expression::Identifier("i".to_string())]))),
+                            ("get", Some((None, vec![sway::Expression::create_identifier("i".to_string())]))),
                             ("unwrap", Some((None, vec![]))),
                             ("read", Some((None, vec![])))
                         ]);
@@ -1008,7 +999,7 @@ pub fn coerce_expression(
                                     }),
                                     type_name: None,
                                     value: sway::Expression::create_function_calls(None, &[
-                                        ("Vec::with_capacity", Some((None, vec![sway::Expression::Identifier("len".to_string())])))
+                                        ("Vec::with_capacity", Some((None, vec![sway::Expression::create_identifier("len".to_string())])))
                                     ]),
                                 }),
                                 sway::Statement::from(sway::Let { 
@@ -1022,8 +1013,8 @@ pub fn coerce_expression(
                                 sway::Statement::from(sway::Expression::from(sway::While { 
                                     condition: sway::Expression::from(sway::BinaryExpression { 
                                         operator: "<".to_string(),
-                                        lhs: sway::Expression::Identifier("i".to_string()),
-                                        rhs: sway::Expression::Identifier("len".to_string()),
+                                        lhs: sway::Expression::create_identifier("i".to_string()),
+                                        rhs: sway::Expression::create_identifier("len".to_string()),
                                     }),
                                     body: sway::Block { 
                                         statements: vec![
@@ -1033,7 +1024,7 @@ pub fn coerce_expression(
                                             ])),
                                             sway::Statement::from(sway::Expression::from(sway::BinaryExpression { 
                                                 operator: "+=".to_string(),
-                                                lhs: sway::Expression::Identifier("i".to_string()),
+                                                lhs: sway::Expression::create_identifier("i".to_string()),
                                                 rhs: sway::Expression::from(sway::Literal::DecInt(BigUint::one(), None))
                                             }))
                                         ],
@@ -1041,7 +1032,7 @@ pub fn coerce_expression(
                                     }
                                 }))
                             ],
-                            final_expr: Some(sway::Expression::Identifier("v".to_string()))
+                            final_expr: Some(sway::Expression::create_identifier("v".to_string()))
                         }))
                     }
                 }
@@ -1210,8 +1201,8 @@ pub fn coerce_expression(
         },sway::TypeName::Tuple {
             type_names: rhs_type_names,
         },)=> {
-            match expression {
-                sway::Expression::Identifier(_) => {
+            match &expression {
+                sway::Expression::PathExpr(path_expr) if path_expr.is_identifier() => {
                     let component_names = ('a'..='z')
                         .enumerate()
                         .take_while(|(i, _)| *i < lhs_type_names.len())
@@ -1226,7 +1217,7 @@ pub fn coerce_expression(
 
                     let exprs = component_names.iter().enumerate()
                         .map(|(i, c)| {
-                            let expr = sway::Expression::Identifier(c.name.clone());
+                            let expr = sway::Expression::create_identifier(c.name.clone());
                             coerce_expression(&expr, &lhs_type_names[i], &rhs_type_names[i])
                         })
                         .collect::<Vec<_>>();

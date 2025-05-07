@@ -544,7 +544,7 @@ pub fn translate_function_call_expression(
                                             if let sway::TypeName::Identifier { name: parameter_type_name, generic_parameters: None } = parameter_type_name {
                                                 if parameter_type_name == "Identity" {
                                                     if let sway::Expression::FunctionCall(function_call) = parameters[i].clone() {
-                                                        if let sway::Expression::Identifier(function_name) = &function_call.function {
+                                                        if let Some(function_name) = function_call.function.as_identifier() {
                                                             if function_name == "abi" {
                                                                 parameters[i] = function_call.parameters[1].clone();
                                                                 continue 'value_type_check;

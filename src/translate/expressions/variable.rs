@@ -97,17 +97,17 @@ pub fn translate_variable_access_expression(
                     Some(variable),
                     if is_storage {
                         sway::Expression::from(sway::MemberAccess {
-                            expression: sway::Expression::Identifier("storage".into()),
+                            expression: sway::Expression::create_identifier("storage".into()),
                             member: variable_name,
                         })
                     } else {
-                        sway::Expression::Identifier(variable_name)
+                        sway::Expression::create_identifier(variable_name)
                     }
                 ));
             } else if let Some(function) = scope.borrow().find_function(|f| {
                 f.borrow().old_name == *name
             }) {
-                return Ok((None, sway::Expression::Identifier(function.borrow().new_name.clone())));
+                return Ok((None, sway::Expression::create_identifier(function.borrow().new_name.clone())));
             }
 
             return Err(Error::Wrapped(Box::new(std::io::Error::new(
@@ -310,7 +310,7 @@ pub fn translate_variable_access_expression(
                         }
                     }
 
-                    return Ok((None, sway::Expression::Identifier(new_name)));
+                    return Ok((None, sway::Expression::create_identifier(new_name)));
                 }
             }
             

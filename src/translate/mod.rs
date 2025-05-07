@@ -833,8 +833,7 @@ impl TranslatedDefinition {
     ) -> Result<sway::TypeName, Error> {
         match expression {
             sway::Expression::Literal(literal) => Ok(self.get_literal_type(literal)),
-            sway::Expression::Identifier(name) => Ok(self.get_identifier_type(scope, name)),
-            sway::Expression::Path(path_expr) => todo!("get type of path expr: {path_expr} - {path_expr:#?}"),
+            sway::Expression::PathExpr(path_expr) => Ok(self.get_path_expr_type(scope, path_expr)),
             sway::Expression::FunctionCall(_) | sway::Expression::FunctionCallBlock(_) => self.get_function_call_type(scope, expression),
             sway::Expression::Block(block) => self.get_block_type(scope, block),
             sway::Expression::Return(value) => self.get_return_type(scope, value.as_deref()),
@@ -919,11 +918,15 @@ impl TranslatedDefinition {
     }
 
     #[inline(always)]
-    fn get_identifier_type(
+    fn get_path_expr_type(
         &mut self,
         scope: &Rc<RefCell<TranslationScope>>,
-        name: &str,
+        path_expr: &sway::PathExpr,
     ) -> sway::TypeName {
+        let Some(name) = path_expr.as_identifier() else {
+            todo!("get type of non-identifier path expressions: {path_expr} - {path_expr:#?}")
+        };
+
         // HACK: Check if the identifier is a translated enum variant
         if name.contains("::") {
             let parts = name.split("::").collect::<Vec<_>>();
@@ -1088,7 +1091,7 @@ impl TranslatedDefinition {
         member_access: &sway::MemberAccess,
         expression: &sway::Expression,
     ) -> Result<sway::TypeName, Error> {
-        if let sway::Expression::Identifier(name) = &member_access.expression {
+        if let Some(name) = member_access.expression.as_identifier() {
             if name == "storage" {
                 let Some(storage_field) = self.storage.as_ref()
                     .map(|s| s.fields.iter().find(|f| f.name == member_access.member))
@@ -1240,9 +1243,9 @@ impl TranslatedDefinition {
         };
 
         match function {
-            sway::Expression::Identifier(name) => self.get_identifier_function_call_type(
+            sway::Expression::PathExpr(path_expr) => self.get_path_expr_function_call_type(
                 scope,
-                name.as_str(),
+                path_expr,
                 function_generic_parameters,
                 parameters.as_slice(),
             ),
@@ -1262,13 +1265,27 @@ impl TranslatedDefinition {
     }
 
     #[inline(always)]
-    fn get_identifier_function_call_type(
+    fn get_path_expr_function_call_type(
         &mut self,
         scope: &Rc<RefCell<TranslationScope>>,
-        name: &str,
+        path_expr: &sway::PathExpr,
         generic_parameters: Option<&sway::GenericParameterList>,
         parameters: &[sway::Expression],
     ) -> Result<sway::TypeName, Error> {
+        let Some(name) = path_expr.as_identifier() else {
+            todo!(
+                "get type of non-identifier path function call expression: {path_expr}({}) - {path_expr:#?}",
+                parameters
+                    .iter()
+                    .map(|p| self.get_expression_type(scope, p))
+                    .collect::<Result<Vec<_>, _>>()?
+                    .iter()
+                    .map(|t| t.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", "),
+            )
+        };
+
         //
         // TODO: check generic parameters!
         //
@@ -1287,8 +1304,7 @@ impl TranslatedDefinition {
             "abi" => {
                 assert!(parameters.len() == 2, "Malformed abi cast, expected 2 parameters, found {}",parameters.len());
 
-                let sway::Expression::Identifier(definition_name) = &parameters[0]
-                else {
+                let Some(definition_name) = parameters[0].as_identifier() else {
                     panic!(
                         "Malformed abi cast, expected identifier, found {:#?}",
                         parameters[0]
@@ -1296,7 +1312,7 @@ impl TranslatedDefinition {
                 };
 
                 return Ok(sway::TypeName::Identifier {
-                    name: definition_name.clone(),
+                    name: definition_name.into(),
                     generic_parameters: None,
                 })
             }

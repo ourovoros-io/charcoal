@@ -47,7 +47,7 @@ pub fn translate_emit_statement(
                                     return Ok(sway::Statement::from(sway::Expression::create_function_calls(None, &[
                                         ("log", Some((None, vec![
                                             if arguments.is_empty() {
-                                                sway::Expression::Identifier(format!(
+                                                sway::Expression::create_identifier(format!(
                                                     "{}::{}",
                                                     events_enum.0.borrow().name,
                                                     event_variant_name,
@@ -140,10 +140,10 @@ pub fn translate_emit_statement(
 
             return Ok(sway::Statement::from(sway::Expression::from(
                 sway::FunctionCall {
-                    function: sway::Expression::Identifier("log".into()),
+                    function: sway::Expression::create_identifier("log".into()),
                     generic_parameters: None,
                     parameters: vec![if arguments.is_empty() {
-                        sway::Expression::Identifier(format!(
+                        sway::Expression::create_identifier(format!(
                             "{}::{}",
                             events_enum.name,
                             event_variant_name,

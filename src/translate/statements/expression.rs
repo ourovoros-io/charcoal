@@ -22,7 +22,7 @@ pub fn translate_expression_statement(
                             parameters.iter()
                                 .map(|(_, p)| match p.as_ref() {
                                     Some(p) => translate_expression(project, translated_definition, scope, &p.ty),
-                                    None => Ok(sway::Expression::Identifier("_".into())),
+                                    None => Ok(sway::Expression::create_identifier("_".into())),
                                 })
                                 .collect::<Result<Vec<_>, _>>()?
                         ),

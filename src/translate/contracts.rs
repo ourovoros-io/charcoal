@@ -279,7 +279,7 @@ pub fn translate_contract_definition(
         // Create assignment statements for all of the deferred initializations
         for deferred_initialization in deferred_initializations.iter().rev() {
             let lhs = sway::Expression::create_member_access(
-                sway::Expression::Identifier("storage".into()),
+                sway::Expression::create_identifier("storage".into()),
                 &[deferred_initialization.name.as_str()],
             );
             
@@ -404,7 +404,7 @@ pub fn translate_contract_definition(
                 break;
             };
 
-            let sway::Expression::Identifier(function_name) = &function_call.function else {
+            let Some(function_name) = function_call.function.as_identifier() else {
                 statement_index = i;
                 break;
             };

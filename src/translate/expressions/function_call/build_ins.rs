@@ -329,7 +329,7 @@ pub fn translate_builtin_function_call(
                                         Some((
                                             None,
                                             vec![
-                                                sway::Expression::Identifier(old_name.into()),
+                                                sway::Expression::create_identifier(old_name.into()),
                                                 sway::Expression::create_function_calls(
                                                     Some(parameters[0].clone()),
                                                     &[
@@ -361,7 +361,7 @@ pub fn translate_builtin_function_call(
                                 // abi(T, Identity::from(ContractId::from(x)))
                                 return Ok(sway::Expression::create_function_calls(None, &[
                                     ("abi", Some((None, vec![
-                                        sway::Expression::Identifier(old_name.into()),
+                                        sway::Expression::create_identifier(old_name.into()),
                                         sway::Expression::create_function_calls(None, &[
                                             ("Identity::from", Some((None, vec![
                                                 // ContractId::from(x)

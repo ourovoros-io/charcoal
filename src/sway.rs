@@ -1499,13 +1499,32 @@ impl Display for PathExpr {
     }
 }
 
+impl PathExpr {
+    #[inline(always)]
+    pub fn as_identifier(&self) -> Option<&str> {
+        let PathExprRoot::Identifier(name) = &self.root else {
+            return None;
+        };
+
+        if !self.segments.is_empty() {
+            return None;
+        }
+
+        Some(name.as_str())
+    }
+
+    #[inline(always)]
+    pub fn is_identifier(&self) -> bool {
+        self.as_identifier().is_some()
+    }
+}
+
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Expression {
     Literal(Literal),
-    Identifier(String),
-    Path(PathExpr),
+    PathExpr(PathExpr),
     FunctionCall(Box<FunctionCall>),
     FunctionCallBlock(Box<FunctionCallBlock>),
     Block(Box<Block>),
@@ -1531,8 +1550,7 @@ impl TabbedDisplay for Expression {
     fn tabbed_fmt(&self, depth: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Expression::Literal(x) => x.tabbed_fmt(depth, f),
-            Expression::Identifier(x) => write!(f, "{x}"),
-            Expression::Path(x) => write!(f, "{x}"),
+            Expression::PathExpr(x) => write!(f, "{x}"),
             Expression::FunctionCall(x) => x.tabbed_fmt(depth, f),
             Expression::FunctionCallBlock(x) => x.tabbed_fmt(depth, f),
             Expression::Block(x) => x.tabbed_fmt(depth, f),
@@ -1595,6 +1613,7 @@ macro_rules! impl_expr_box_from {
 }
 
 impl_expr_from!(Literal);
+impl_expr_from!(PathExpr);
 impl_expr_box_from!(FunctionCall);
 impl_expr_box_from!(FunctionCallBlock);
 impl_expr_box_from!(Block);
@@ -1640,10 +1659,24 @@ impl Expression {
     pub fn create_identifier(name: String) -> Expression {
         assert!(!name.is_empty());
         
-        Expression::Path(PathExpr {
+        Expression::PathExpr(PathExpr {
             root: PathExprRoot::Identifier(name),
             segments: vec![],
         })
+    }
+
+    #[inline(always)]
+    pub fn as_identifier(&self) -> Option<&str> {
+        let Expression::PathExpr(path_expr) = self else {
+            return None;
+        };
+
+        path_expr.as_identifier()
+    }
+
+    #[inline(always)]
+    pub fn is_identifier(&self) -> bool {
+        self.as_identifier().is_some()
     }
 
     pub fn create_member_access(container: Expression, members: &[&str]) -> Expression {
@@ -1678,7 +1711,7 @@ impl Expression {
                     member: member.to_string(),
                 }));
             } else {
-                result = Some(Expression::Identifier(member.to_string()));
+                result = Some(Expression::create_identifier(member.to_string()));
             }
 
             if let Some((generic_parameters, parameters)) = call_data {

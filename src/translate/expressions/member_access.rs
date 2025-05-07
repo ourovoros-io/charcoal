@@ -29,13 +29,13 @@ pub fn translate_member_access_expression(
                     match &type_name {
                         sway::TypeName::Identifier { name, .. } => match (name.as_str(), member.name.as_str()) {
                             ("I8" | "I16" | "I32" | "I64" | "I128" | "I256" | "u8" | "u16" | "u32" | "u64" | "u256", "min") => return Ok(sway::Expression::from(sway::FunctionCall {
-                                function: sway::Expression::Identifier(format!("{name}::min")),
+                                function: sway::Expression::create_identifier(format!("{name}::min")),
                                 generic_parameters: None,
                                 parameters: vec![],
                             })),
 
                             ("I8" | "I16" | "I32" | "I64" | "I128" | "I256" | "u8" | "u16" | "u32" | "u64" | "u256", "max") => return Ok(sway::Expression::from(sway::FunctionCall {
-                                function: sway::Expression::Identifier(format!("{name}::max")),
+                                function: sway::Expression::create_identifier(format!("{name}::max")),
                                 generic_parameters: None,
                                 parameters: vec![],
                             })),
@@ -131,11 +131,11 @@ pub fn translate_member_access_expression(
                             }),
                             type_name: None,
                             value: sway::Expression::from(sway::FunctionCall {
-                                function: sway::Expression::Identifier("std::alloc::alloc".into()),
+                                function: sway::Expression::create_identifier("std::alloc::alloc".into()),
                                 generic_parameters: None,
                                 parameters: vec![
                                     sway::Expression::from(sway::FunctionCall {
-                                        function: sway::Expression::Identifier("__size_of".into()),
+                                        function: sway::Expression::create_identifier("__size_of".into()),
                                         generic_parameters: Some(sway::GenericParameterList {
                                             entries: vec![
                                                 sway::GenericParameter {
@@ -160,7 +160,7 @@ pub fn translate_member_access_expression(
                             registers: vec![
                                 sway::AsmRegister {
                                     name: "r1".into(),
-                                    value: Some(sway::Expression::Identifier("ptr".into())),
+                                    value: Some(sway::Expression::create_identifier("ptr".into())),
                                 },
                             ],
                             instructions: vec![
@@ -221,7 +221,7 @@ pub fn translate_member_access_expression(
             ("block", "number") => {
                 // block.number => std::block::height()
                 return Ok(sway::Expression::from(sway::FunctionCall {
-                    function: sway::Expression::Identifier("std::block::height".into()),
+                    function: sway::Expression::create_identifier("std::block::height".into()),
                     generic_parameters: None,
                     parameters: vec![],
                 }))
@@ -256,7 +256,7 @@ pub fn translate_member_access_expression(
                     ]))),
                     ("unwrap_or", Some((None, vec![
                         sway::Expression::from(sway::FunctionCall {
-                            function: sway::Expression::Identifier("Bytes::new".into()),
+                            function: sway::Expression::create_identifier("Bytes::new".into()),
                             generic_parameters: None,
                             parameters: vec![],
                         }),
@@ -290,7 +290,7 @@ pub fn translate_member_access_expression(
             ("msg", "value") => {
                 // msg.value => std::context::msg_amount()
                 return Ok(sway::Expression::from(sway::FunctionCall {
-                    function: sway::Expression::Identifier("std::context::msg_amount".into()),
+                    function: sway::Expression::create_identifier("std::context::msg_amount".into()),
                     generic_parameters: None,
                     parameters: vec![],
                 }))
@@ -310,11 +310,11 @@ pub fn translate_member_access_expression(
                 // tx.origin => Identity::from(Address::from(/*unsupported: tx.origin; using:*/ ZERO_B256))
 
                 return Ok(sway::Expression::from(sway::FunctionCall {
-                    function: sway::Expression::Identifier("Identity::Address".into()),
+                    function: sway::Expression::create_identifier("Identity::Address".into()),
                     generic_parameters: None,
                     parameters: vec![
                         sway::Expression::from(sway::FunctionCall {
-                            function: sway::Expression::Identifier("Address::from".into()),
+                            function: sway::Expression::create_identifier("Address::from".into()),
                             generic_parameters: None,
                             parameters: vec![
                                 sway::Expression::Commented(
@@ -342,11 +342,11 @@ pub fn translate_member_access_expression(
                                         return Ok(sway::Expression::create_function_calls(
                                             Some(if variable.is_storage {
                                                 sway::Expression::from(sway::MemberAccess {
-                                                    expression: sway::Expression::Identifier("storage".into()),
+                                                    expression: sway::Expression::create_identifier("storage".into()),
                                                     member: variable.new_name.clone(),
                                                 })
                                             } else {
-                                                sway::Expression::Identifier(variable.new_name.clone())
+                                                sway::Expression::create_identifier(variable.new_name.clone())
                                             }),
                                             &[("len", Some((None, vec![])))],
                                         ));
@@ -362,11 +362,11 @@ pub fn translate_member_access_expression(
                                     return Ok(sway::Expression::create_function_calls(
                                         Some(if variable.is_storage {
                                             sway::Expression::from(sway::MemberAccess {
-                                                expression: sway::Expression::Identifier("storage".into()),
+                                                expression: sway::Expression::create_identifier("storage".into()),
                                                 member: variable.new_name.clone(),
                                             })
                                         } else {
-                                            sway::Expression::Identifier(variable.new_name.clone())
+                                            sway::Expression::create_identifier(variable.new_name.clone())
                                         }),
                                         &[("len", Some((None, vec![])))],
                                     ));
@@ -394,7 +394,7 @@ pub fn translate_member_access_expression(
                         sway::ImplItem::Constant(c) => c.name == new_name,
                         _ => false,
                     }) {
-                        return Ok(sway::Expression::Identifier(format!("{}::{}", name, c.name)));
+                        return Ok(sway::Expression::create_identifier(format!("{}::{}", name, c.name)));
                     }
                 }
 
@@ -417,12 +417,12 @@ pub fn translate_member_access_expression(
                             }
                         }
 
-                        return Ok(sway::Expression::Identifier(variable.new_name.clone()));
+                        return Ok(sway::Expression::create_identifier(variable.new_name.clone()));
                     }
 
                     // Check to see if the variable is referring to a function (fn pointer type)
                     if let Some(function) = external_definition.toplevel_scope.borrow().find_function(|f| f.borrow().old_name == member) {
-                        return Ok(sway::Expression::Identifier(function.borrow().new_name.clone()));
+                        return Ok(sway::Expression::create_identifier(function.borrow().new_name.clone()));
                     }
                 }
             }
@@ -469,7 +469,7 @@ pub fn translate_member_access_expression(
                             c.name == variant_name
                         }) {
                             translated_definition.add_enum(external_enum);
-                            return Ok(sway::Expression::Identifier(format!("{enum_name}::{variant_name}")));
+                            return Ok(sway::Expression::create_identifier(format!("{enum_name}::{variant_name}")));
                         }
                     }
                 }
@@ -512,7 +512,7 @@ pub fn translate_member_access_expression(
     
                 ("Identity", None) => match member.name.as_str() {
                     "balance" => return Ok(Some(sway::Expression::from(sway::FunctionCall {
-                        function: sway::Expression::Identifier("std::context::balance_of".into()),
+                        function: sway::Expression::create_identifier("std::context::balance_of".into()),
                         generic_parameters: None,
                         parameters: vec![
                             sway::Expression::create_function_calls(Some(container.clone()), &[

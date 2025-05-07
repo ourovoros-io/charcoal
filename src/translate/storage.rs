@@ -141,7 +141,7 @@ pub fn translate_state_variable(
                         
                         if let Ok(sway::Expression::Commented(comment, expression)) = &value {
                             if let sway::Expression::FunctionCall(function_call) = expression.as_ref() {
-                                if let sway::Expression::Identifier(identifier) = &function_call.function {
+                                if let Some(identifier) = function_call.function.as_identifier() {
                                     if identifier == "abi" && function_call.parameters.len() == 2 {
                                         value = Ok(sway::Expression::Commented(comment.clone(), Box::new(function_call.parameters[1].clone())));
                                     }
@@ -407,13 +407,13 @@ pub fn translate_state_variable(
         statements: vec![],
         final_expr: Some(if is_storage {
             let mut expression = sway::Expression::from(sway::MemberAccess {
-                expression: sway::Expression::Identifier("storage".into()),
+                expression: sway::Expression::create_identifier("storage".into()),
                 member: new_name.clone(),
             });
 
             for (parameter, needs_unwrap) in parameters.iter() {
                 expression = sway::Expression::create_function_calls(Some(expression), &[
-                    ("get", Some((None, vec![sway::Expression::Identifier(parameter.name.clone())]))),
+                    ("get", Some((None, vec![sway::Expression::create_identifier(parameter.name.clone())]))),
                 ]);
 
                 if *needs_unwrap {
@@ -425,7 +425,7 @@ pub fn translate_state_variable(
             
             sway::Expression::create_function_calls(Some(expression), &[("read", Some((None, vec![])))])
         } else if is_constant || is_immutable {
-            sway::Expression::Identifier(new_name.clone())
+            sway::Expression::create_identifier(new_name.clone())
         } else {
             todo!("Handle getter function for non-storage variables: {} - {variable_definition:#?}", variable_definition.to_string())
         }),

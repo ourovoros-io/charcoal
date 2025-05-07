@@ -61,7 +61,7 @@ pub fn translate_binary_expression(
     let mut abi_check = |lhs_type: &sway::TypeName, rhs: &mut sway::Expression, rhs_type: &mut sway::TypeName| -> bool {
         if lhs_type.is_identity() {
             if let sway::Expression::FunctionCall(expr) = &rhs {
-                if let sway::Expression::Identifier(ident) = &expr.function {
+                if let Some(ident) = expr.function.as_identifier() {
                     if ident == "abi" && expr.parameters.len() == 2 {
                         *rhs = expr.parameters[1].clone();
                         if let sway::Expression::FunctionCall(f) = &rhs {

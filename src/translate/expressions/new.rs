@@ -79,16 +79,16 @@ pub fn translate_new_expression(
                 return Ok(sway::Expression::Commented(
                     format!("unsupported: new {expression}; using:"),
                     Box::new(sway::Expression::from(sway::FunctionCall {
-                        function: sway::Expression::Identifier("abi".into()),
+                        function: sway::Expression::create_identifier("abi".into()),
                         generic_parameters: None,
                         parameters: vec![
-                            sway::Expression::Identifier(name.clone()),
+                            sway::Expression::create_identifier(name.clone()),
                             sway::Expression::from(sway::FunctionCall {
-                                function: sway::Expression::Identifier("Identity::ContractId".into()),
+                                function: sway::Expression::create_identifier("Identity::ContractId".into()),
                                 generic_parameters: None,
                                 parameters: vec![
                                     sway::Expression::from(sway::FunctionCall {
-                                        function: sway::Expression::Identifier("ContractId::from".into()),
+                                        function: sway::Expression::create_identifier("ContractId::from".into()),
                                         generic_parameters: None,
                                         parameters: vec![
                                             sway::Expression::create_function_calls(None, &[
@@ -139,7 +139,7 @@ pub fn translate_new_expression(
                             }),
                             type_name: None,
                             value: sway::Expression::from(sway::FunctionCall {
-                                function: sway::Expression::Identifier("Bytes::with_capacity".into()),
+                                function: sway::Expression::create_identifier("Bytes::with_capacity".into()),
                                 generic_parameters: None,
                                 parameters: vec![
                                     length.clone(),
@@ -165,7 +165,7 @@ pub fn translate_new_expression(
                             // i < length
                             condition: sway::Expression::from(sway::BinaryExpression {
                                 operator: "<".into(),
-                                lhs: sway::Expression::Identifier("i".into()),
+                                lhs: sway::Expression::create_identifier("i".into()),
                                 rhs: length.clone(),
                             }),
 
@@ -182,7 +182,7 @@ pub fn translate_new_expression(
                                     // i += 1;
                                     sway::Statement::from(sway::Expression::from(sway::BinaryExpression {
                                         operator: "+=".into(),
-                                        lhs: sway::Expression::Identifier("i".into()),
+                                        lhs: sway::Expression::create_identifier("i".into()),
                                         rhs: sway::Expression::from(sway::Literal::DecInt(BigUint::one(), None)),
                                     })),
                                 ],
@@ -192,7 +192,7 @@ pub fn translate_new_expression(
                     ],
 
                     // v
-                    final_expr: Some(sway::Expression::Identifier("v".into())),
+                    final_expr: Some(sway::Expression::create_identifier("v".into())),
                 }));
             }
 
@@ -230,7 +230,7 @@ pub fn translate_new_expression(
                             }),
                             type_name: None,
                             value: sway::Expression::from(sway::FunctionCall {
-                                function: sway::Expression::Identifier("Bytes::with_capacity".into()),
+                                function: sway::Expression::create_identifier("Bytes::with_capacity".into()),
                                 generic_parameters: None,
                                 parameters: vec![
                                     length.clone(),
@@ -256,7 +256,7 @@ pub fn translate_new_expression(
                             // i < length
                             condition: sway::Expression::from(sway::BinaryExpression {
                                 operator: "<".into(),
-                                lhs: sway::Expression::Identifier("i".into()),
+                                lhs: sway::Expression::create_identifier("i".into()),
                                 rhs: length.clone(),
                             }),
 
@@ -273,7 +273,7 @@ pub fn translate_new_expression(
                                     // i += 1;
                                     sway::Statement::from(sway::Expression::from(sway::BinaryExpression {
                                         operator: "+=".into(),
-                                        lhs: sway::Expression::Identifier("i".into()),
+                                        lhs: sway::Expression::create_identifier("i".into()),
                                         rhs: sway::Expression::from(sway::Literal::DecInt(BigUint::one(), None)),
                                     })),
                                 ],
@@ -284,10 +284,10 @@ pub fn translate_new_expression(
 
                     // String::from(v)
                     final_expr: Some(sway::Expression::from(sway::FunctionCall {
-                        function: sway::Expression::Identifier("String::from".into()),
+                        function: sway::Expression::create_identifier("String::from".into()),
                         generic_parameters: None,
                         parameters: vec![
-                            sway::Expression::Identifier("v".into()),
+                            sway::Expression::create_identifier("v".into()),
                         ],
                     })),
                 }));
@@ -299,7 +299,7 @@ pub fn translate_new_expression(
         solidity::Expression::ArraySubscript(_, _, None) => {
             assert!(args.len() == 1);
             return Ok(sway::Expression::from(sway::FunctionCall {
-                function: sway::Expression::Identifier("Vec::with_capacity".into()),
+                function: sway::Expression::create_identifier("Vec::with_capacity".into()),
                 generic_parameters: None,
                 parameters: args,
             }));
@@ -329,14 +329,14 @@ pub fn translate_new_expression(
     
     match block_fields {
         Some(fields) => Ok(sway::Expression::from(sway::FunctionCallBlock {
-            function: sway::Expression::Identifier(name.clone()),
+            function: sway::Expression::create_identifier(name.clone()),
             generic_parameters: None,
             fields,
             parameters: vec![],
         })),
 
         None => Ok(sway::Expression::from(sway::FunctionCall {
-            function: sway::Expression::Identifier(name.clone()),
+            function: sway::Expression::create_identifier(name.clone()),
             generic_parameters: None,
             parameters: vec![],
         })),

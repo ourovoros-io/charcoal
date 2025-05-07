@@ -114,7 +114,7 @@ pub fn translate_function_declaration(
             let name = format!("{prefix}_constructor");
             
             constructor_calls.push(sway::FunctionCall {
-                function: sway::Expression::Identifier(name),
+                function: sway::Expression::create_identifier(name),
                 generic_parameters: None,
                 parameters,
             });
@@ -124,7 +124,7 @@ pub fn translate_function_declaration(
 
         // Add the base to the modifiers list
         modifiers.push(sway::FunctionCall {
-            function: sway::Expression::Identifier(new_name),
+            function: sway::Expression::create_identifier(new_name),
             generic_parameters: None,
             parameters,
         });
@@ -849,7 +849,7 @@ pub fn translate_function_definition(
                     name: parameter.new_name.clone(),
                 }),
                 type_name: Some(parameter.type_name.clone()),
-                value: sway::Expression::Identifier(parameter.new_name.clone()),
+                value: sway::Expression::create_identifier(parameter.new_name.clone()),
             }));
         }
     }
@@ -875,12 +875,12 @@ pub fn translate_function_definition(
     if !return_parameters.is_empty() && !matches!(function_body.statements.last(), Some(sway::Statement::Expression(sway::Expression::Return(_)))) {
         function_body.statements.push(sway::Statement::from(sway::Expression::Return(Some(Box::new(
             if return_parameters.len() == 1 {
-                sway::Expression::Identifier(
+                sway::Expression::create_identifier(
                     return_parameters[0].new_name.clone()
                 )
             } else {
                 sway::Expression::Tuple(
-                    return_parameters.iter().map(|p| sway::Expression::Identifier(p.new_name.clone())).collect()
+                    return_parameters.iter().map(|p| sway::Expression::create_identifier(p.new_name.clone())).collect()
                 )
             }
         )))));
@@ -920,7 +920,7 @@ pub fn translate_function_definition(
     let mut modifier_post_calls = vec![];
 
     for modifier_invocation in function.modifiers.iter() {
-        let sway::Expression::Identifier(new_name) = &modifier_invocation.function else {
+        let Some(new_name) = modifier_invocation.function.as_identifier() else {
             panic!("Malformed modifier invocation: {modifier_invocation:#?}");
         };
         
@@ -930,25 +930,25 @@ pub fn translate_function_definition(
 
         if modifier.pre_body.is_some() && modifier.post_body.is_some() {
             modifier_pre_calls.push(sway::FunctionCall {
-                function: sway::Expression::Identifier(format!("{}_pre", modifier.new_name)),
+                function: sway::Expression::create_identifier(format!("{}_pre", modifier.new_name)),
                 generic_parameters: None,
                 parameters: modifier_invocation.parameters.clone(),
             });
 
             modifier_post_calls.push(sway::FunctionCall {
-                function: sway::Expression::Identifier(format!("{}_post", modifier.new_name)),
+                function: sway::Expression::create_identifier(format!("{}_post", modifier.new_name)),
                 generic_parameters: None,
                 parameters: modifier_invocation.parameters.clone(),
             });
         } else if modifier.pre_body.is_some() {
             modifier_pre_calls.push(sway::FunctionCall {
-                function: sway::Expression::Identifier(modifier.new_name.clone()),
+                function: sway::Expression::create_identifier(modifier.new_name.clone()),
                 generic_parameters: None,
                 parameters: modifier_invocation.parameters.clone(),
             });
         } else if modifier.post_body.is_some() {
             modifier_post_calls.push(sway::FunctionCall {
-                function: sway::Expression::Identifier(modifier.new_name.clone()),
+                function: sway::Expression::create_identifier(modifier.new_name.clone()),
                 generic_parameters: None,
                 parameters: modifier_invocation.parameters.clone(),
             });
@@ -990,21 +990,24 @@ pub fn translate_function_definition(
                             sway::Statement::from(sway::Let { 
                                 pattern: sway::LetPattern::Identifier(sway::LetIdentifier { is_mutable: false, name: "bytes".into() }),  
                                 type_name: None,
-                                value: sway::Expression::create_function_calls(Some(sway::Expression::Identifier(p.name.clone())), &[
+                                value: sway::Expression::create_function_calls(None, &[
+                                    (p.name.as_str(), None),
                                     ("as_bytes", Some((None, vec![])))
                                 ]),
                             }),
                             sway::Statement::from(sway::Let { 
                                 pattern: sway::LetPattern::Identifier(sway::LetIdentifier { is_mutable: false, name: "ptr".into() }),  
                                 type_name: None,
-                                value: sway::Expression::create_function_calls(Some(sway::Expression::Identifier("bytes".into())), &[
+                                value: sway::Expression::create_function_calls(None, &[
+                                    ("bytes", None),
                                     ("ptr", Some((None, vec![])))
                                 ]),
                             }),
                             sway::Statement::from(sway::Let { 
                                 pattern: sway::LetPattern::Identifier(sway::LetIdentifier { is_mutable: false, name: "str_size".into() }),  
                                 type_name: None,
-                                value: sway::Expression::create_function_calls(Some(sway::Expression::Identifier("bytes".into())), &[
+                                value: sway::Expression::create_function_calls(None, &[
+                                    ("bytes", None),
                                     ("len", Some((None, vec![])))
                                 ]),
                             }),
@@ -1014,8 +1017,8 @@ pub fn translate_function_definition(
                                 sway::AsmRegister { 
                                     name: "s".into(),
                                     value: Some(sway::Expression::Tuple(vec![
-                                        sway::Expression::Identifier("ptr".into()),
-                                        sway::Expression::Identifier("str_size".into())
+                                        sway::Expression::create_identifier("ptr".into()),
+                                        sway::Expression::create_identifier("str_size".into())
                                     ]))
                                 }
                             ],
@@ -1039,7 +1042,7 @@ pub fn translate_function_definition(
                     Some((
                         None,
                         sway_function.parameters.entries.iter()
-                            .map(|p| sway::Expression::Identifier(p.name.clone()))
+                            .map(|p| sway::Expression::create_identifier(p.name.clone()))
                             .collect(),
                     )),
                 ),

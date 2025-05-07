@@ -47,7 +47,11 @@ pub fn evaluate_expression(
             _ => expression.clone(),
         }
         
-        sway::Expression::Identifier(identifier) => {
+        sway::Expression::PathExpr(path_expr) => {
+            let Some(identifier) = path_expr.as_identifier() else {
+                todo!("evaluate non-identifier path expression: {path_expr} - {path_expr:#?}")
+            };
+
             let variable = scope.borrow().find_variable(|v| v.borrow().new_name == *identifier).unwrap();
 
             if variable.borrow().is_constant {
@@ -66,88 +70,100 @@ pub fn evaluate_expression(
                 }
             }
 
-            todo!("evaluate identifier: {expression:#?} - {variable:#?}")
+            todo!("evaluate path expression: {expression:#?} - {variable:#?}")
         }
 
-        sway::Expression::Path(_) => {
-            todo!("evaluate path expr: {expression:#?}")
-        }
-        
         sway::Expression::FunctionCall(function_call) => match &function_call.function {
-            sway::Expression::Identifier(identifier) => match identifier.as_str() {
-                "todo!" => expression.clone(),
-
-                "abi" => sway::Expression::create_todo(Some(format!("{}", sway::TabbedDisplayer(expression)))),
-
-                "Address::from" => {
-                    sway::Expression::from(sway::FunctionCall {
-                        function: function_call.function.clone(),
-                        generic_parameters: function_call.generic_parameters.clone(),
-                        parameters: function_call.parameters.iter().map(|p| evaluate_expression(translated_definition, scope.clone(), type_name, p)).collect(),
-                    })
-                }
-
-                "b256::from_be_bytes" => {
-                    // TODO: sigh...
-                    expression.clone()
-                }
-
-                "keccak256" | "std::hash::keccak256" if function_call.parameters.len() == 1 => match &function_call.parameters[0] {
-                    sway::Expression::Literal(sway::Literal::String(s)) => {
-                        use sha3::Digest;
-
-                        let mut hasher = sha3::Keccak256::new();
-                        hasher.update(s.as_bytes());
-
-                        let value = BigUint::from_str_radix(hex::encode(hasher.finalize()).as_str(), 16).unwrap();
-
-                        return sway::Expression::Commented(
-                            format!("{}", sway::TabbedDisplayer(expression)),
-                            Box::new(
-                                if value.is_zero() {
-                                    sway::Expression::create_function_calls(None, &[
-                                        ("b256::zero", Some((None, vec![])))
-                                    ])
-                                } else {
-                                    sway::Expression::from(sway::Literal::HexInt(value, None))
-                                }
-                            ),
-                        );
+            sway::Expression::PathExpr(path_expr) => {
+                let Some(identifier) = path_expr.as_identifier() else {
+                    todo!(
+                        "evaluate non-identifier path function call expression: {path_expr}({}) - {path_expr:#?}",
+                        function_call.parameters.iter()
+                            .map(|p| translated_definition.get_expression_type(&scope, p))
+                            .collect::<Result<Vec<_>, _>>()
+                            .unwrap()
+                            .iter()
+                            .map(|t| t.to_string())
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                    )
+                };
+    
+                match identifier {
+                    "todo!" => expression.clone(),
+    
+                    "abi" => sway::Expression::create_todo(Some(format!("{}", sway::TabbedDisplayer(expression)))),
+    
+                    "Address::from" => {
+                        sway::Expression::from(sway::FunctionCall {
+                            function: function_call.function.clone(),
+                            generic_parameters: function_call.generic_parameters.clone(),
+                            parameters: function_call.parameters.iter().map(|p| evaluate_expression(translated_definition, scope.clone(), type_name, p)).collect(),
+                        })
                     }
-
+    
+                    "b256::from_be_bytes" => {
+                        // TODO: sigh...
+                        expression.clone()
+                    }
+    
+                    "keccak256" | "std::hash::keccak256" if function_call.parameters.len() == 1 => match &function_call.parameters[0] {
+                        sway::Expression::Literal(sway::Literal::String(s)) => {
+                            use sha3::Digest;
+    
+                            let mut hasher = sha3::Keccak256::new();
+                            hasher.update(s.as_bytes());
+    
+                            let value = BigUint::from_str_radix(hex::encode(hasher.finalize()).as_str(), 16).unwrap();
+    
+                            return sway::Expression::Commented(
+                                format!("{}", sway::TabbedDisplayer(expression)),
+                                Box::new(
+                                    if value.is_zero() {
+                                        sway::Expression::create_function_calls(None, &[
+                                            ("b256::zero", Some((None, vec![])))
+                                        ])
+                                    } else {
+                                        sway::Expression::from(sway::Literal::HexInt(value, None))
+                                    }
+                                ),
+                            );
+                        }
+    
+                        _ => todo!("evaluate function call: {expression:#?}"),
+                    }
+    
+                    "I8::from_uint"
+                    | "I16::from_uint"
+                    | "I32::from_uint"
+                    | "I64::from_uint"
+                    | "I128::from_uint"
+                    | "I256::from_uint" => {
+                        evaluate_expression(translated_definition, scope, type_name, &function_call.parameters[0])
+                    }
+    
+                    "Identity::Address" | "Identity::ContractId" => {
+                        sway::Expression::from(sway::FunctionCall {
+                            function: function_call.function.clone(),
+                            generic_parameters: function_call.generic_parameters.clone(),
+                            parameters: function_call.parameters.iter().map(|p| evaluate_expression(translated_definition, scope.clone(), type_name, p)).collect(),
+                        })
+                    }
+    
+                    "u64::max" => {
+                        assert!(function_call.parameters.is_empty());
+                        sway::Expression::from(sway::Literal::DecInt(u64::MAX.into(), None))
+                    }
+    
+                    "u64::min" => {
+                        assert!(function_call.parameters.is_empty());
+                        sway::Expression::from(sway::Literal::DecInt(u64::MIN.into(), None))
+                    }
+    
+                    "__to_str_array" => expression.clone(),
+    
                     _ => todo!("evaluate function call: {expression:#?}"),
-                }
-
-                "I8::from_uint"
-                | "I16::from_uint"
-                | "I32::from_uint"
-                | "I64::from_uint"
-                | "I128::from_uint"
-                | "I256::from_uint" => {
-                    evaluate_expression(translated_definition, scope, type_name, &function_call.parameters[0])
-                }
-
-                "Identity::Address" | "Identity::ContractId" => {
-                    sway::Expression::from(sway::FunctionCall {
-                        function: function_call.function.clone(),
-                        generic_parameters: function_call.generic_parameters.clone(),
-                        parameters: function_call.parameters.iter().map(|p| evaluate_expression(translated_definition, scope.clone(), type_name, p)).collect(),
-                    })
-                }
-
-                "u64::max" => {
-                    assert!(function_call.parameters.is_empty());
-                    sway::Expression::from(sway::Literal::DecInt(u64::MAX.into(), None))
-                }
-
-                "u64::min" => {
-                    assert!(function_call.parameters.is_empty());
-                    sway::Expression::from(sway::Literal::DecInt(u64::MIN.into(), None))
-                }
-
-                "__to_str_array" => expression.clone(),
-
-                _ => todo!("evaluate function call: {expression:#?}"),
+                }    
             }
 
             sway::Expression::MemberAccess(member_access) => match &member_access.expression {
@@ -305,7 +321,7 @@ pub fn create_value_expression(
 
                         sway::TypeName::Array { type_name, length } if type_name.to_string() == "u8" && length == 32 => {
                             sway::Expression::from(sway::FunctionCall {
-                                function: sway::Expression::Identifier("b256::from_be_bytes".into()),
+                                function: sway::Expression::create_identifier("b256::from_be_bytes".into()),
                                 generic_parameters: None,
                                 parameters: vec![
                                     value.clone(),
@@ -339,34 +355,38 @@ pub fn create_value_expression(
                 match &value {
                     sway::Expression::Literal(sway::Literal::DecInt(_, _) | sway::Literal::HexInt(_, _)) => {
                         sway::Expression::from(sway::FunctionCall {
-                            function: sway::Expression::Identifier(format!("{name}::from_uint").into()),
+                            function: sway::Expression::create_identifier(format!("{name}::from_uint").into()),
                             generic_parameters: None,
                             parameters: vec![value.clone()],
                         })
                     }
                     
-                    sway::Expression::FunctionCall(function_call) => match &function_call.function {
-                        sway::Expression::Identifier(name) if name == "todo!" => value.clone(),
-                        
-                        _ => {
-                            let mut value_type_name = translated_definition.get_expression_type(&scope, &value).unwrap();
-                            
-                            if value_type_name.is_uint() {
-                                value = coerce_expression(&value, &value_type_name, type_name).unwrap();
-                                value_type_name = type_name.clone();
-                            }
-
-                            if !value_type_name.is_int() {
-                                panic!("Invalid {name} value expression: {} ({value_type_name})", sway::TabbedDisplayer(&value))
-                            }
-                            
-                            value.clone()
+                    sway::Expression::FunctionCall(function_call) => {
+                        if let Some("todo!") = function_call.function.as_identifier() {
+                            return value.clone();
                         }
+                        
+                        let mut value_type_name = translated_definition.get_expression_type(&scope, &value).unwrap();
+                        
+                        if value_type_name.is_uint() {
+                            value = coerce_expression(&value, &value_type_name, type_name).unwrap();
+                            value_type_name = type_name.clone();
+                        }
+
+                        if !value_type_name.is_int() {
+                            panic!("Invalid {name} value expression: {} ({value_type_name})", sway::TabbedDisplayer(&value))
+                        }
+                        
+                        value.clone()
                     }
                     
                     x if matches!(x, sway::Expression::BinaryExpression(_)) => (x).clone(),
                     
-                    sway::Expression::Identifier(ref name) => {
+                    sway::Expression::PathExpr(path_expr) => {
+                        let Some(name) = path_expr.as_identifier() else {
+                            todo!("handle non-identifier path expression: {path_expr} - {path_expr:#?}")
+                        };
+                        
                         let Some(variable) = scope.borrow().get_variable_from_new_name(name) else {
                             panic!("error: Variable not found in scope: \"{name}\"");
                         };
@@ -375,7 +395,7 @@ pub fn create_value_expression(
                             panic!("Invalid {name} value expression: {value:#?}");
                         }
                         
-                        sway::Expression::Identifier(name.clone())
+                        sway::Expression::create_identifier(name.into())
                     }
                     
                     _ => {
@@ -386,7 +406,7 @@ pub fn create_value_expression(
                         }
                         
                         sway::Expression::from(sway::FunctionCall {
-                            function: sway::Expression::Identifier(format!("{name}::from_uint").into()),
+                            function: sway::Expression::create_identifier(format!("{name}::from_uint").into()),
                             generic_parameters: None,
                             parameters: vec![value.clone()],
                         })
@@ -400,11 +420,17 @@ pub fn create_value_expression(
                 Some(value) if matches!(value, sway::Expression::Literal(sway::Literal::DecInt(_, _) | sway::Literal::HexInt(_, _))) => (*value).clone(),
                 
                 Some(sway::Expression::FunctionCall(function_call)) => match &function_call.function {
-                    sway::Expression::Identifier(identifier_name) => match identifier_name.as_str() {
-                        "todo!" => value.unwrap().clone(),
-                        s if s == format!("{name}::max") => value.unwrap().clone(),
-                        s if s == format!("{name}::min") => value.unwrap().clone(),
-                        _ => panic!("Invalid {name} value expression: {value:#?}"),
+                    sway::Expression::PathExpr(path_expr) => {
+                        let Some(identifier_name) = path_expr.as_identifier() else {
+                            todo!("handle non-identifier path expression: {path_expr} - {path_expr:#?}")
+                        };
+
+                        match identifier_name {
+                            "todo!" => value.unwrap().clone(),
+                            s if s == format!("{name}::max") => value.unwrap().clone(),
+                            s if s == format!("{name}::min") => value.unwrap().clone(),
+                            _ => panic!("Invalid {name} value expression: {value:#?}"),
+                        }
                     }
 
                     sway::Expression::MemberAccess(member_access) => match member_access.member.as_str() {
@@ -430,7 +456,11 @@ pub fn create_value_expression(
 
                 Some(x) if matches!(x, sway::Expression::BinaryExpression(_)) => (*x).clone(),
 
-                Some(sway::Expression::Identifier(name)) => {
+                Some(sway::Expression::PathExpr(path_expr)) => {
+                    let Some(name) = path_expr.as_identifier() else {
+                        todo!("handle non-identifier path expression: {path_expr} - {path_expr:#?}")
+                    };
+
                     let Some(variable) = scope.borrow().get_variable_from_new_name(name) else {
                         panic!("error: Variable not found in scope: \"{name}\"");
                     };
@@ -439,7 +469,7 @@ pub fn create_value_expression(
                         panic!("Invalid {name} value expression: {value:#?}");
                     }
 
-                    sway::Expression::Identifier(name.clone())
+                    sway::Expression::create_identifier(name.into())
                 }
                 
                 Some(value) => panic!("Invalid {name} value expression: {value:#?}"),
@@ -451,7 +481,7 @@ pub fn create_value_expression(
 
                 // alloc_bytes(0)
                 sway::Expression::from(sway::FunctionCall {
-                    function: sway::Expression::Identifier("alloc_bytes".into()),
+                    function: sway::Expression::create_identifier("alloc_bytes".into()),
                     generic_parameters: None,
                     parameters: vec![
                         sway::Expression::from(sway::Literal::DecInt(0u8.into(), None)),
@@ -464,7 +494,7 @@ pub fn create_value_expression(
                 translated_definition.ensure_use_declared("std::bytes::Bytes");
 
                 sway::Expression::from(sway::FunctionCall {
-                    function: sway::Expression::Identifier("Bytes::new".into()),
+                    function: sway::Expression::create_identifier("Bytes::new".into()),
                     generic_parameters: None,
                     parameters: vec![],
                 })
@@ -472,11 +502,11 @@ pub fn create_value_expression(
 
             ("Identity", None) => match value {
                 None => sway::Expression::from(sway::FunctionCall {
-                    function: sway::Expression::Identifier("Identity::Address".into()),
+                    function: sway::Expression::create_identifier("Identity::Address".into()),
                     generic_parameters: None,
                     parameters: vec![
                         sway::Expression::from(sway::FunctionCall {
-                            function: sway::Expression::Identifier("Address::from".into()),
+                            function: sway::Expression::create_identifier("Address::from".into()),
                             generic_parameters: None,
                             parameters: vec![                                
                                 sway::Expression::create_function_calls(None, &[
@@ -492,7 +522,7 @@ pub fn create_value_expression(
 
             ("Option", Some(generic_parameters)) if generic_parameters.entries.len() ==1 => match value {
                 Some(value) => value.clone(),
-                None => sway::Expression::Identifier("None".into())
+                None => sway::Expression::create_identifier("None".into())
             }
 
             ("StorageKey", Some(generic_parameters)) if generic_parameters.entries.len() == 1 => {
@@ -536,7 +566,7 @@ pub fn create_value_expression(
             }
 
             ("Vec", Some(_)) => sway::Expression::from(sway::FunctionCall {
-                function: sway::Expression::Identifier("Vec::new".into()),
+                function: sway::Expression::create_identifier("Vec::new".into()),
                 generic_parameters: None,
                 parameters: vec![],
             }),
@@ -560,7 +590,7 @@ pub fn create_value_expression(
                         return create_value_expression(translated_definition, scope, &underlying_type, value);
                     };
 
-                    return sway::Expression::Identifier(format!("{}::{}", name, value.name));
+                    return sway::Expression::create_identifier(format!("{}::{}", name, value.name));
                 }
                 // Check to see if the type is a struct definition
                 else if let Some(struct_definition) = translated_definition.structs.iter().find(|s| s.borrow().name == *name).cloned() {
@@ -640,7 +670,7 @@ pub fn create_value_expression(
 
         sway::TypeName::StringArray { length } => match value {
             None => sway::Expression::from(sway::FunctionCall {
-                function: sway::Expression::Identifier("__to_str_array".into()),
+                function: sway::Expression::create_identifier("__to_str_array".into()),
                 generic_parameters: None,
                 parameters: vec![
                     sway::Expression::Literal(sway::Literal::String((0..*length).map(|_| " ").collect())),
@@ -666,7 +696,7 @@ pub fn create_value_expression(
             }
 
             Some(sway::Expression::FunctionCall(f)) => {
-                let sway::Expression::Identifier(id) = &f.function else {
+                let Some(id) = f.function.as_identifier() else {
                     panic!("Invalid string value expression, expected `__to_str_array` function call, found: {value:#?}");
                 };
 

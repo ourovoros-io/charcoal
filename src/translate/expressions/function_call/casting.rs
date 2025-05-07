@@ -426,7 +426,7 @@ pub fn translate_uint_types_cast_function_call(
                                 lhs: sway::Expression::from(sway::BinaryExpression { 
                                     operator: "!=".to_string(),
                                     lhs: sway::Expression::from(sway::MemberAccess { 
-                                        expression: sway::Expression::Identifier(unique_variable_name.clone()),
+                                        expression: sway::Expression::create_identifier(unique_variable_name.clone()),
                                         member: "0".to_string()
                                     }),
                                     rhs: sway::Expression::from(sway::Literal::DecInt(BigUint::zero(), None))
@@ -434,7 +434,7 @@ pub fn translate_uint_types_cast_function_call(
                                 rhs: sway::Expression::from(sway::BinaryExpression { 
                                     operator: "!=".to_string(),
                                     lhs: sway::Expression::from(sway::MemberAccess { 
-                                        expression: sway::Expression::Identifier(unique_variable_name.clone()),
+                                        expression: sway::Expression::create_identifier(unique_variable_name.clone()),
                                         member: "1".to_string()
                                     }),
                                     rhs: sway::Expression::from(sway::Literal::DecInt(BigUint::zero(), None))
@@ -452,11 +452,11 @@ pub fn translate_uint_types_cast_function_call(
                     final_expr: Some(sway::Expression::create_function_calls(None, &[
                         ("U128::from", Some((None, vec![sway::Expression::Tuple(vec![
                             sway::Expression::from(sway::MemberAccess { 
-                                expression: sway::Expression::Identifier(unique_variable_name.clone()),
+                                expression: sway::Expression::create_identifier(unique_variable_name.clone()),
                                 member: "2".to_string()
                             }),
                             sway::Expression::from(sway::MemberAccess { 
-                                expression: sway::Expression::Identifier(unique_variable_name.clone()),
+                                expression: sway::Expression::create_identifier(unique_variable_name.clone()),
                                 member: "3".to_string()
                             })
                         ])])))
@@ -783,18 +783,11 @@ pub fn translate_bytes_type_cast_function_call(
                                     .map(|index| {
                                         if index < 8 {
                                             sway::Expression::from(sway::ArrayAccess {
-                                                expression: sway::Expression::Identifier(
-                                                    variable_name.clone(),
-                                                ),
-                                                index: sway::Expression::from(
-                                                    sway::Literal::DecInt(index.into(), None),
-                                                ),
+                                                expression: sway::Expression::create_identifier(variable_name.clone()),
+                                                index: sway::Expression::from(sway::Literal::DecInt(index.into(), None)),
                                             })
                                         } else {
-                                            sway::Expression::from(sway::Literal::DecInt(
-                                                0u8.into(),
-                                                None,
-                                            ))
+                                            sway::Expression::from(sway::Literal::DecInt(0u8.into(), None))
                                         }
                                     })
                                     .collect(),
@@ -978,7 +971,7 @@ pub fn translate_dynamic_bytes_type_cast_function_call(
                 _ => value_expression
             };
 
-            if let sway::Expression::Identifier(variable_name) = &value_expression {
+            if let Some(variable_name) = value_expression.as_identifier() {
                 return Ok(sway::Expression::create_function_calls(
                     None,
                     &[(
@@ -1003,14 +996,14 @@ pub fn translate_dynamic_bytes_type_cast_function_call(
                                             sway::Expression::create_function_calls(
                                                 None,
                                                 &[
-                                                    (variable_name.as_str(), None),
+                                                    (variable_name, None),
                                                     ("as_ptr", Some((None, vec![]))),
                                                 ],
                                             ),
                                             sway::Expression::create_function_calls(
                                                 None,
                                                 &[
-                                                    (variable_name.as_str(), None),
+                                                    (variable_name, None),
                                                     ("len", Some((None, vec![]))),
                                                 ],
                                             ),

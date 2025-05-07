@@ -403,7 +403,7 @@ impl Project {
                 // Skip `require` statements in the constructor
                 while i < constructor_body.statements.len() {
                     let sway::Statement::Expression(sway::Expression::FunctionCall(f)) = &constructor_body.statements[i] else { break };
-                    let sway::Expression::Identifier(id) = &f.function else { break }; 
+                    let Some(id) = f.function.as_identifier() else { break }; 
                     if id != "require" {
                         break;
                     }
@@ -416,7 +416,7 @@ impl Project {
                     (format!("{mapping_name}_instance_count").as_str(), None),
                     ("write", Some((None, vec![sway::Expression::from(sway::BinaryExpression { 
                         operator: "+".into(),
-                        lhs: sway::Expression::Identifier("i".to_string()),
+                        lhs: sway::Expression::create_identifier("i".to_string()),
                         rhs: sway::Expression::from(sway::Literal::DecInt(BigUint::one(), None))
                     })])))
                 ])));   
@@ -446,9 +446,11 @@ impl Project {
                         (field_name.as_str(), None),
                         ("write", Some((None, vec![
                             sway::Expression::create_function_calls(None, &[
-                                ("Some", Some((None, vec![sway::Expression::Identifier(field_name.to_string())])))
-                            ])
-                        ])))
+                                ("Some", Some((None, vec![
+                                    sway::Expression::create_identifier(field_name.to_string()),
+                                ]))),
+                            ]),
+                        ]))),
                     ])));
 
                     // let my_mapping = storage.my_struct_mappings.get(i);
@@ -462,7 +464,7 @@ impl Project {
                             value: sway::Expression::create_function_calls(None, &[
                                 ("storage", None),
                                 (format!("{mapping_name}_{field_name}s").as_str(), None),
-                                ("get", Some((None, vec![sway::Expression::Identifier("i".to_string())])))
+                                ("get", Some((None, vec![sway::Expression::create_identifier("i".to_string())])))
                             ])
                         }
                     ));

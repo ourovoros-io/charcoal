@@ -144,7 +144,7 @@ pub fn translate_address_call_expression(
                 type_name: None,
                 value: sway::Expression::create_function_calls(None, &[
                     ("std::alloc::alloc_bytes", Some((None, vec![
-                        sway::Expression::Identifier(return_length_name.clone()),
+                        sway::Expression::create_identifier(return_length_name.clone()),
                     ]))),
                 ]),
             }),
@@ -165,8 +165,8 @@ pub fn translate_address_call_expression(
                         ],
                     }),
                     vec![
-                        sway::Expression::Identifier(result_ptr_name.clone()),
-                        sway::Expression::Identifier(return_length_name.clone()),
+                        sway::Expression::create_identifier(result_ptr_name.clone()),
+                        sway::Expression::create_identifier(return_length_name.clone()),
                     ],
                 ))),
             ])),
@@ -191,8 +191,8 @@ pub fn translate_address_call_expression(
                                 ],
                             }),
                             vec![
-                                sway::Expression::Identifier(result_ptr_name.clone()),
-                                sway::Expression::Identifier(return_length_name.clone()),
+                                sway::Expression::create_identifier(result_ptr_name.clone()),
+                                sway::Expression::create_identifier(return_length_name.clone()),
                             ],
                         ))),
                     ]),
