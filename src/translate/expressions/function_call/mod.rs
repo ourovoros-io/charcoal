@@ -110,6 +110,10 @@ pub fn translate_function_call_expression(
         }
 
         solidity::Expression::Variable(solidity::Identifier { name, .. }) => {
+            if name == "type" {
+                return Ok(sway::Expression::create_todo(Some(sway::TabbedDisplayer(&expression).to_string())));
+            }
+
             let parameters = arguments
                 .iter()
                 .map(|a| translate_expression(project, translated_definition, scope, a))
@@ -163,9 +167,7 @@ pub fn translate_function_call_expression(
                     ),
                 },
 
-                solidity::Expression::Variable(solidity::Identifier { name, .. }) => match name
-                    .as_str()
-                {
+                solidity::Expression::Variable(solidity::Identifier { name, .. }) => match name.as_str() {
                     "abi" => translate_abi_member_access_function_call(
                         project,
                         translated_definition,
@@ -315,7 +317,8 @@ pub fn translate_function_call_expression(
                             }
                         }
 
-                        if let Some(variable) = scope.borrow().find_variable(|v| v.borrow().old_name == name) {
+                        let variable = scope.borrow().find_variable(|v| v.borrow().old_name == name);
+                        if let Some(variable) = variable {
                             // Check if variable is an abi type
                             let abi_type_name = variable.borrow().abi_type_name.clone();
 

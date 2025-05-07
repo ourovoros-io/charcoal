@@ -618,9 +618,11 @@ impl Project {
             // Remappings in hardhat and truffle are done using the @ symbol and the node_modules folder
             ProjectKind::Hardhat | ProjectKind::Truffle => {
                 if filename.starts_with('.') {
-                    Ok(project_root_folder.join(filename))
-                } else {
+                    Ok(source_unit_directory.join(filename))
+                } else if filename.starts_with('@') {
                     Ok(project_root_folder.join("node_modules").join(filename))
+                } else {
+                    Ok(project_root_folder.join(filename))
                 }
             }
 

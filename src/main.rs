@@ -32,9 +32,7 @@ fn translate_project() -> Result<(), Error> {
 
     let mut project = Project::default();
     
-    if options.target.is_dir() {
-        project.detect_project_type(options.target.as_path())?;
-    } else if let Some(root_path) = project::find_project_root_folder(options.target.as_path()) {
+    if let Some(root_path) = project::find_project_root_folder(options.target.as_path()) {
         project.detect_project_type(root_path)?;
     } else {
         project.kind = ProjectKind::Unknown;

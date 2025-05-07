@@ -635,7 +635,7 @@ pub fn translate_function_definition(
                 ),
             });
 
-            if is_payable {
+            if is_payable && !is_fallback {
                 attributes.push(sway::Attribute {
                     name: "payable".into(),
                     parameters: None,
@@ -684,7 +684,7 @@ pub fn translate_function_definition(
         let mut abi_function = sway_function.clone();
         let mut use_string = false;
         
-        {
+        if !is_fallback {
             let abi = translated_definition.get_abi();
             
             for p in abi_function.parameters.entries.iter_mut() {
@@ -969,7 +969,7 @@ pub fn translate_function_definition(
     // Add the toplevel function
     translated_definition.functions.push(sway_function.clone());
 
-    if is_public {
+    if is_public && !is_fallback {
         let mut statements = vec![];
 
         for p in sway_function.parameters.entries.iter_mut() {
@@ -979,56 +979,10 @@ pub fn translate_function_definition(
                 statements.push(sway::Statement::from(sway::Let { 
                     pattern: sway::LetPattern::Identifier(sway::LetIdentifier { is_mutable: true, name: p.name.clone() }),
                     type_name: None,
-                    value: sway::Expression::from(sway::Block {
-                        // let bytes = x.as_bytes();
-                        // let ptr = bytes.ptr();
-                        // let str_size = bytes.len();
-                        // asm(s: (ptr, str_size)) {
-                        //     s: str
-                        // }
-                        statements: vec![
-                            sway::Statement::from(sway::Let { 
-                                pattern: sway::LetPattern::Identifier(sway::LetIdentifier { is_mutable: false, name: "bytes".into() }),  
-                                type_name: None,
-                                value: sway::Expression::create_function_calls(None, &[
-                                    (p.name.as_str(), None),
-                                    ("as_bytes", Some((None, vec![])))
-                                ]),
-                            }),
-                            sway::Statement::from(sway::Let { 
-                                pattern: sway::LetPattern::Identifier(sway::LetIdentifier { is_mutable: false, name: "ptr".into() }),  
-                                type_name: None,
-                                value: sway::Expression::create_function_calls(None, &[
-                                    ("bytes", None),
-                                    ("ptr", Some((None, vec![])))
-                                ]),
-                            }),
-                            sway::Statement::from(sway::Let { 
-                                pattern: sway::LetPattern::Identifier(sway::LetIdentifier { is_mutable: false, name: "str_size".into() }),  
-                                type_name: None,
-                                value: sway::Expression::create_function_calls(None, &[
-                                    ("bytes", None),
-                                    ("len", Some((None, vec![])))
-                                ]),
-                            }),
-                        ],
-                        final_expr: Some(sway::Expression::from(sway::AsmBlock {
-                            registers: vec![
-                                sway::AsmRegister { 
-                                    name: "s".into(),
-                                    value: Some(sway::Expression::Tuple(vec![
-                                        sway::Expression::create_identifier("ptr".into()),
-                                        sway::Expression::create_identifier("str_size".into())
-                                    ]))
-                                }
-                            ],
-                            instructions: vec![],
-                            final_expression: Some(sway::AsmFinalExpression { 
-                                register: "s".into(),
-                                type_name: Some(sway::TypeName::StringSlice)
-                            }),
-                        })),
-                    })
+                    value: sway::Expression::create_function_calls(None, &[
+                        (p.name.as_str(), None),
+                        ("as_str", Some((None, vec![])))
+                    ])
                 }))
             }
         }

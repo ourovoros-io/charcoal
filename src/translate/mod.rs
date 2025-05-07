@@ -1272,25 +1272,11 @@ impl TranslatedDefinition {
         generic_parameters: Option<&sway::GenericParameterList>,
         parameters: &[sway::Expression],
     ) -> Result<sway::TypeName, Error> {
-        let Some(name) = path_expr.as_identifier() else {
-            todo!(
-                "get type of non-identifier path function call expression: {path_expr}({}) - {path_expr:#?}",
-                parameters
-                    .iter()
-                    .map(|p| self.get_expression_type(scope, p))
-                    .collect::<Result<Vec<_>, _>>()?
-                    .iter()
-                    .map(|t| t.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", "),
-            )
-        };
-
         //
         // TODO: check generic parameters!
         //
 
-        match name {
+        match path_expr.to_string().as_str() {
             "__size_of" => return Ok(sway::TypeName::Identifier {
                 name: "u64".into(),
                 generic_parameters: None,
@@ -1629,6 +1615,8 @@ impl TranslatedDefinition {
             .iter()
             .map(|p| self.get_expression_type(scope, p))
             .collect::<Result<Vec<_>, _>>()?;
+
+        let name = path_expr.to_string();
 
         // Attempt to find a function in scope
         if let Some(function) = scope.borrow().find_function(|f| {
@@ -2491,7 +2479,7 @@ impl TranslatedDefinition {
 
                     "wrapping_neg" => {
                         self.ensure_dependency_declared(
-                            "sway_libs = { git = \"https://github.com/FuelLabs/sway-libs\", tag = \"v0.25.0\" }"
+                            "sway_libs = { git = \"https://github.com/FuelLabs/sway-libs\", tag = \"v0.25.2\" }"
                         );
 
                         Ok(sway::TypeName::Identifier {

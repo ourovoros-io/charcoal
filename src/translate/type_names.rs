@@ -77,7 +77,7 @@ pub fn translate_type_name(
 
             solidity::Type::Int(bits) => {
                 translated_definition.ensure_dependency_declared(
-                    "sway_libs = { git = \"https://github.com/FuelLabs/sway-libs\", tag = \"v0.25.0\" }"
+                    "sway_libs = { git = \"https://github.com/FuelLabs/sway-libs\", tag = \"v0.25.2\" }"
                 );
 
                 sway::TypeName::Identifier {

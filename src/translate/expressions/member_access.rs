@@ -482,7 +482,9 @@ pub fn translate_member_access_expression(
     }
 
     let container = translate_expression(project, translated_definition, scope, container)?;
-    
+    let container_type_name = translated_definition.get_expression_type(scope, &container)?;
+    let container_type_name_string = container_type_name.to_string();
+
     let mut check_container = |container: &sway::Expression| -> Result<Option<sway::Expression>, Error> {
         let container_type_name = translated_definition.get_expression_type(scope, container)?;
         let container_type_name_string = container_type_name.to_string();
@@ -566,18 +568,23 @@ pub fn translate_member_access_expression(
     if let Some(result) = check_container(&container)? {
         return Ok(result);
     }
-
+    
     // HACK: try tacking `.read()` onto the end and checking again
-    if let Ok(Some(result)) = check_container(&sway::Expression::create_function_calls(
-        Some(container.clone()), &[
-            ("read", Some((None, vec![]))),
-        ],
-    )) {
-        return Ok(result);
+    if container_type_name_string != "todo!" {
+        if let Ok(Some(result)) = check_container(&sway::Expression::create_function_calls(
+            Some(container.clone()), &[
+                ("read", Some((None, vec![]))),
+            ],
+        )) {
+            return Ok(result);
+        }
+    } else {
+        let sway::Expression::FunctionCall(f) = &container else { unreachable!() };
+        let Some(ident) = f.function.as_identifier() else { unreachable!() };
+        let "todo!" = ident else { unreachable!() };
+        let sway::Expression::Literal(sway::Literal::String(s)) = &f.parameters[0] else { unreachable!() };
+        return Ok(sway::Expression::create_todo(Some(format!("{s}.{member}"))))
     }
-
-    let container_type_name = translated_definition.get_expression_type(scope, &container)?;
-    let container_type_name_string = container_type_name.to_string();
 
     todo!("{}translate {container_type_name_string} member access expression: {expression} - {expression:#?}", match project.loc_to_line_and_column(&translated_definition.path, &expression.loc()) {
         Some((line, col)) => format!("{}:{}:{} - ", translated_definition.path.to_string_lossy(), line, col),

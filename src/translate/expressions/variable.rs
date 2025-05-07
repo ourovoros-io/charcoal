@@ -322,21 +322,36 @@ pub fn translate_variable_access_expression(
             let (variable, _) = translate_variable_access_expression(project, translated_definition, scope, container)?;
 
             // HACK: tack `.read()` onto the end if the container is a StorageKey
-            if !variable.as_ref().map(|v| v.borrow().is_storage).unwrap_or(false) {
-                if let Some(storage_key_type) = container_type_name.storage_key_type() {
+            if variable.as_ref().map(|v| v.borrow().type_name.is_storage_key() || v.borrow().is_storage).unwrap_or(false) {
+                let storage_key_type = match container_type_name.storage_key_type() {
+                    Some(key_type) => key_type,
+                    None => container_type_name,
+                };
+                
+                let mut has_read = false;
+
+                if let sway::Expression::FunctionCall(f) = &translated_container {
+                    if let sway::Expression::MemberAccess(member_access) = &f.function {
+                        if member_access.member == "read" && f.parameters.len() == 0 {
+                            has_read = true;
+                        }
+                    }
+                }
+                
+                if !has_read {
                     translated_container = sway::Expression::create_function_calls(Some(translated_container), &[
                         ("read", Some((None, vec![]))),
                     ]);
-    
-                    container_type_name = storage_key_type;
-                    container_type_name_string = container_type_name.to_string();
                 }
+                
+                container_type_name = storage_key_type;
+                container_type_name_string = container_type_name.to_string();
             }
 
             // Check if container is a struct
             if let Some(struct_definition) = translated_definition.structs.iter().find(|s| s.borrow().name == container_type_name_string) {
                 let field_name = crate::translate::translate_naming_convention(member.name.as_str(), Case::Snake);
-        
+                
                 if struct_definition.borrow().fields.iter().any(|f| f.name == field_name) {
                     return Ok((
                         variable,

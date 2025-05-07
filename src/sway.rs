@@ -1705,13 +1705,33 @@ impl Expression {
         let mut result = container;
 
         for (member, call_data) in member_calls {
+            if member.contains("<") {
+                todo!("Handle path strings with generic parameters");
+            }
+
+            let mut member_parts = member.split("::").collect::<Vec<_>>();
+
+            assert!(member.len() >= 1);
+
+            let root = PathExprRoot::Identifier(member_parts[0].to_string());
+            member_parts.remove(0);
+
+            let path = PathExpr {
+                root,
+                segments: member_parts.iter().map(|p| PathExprSegment {
+                    name: p.to_string(),
+                    generic_parameters: None
+                }).collect()
+            };
+
             if let Some(container) = result {
+                assert!(member_parts.is_empty());
                 result = Some(Expression::from(MemberAccess {
                     expression: container,
                     member: member.to_string(),
                 }));
             } else {
-                result = Some(Expression::create_identifier(member.to_string()));
+                result = Some(Expression::from(path));
             }
 
             if let Some((generic_parameters, parameters)) = call_data {

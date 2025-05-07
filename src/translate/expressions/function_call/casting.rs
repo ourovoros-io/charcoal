@@ -373,6 +373,14 @@ pub fn translate_uint_types_cast_function_call(
             
             ("u256", 8 | 16 | 32 | 64 | 256) => create_uint_try_from_unwrap_expression(256, bits, value_expression),
 
+            ("u8" | "u16" | "u32" | "u64", 128) => {
+                translated_definition.ensure_use_declared("std::u128::U128");
+
+                Ok(sway::Expression::create_function_calls(None, &[
+                    ("U128::from", Some((None, vec![value_expression])))
+                ]))
+            }
+
             ("u256", 128) => {
                 // use std::u128::U128;
                 // {
