@@ -180,6 +180,41 @@ impl TabbedDisplay for Module {
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct Submodule {
+    pub name: String,
+    pub items: Vec<ModuleItem>,
+}
+
+impl TabbedDisplay for Submodule {
+    fn tabbed_fmt(&self, depth: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "mod {} {{", self.name)?;
+
+        let mut prev_item: Option<&ModuleItem> = None;
+
+        for (i, item) in self.items.iter().enumerate() {
+            if let Some(prev_item) = prev_item {
+                if !(matches!(prev_item, ModuleItem::Use(_)) && matches!(item, ModuleItem::Use(_))
+                || matches!(prev_item, ModuleItem::Constant(_)) && matches!(item, ModuleItem::Constant(_))
+                || matches!(prev_item, ModuleItem::TypeDefinition(_)) && matches!(item, ModuleItem::TypeDefinition(_))) {
+                    writeln!(f)?;
+                }
+            } else if i > 0 {
+                writeln!(f)?;
+            }
+
+            item.tabbed_fmt(depth + 1, f)?;
+            writeln!(f)?;
+
+            prev_item = Some(item);
+        }
+
+        write!(f, "}}")
+    }
+}
+
+// -------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum ModuleItem {
     Use(Use),
     TypeDefinition(TypeDefinition),
@@ -192,6 +227,7 @@ pub enum ModuleItem {
     Configurable(Configurable),
     Function(Function),
     Impl(Impl),
+    Submodule(Submodule),
 }
 
 impl TabbedDisplay for ModuleItem {
@@ -208,6 +244,7 @@ impl TabbedDisplay for ModuleItem {
             ModuleItem::Configurable(x) => x.tabbed_fmt(depth, f),
             ModuleItem::Function(x) => x.tabbed_fmt(depth, f),
             ModuleItem::Impl(x) => x.tabbed_fmt(depth, f),
+            ModuleItem::Submodule(x) => x.tabbed_fmt(depth, f),
         }
     }
 }
@@ -1063,6 +1100,7 @@ impl TabbedDisplay for TraitItem {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Storage {
     pub fields: Vec<StorageField>,
+    pub namespaces: Vec<StorageNamespace>,
 }
 
 impl TabbedDisplay for Storage {
@@ -1072,6 +1110,41 @@ impl TabbedDisplay for Storage {
         for field in self.fields.iter() {
             "".tabbed_fmt(depth + 1, f)?;
             field.tabbed_fmt(depth + 1, f)?;
+            writeln!(f, ",")?;
+        }
+
+        for namespace in self.namespaces.iter() {
+            "".tabbed_fmt(depth + 1, f)?;
+            namespace.tabbed_fmt(depth + 1, f)?;
+            writeln!(f, ",")?;
+        }
+
+        "}".tabbed_fmt(depth, f)
+    }
+}
+
+// -------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct StorageNamespace {
+    pub name: String,
+    pub fields: Vec<StorageField>,
+    pub namespaces: Vec<StorageNamespace>,
+}
+
+impl TabbedDisplay for StorageNamespace {
+    fn tabbed_fmt(&self, depth: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "{} {{", self.name)?;
+
+        for field in self.fields.iter() {
+            "".tabbed_fmt(depth + 1, f)?;
+            field.tabbed_fmt(depth + 1, f)?;
+            writeln!(f, ",")?;
+        }
+
+        for namespace in self.namespaces.iter() {
+            "".tabbed_fmt(depth + 1, f)?;
+            namespace.tabbed_fmt(depth + 1, f)?;
             writeln!(f, ",")?;
         }
 

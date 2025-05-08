@@ -681,7 +681,7 @@ impl TranslatedDefinition {
     #[inline]
     pub fn get_storage(&mut self) -> &mut sway::Storage {
         if self.storage.is_none() {
-            self.storage = Some(sway::Storage { fields: vec![] });
+            self.storage = Some(sway::Storage::default());
         }
 
         self.storage.as_mut().unwrap()
