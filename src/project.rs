@@ -1,6 +1,18 @@
 use crate::{
     errors::Error,
-    sway::{self, AttributeList}, translate::{contracts::{translate_contract_definition, translate_using_directive}, enums::{translate_enum_definition, translate_error_definition, translate_event_definition}, functions::{translate_function_declaration, translate_function_definition}, import_directives::translate_import_directives, storage::translate_storage_name, structs::translate_struct_definition, type_definitions::translate_type_definition, TranslatedDefinition},
+    sway::{self, AttributeList},
+    translate::{
+        contracts::{translate_contract_definition, translate_using_directive},
+        enums::{
+            translate_enum_definition, translate_error_definition, translate_event_definition,
+        },
+        functions::{translate_function_declaration, translate_function_definition},
+        import_directives::translate_import_directives,
+        storage::translate_storage_name,
+        structs::translate_struct_definition,
+        type_definitions::translate_type_definition,
+        TranslatedDefinition,
+    },
 };
 use convert_case::Case;
 use num_bigint::BigUint;
@@ -351,21 +363,23 @@ impl Project {
             }
             
             let mut constructor_body = translated_definition.get_constructor_fn().body.clone().unwrap();
+            
+            let namespace_name = translated_definition.get_storage_namespace_name();
 
             // Insert constructor call guard if necessary
             if constructor_body.statements.is_empty() {
                 let prefix = crate::translate::translate_naming_convention(translated_definition.name.as_str(), Case::Snake);
                 let constructor_called_variable_name =  translate_storage_name(project, translated_definition, format!("{prefix}_constructor_called").as_str());
-                
+
                 // Add the `constructor_called` field to the storage block
-                translated_definition.get_storage().fields.push(sway::StorageField {
+                translated_definition.get_storage_namespace().fields.push(sway::StorageField {
                     name: constructor_called_variable_name.clone(),
                     type_name: sway::TypeName::Identifier {
                         name: "bool".into(),
                         generic_parameters: None,
                     },
                     value: sway::Expression::from(sway::Literal::Bool(false)),
-                });
+                });                
 
                 // Add the `constructor_called` requirement to the beginning of the function
                 // require(!storage.initialized.read(), "The Contract constructor has already been called");
@@ -374,7 +388,7 @@ impl Project {
                         sway::Expression::from(sway::UnaryExpression {
                             operator: "!".into(),
                             expression: sway::Expression::create_function_calls(None, &[
-                                ("storage", None),
+                                (format!("storage::{namespace_name}").as_str(), None),
                                 (constructor_called_variable_name.as_str(), None),
                                 ("read", Some((None, vec![]))),
                             ])
@@ -388,7 +402,7 @@ impl Project {
                 // Set the `constructor_called` storage field to `true` at the end of the function
                 // storage.initialized.write(true);
                 constructor_body.statements.push(sway::Statement::from(sway::Expression::create_function_calls(None, &[
-                    ("storage", None),
+                    (format!("storage::{namespace_name}").as_str(), None),
                     (constructor_called_variable_name.as_str(), None),
                     ("write", Some((None, vec![
                         sway::Expression::from(sway::Literal::Bool(true)),
@@ -412,7 +426,7 @@ impl Project {
 
                 // storage.x_instance_count.write(i + 1);
                 constructor_body.statements.insert(i, sway::Statement::from(sway::Expression::create_function_calls(None, &[
-                    ("storage", None),
+                    (format!("storage::{namespace_name}").as_str(), None),
                     (format!("{mapping_name}_instance_count").as_str(), None),
                     ("write", Some((None, vec![sway::Expression::from(sway::BinaryExpression { 
                         operator: "+".into(),
@@ -429,7 +443,7 @@ impl Project {
                     }),
                     type_name: None,
                     value: sway::Expression::create_function_calls(None, &[
-                        ("storage", None),
+                        (format!("storage::{namespace_name}").as_str(), None),
                         (format!("{mapping_name}_instance_count").as_str(), None),
                         ("read", Some((None, vec![])))
                     ])
@@ -441,7 +455,7 @@ impl Project {
                 for field_name in field_names.iter().rev() {
                     // storage.my_struct.my_mapping.write(Some(my_mapping));
                     constructor_body.statements.insert(i, sway::Statement::from(sway::Expression::create_function_calls(None, &[
-                        ("storage", None),
+                        (format!("storage::{namespace_name}").as_str(), None),
                         (mapping_name.as_str(), None),
                         (field_name.as_str(), None),
                         ("write", Some((None, vec![
@@ -462,7 +476,7 @@ impl Project {
                             }),
                             type_name: None,
                             value: sway::Expression::create_function_calls(None, &[
-                                ("storage", None),
+                                (format!("storage::{namespace_name}").as_str(), None),
                                 (format!("{mapping_name}_{field_name}s").as_str(), None),
                                 ("get", Some((None, vec![sway::Expression::create_identifier("i".to_string())])))
                             ])
@@ -542,7 +556,6 @@ impl Project {
             translate_contract_definition(
                 self,
                 &mut translated_definition,
-                import_directives.as_slice(),
                 contract_definition,
             )?;
 

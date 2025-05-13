@@ -1,5 +1,5 @@
 use super::{
-    expressions::{create_value_expression, evaluate_expression, translate_expression}, type_names::{translate_return_type_name, translate_type_name}, DeferredInitialization, TranslatedDefinition, TranslatedFunction, TranslatedVariable, TranslationScope
+    expressions::{create_value_expression, evaluate_expression, translate_expression}, translate_naming_convention, type_names::{translate_return_type_name, translate_type_name}, DeferredInitialization, TranslatedDefinition, TranslatedFunction, TranslatedVariable, TranslationScope
 };
 use crate::{project::Project, sway, Error};
 use convert_case::Case;
@@ -42,7 +42,13 @@ pub fn translate_state_variable(
     let is_immutable = variable_definition.attrs.iter().any(|x| matches!(x, solidity::VariableAttribute::Immutable(_)));
 
     // If the state variable is not constant or immutable, it is a storage field
-    let is_storage = !is_constant && !is_immutable;
+    let storage_namespace = if !is_constant && !is_immutable {
+        Some(translate_naming_convention(&translated_definition.name, Case::Snake))
+    } else {
+        None
+    };
+
+    let is_storage = storage_namespace.is_some();
 
     // If the state variable is immutable and not a constant, it is a configurable field
     let is_configurable = is_immutable && !is_constant;
@@ -97,10 +103,6 @@ pub fn translate_state_variable(
             };
         }
     }
-
-    //
-    // TODO: we need to defer initialization of storage variables that can't have an initial value (i.e: StorageString, StorageVec, etc)
-    //
 
     // Translate the variable's initial value
     let value_scope = Rc::new(RefCell::new(TranslationScope {
@@ -294,8 +296,8 @@ pub fn translate_state_variable(
         });
     }
     // Handle regular state variable definitions
-    else {
-        translated_definition.get_storage().fields.push(sway::StorageField {
+    else if storage_namespace.is_some() {
+        translated_definition.get_storage_namespace().fields.push(sway::StorageField {
             name: new_name.clone(),
             type_name: variable_type_name.clone(),
             value,
@@ -322,7 +324,7 @@ pub fn translate_state_variable(
             variable_type_name.clone()
         },
         abi_type_name,
-        is_storage,
+        storage_namespace,
         is_configurable,
         is_constant,
         ..Default::default()
@@ -402,12 +404,14 @@ pub fn translate_state_variable(
         },
     })));
 
+    let namespace_name = translated_definition.get_storage_namespace_name();
+
     // Create the body for the toplevel function
     sway_function.body = Some(sway::Block {
         statements: vec![],
         final_expr: Some(if is_storage {
             let mut expression = sway::Expression::from(sway::MemberAccess {
-                expression: sway::Expression::create_identifier("storage".into()),
+                expression: sway::Expression::create_identifier(format!("storage::{namespace_name}")),
                 member: new_name.clone(),
             });
 

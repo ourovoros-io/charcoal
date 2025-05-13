@@ -3,50 +3,12 @@ use crate::{errors::Error, project::Project, sway};
 use solang_parser::{helpers::CodeLocation, pt as solidity};
 use std::{cell::RefCell, path::{Path, PathBuf}, rc::Rc};
 
-pub fn resolve_import(
-    project: &mut Project,
-    definition_name: &String,
-    source_unit_path: &Path,
-) -> Result<Option<TranslatedDefinition>, Error> {
-    let mut source_unit_path = PathBuf::from(source_unit_path);
-    let source_unit_directory = source_unit_path.parent().map(PathBuf::from).unwrap();
-    
-    if !source_unit_path.to_string_lossy().starts_with('.') {
-        source_unit_path = project.get_project_type_path(&source_unit_directory, source_unit_path.to_string_lossy().to_string().as_str())?;
-    } else {
-        source_unit_path = source_unit_directory.join(source_unit_path);
-    }
-    
-    source_unit_path = crate::get_canonical_path(source_unit_path, false, false)
-        .map_err(|e| Error::Wrapped(Box::new(e))).unwrap();
-    
-    if !source_unit_path.exists() {
-        return Err(Error::Wrapped(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, source_unit_path.to_string_lossy()))));
-    }
-
-    if let Some(t) = project.translated_definitions.iter().find(|t| t.name == *definition_name && t.path == source_unit_path).cloned() {
-        return Ok(Some(t));
-    }
-    
-    project.translate(Some(definition_name), &source_unit_path)?;
-
-    if let Some(t) = project.translated_definitions.iter().find(|t| t.name == *definition_name && t.path == source_unit_path).cloned() {
-        return Ok(Some(t));
-    }
-
-    Ok(None)
-}
-
 fn process_import(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
     symbol: Option<&str>,
     import_path: &Path,
 ) -> Result<bool, Error> {
-    if !project.translated_definitions.iter().any(|t| t.path == import_path) {
-        project.translate(None, import_path)?;
-    }
-
     let mut found = false;
 
     for external_definition in project.translated_definitions.iter() {
@@ -318,20 +280,15 @@ pub fn translate_import_directives(
                     
                     let import_path = project.canonicalize_import_path(&source_unit_directory, &filename.string)?;
                     let found = process_import(project, translated_definition, Some(&identifier.name), &import_path)?;
-                    
-                    if !found {
-                        project.translate(None, &import_path)?;
-                        let found = process_import(project, translated_definition, Some(&identifier.name), &import_path)?;
 
-                        if !found {
-                            panic!(
-                                "{}ERROR: failed to resolve import directive from `{import_directive}`",
-                                match project.loc_to_line_and_column(&translated_definition.path, &import_directive.loc()) {
-                                    Some((line, col)) => format!("{}:{}:{} - ", translated_definition.path.to_string_lossy(), line, col),
-                                    None => format!("{} - ", translated_definition.path.to_string_lossy()),
-                                }
-                            );
-                        }
+                    if !found {
+                        panic!(
+                            "{}ERROR: failed to resolve import directive from `{import_directive}`",
+                            match project.loc_to_line_and_column(&translated_definition.path, &import_directive.loc()) {
+                                Some((line, col)) => format!("{}:{}:{} - ", translated_definition.path.to_string_lossy(), line, col),
+                                None => format!("{} - ", translated_definition.path.to_string_lossy()),
+                            }
+                        );
                     }
                 }
             }

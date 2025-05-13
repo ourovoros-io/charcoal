@@ -40,7 +40,7 @@ pub struct TranslatedVariable {
     pub new_name: String,
     pub type_name: sway::TypeName,
     pub abi_type_name: Option<sway::TypeName>,
-    pub is_storage: bool,
+    pub storage_namespace: Option<String>,
     pub is_configurable: bool,
     pub is_constant: bool,
     pub statement_index: Option<usize>,
@@ -687,6 +687,29 @@ impl TranslatedDefinition {
         self.storage.as_mut().unwrap()
     }
 
+    /// Attempt to get storage namespace by name from the translated definition. If it doesn't exist, it gets created.
+    #[inline]
+    pub fn get_storage_namespace(&mut self) -> &mut sway::StorageNamespace {
+        let namespace_name = self.get_storage_namespace_name();
+        let storage = self.get_storage();
+
+        if !storage.namespaces.iter().any(|s| s.name == namespace_name) {
+            storage.namespaces.push(sway::StorageNamespace { 
+                name: namespace_name.clone(), 
+                fields: vec![], 
+                namespaces: vec![]
+            });
+        }
+
+        storage.namespaces.iter_mut().find(|s| s.name == namespace_name).unwrap()
+    }
+
+    /// Gets the name of the storage namespace from the translated definition.
+    #[inline]
+    pub fn get_storage_namespace_name(&mut self) -> String {
+        translate_naming_convention(&self.name, Case::Snake)
+    }
+ 
     #[inline]
     pub fn get_constructor_fn(&mut self) -> &mut sway::Function {
         let abi = self.get_abi();
@@ -964,7 +987,7 @@ impl TranslatedDefinition {
             let variable = variable.borrow();
 
             // Variable should not be a storage field
-            assert!(!variable.is_storage, "error: Variable not found in scope: \"{name}\"");
+            assert!(!variable.storage_namespace.is_some(), "error: Variable not found in scope: \"{name}\"");
 
             return variable.type_name.clone();
         }
@@ -1092,11 +1115,14 @@ impl TranslatedDefinition {
         expression: &sway::Expression,
     ) -> Result<sway::TypeName, Error> {
         if let Some(name) = member_access.expression.as_identifier() {
-            if name == "storage" {
-                let Some(storage_field) = self.storage.as_ref()
-                    .map(|s| s.fields.iter().find(|f| f.name == member_access.member))
-                    .flatten()
-                else {
+            if name.starts_with("storage::") {
+                let parts = name.split("::").collect::<Vec<_>>();
+                
+                assert!(parts.len() == 2);
+
+                let namespace = self.storage.as_ref().map(|s| s.namespaces.iter().find(|n| n.name == parts[1])).flatten().unwrap();
+                
+                let Some(storage_field) = namespace.fields.iter().find(|f| f.name == member_access.member) else {
                     panic!("Failed to find storage variable in scope: `{}`", member_access.member)
                 };
 

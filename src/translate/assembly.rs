@@ -452,9 +452,9 @@ pub fn translate_yul_variable_expression(
 
     let variable = variable.borrow();
 
-    if variable.is_storage {
+    if let Some(namespace) = variable.storage_namespace.as_ref() {
         Ok(sway::Expression::create_function_calls(None, &[
-            ("storage", None),
+            (format!("storage::{namespace}").as_str(), None),
             (variable.new_name.as_str(), None),
             ("read", Some((None, vec![]))),
         ]))

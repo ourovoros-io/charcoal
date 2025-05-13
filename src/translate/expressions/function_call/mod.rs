@@ -348,21 +348,23 @@ pub fn translate_function_call_expression(
                                 }
                             }
 
+                            let namespace_name = translated_definition.get_storage_namespace_name();
+
                             // Check if variable is a storage vector
-                            if variable.borrow().is_storage {
+                            if variable.borrow().storage_namespace.is_some() {
                                 if let Some(storage_key_type) = variable.borrow().type_name.storage_key_type() {
                                     if storage_key_type.is_storage_vec() {
                                         match member.name.as_str() {
                                             "push" => {
                                                 return Ok(sway::Expression::create_function_calls(None, &[
-                                                    ("storage", None),
+                                                    (format!("storage::{namespace_name}").as_str(), None),
                                                     (variable.borrow().new_name.as_str(), None),
                                                     ("push", Some((None, parameters)))
                                                 ]))
                                             }
                                             "pop" => {
                                                 return Ok(sway::Expression::create_function_calls(None, &[
-                                                    ("storage", None),
+                                                    (format!("storage::{namespace_name}").as_str(), None),
                                                     (variable.borrow().new_name.as_str(), None),
                                                     ("pop", Some((None, parameters)))
                                                 ]))

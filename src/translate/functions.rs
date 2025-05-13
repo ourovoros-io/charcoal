@@ -278,7 +278,7 @@ pub fn translate_modifier_definition(
                                 break;
                             }
 
-                            if variable.borrow().is_storage {
+                            if variable.borrow().storage_namespace.is_some() {
                                 if variable.borrow().read_count != 0 {
                                     *has_storage_read = true;
                                 }
@@ -347,7 +347,7 @@ pub fn translate_modifier_definition(
     }
 
     for variable in current_scope.borrow().variables.iter() {
-        if variable.borrow().is_storage {
+        if variable.borrow().storage_namespace.is_some() {
             if variable.borrow().read_count != 0 {
                 *has_storage_read = true;
             }
@@ -799,8 +799,10 @@ pub fn translate_function_definition(
         let prefix = crate::translate::translate_naming_convention(translated_definition.name.as_str(), Case::Snake);
         let constructor_called_variable_name =  translate_storage_name(project, translated_definition, format!("{prefix}_constructor_called").as_str());
         
+        let namespace_name = translated_definition.get_storage_namespace_name();
+
         // Add the `constructor_called` field to the storage block
-        translated_definition.get_storage().fields.push(sway::StorageField {
+        translated_definition.get_storage_namespace().fields.push(sway::StorageField {
             name: constructor_called_variable_name.clone(),
             type_name: sway::TypeName::Identifier {
                 name: "bool".into(),
@@ -816,7 +818,7 @@ pub fn translate_function_definition(
                 sway::Expression::from(sway::UnaryExpression {
                     operator: "!".into(),
                     expression: sway::Expression::create_function_calls(None, &[
-                        ("storage", None),
+                        (format!("storage::{namespace_name}").as_str(), None),
                         (constructor_called_variable_name.as_str(), None),
                         ("read", Some((None, vec![]))),
                     ])
@@ -828,7 +830,7 @@ pub fn translate_function_definition(
         // Set the `constructor_called` storage field to `true` at the end of the function
         // storage.initialized.write(true);
         function_body.statements.push(sway::Statement::from(sway::Expression::create_function_calls(None, &[
-            ("storage", None),
+            (format!("storage::{namespace_name}").as_str(), None),
             (constructor_called_variable_name.as_str(), None),
             ("write", Some((None, vec![
                 sway::Expression::from(sway::Literal::Bool(true)),

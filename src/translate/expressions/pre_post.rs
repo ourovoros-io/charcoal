@@ -66,7 +66,7 @@ pub fn translate_pre_operator_expression(
     Ok(sway::Expression::from(sway::Block {
         statements: vec![assignment],
         final_expr: Some(
-            if variable.is_storage {
+            if variable.storage_namespace.is_some() {
                 sway::Expression::create_function_calls(Some(expression), &[("read", Some((None, vec![])))])
             } else {
                 expression
@@ -104,7 +104,7 @@ pub fn translate_post_operator_expression(
 
     variable.read_count += 1;
 
-    let variable_name = if variable.is_storage {
+    let variable_name = if variable.storage_namespace.is_some() {
         variable.new_name.clone()
     } else {
         format!("_{}", variable.new_name)
@@ -118,7 +118,7 @@ pub fn translate_post_operator_expression(
                     name: variable_name.clone(),
                 }),
                 type_name: None,
-                value: if variable.is_storage {
+                value: if variable.storage_namespace.is_some() {
                     sway::Expression::create_function_calls(Some(expression), &[("read", Some((None, vec![])))])
                 } else {
                     expression

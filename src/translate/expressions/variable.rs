@@ -52,7 +52,7 @@ pub fn translate_variable_expression(
     
         variable.read_count += 1;
         
-        if variable.is_storage {
+        if variable.storage_namespace.is_some() {
             match &variable.type_name {
                 sway::TypeName::Identifier { name, .. } if name == "StorageString" => {
                     Ok(sway::Expression::create_function_calls(Some(expression), &[
@@ -91,13 +91,15 @@ pub fn translate_variable_access_expression(
         solidity::Expression::Variable(solidity::Identifier { name, .. }) => {
             if let Some(variable) = scope.borrow().get_variable_from_old_name(name) {
                 let variable_name = variable.borrow().new_name.clone();
-                let is_storage = variable.borrow().is_storage;
+                let is_storage = variable.borrow().storage_namespace.is_some();
     
+                let namespace_name = translated_definition.get_storage_namespace_name();
+
                 return Ok((
                     Some(variable),
                     if is_storage {
                         sway::Expression::from(sway::MemberAccess {
-                            expression: sway::Expression::create_identifier("storage".into()),
+                            expression: sway::Expression::create_identifier(format!("storage::{namespace_name}")),
                             member: variable_name,
                         })
                     } else {
@@ -136,7 +138,7 @@ pub fn translate_variable_access_expression(
 
             let variable = variable.unwrap();
             let type_name = translated_definition.get_expression_type(scope, &expression)?;
-            let is_storage = variable.borrow().is_storage;
+            let is_storage = variable.borrow().storage_namespace.is_some();
 
             Ok((
                 Some(variable),
@@ -322,7 +324,7 @@ pub fn translate_variable_access_expression(
             let (variable, _) = translate_variable_access_expression(project, translated_definition, scope, container)?;
 
             // HACK: tack `.read()` onto the end if the container is a StorageKey
-            if variable.as_ref().map(|v| v.borrow().type_name.is_storage_key() || v.borrow().is_storage).unwrap_or(false) {
+            if variable.as_ref().map(|v| v.borrow().type_name.is_storage_key() || v.borrow().storage_namespace.is_some()).unwrap_or(false) {
                 let storage_key_type = match container_type_name.storage_key_type() {
                     Some(key_type) => key_type,
                     None => container_type_name,

@@ -1,10 +1,24 @@
-
+use super::{
+    enums::{
+        generate_enum_abi_encode_function, translate_enum_definition, translate_error_definition,
+        translate_event_definition,
+    },
+    expressions::assignment::create_assignment_expression,
+    functions::{
+        translate_function_declaration, translate_function_definition,
+        translate_modifier_definition,
+    },
+    storage::{translate_state_variable, translate_storage_name},
+    structs::translate_struct_definition,
+    type_definitions::translate_type_definition,
+    type_names::translate_type_name,
+    TranslatedDefinition, TranslatedUsingDirective,
+};
 use crate::{project::Project, sway, Error};
 use convert_case::Case;
 use solang_parser::pt as solidity;
-use std::{cell::RefCell, path::PathBuf, rc::Rc};
+use std::{cell::RefCell, rc::Rc};
 
-use super::{enums::{generate_enum_abi_encode_function, translate_enum_definition, translate_error_definition, translate_event_definition}, expressions::assignment::create_assignment_expression, functions::{translate_function_declaration, translate_function_definition, translate_modifier_definition}, import_directives::resolve_import, storage::{translate_state_variable, translate_storage_name}, structs::translate_struct_definition, type_definitions::translate_type_definition, type_names::translate_type_name, TranslatedDefinition, TranslatedUsingDirective};
 
 #[inline]
 pub fn translate_using_directive(
@@ -132,11 +146,10 @@ pub fn translate_using_directive(
 pub fn translate_contract_definition(
     project: &mut Project,
     translated_definition: &mut TranslatedDefinition,
-    import_directives: &[solidity::Import],
     contract_definition: &solidity::ContractDefinition,
 ) -> Result<(), Error> {
     // Propagate inherited definitions
-    propagate_inherited_definitions(project, import_directives, translated_definition)?;
+    propagate_inherited_definitions(project, translated_definition)?;
 
     // Translate contract using directives
     for part in contract_definition.parts.iter() {
@@ -276,10 +289,12 @@ pub fn translate_contract_definition(
         let mut assignment_statements = vec![];
         let deferred_initializations = translated_definition.deferred_initializations.clone();
 
+        let namespace_name = translated_definition.get_storage_namespace_name();
+
         // Create assignment statements for all of the deferred initializations
         for deferred_initialization in deferred_initializations.iter().rev() {
             let lhs = sway::Expression::create_member_access(
-                sway::Expression::create_identifier("storage".into()),
+                sway::Expression::create_identifier(format!("storage::{namespace_name}")),
                 &[deferred_initialization.name.as_str()],
             );
             
@@ -290,7 +305,7 @@ pub fn translate_contract_definition(
                 sway::Expression::Array(sway::Array { elements }) => {
                     for element in elements {
                         assignment_statements.push(sway::Statement::from(sway::Expression::create_function_calls(None, &[
-                            ("storage", None),
+                            (format!("storage::{namespace_name}").as_str(), None),
                             (deferred_initialization.name.as_str(), None),
                             ("push", Some((None, vec![
                                 element.clone(),
@@ -340,7 +355,7 @@ pub fn translate_contract_definition(
             let constructor_called_variable_name =  translate_storage_name(project, translated_definition, format!("{prefix}_constructor_called").as_str());
             
             // Add the `constructor_called` field to the storage block
-            translated_definition.get_storage().fields.push(sway::StorageField {
+            translated_definition.get_storage_namespace().fields.push(sway::StorageField {
                 name: constructor_called_variable_name.clone(),
                 type_name: sway::TypeName::Identifier {
                     name: "bool".into(),
@@ -356,7 +371,7 @@ pub fn translate_contract_definition(
                     sway::Expression::from(sway::UnaryExpression {
                         operator: "!".into(),
                         expression: sway::Expression::create_function_calls(None, &[
-                            ("storage", None),
+                            (format!("storage::{namespace_name}").as_str(), None),
                             (constructor_called_variable_name.as_str(), None),
                             ("read", Some((None, vec![]))),
                         ]),
@@ -368,7 +383,7 @@ pub fn translate_contract_definition(
             // Set the `constructor_called` storage field to `true` at the end of the function
             // storage.initialized.write(true);
             function_body.statements.push(sway::Statement::from(sway::Expression::create_function_calls(None, &[
-                ("storage", None),
+                (format!("storage::{namespace_name}").as_str(), None),
                 (constructor_called_variable_name.as_str(), None),
                 ("write", Some((None, vec![
                     sway::Expression::from(sway::Literal::Bool(true)),
@@ -494,62 +509,19 @@ pub fn translate_contract_definition(
 #[inline]
 pub fn propagate_inherited_definitions(
     project: &mut Project,
-    import_directives: &[solidity::Import],
     translated_definition: &mut TranslatedDefinition,
 ) -> Result<(), Error> {
-    let source_unit_directory = translated_definition.path.parent().map(PathBuf::from).unwrap();
-
     for inherit in translated_definition.inherits.clone() {
         let mut inherited_definition = None;
 
-        // Find inherited import directive
-        for import_directive in import_directives.iter() {
-            let filename = match import_directive {
-                solidity::Import::Plain(solidity::ImportPath::Filename(filename), _) => filename,
-                
-                solidity::Import::Rename(solidity::ImportPath::Filename(filename), identifiers, _) => {
-                    if !identifiers.iter().any(|i| i.0.name == *inherit) {
-                        continue;
-                    }
-
-                    filename
-                }
-
-                _ => panic!("Unsupported import directive: {import_directive:#?}"),
-            };
-            
-            let mut import_path = project.get_project_type_path(&source_unit_directory, filename.string.as_str())?;
-            
-            if !import_path.exists() {
-                import_path = match translated_definition.path.parent() {
-                    Some(path) => path.join(filename.string.as_str()),
-                    None => PathBuf::from(filename.string.as_str())
-                };
-
-                if !import_path.exists() {
-                    return Err(Error::Wrapped(Box::new(
-                        std::io::Error::new(
-                            std::io::ErrorKind::NotFound,
-                            format!("File not found: {}", import_path.to_string_lossy()),
-                        )
-                    )));
-                }
-            }
-
-            let import_path = crate::get_canonical_path(import_path, false, false)
-                .map_err(|e| Error::Wrapped(Box::new(e)))?;
-
-            if let Some(t) = resolve_import(project, &inherit, &import_path)? {
-                inherited_definition = Some(t);
-                break;
-            }
+        // Try to find the inherited definition in project
+        if let Some(external_definition) = project.translated_definitions.iter().find(|t| t.name == inherit) {
+            inherited_definition = Some(external_definition);
         }
 
         // Check to see if the definition was defined in the current file
         if inherited_definition.is_none() {
-            if let Some(t) = resolve_import(project, &inherit, &translated_definition.path)? {
-                inherited_definition = Some(t);
-            } else if translated_definition.abis.iter().find(|d| d.name == inherit).is_some() {
+            if translated_definition.abis.iter().find(|d| d.name == inherit).is_some() {
                 return Ok(());
             }
         }
@@ -663,7 +635,7 @@ pub fn propagate_inherited_definitions(
             }
         }
 
-        // Extend the storage fields
+        // Extend the storage
         if let Some(inherited_storage) = inherited_definition.storage.as_ref() {
             let storage = translated_definition.get_storage();
 
@@ -673,6 +645,14 @@ pub fn propagate_inherited_definitions(
                 }
                 
                 storage.fields.push(inherited_field.clone());
+            }
+
+            for inherited_namespace in inherited_storage.namespaces.iter() {
+                if storage.namespaces.contains(inherited_namespace) {
+                    continue;
+                }
+
+                storage.namespaces.push(inherited_namespace.clone());
             }
         }
 

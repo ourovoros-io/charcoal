@@ -334,15 +334,17 @@ pub fn translate_member_access_expression(
                 if let Some(variable) = scope.borrow().get_variable_from_old_name(name) {
                     let variable = variable.borrow();
 
+                    let namespace_name = translated_definition.get_storage_namespace_name();
+
                     match &variable.type_name {
                         sway::TypeName::Identifier { name: type_name, generic_parameters } => match (type_name.as_str(), generic_parameters.as_ref()) {
                             ("StorageKey", Some(generic_parameters)) if generic_parameters.entries.len() == 1 => match &generic_parameters.entries[0].type_name {
                                 sway::TypeName::Identifier { name, generic_parameters } => match (name.as_str(), generic_parameters.as_ref()) {
                                     ("StorageVec", Some(generic_parameters)) if generic_parameters.entries.len() == 1 => {
                                         return Ok(sway::Expression::create_function_calls(
-                                            Some(if variable.is_storage {
+                                            Some(if variable.storage_namespace.is_some() {
                                                 sway::Expression::from(sway::MemberAccess {
-                                                    expression: sway::Expression::create_identifier("storage".into()),
+                                                    expression: sway::Expression::create_identifier(format!("storage::{namespace_name}")),
                                                     member: variable.new_name.clone(),
                                                 })
                                             } else {
@@ -360,9 +362,9 @@ pub fn translate_member_access_expression(
                             ("Vec", Some(generic_parameters)) if generic_parameters.entries.len() == 1 => match member {
                                 "length" => {
                                     return Ok(sway::Expression::create_function_calls(
-                                        Some(if variable.is_storage {
+                                        Some(if variable.storage_namespace.is_some() {
                                             sway::Expression::from(sway::MemberAccess {
-                                                expression: sway::Expression::create_identifier("storage".into()),
+                                                expression: sway::Expression::create_identifier(format!("storage::{namespace_name}")),
                                                 member: variable.new_name.clone(),
                                             })
                                         } else {

@@ -653,7 +653,7 @@ pub fn translate_storage_vec_member_access_function_call(
 
             let variable = variable.unwrap();
 
-            if !variable.borrow().is_storage {
+            if !variable.borrow().storage_namespace.is_some() {
                 panic!("StorageVec is not in storage");
             }
 
@@ -683,7 +683,7 @@ pub fn translate_storage_vec_member_access_function_call(
 
             let variable = variable.unwrap();
 
-            if !variable.borrow().is_storage {
+            if !variable.borrow().storage_namespace.is_some() {
                 panic!("StorageVec is not in storage");
             }
 
@@ -706,7 +706,7 @@ pub fn translate_storage_vec_member_access_function_call(
 
             let variable = variable.unwrap();
 
-            if !variable.borrow().is_storage {
+            if !variable.borrow().storage_namespace.is_some() {
                 panic!("StorageVec is not in storage");
             }
 

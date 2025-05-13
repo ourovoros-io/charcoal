@@ -28,15 +28,17 @@ pub fn create_assignment_expression(
 
     variable.borrow_mut().mutation_count += 1;
 
-    let is_storage = variable.borrow().is_storage;
+    let is_storage = variable.borrow().storage_namespace.is_some();
     let type_name = variable.borrow().type_name.clone();
 
     let expr_type_name = translated_definition.get_expression_type(scope, expression)?;
     
+    let namespace_name = translated_definition.get_storage_namespace_name();
+
     // Check for assignments to fields of struct variables defined in scope
     if !type_name.is_compatible_with(&expr_type_name) {
         if let sway::Expression::MemberAccess(member_access) = expression {
-            if member_access.expression != sway::Expression::create_identifier("storage".into()) {
+            if member_access.expression != sway::Expression::create_identifier(format!("storage::{namespace_name}")) {
                 let type_name = translated_definition.get_expression_type(scope, &member_access.expression)?;
 
                 if let Some(struct_definition) = translated_definition.structs.iter().find(|s| {
