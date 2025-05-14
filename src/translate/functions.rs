@@ -969,7 +969,11 @@ pub fn translate_function_definition(
     sway_function.body = Some(function_body);
 
     // Add the toplevel function
-    translated_definition.functions.push(sway_function.clone());
+    let mut toplevel_function = sway_function.clone();
+    if let Some((index, _)) = toplevel_function.attributes.as_ref().map(|a| a.attributes.iter().enumerate().find(|(_, a)| a.name == "payable")).flatten().clone() {
+        toplevel_function.attributes.as_mut().map(|a| a.attributes.remove(index)).unwrap();
+    }
+    translated_definition.functions.push(toplevel_function);
 
     if is_public && !is_fallback {
         let mut statements = vec![];

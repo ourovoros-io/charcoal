@@ -28,12 +28,14 @@ pub fn create_assignment_expression(
 
     variable.borrow_mut().mutation_count += 1;
 
-    let is_storage = variable.borrow().storage_namespace.is_some();
     let type_name = variable.borrow().type_name.clone();
 
     let expr_type_name = translated_definition.get_expression_type(scope, expression)?;
     
-    let namespace_name = translated_definition.get_storage_namespace_name();
+    let (is_storage, namespace_name) = match variable.borrow().storage_namespace.as_ref() {
+        Some(namespace_name) => (true, namespace_name.clone()),
+        None => (false, String::new()),
+    };
 
     // Check for assignments to fields of struct variables defined in scope
     if !type_name.is_compatible_with(&expr_type_name) {

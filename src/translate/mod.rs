@@ -1120,7 +1120,9 @@ impl TranslatedDefinition {
                 
                 assert!(parts.len() == 2);
 
-                let namespace = self.storage.as_ref().map(|s| s.namespaces.iter().find(|n| n.name == parts[1])).flatten().unwrap();
+                let Some(namespace) = self.storage.as_ref().map(|s| s.namespaces.iter().find(|n| n.name == parts[1])).flatten() else {
+                    panic!("Failed to find storage namespace {}. Available namespaces : {}", parts[1], self.storage.as_ref().map(|s| s.namespaces.iter().map(|n| n.name.clone()).collect::<Vec<_>>().join(", ")).unwrap_or("<none>".into()));
+                };
                 
                 let Some(storage_field) = namespace.fields.iter().find(|f| f.name == member_access.member) else {
                     panic!("Failed to find storage variable in scope: `{}`", member_access.member)

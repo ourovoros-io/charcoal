@@ -91,9 +91,11 @@ pub fn translate_variable_access_expression(
         solidity::Expression::Variable(solidity::Identifier { name, .. }) => {
             if let Some(variable) = scope.borrow().get_variable_from_old_name(name) {
                 let variable_name = variable.borrow().new_name.clone();
-                let is_storage = variable.borrow().storage_namespace.is_some();
-    
-                let namespace_name = translated_definition.get_storage_namespace_name();
+                
+                let (is_storage, namespace_name) = match variable.borrow().storage_namespace.as_ref() {
+                    Some(namespace_name) => (true, namespace_name.clone()),
+                    None => (false, String::new()),
+                };
 
                 return Ok((
                     Some(variable),

@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::{collections::HashMap, path::{Path, PathBuf}};
 use convert_case::Case;
 use crate::{errors::Error, project::{Project, ProjectKind}, sway};
 
@@ -141,59 +141,62 @@ pub fn create_usage_queue(
     project: &mut crate::project::Project,
     mut paths: Vec<PathBuf>,
 ) -> Result<Vec<PathBuf>, Error> {
-    let mut results = vec![];
+    // 1. Build a mapping of files paths to the number of times that that file is imported from another file
+    let mut import_paths = HashMap::new();
+    let mut import_counts = HashMap::new();
 
-    while let Some(source_unit_path) = paths.pop() {
-        project.parse_solidity_source_unit(&source_unit_path)?;
+    fn visit_file_1(
+        project: &mut Project,
+        path: &Path,
+        import_paths: &mut HashMap<PathBuf, Vec<PathBuf>>,
+        import_counts: &mut HashMap<PathBuf, i32>,
+    ) {
+        import_counts.entry(path.into()).or_insert(0);
+
+        project.parse_solidity_source_unit(path).unwrap();
 
         let ast = project.solidity_source_units.borrow()
-            .get(&source_unit_path).cloned()
+            .get(path).cloned()
             .unwrap();
-        let import_paths = get_import_paths(project, &ast, &source_unit_path)?;
+        
+        if !import_paths.contains_key(path) {
+            let paths = get_import_paths(project, &ast, path).unwrap();
 
-        for import_path in import_paths.iter() {
-            if !paths.contains(import_path) && !results.iter().any(|(r, _)| r == import_path) {
-                paths.push(import_path.clone());
+            for import_path in paths.iter() {
+                visit_file_1(project, import_path, import_paths, import_counts);
+                *import_counts.entry(import_path.clone()).or_insert(0) += 1;
             }
-        }
-
-        results.push((source_unit_path.clone(), import_paths));
-    }
-
-    results.sort_by(|a, b| a.1.len().cmp(&b.1.len()));
-
-    let mut new_results: Vec<PathBuf> = vec![];
-
-    while !results.is_empty() {
-        let mut queue = vec![];
-
-        let import_count = results[0].1.len();
-
-        while !results.is_empty() && results[0].1.len() == import_count {
-            let item = results[0].clone();
-            results.remove(0);
-            queue.push(item);
-        }
-
-        for item in queue {
-            if !new_results.iter().any(|r| r == &item.0) {
-                new_results.push(item.0.clone());
-            }
-
-            for item_import_path in item.1 {
-                let mut depends = vec![];
-
-                for result in results.iter() {
-                    if result.0 == item_import_path {
-                        depends.push(result.0.clone());
-                    }
-                }
-                new_results.extend(depends);
-            }
+            
+            import_paths.insert(path.into(), paths);
         }
     }
 
-    Ok(new_results)
+    for path in paths.iter() {
+        visit_file_1(project, path, &mut import_paths, &mut import_counts);
+    }
+
+    // 2a. Start with all the files that have a import count of 0
+    // 2b. When visiting a file you visit each of its imports first, inserting them higher in the queue before inserting the current file
+    // 2c. After visiting each import path find the entry of import in the dependent file paths mapping and add the current file to the import path entry
+    fn visit_file_2(project: &mut Project, import_paths: &HashMap<PathBuf, Vec<PathBuf>>, path: &Path, deps: &mut Vec<(PathBuf, Vec<PathBuf>)>) {
+        let current_import_paths =  import_paths.get(path).unwrap();
+
+        for import_path in current_import_paths.iter() {
+            visit_file_2(project, import_paths, import_path, deps);
+        }
+
+        if !deps.iter().any(|(p, _)| p == path) {
+            deps.push((path.into(), current_import_paths.clone()));
+        }
+    }
+
+    let mut deps = vec![];
+
+    for (path, _) in  import_counts.iter().filter(|&(_, x)| *x == 0) {
+        visit_file_2(project, &import_paths, path, &mut deps);
+    }
+
+    Ok(deps.iter().map(|d| d.0.clone()).collect())
 }
 
 pub fn get_import_paths(

@@ -348,10 +348,8 @@ pub fn translate_function_call_expression(
                                 }
                             }
 
-                            let namespace_name = translated_definition.get_storage_namespace_name();
-
                             // Check if variable is a storage vector
-                            if variable.borrow().storage_namespace.is_some() {
+                            if let Some(namespace_name) = variable.borrow().storage_namespace.as_ref() {
                                 if let Some(storage_key_type) = variable.borrow().type_name.storage_key_type() {
                                     if storage_key_type.is_storage_vec() {
                                         match member.name.as_str() {

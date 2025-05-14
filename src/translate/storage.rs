@@ -183,7 +183,7 @@ pub fn translate_state_variable(
                             let instance_field_name = format!("{struct_name}_instance_count");
                             let mapping_field_name = format!("{struct_name}_{}s", field.name);
 
-                            let storage = translated_definition.get_storage();
+                            let storage = translated_definition.get_storage_namespace();
 
                             if let Some(field) = storage.fields.iter().find(|f| f.name == instance_field_name) {
                                 assert!(field.type_name.is_u64(), "Instance count field already exists : {field:#?}");
