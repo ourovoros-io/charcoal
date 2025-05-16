@@ -1,11 +1,8 @@
-use std::{cell::RefCell, rc::Rc};
+use crate::{errors::Error, project::Project, sway, translate::*};
 use num_bigint::BigUint;
 use num_traits::{One, Zero};
 use solang_parser::{helpers::CodeLocation, pt as solidity};
-
-use crate::{errors::Error, project::Project, sway, translate::{TranslatedDefinition, TranslationScope}};
-
-use super::translate_expression;
+use std::{cell::RefCell, rc::Rc};
 
 #[inline]
 pub fn translate_new_expression(

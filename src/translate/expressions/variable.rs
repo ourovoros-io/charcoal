@@ -1,10 +1,7 @@
-use std::{cell::RefCell, rc::Rc};
+use crate::{errors::Error, project::Project, sway, translate::*};
 use convert_case::Case;
 use solang_parser::{helpers::CodeLocation, pt as solidity};
-
-use crate::{errors::Error, project::Project, sway, translate::{TranslatedDefinition, TranslatedVariable, TranslationScope}};
-
-use super::{function_call::utils::coerce_expression, translate_expression};
+use std::{cell::RefCell, rc::Rc};
 
 #[inline]
 pub fn translate_variable_expression(

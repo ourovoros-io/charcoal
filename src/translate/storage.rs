@@ -1,7 +1,4 @@
-use super::{
-    expressions::{create_value_expression, evaluate_expression, translate_expression}, translate_naming_convention, type_names::{translate_return_type_name, translate_type_name}, DeferredInitialization, TranslatedDefinition, TranslatedFunction, TranslatedVariable, TranslationScope
-};
-use crate::{project::Project, sway, Error};
+use crate::{errors::Error, project::Project, sway, translate::*};
 use convert_case::Case;
 use num_bigint::BigUint;
 use num_traits::Zero;

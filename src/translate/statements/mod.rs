@@ -1,20 +1,34 @@
-use std::{cell::RefCell, rc::Rc};
+use crate::{errors::Error, project::Project, sway, translate::*};
 use solang_parser::pt as solidity;
-use crate::{errors::Error, project::Project, sway};
-use super::{TranslatedDefinition, TranslationScope};
+use std::{cell::RefCell, rc::Rc};
 
-pub mod arguments;
-pub mod block;
-pub mod do_while;
-pub mod emit;
-pub mod expression;
-pub mod r#for;
-pub mod r#if;
-pub mod r#return;
-pub mod revert;
-pub mod try_catch;
-pub mod variable;
-pub mod r#while;
+mod arguments;
+mod block;
+mod do_while;
+mod emit;
+mod expression;
+mod r#for;
+mod r#if;
+mod r#return;
+mod revert;
+mod try_catch;
+mod variable;
+mod r#while;
+
+pub use self::{
+    arguments::*,
+    block::*,
+    do_while::*,
+    emit::*,
+    expression::*,
+    r#for::*,
+    r#if::*,
+    r#return::*,
+    revert::*,
+    try_catch::*,
+    variable::*,
+    r#while::*,
+};
 
 pub fn translate_statement(
     project: &mut Project,

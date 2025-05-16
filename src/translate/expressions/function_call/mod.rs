@@ -1,21 +1,23 @@
-pub mod casting;
-pub mod utils;
-pub mod build_ins;
-pub mod member_access;
-
 use crate::{
     errors::Error,
     project::Project,
-    sway, translate::{expressions::address_call::translate_address_call_expression, TranslatedDefinition, TranslationScope},
+    sway,
+    translate::*,
 };
-use build_ins::translate_builtin_function_call;
-use casting::{translate_address_type_cast_function_call, translate_bytes_type_cast_function_call, translate_dynamic_bytes_type_cast_function_call, translate_int_types_cast_function_call, translate_payable_type_cast_function_call, translate_string_type_cast_function_call, translate_uint_types_cast_function_call};
-use member_access::{translate_abi_member_access_function_call, translate_function_call_block_member_access, translate_member_access_function_call, translate_super_member_access_function_call, translate_this_member_access_function_call};
-use solang_parser::{helpers::CodeLocation, pt as solidity};
-use member_access::{translate_identity_member_access_function_call, translate_storage_vec_member_access_function_call, translate_vec_member_access_function_call};
-use utils::{resolve_abi_function_call, resolve_function_call, resolve_struct_constructor};
+use solang_parser::helpers::CodeLocation;
 use std::{cell::RefCell, rc::Rc};
-use super::translate_expression;
+
+mod casting;
+mod utils;
+mod build_ins;
+mod member_access;
+
+pub use self::{
+    casting::*,
+    utils::*,
+    build_ins::*,
+    member_access::*,
+};
 
 #[inline]
 pub fn translate_function_call_expression(

@@ -1,7 +1,6 @@
-use std::{cell::RefCell, rc::Rc};
+use crate::{errors::Error, project::Project, sway, translate::*};
 use solang_parser::pt as solidity;
-use crate::{errors::Error, project::Project, sway, translate::{TranslatedDefinition, TranslationScope}};
-use super::{assignment::create_assignment_expression, create_value_expression, translate_expression, variable::translate_variable_access_expression};
+use std::{cell::RefCell, rc::Rc};
 
 #[inline]
 pub fn translate_delete_expression(

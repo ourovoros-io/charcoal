@@ -2,7 +2,7 @@ use crate::{
     errors::Error,
     project::Project,
     sway,
-    translate::{expressions::translate_expression, TranslatedDefinition, TranslationScope},
+    translate::*,
 };
 use convert_case::Case;
 use num_bigint::BigUint;

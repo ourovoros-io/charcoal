@@ -1,7 +1,10 @@
-use super::{TranslatedDefinition, TranslatedFunction};
-use crate::{errors::Error, project::Project, sway};
+use crate::{errors::Error, project::Project, sway, translate::*};
 use solang_parser::{helpers::CodeLocation, pt as solidity};
-use std::{cell::RefCell, path::{Path, PathBuf}, rc::Rc};
+use std::{
+    cell::RefCell,
+    path::{Path, PathBuf},
+    rc::Rc,
+};
 
 fn process_import(
     project: &mut Project,

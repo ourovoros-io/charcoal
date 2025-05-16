@@ -1,10 +1,8 @@
-use std::{cell::RefCell, rc::Rc};
-
-use super::{type_names::translate_type_name, TranslatedDefinition, TranslatedEnum};
-use crate::{project::Project, sway, Error};
+use crate::{errors::Error, project::Project, sway, translate::*};
 use convert_case::Case;
 use num_bigint::BigUint;
 use solang_parser::pt as solidity;
+use std::{cell::RefCell, rc::Rc};
 
 #[inline]
 pub fn translate_enum_definition(

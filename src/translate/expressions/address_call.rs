@@ -1,7 +1,12 @@
-use std::{cell::RefCell, rc::Rc};
+use crate::{
+    errors::Error,
+    project::Project,
+    sway,
+    translate::*,
+};
 use num_bigint::BigUint;
 use num_traits::Zero;
-use crate::{errors::Error, project::Project, sway, translate::{TranslatedDefinition, TranslationScope}};
+use std::{cell::RefCell, rc::Rc};
 
 #[inline]
 pub fn translate_address_call_expression(

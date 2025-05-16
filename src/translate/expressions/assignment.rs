@@ -1,13 +1,8 @@
-use super::{
-    function_call::utils::coerce_expression,
-    pre_post::translate_pre_or_post_operator_value_expression, translate_expression,
-    variable::translate_variable_access_expression,
-};
 use crate::{
     errors::Error,
     project::Project,
     sway,
-    translate::{TranslatedDefinition, TranslatedVariable, TranslationScope},
+    translate::*,
 };
 use solang_parser::pt as solidity;
 use std::{cell::RefCell, rc::Rc};

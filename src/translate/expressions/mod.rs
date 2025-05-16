@@ -1,26 +1,42 @@
-use std::{cell::RefCell, rc::Rc};
-use function_call::utils::coerce_expression;
+use crate::{errors::Error, project::Project, sway, translate::*};
 use num_bigint::BigUint;
 use num_traits::{Num, Zero};
 use solang_parser::pt as solidity;
-use crate::{errors::Error, project::Project, sway};
-use super::{TranslatedDefinition, TranslationScope};
+use std::{cell::RefCell, rc::Rc};
 
-pub mod address_call;
-pub mod array;
-pub mod assignment;
-pub mod binary_unary;
-pub mod conditional;
-pub mod delete;
-pub mod function_call;
-pub mod literal;
-pub mod list;
-pub mod member_access;
-pub mod new;
-pub mod parenthesis;
-pub mod pre_post;
-pub mod expression_type;
-pub mod variable;
+mod address_call;
+mod array;
+mod assignment;
+mod binary_unary;
+mod conditional;
+mod delete;
+mod function_call;
+mod literal;
+mod list;
+mod member_access;
+mod new;
+mod parenthesis;
+mod pre_post;
+mod expression_type;
+mod variable;
+
+pub use self::{
+    address_call::*,
+    array::*,
+    assignment::*,
+    binary_unary::*,
+    conditional::*,
+    delete::*,
+    function_call::*,
+    literal::*,
+    list::*,
+    member_access::*,
+    new::*,
+    parenthesis::*,
+    pre_post::*,
+    expression_type::*,
+    variable::*,
+};
 
 pub fn evaluate_expression(
     translated_definition: &mut TranslatedDefinition,

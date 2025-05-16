@@ -1,6 +1,6 @@
-use std::{cell::RefCell, rc::Rc};
+use crate::{errors::Error, project::Project, sway, translate::*};
 use solang_parser::pt as solidity;
-use crate::{errors::Error, project::Project, sway, translate::{TranslatedDefinition, TranslationScope}};
+use std::{cell::RefCell, rc::Rc};
 
 #[inline]
 pub fn translate_args_statement(

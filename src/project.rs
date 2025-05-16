@@ -1,19 +1,4 @@
-use crate::{
-    errors::Error,
-    sway::{self, AttributeList},
-    translate::{
-        contracts::{translate_contract_definition, translate_using_directive},
-        enums::{
-            translate_enum_definition, translate_error_definition, translate_event_definition,
-        },
-        functions::{translate_function_declaration, translate_function_definition},
-        import_directives::translate_import_directives,
-        storage::translate_storage_name,
-        structs::translate_struct_definition,
-        type_definitions::translate_type_definition,
-        TranslatedDefinition,
-    },
-};
+use crate::{errors::Error, sway, translate::*};
 use convert_case::Case;
 use num_bigint::BigUint;
 use num_traits::One;
@@ -492,7 +477,7 @@ impl Project {
                 *constructor_fn.body.as_mut().unwrap() = constructor_body;
 
                 if constructor_fn.attributes.is_none() {
-                    constructor_fn.attributes = Some(AttributeList::default());
+                    constructor_fn.attributes = Some(sway::AttributeList::default());
                 }
 
                 let Some(attributes) = constructor_fn.attributes.as_mut() else { unreachable!() };

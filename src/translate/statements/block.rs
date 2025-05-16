@@ -1,7 +1,6 @@
-use std::{cell::RefCell, rc::Rc};
+use crate::{errors::Error, project::Project, sway, translate::*};
 use solang_parser::pt as solidity;
-use crate::{errors::Error, project::Project, sway, translate::{TranslatedDefinition, TranslationScope}};
-use super::translate_statement;
+use std::{cell::RefCell, rc::Rc};
 
 pub fn translate_block(
     project: &mut Project,

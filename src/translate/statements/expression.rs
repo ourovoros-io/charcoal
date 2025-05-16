@@ -1,7 +1,7 @@
-use std::{cell::RefCell, rc::Rc};
+use crate::{errors::Error, project::Project, sway, translate::*};
 use convert_case::Case;
 use solang_parser::pt as solidity;
-use crate::{errors::Error, project::Project, sway, translate::{expressions::{assignment::translate_assignment_expression, translate_expression}, type_names::translate_type_name, TranslatedDefinition, TranslatedVariable, TranslationScope}};
+use std::{cell::RefCell, rc::Rc};
 
 #[inline]
 pub fn translate_expression_statement(

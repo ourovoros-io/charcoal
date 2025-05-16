@@ -1,11 +1,13 @@
-use std::{cell::RefCell, rc::Rc};
+use crate::{
+    errors::Error,
+    project::Project,
+    sway,
+    translate::*,
+};
 use num_bigint::BigUint;
 use num_traits::Zero;
 use solang_parser::{helpers::CodeLocation, pt as solidity};
-
-use crate::{errors::Error, project::Project, sway, translate::{expressions::function_call::utils::{resolve_function_call, resolve_struct_constructor}, TranslatedDefinition, TranslationScope}};
-
-use super::utils::coerce_expression;
+use std::{cell::RefCell, rc::Rc};
 
 /// Translates solidity build in types
 /// Note: function argument is only needed for the loc debug in the end of the function

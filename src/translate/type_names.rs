@@ -1,5 +1,4 @@
-use super::{expressions::translate_expression, TranslatedDefinition, TranslationScope};
-use crate::{project::Project, sway};
+use crate::{project::Project, sway, translate::*};
 use solang_parser::{helpers::CodeLocation, pt as solidity};
 use std::{cell::RefCell, rc::Rc};
 

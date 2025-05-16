@@ -1,13 +1,14 @@
-use std::{cell::RefCell, rc::Rc};
+use crate::{
+    errors::Error,
+    project::Project,
+    sway,
+    translate::*,
+};
 use convert_case::Case;
 use num_bigint::BigUint;
 use num_traits::One;
 use solang_parser::{helpers::CodeLocation, pt as solidity};
-use crate::{
-    errors::Error,
-    project::Project,
-    sway, translate::{expressions::{address_call::translate_address_call_expression, function_call::utils::{coerce_expression, resolve_function_call}, translate_expression, variable::translate_variable_access_expression}, type_names::translate_type_name, TranslatedDefinition, TranslationScope}
-};
+use std::{cell::RefCell, rc::Rc};
 
 pub fn translate_member_access_function_call(
     project: &mut Project,

@@ -1,9 +1,9 @@
-use std::{cell::RefCell, rc::Rc};
+use crate::{errors::Error, project::Project, sway, translate::*};
 use convert_case::Case;
 use num_bigint::BigUint;
 use num_traits::{One, Zero};
 use solang_parser::pt as solidity;
-use crate::{errors::Error, project::Project, sway, translate::{expressions::{create_value_expression, function_call::utils::coerce_expression, pre_post::translate_pre_or_post_operator_value_expression, translate_expression}, type_names::translate_type_name, TranslatedDefinition, TranslatedVariable, TranslationScope}};
+use std::{cell::RefCell, rc::Rc};
 
 #[inline]
 pub fn translate_variable_definition_statement(

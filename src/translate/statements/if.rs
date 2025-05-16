@@ -1,7 +1,6 @@
+use crate::{errors::Error, project::Project, sway, translate::*};
 use std::{cell::RefCell, rc::Rc};
 use solang_parser::pt as solidity;
-use crate::{errors::Error, project::Project, sway, translate::{expressions::translate_expression, TranslatedDefinition, TranslationScope}};
-use super::translate_statement;
 
 #[inline]
 pub fn translate_if_statement(

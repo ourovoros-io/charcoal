@@ -1,9 +1,14 @@
-use std::{cell::RefCell, rc::Rc};
-use num_bigint::BigUint;
-use solang_parser::{helpers::CodeLocation, pt as solidity};
-use num_traits::{Num, One, Zero};
-use crate::{errors::Error, project::Project, sway, translate::{expressions::translate_expression, TranslatedDefinition, TranslationScope}};
 use super::utils::match_bits;
+use crate::{
+    errors::Error,
+    project::Project,
+    sway,
+    translate::*,
+};
+use num_bigint::BigUint;
+use num_traits::{Num, One, Zero};
+use solang_parser::{helpers::CodeLocation, pt as solidity};
+use std::{cell::RefCell, rc::Rc};
 
 pub fn translate_address_type_cast_function_call(
     project: &mut Project,

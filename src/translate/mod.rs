@@ -1,14 +1,28 @@
-pub mod assembly;
-pub mod contracts;
-pub mod enums;
-pub mod expressions;
-pub mod functions;
-pub mod import_directives;
-pub mod statements;
-pub mod storage;
-pub mod structs;
-pub mod type_definitions;
-pub mod type_names;
+mod assembly;
+mod contracts;
+mod enums;
+mod expressions;
+mod functions;
+mod import_directives;
+mod statements;
+mod storage;
+mod structs;
+mod type_definitions;
+mod type_names;
+
+pub use self::{
+    assembly::*,
+    contracts::*,
+    enums::*,
+    expressions::*,
+    functions::*,
+    import_directives::*,
+    statements::*,
+    storage::*,
+    structs::*,
+    type_definitions::*,
+    type_names::*,
+};
 
 use crate::{errors::Error, project::Project, sway};
 use convert_case::{Case, Casing};

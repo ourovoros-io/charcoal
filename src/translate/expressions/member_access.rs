@@ -1,10 +1,9 @@
-use std::{cell::RefCell, rc::Rc};
+use crate::{errors::Error, project::Project, sway, translate::*};
 use convert_case::Case;
 use num_bigint::BigUint;
 use num_traits::Zero;
 use solang_parser::{helpers::CodeLocation, pt as solidity};
-use crate::{errors::Error, project::Project, sway, translate::{type_names::translate_type_name, TranslatedDefinition, TranslationScope}};
-use super::translate_expression;
+use std::{cell::RefCell, rc::Rc};
 
 #[inline]
 pub fn translate_member_access_expression(

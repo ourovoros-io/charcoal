@@ -1,8 +1,7 @@
-use std::{cell::RefCell, rc::Rc};
+use crate::{errors::Error, project::Project, sway, translate::*};
 use convert_case::Case;
 use solang_parser::pt as solidity;
-use crate::{errors::Error, project::Project, sway, translate::{expressions::translate_expression, translate_naming_convention, type_names::translate_type_name, TranslatedDefinition, TranslatedVariable, TranslationScope}};
-use super::translate_statement;
+use std::{cell::RefCell, rc::Rc};
 
 #[allow(clippy::type_complexity)]
 pub fn translate_try_catch_statement(

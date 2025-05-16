@@ -1,9 +1,6 @@
-use std::{cell::RefCell, rc::Rc};
+use crate::{errors::Error, project::Project, sway, translate::*};
 use solang_parser::pt as solidity;
-
-use crate::{errors::Error, project::Project, sway, translate::{TranslatedDefinition, TranslationScope}};
-
-use super::translate_expression;
+use std::{cell::RefCell, rc::Rc};
 
 #[inline]
 pub fn translate_parenthesis_expression(
