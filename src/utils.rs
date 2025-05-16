@@ -139,13 +139,13 @@ pub fn collect_source_unit_paths(
 
 pub fn create_usage_queue(
     project: &mut crate::project::Project,
-    mut paths: Vec<PathBuf>,
+    paths: Vec<PathBuf>,
 ) -> Result<Vec<PathBuf>, Error> {
-    // 1. Build a mapping of files paths to the number of times that that file is imported from another file
+    // Build a mapping of file paths to import paths, and file paths to the number of times that that file is imported from another file
     let mut import_paths = HashMap::new();
     let mut import_counts = HashMap::new();
 
-    fn visit_file_1(
+    fn collect_imports(
         project: &mut Project,
         path: &Path,
         import_paths: &mut HashMap<PathBuf, Vec<PathBuf>>,
@@ -154,16 +154,13 @@ pub fn create_usage_queue(
         import_counts.entry(path.into()).or_insert(0);
 
         project.parse_solidity_source_unit(path).unwrap();
-
-        let ast = project.solidity_source_units.borrow()
-            .get(path).cloned()
-            .unwrap();
+        let ast = project.solidity_source_units.borrow().get(path).cloned().unwrap();
         
         if !import_paths.contains_key(path) {
             let paths = get_import_paths(project, &ast, path).unwrap();
 
             for import_path in paths.iter() {
-                visit_file_1(project, import_path, import_paths, import_counts);
+                collect_imports(project, import_path, import_paths, import_counts);
                 *import_counts.entry(import_path.clone()).or_insert(0) += 1;
             }
             
@@ -172,31 +169,36 @@ pub fn create_usage_queue(
     }
 
     for path in paths.iter() {
-        visit_file_1(project, path, &mut import_paths, &mut import_counts);
+        collect_imports(project, path, &mut import_paths, &mut import_counts);
     }
 
-    // 2a. Start with all the files that have a import count of 0
-    // 2b. When visiting a file you visit each of its imports first, inserting them higher in the queue before inserting the current file
-    // 2c. After visiting each import path find the entry of import in the dependent file paths mapping and add the current file to the import path entry
-    fn visit_file_2(project: &mut Project, import_paths: &HashMap<PathBuf, Vec<PathBuf>>, path: &Path, deps: &mut Vec<(PathBuf, Vec<PathBuf>)>) {
+    // Start with all the files that have an import count of 0 (as in they are never imported by another file)
+    // When visiting a file you visit each of its imports first, inserting them higher in the queue before inserting the current file
+    // After visiting each import path, add the path of the current file
+    fn queue_imports(
+        project: &mut Project,
+        import_paths: &HashMap<PathBuf, Vec<PathBuf>>,
+        path: &Path,
+        queue: &mut Vec<PathBuf>,
+    ) {
         let current_import_paths =  import_paths.get(path).unwrap();
 
         for import_path in current_import_paths.iter() {
-            visit_file_2(project, import_paths, import_path, deps);
+            queue_imports(project, import_paths, import_path, queue);
         }
 
-        if !deps.iter().any(|(p, _)| p == path) {
-            deps.push((path.into(), current_import_paths.clone()));
+        if !queue.iter().any(|p| p == path) {
+            queue.push(path.into());
         }
     }
 
-    let mut deps = vec![];
+    let mut queue = vec![];
 
     for (path, _) in  import_counts.iter().filter(|&(_, x)| *x == 0) {
-        visit_file_2(project, &import_paths, path, &mut deps);
+        queue_imports(project, &import_paths, path, &mut queue);
     }
 
-    Ok(deps.iter().map(|d| d.0.clone()).collect())
+    Ok(queue)
 }
 
 pub fn get_import_paths(
