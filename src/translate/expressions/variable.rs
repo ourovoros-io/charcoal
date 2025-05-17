@@ -249,8 +249,8 @@ pub fn translate_variable_access_expression(
                         continue;
                     }
 
-                    let member_name = crate::translate::translate_naming_convention(&member.name, Case::Snake);
-                    let new_name = format!("{}_{}", crate::translate::translate_naming_convention(&external_definition.name, Case::Snake), member_name);
+                    let member_name = translate_naming_convention(&member.name, Case::Snake);
+                    let new_name = format!("{}_{}", translate_naming_convention(&external_definition.name, Case::Snake), member_name);
                     
                     if translated_definition.toplevel_scope.borrow().find_function(|f| f.borrow().new_name == new_name).is_none() {
                         // Get the scope entry for the library function
@@ -351,7 +351,7 @@ pub fn translate_variable_access_expression(
 
             // Check if container is a struct
             if let Some(struct_definition) = translated_definition.structs.iter().find(|s| s.borrow().name == container_type_name_string) {
-                let field_name = crate::translate::translate_naming_convention(member.name.as_str(), Case::Snake);
+                let field_name = translate_naming_convention(member.name.as_str(), Case::Snake);
                 
                 if struct_definition.borrow().fields.iter().any(|f| f.name == field_name) {
                     return Ok((

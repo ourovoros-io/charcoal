@@ -1,9 +1,4 @@
-use crate::{
-    errors::Error,
-    project::Project,
-    sway,
-    translate::*,
-};
+use crate::{errors::Error, project::Project, sway, translate::*};
 use solang_parser::pt as solidity;
 use std::{cell::RefCell, rc::Rc};
 

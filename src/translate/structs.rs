@@ -13,7 +13,7 @@ pub fn translate_struct_definition(
 
     for field in struct_definition.fields.iter() {
         // TODO: keep track of original struct name?
-        let name = crate::translate::translate_naming_convention(field.name.as_ref().unwrap().name.as_str(), Case::Snake);
+        let name = translate_naming_convention(field.name.as_ref().unwrap().name.as_str(), Case::Snake);
         let mut type_name = translate_type_name(project, translated_definition, &field.ty, false, false);
 
         if let sway::TypeName::Identifier { name, generic_parameters } = &type_name {

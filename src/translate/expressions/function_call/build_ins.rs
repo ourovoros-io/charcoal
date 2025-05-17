@@ -1,9 +1,4 @@
-use crate::{
-    errors::Error,
-    project::Project,
-    sway,
-    translate::*,
-};
+use crate::{errors::Error, project::Project, sway, translate::*};
 use num_bigint::BigUint;
 use num_traits::Zero;
 use solang_parser::{helpers::CodeLocation, pt as solidity};
@@ -421,4 +416,3 @@ pub fn translate_builtin_function_call(
         }
     }
 }
-

@@ -720,7 +720,12 @@ impl TranslatedDefinition {
 
     /// Gets the name of the storage namespace from the translated definition.
     #[inline]
-    pub fn get_storage_namespace_name(&mut self) -> String {
+    pub fn get_storage_namespace_name(&self) -> String {
+        translate_naming_convention(&self.name, Case::Snake)
+    }
+
+    #[inline]
+    pub fn get_module_name(&self) -> String {
         translate_naming_convention(&self.name, Case::Snake)
     }
  

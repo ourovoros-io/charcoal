@@ -1,9 +1,4 @@
-use crate::{
-    errors::Error,
-    project::Project,
-    sway,
-    translate::*,
-};
+use crate::{errors::Error, project::Project, sway, translate::*};
 use convert_case::Case;
 use num_bigint::BigUint;
 use num_traits::One;
@@ -87,7 +82,7 @@ pub fn translate_member_access_function_call(
 
                                 _ => {
                                     let mut name = name.clone();
-                                    let external_function_new_name = crate::translate::translate_naming_convention(member.name.as_str(), Case::Snake);
+                                    let external_function_new_name = translate_naming_convention(member.name.as_str(), Case::Snake);
 
                                     // Check if expression is a variable that had an ABI type
                                     if let Some(variable) = variable.as_ref() {
@@ -265,7 +260,7 @@ pub fn translate_function_call_block_member_access(
 
                 _ => {
                     let mut name = name.clone();
-                    let external_function_new_name = crate::translate::translate_naming_convention(
+                    let external_function_new_name = translate_naming_convention(
                         member.name.as_str(),
                         Case::Snake,
                     );
@@ -488,8 +483,8 @@ pub fn translate_identity_member_access_function_call(
     }
 
     let mut name = name.clone();
-    let new_name_lower = crate::translate::translate_naming_convention(member.name.as_str(), Case::Snake);
-    let new_name_upper = crate::translate::translate_naming_convention(member.name.as_str(), Case::Constant);
+    let new_name_lower = translate_naming_convention(member.name.as_str(), Case::Snake);
+    let new_name_upper = translate_naming_convention(member.name.as_str(), Case::Constant);
 
     // Check using directives for Identity-specific function
     for using_directive in translated_definition.using_directives.iter() {

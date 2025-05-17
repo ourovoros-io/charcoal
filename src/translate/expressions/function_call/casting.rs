@@ -1,10 +1,4 @@
-use super::utils::match_bits;
-use crate::{
-    errors::Error,
-    project::Project,
-    sway,
-    translate::*,
-};
+use crate::{errors::Error, project::Project, sway, translate::*};
 use num_bigint::BigUint;
 use num_traits::{Num, One, Zero};
 use solang_parser::{helpers::CodeLocation, pt as solidity};

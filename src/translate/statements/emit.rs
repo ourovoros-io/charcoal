@@ -1,9 +1,4 @@
-use crate::{
-    errors::Error,
-    project::Project,
-    sway,
-    translate::*,
-};
+use crate::{errors::Error, project::Project, sway, translate::*};
 use convert_case::Case;
 use solang_parser::{helpers::CodeLocation, pt as solidity};
 use std::{cell::RefCell, rc::Rc};
@@ -26,7 +21,7 @@ pub fn translate_emit_statement(
                     };
 
                     let event_variant_name =
-                        crate::translate::translate_naming_convention(&member.name, Case::Pascal);
+                        translate_naming_convention(&member.name, Case::Pascal);
 
                     // Check if container is contained in an external definition
                     if let Some(external_definition) = project

@@ -1,4 +1,4 @@
-use crate::{errors::Error, sway, translate::*};
+use crate::{errors::Error, sway, translate::*, utils};
 use convert_case::Case;
 use num_bigint::BigUint;
 use num_traits::One;
@@ -56,14 +56,12 @@ impl Project {
             )));
         }
 
-        let path = crate::get_canonical_path(path, false, false)
-            .map_err(|e| Error::Wrapped(Box::new(e)))?;
-        
+        let path = utils::get_canonical_path(path, false, false)?;
+
         let source = std::fs::read_to_string(path.clone())
             .map_err(|e| Error::Wrapped(Box::new(e)))?;
         
         self.load_line_ranges(&path, source.as_str());
-
         let line_ranges = self.line_ranges.get(&path).unwrap();
 
         let (source_unit, _comments) = solang_parser::parse(source.as_str(), 0)
@@ -151,8 +149,7 @@ impl Project {
             import_path = source_unit_directory.join(import_path);
         }
         
-        import_path = crate::get_canonical_path(import_path, false, false)
-            .map_err(|e| Error::Wrapped(Box::new(e))).unwrap();
+        import_path = utils::get_canonical_path(import_path, false, false)?;
         
         if !import_path.exists() {
             return Err(Error::Wrapped(Box::new(
@@ -353,7 +350,7 @@ impl Project {
 
             // Insert constructor call guard if necessary
             if constructor_body.statements.is_empty() {
-                let prefix = crate::translate::translate_naming_convention(translated_definition.name.as_str(), Case::Snake);
+                let prefix = translate_naming_convention(translated_definition.name.as_str(), Case::Snake);
                 let constructor_called_variable_name =  translate_storage_name(project, translated_definition, format!("{prefix}_constructor_called").as_str());
 
                 // Add the `constructor_called` field to the storage block
@@ -562,6 +559,7 @@ impl Project {
     /// Get the project type from the [PathBuf] and return a [ProjectKind]
     pub fn detect_project_type<P: AsRef<Path>>(&mut self, path: P) -> Result<(), Error> {
         let path = path.as_ref();
+        
         if path.join(ProjectKind::FOUNDRY_CONFIG_FILE).exists() {
             self.kind = ProjectKind::Foundry {
                 remappings: HashMap::new(),

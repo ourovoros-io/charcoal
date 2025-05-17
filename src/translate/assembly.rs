@@ -157,7 +157,7 @@ pub fn translate_yul_variable_declaration_statement(
     for p in identifiers.iter() {
         variables.push(Rc::new(RefCell::new(TranslatedVariable {
             old_name: p.id.name.clone(),
-            new_name: crate::translate::translate_naming_convention(p.id.name.as_str(), Case::Snake),
+            new_name: translate_naming_convention(p.id.name.as_str(), Case::Snake),
             type_name: sway::TypeName::Identifier {
                 name: "u256".into(),
                 generic_parameters: None,

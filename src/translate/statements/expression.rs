@@ -39,7 +39,7 @@ pub fn translate_expression_statement(
 
                     variables.push(Rc::new(RefCell::new(TranslatedVariable {
                         old_name: name.name.clone(),
-                        new_name: crate::translate::translate_naming_convention(name.name.as_str(), Case::Snake),
+                        new_name: translate_naming_convention(name.name.as_str(), Case::Snake),
                         type_name: translate_type_name(project, translated_definition, &p.ty, false, false),
                         ..Default::default()
                     })));
@@ -55,7 +55,7 @@ pub fn translate_expression_statement(
                                 is_mutable: false,
                                 name: if let Some(p) = p.as_ref() {
                                     if let Some(name) = p.name.as_ref() {
-                                        crate::translate::translate_naming_convention(name.name.as_str(), Case::Snake)
+                                        translate_naming_convention(name.name.as_str(), Case::Snake)
                                     } else {
                                         "_".into()
                                     }

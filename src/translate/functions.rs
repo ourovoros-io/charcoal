@@ -27,7 +27,7 @@ pub fn translate_function_name(
     // Add the translated function name to the function names mapping if we haven't already
     if !translated_definition.function_names.contains_key(&signature) {
         let old_name = function_definition.name.as_ref().map(|i| i.name.clone()).unwrap_or_default();
-        let mut new_name = crate::translate::translate_naming_convention(old_name.as_str(), Case::Snake);
+        let mut new_name = translate_naming_convention(old_name.as_str(), Case::Snake);
 
         // Increase the function name count
         let count = translated_definition.function_name_counts.entry(new_name.clone()).or_insert(0);
@@ -50,18 +50,19 @@ pub fn translate_function_declaration(
     translated_definition: &mut TranslatedDefinition,
     function_definition: &solidity::FunctionDefinition,
 ) -> Result<TranslatedFunction, Error> {
-    let new_name = function_definition.ty.to_string();
-    
-    let (old_name, mut new_name) = if matches!(function_definition.ty, solidity::FunctionTy::Function | solidity::FunctionTy::Modifier) {
-        let old_name = function_definition.name.as_ref().unwrap().name.clone();
-        let new_name = translate_function_name(project, translated_definition, function_definition);
-        (old_name, new_name)
-    } else {
-        (String::new(), new_name)
+    let module_name = translated_definition.get_module_name();
+
+    let (old_name, mut new_name) = match &function_definition.ty {
+        solidity::FunctionTy::Function | solidity::FunctionTy::Modifier => {
+            let old_name = function_definition.name.as_ref().unwrap().name.clone();
+            let new_name = translate_function_name(project, translated_definition, function_definition);
+            (old_name, new_name)
+        }
+        _ => (String::new(), function_definition.ty.to_string()),
     };
 
     if let Some(solidity::ContractTy::Abstract(_) | solidity::ContractTy::Library(_)) = &translated_definition.kind {
-        new_name = format!("{}_{}", crate::translate::translate_naming_convention(&translated_definition.name, Case::Snake), new_name);
+        new_name = format!("{}_{}", module_name, new_name);
     }
     
     // Add the function to the conversion stack
@@ -79,7 +80,7 @@ pub fn translate_function_declaration(
         let Some(parameter_identifier) = p.name.as_ref() else { continue };
         
         let old_name = parameter_identifier.name.clone();
-        let new_name = crate::translate::translate_naming_convention(old_name.as_str(), Case::Snake);
+        let new_name = translate_naming_convention(old_name.as_str(), Case::Snake);
         let type_name = translate_type_name(project, translated_definition, &p.ty, false, true);
 
         scope.borrow_mut().variables.push(Rc::new(RefCell::new(TranslatedVariable {
@@ -98,7 +99,7 @@ pub fn translate_function_declaration(
         let solidity::FunctionAttribute::BaseOrModifier(_, base) = attr else { continue };
 
         let old_name = base.name.identifiers.iter().map(|i| i.name.clone()).collect::<Vec<_>>().join(".");
-        let new_name = crate::translate::translate_naming_convention(old_name.as_str(), Case::Snake);
+        let new_name = translate_naming_convention(old_name.as_str(), Case::Snake);
 
         let parameters = base.args.as_ref()
             .map(|args| args.iter().map(|a| translate_expression(project, translated_definition, &scope, a)).collect::<Result<Vec<_>, _>>())
@@ -106,7 +107,7 @@ pub fn translate_function_declaration(
 
         // Check to see if base is a constructor call
         if project.find_definition_with_abi(old_name.as_str()).is_some() {
-            let prefix = crate::translate::translate_naming_convention(old_name.as_str(), Case::Snake);
+            let prefix = translate_naming_convention(old_name.as_str(), Case::Snake);
             let name = format!("{prefix}_constructor");
             
             constructor_calls.push(sway::FunctionCall {
@@ -131,7 +132,7 @@ pub fn translate_function_declaration(
 
     for (_, parameter) in function_definition.params.iter() {
         let old_name = parameter.as_ref().unwrap().name.as_ref().map_or("_".into(), |n| n.name.clone());
-        let new_name = crate::translate::translate_naming_convention(old_name.as_str(), Case::Snake);
+        let new_name = translate_naming_convention(old_name.as_str(), Case::Snake);
         let mut type_name = translate_type_name(project, translated_definition, &parameter.as_ref().unwrap().ty, false, true);
 
         // Check if the parameter's type is an ABI
@@ -205,7 +206,7 @@ pub fn translate_modifier_definition(
     function_definition: &solidity::FunctionDefinition,
 ) -> Result<(), Error> {
     let old_name = function_definition.name.as_ref().unwrap().name.clone();
-    let new_name = crate::translate::translate_naming_convention(old_name.as_str(), Case::Snake);
+    let new_name = translate_naming_convention(old_name.as_str(), Case::Snake);
 
     translated_definition.current_functions.push(new_name.clone());
 
@@ -226,7 +227,7 @@ pub fn translate_modifier_definition(
 
     for (_, p) in function_definition.params.iter() {
         let old_name = p.as_ref().unwrap().name.as_ref().unwrap().name.clone();
-        let new_name = crate::translate::translate_naming_convention(old_name.as_str(), Case::Snake);
+        let new_name = translate_naming_convention(old_name.as_str(), Case::Snake);
         let type_name = translate_type_name(project, translated_definition, &p.as_ref().unwrap().ty, false, true);
 
         modifier.parameters.entries.push(sway::Parameter {
@@ -571,7 +572,7 @@ pub fn translate_function_definition(
     };
 
     if let Some(solidity::ContractTy::Abstract(_) | solidity::ContractTy::Library(_)) = &translated_definition.kind {
-       new_name = format!("{}_{}", crate::translate::translate_naming_convention(&translated_definition.name, Case::Snake), new_name);
+       new_name = format!("{}_{}", translate_naming_convention(&translated_definition.name, Case::Snake), new_name);
     }
 
     translated_definition.current_functions.push(new_name.clone());
@@ -592,7 +593,7 @@ pub fn translate_function_definition(
 
     for (_, parameter) in function_definition.params.iter() {
         let old_name = parameter.as_ref().unwrap().name.as_ref().map(|n| n.name.clone()).unwrap_or(parameter_names.next().unwrap().to_string());
-        let new_name = crate::translate::translate_naming_convention(old_name.as_str(), Case::Snake);
+        let new_name = translate_naming_convention(old_name.as_str(), Case::Snake);
         let mut type_name = translate_type_name(project, translated_definition, &parameter.as_ref().unwrap().ty, false, true);
 
         // Check if the parameter's type is an ABI and make it an Identity
@@ -721,7 +722,7 @@ pub fn translate_function_definition(
 
     for (_, p) in function_definition.params.iter() {
         let old_name = p.as_ref().unwrap().name.as_ref().map_or("_".into(), |n| n.name.clone());
-        let new_name = crate::translate::translate_naming_convention(old_name.as_str(), Case::Snake);
+        let new_name = translate_naming_convention(old_name.as_str(), Case::Snake);
         let mut type_name = translate_type_name(project, translated_definition, &p.as_ref().unwrap().ty, false, true);
         let mut abi_type_name = None;
 
@@ -760,7 +761,7 @@ pub fn translate_function_definition(
     for (_, return_parameter) in function_definition.returns.iter() {
         let Some(return_parameter) = return_parameter else { continue };
         let Some(old_name) = return_parameter.name.as_ref().map(|n| n.name.clone()) else { continue };
-        let new_name = crate::translate::translate_naming_convention(old_name.as_str(), Case::Snake);
+        let new_name = translate_naming_convention(old_name.as_str(), Case::Snake);
         let mut type_name = translate_type_name(project, translated_definition, &return_parameter.ty, false, true);
         let mut abi_type_name = None;
 
@@ -792,7 +793,7 @@ pub fn translate_function_definition(
     let mut function_body = translate_block(project, translated_definition, &scope, statements.as_slice())?;
 
     if is_constructor {
-        let prefix = crate::translate::translate_naming_convention(translated_definition.name.as_str(), Case::Snake);
+        let prefix = translate_naming_convention(translated_definition.name.as_str(), Case::Snake);
         let constructor_called_variable_name =  translate_storage_name(project, translated_definition, format!("{prefix}_constructor_called").as_str());
         
         let namespace_name = translated_definition.get_storage_namespace_name();

@@ -386,7 +386,7 @@ pub fn translate_member_access_expression(
                     sway::TypeName::Identifier { name: enum_name, .. } => enum_name == name,
                     _ => false
                 }) {
-                    let new_name = crate::translate::translate_naming_convention(member, Case::Constant);
+                    let new_name = translate_naming_convention(member, Case::Constant);
 
                     // Check to see if member is part of translated enum
                     if let Some(sway::ImplItem::Constant(c)) = translated_enum.variants_impl.items.iter().find(|i| match i {
@@ -460,7 +460,7 @@ pub fn translate_member_access_expression(
                             panic!("Expected Identifier type name, found {:#?}", external_enum.type_definition.name);
                         };
     
-                        let variant_name = crate::translate::translate_naming_convention(member.name.as_str(), Case::Constant);
+                        let variant_name = translate_naming_convention(member.name.as_str(), Case::Constant);
     
                         // Ensure the variant exists
                         if external_enum.variants_impl.items.iter().any(|i| {
@@ -490,7 +490,7 @@ pub fn translate_member_access_expression(
     
         // Check if container is a struct
         if let Some(struct_definition) = translated_definition.structs.iter().find(|s| s.borrow().name == container_type_name_string) {
-            let field_name = crate::translate::translate_naming_convention(member.name.as_str(), Case::Snake);
+            let field_name = translate_naming_convention(member.name.as_str(), Case::Snake);
     
             if struct_definition.borrow().fields.iter().any(|f| f.name == field_name) {
                 return Ok(Some(sway::Expression::from(sway::MemberAccess {

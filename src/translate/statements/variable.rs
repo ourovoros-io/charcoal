@@ -14,7 +14,7 @@ pub fn translate_variable_definition_statement(
     initializer: Option<&solidity::Expression>,
 ) -> Result<sway::Statement, Error> {
     let old_name = variable_declaration.name.as_ref().unwrap().name.clone();
-    let new_name = crate::translate::translate_naming_convention(old_name.as_str(), Case::Snake);
+    let new_name = translate_naming_convention(old_name.as_str(), Case::Snake);
     let mut type_name = translate_type_name(project, translated_definition, &variable_declaration.ty, false, false);
     let mut abi_type_name = None;
 

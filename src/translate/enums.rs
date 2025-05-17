@@ -35,7 +35,7 @@ pub fn translate_enum_definition(
     for (i, value) in enum_definition.values.iter().enumerate() {
         variants_impl.items.push(sway::ImplItem::Constant(sway::Constant {
             is_public: false,
-            name: crate::translate::translate_naming_convention(value.as_ref().unwrap().name.as_str(), Case::Constant),
+            name: translate_naming_convention(value.as_ref().unwrap().name.as_str(), Case::Constant),
             type_name: type_definition.name.clone(),
             value: Some(sway::Expression::from(sway::Literal::DecInt(BigUint::from(i), None))),
         }));

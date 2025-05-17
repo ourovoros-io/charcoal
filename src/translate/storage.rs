@@ -12,7 +12,7 @@ pub fn translate_storage_name(
     name: &str,
 ) -> String {
     if !translated_definition.storage_fields_names.contains_key(name) {
-        let mut new_name = crate::translate::translate_naming_convention(name, Case::Snake);
+        let mut new_name = translate_naming_convention(name, Case::Snake);
 
         let count = translated_definition.storage_fields_name_counts.entry(new_name.clone()).or_insert(0);
         *count += 1;
@@ -53,7 +53,7 @@ pub fn translate_state_variable(
     // Translate the variable's naming convention
     let old_name = variable_definition.name.as_ref().unwrap().name.clone();
     let new_name = if is_constant || is_immutable {
-        crate::translate::translate_naming_convention(old_name.as_str(), Case::Constant)
+        translate_naming_convention(old_name.as_str(), Case::Constant)
     } else {
         translate_storage_name(project, translated_definition, old_name.as_str())
     };
@@ -168,7 +168,7 @@ pub fn translate_state_variable(
                             let Some(storage_key_type) = option_type.storage_key_type() else { continue };
                             let Some(_) = storage_key_type.storage_map_type() else { continue };
 
-                            let struct_name = crate::translate::translate_naming_convention(struct_definition.borrow().name.as_str(), Case::Snake);
+                            let struct_name = translate_naming_convention(struct_definition.borrow().name.as_str(), Case::Snake);
 
                             if !translated_definition.mapping_names.iter().any(|(n, _)| *n == struct_name) {
                                 translated_definition.mapping_names.push((struct_name.clone(), vec![]));

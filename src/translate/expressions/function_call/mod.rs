@@ -1,16 +1,11 @@
-use crate::{
-    errors::Error,
-    project::Project,
-    sway,
-    translate::*,
-};
+use crate::{errors::Error, project::Project, sway, translate::*};
 use solang_parser::helpers::CodeLocation;
 use std::{cell::RefCell, rc::Rc};
 
-mod casting;
-mod utils;
 mod build_ins;
+mod casting;
 mod member_access;
+mod utils;
 
 pub use self::{
     casting::*,

@@ -12,7 +12,6 @@ use cli::Options;
 use errors::Error;
 use project::{Project, ProjectKind};
 use structopt::StructOpt;
-use utils::{collect_source_unit_paths, generate_forc_project, get_canonical_path};
 
 fn main() {
     if let Err(e) = translate_project() {
@@ -26,8 +25,7 @@ fn translate_project() -> Result<(), Error> {
 
     // If an output directory was supplied, canonicalize it
     if let Some(output_directory) = options.output_directory.as_mut() {
-        *output_directory = get_canonical_path(output_directory.clone(), true, true)
-            .map_err(|e| Error::Wrapped(Box::new(e)))?;
+        *output_directory = utils::get_canonical_path(output_directory.clone(), true, true)?;
     }
 
     let mut project = Project::default();
@@ -38,9 +36,7 @@ fn translate_project() -> Result<(), Error> {
         project.kind = ProjectKind::Unknown;
     }
     
-    let source_unit_paths = collect_source_unit_paths(&options.target, &project.kind)
-        .map_err(|e| Error::Wrapped(Box::new(e)))?;
-
+    let source_unit_paths = utils::collect_source_unit_paths(&options.target, &project.kind)?;
     let usage_queue = utils::create_usage_queue(&mut project, source_unit_paths)?;
 
     for source_unit_path in &usage_queue {
@@ -48,7 +44,7 @@ fn translate_project() -> Result<(), Error> {
 
         match options.output_directory.as_ref() {
             Some(output_directory) => {
-                generate_forc_project(&mut project, output_directory, options.definition_name.as_ref(), source_unit_path)?;
+                utils::generate_forc_project(&mut project, output_directory, options.definition_name.as_ref(), source_unit_path)?;
             }
 
             None => {

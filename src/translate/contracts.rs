@@ -334,7 +334,7 @@ pub fn translate_contract_definition(
             function.body = Some(sway::Block::default());
             let function_body = function.body.as_mut().unwrap();
     
-            let prefix = crate::translate::translate_naming_convention(translated_definition.name.as_str(), Case::Snake);
+            let prefix = translate_naming_convention(translated_definition.name.as_str(), Case::Snake);
             let constructor_called_variable_name =  translate_storage_name(project, translated_definition, format!("{prefix}_constructor_called").as_str());
             
             // Add the `constructor_called` field to the storage block
@@ -688,7 +688,7 @@ pub fn propagate_inherited_definitions(
                     if inherited_function.name == "constructor" {
                         let mut inherited_function = inherited_function.clone();
                         
-                        let prefix = crate::translate::translate_naming_convention(inherited_definition.name.as_str(), Case::Snake);
+                        let prefix = translate_naming_convention(inherited_definition.name.as_str(), Case::Snake);
                         inherited_function.name = format!("{prefix}_constructor");
 
                         if !translated_definition.functions.contains(&inherited_function) {

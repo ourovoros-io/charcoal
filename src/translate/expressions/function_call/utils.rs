@@ -1,9 +1,4 @@
-use crate::{
-    errors::Error,
-    project::Project,
-    sway,
-    translate::*,
-};
+use crate::{errors::Error, project::Project, sway, translate::*};
 use convert_case::Case;
 use num_bigint::BigUint;
 use num_traits::{One, Zero};
@@ -29,7 +24,7 @@ pub fn resolve_abi_function_call(
 
         for arg in named_arguments {
             named_parameters.push((
-                crate::translate::translate_naming_convention(&arg.name.name, Case::Snake),
+                translate_naming_convention(&arg.name.name, Case::Snake),
                 translate_expression(project, translated_definition, scope, &arg.expr)?,
             ));
         }
@@ -48,7 +43,7 @@ pub fn resolve_abi_function_call(
                 let arg = named_arguments.iter()
                     .find(|a| {
                         let new_name =
-                            crate::translate::translate_naming_convention(&a.name.name, Case::Snake);
+                            translate_naming_convention(&a.name.name, Case::Snake);
                         new_name == parameter.name
                     })
                     .unwrap();
@@ -270,7 +265,7 @@ pub fn resolve_function_call(
 
         for arg in named_arguments {
             named_parameters.push((
-                crate::translate::translate_naming_convention(&arg.name.name, Case::Snake),
+                translate_naming_convention(&arg.name.name, Case::Snake),
                 translate_expression(project, translated_definition, scope, &arg.expr)?,
             ));
         }
@@ -317,7 +312,7 @@ pub fn resolve_function_call(
                     .iter()
                     .find(|a| {
                         let new_name =
-                            crate::translate::translate_naming_convention(&a.name.name, Case::Snake);
+                            translate_naming_convention(&a.name.name, Case::Snake);
                         new_name == parameter.name
                     })
                     .unwrap();
@@ -356,7 +351,7 @@ pub fn resolve_function_call(
                     .iter()
                     .find(|a| {
                         let new_name =
-                            crate::translate::translate_naming_convention(&a.name.name, Case::Snake);
+                            translate_naming_convention(&a.name.name, Case::Snake);
                         new_name == parameter.name
                     })
                     .unwrap();
@@ -751,7 +746,7 @@ pub fn resolve_struct_constructor(
                         .iter()
                         .find(|a| {
                             let new_name =
-                                crate::translate::translate_naming_convention(&a.name.name, Case::Snake);
+                                translate_naming_convention(&a.name.name, Case::Snake);
                             new_name == field.name
                         })
                         .unwrap();
