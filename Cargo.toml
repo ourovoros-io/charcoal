@@ -9,7 +9,6 @@ solang-parser = "0.3.4"
 path-clean = "1.0.1"
 toml = "0.8.22"
 serde_yaml = "0.9.33"
-
-
-[dev-dependencies]
-tempfile = "3.19.1"
+num-bigint = "0.4.6"
+num-traits = "0.2.19"
+convert_case = "0.8.0"

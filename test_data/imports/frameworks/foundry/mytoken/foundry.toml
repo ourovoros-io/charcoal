@@ -1,7 +1,0 @@
-[profile.ci.fuzz]
-runs = 10_000
-
-[profile.default]
-remappings = [
-    "@math/=lib/math"
-]

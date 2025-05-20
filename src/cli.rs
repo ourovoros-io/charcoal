@@ -10,4 +10,8 @@ pub struct Args {
     #[arg(short, long)]
     /// The output folder to store the translated contracts.
     pub output_directory: Option<std::path::PathBuf>,
+
+    #[arg(short, long)]
+    /// The project root folder
+    pub root_folder: Option<std::path::PathBuf>,
 }
