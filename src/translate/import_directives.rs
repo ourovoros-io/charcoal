@@ -1,8 +1,7 @@
 use std::{cell::RefCell, path::PathBuf, rc::Rc};
-
-use crate::{error::Error, project::{Project, TranslatedModule}};
+use crate::{error::Error, project::Project};
 use solang_parser::{helpers::CodeLocation, pt as solidity};
-
+use super::TranslatedModule;
 
 #[inline]
 pub fn translate_import_directives(
@@ -10,17 +9,15 @@ pub fn translate_import_directives(
     translated_module: Rc<RefCell<TranslatedModule>>,
     import_directives: &[solidity::Import],
 ) -> Result<(), Error> {
-    let source_unit_directory = translated_module.borrow().path.parent().map(PathBuf::from).unwrap();
-
+    let source_unit_directory = project.root_folder.as_ref().unwrap().join(translated_module.borrow().path.parent().map(PathBuf::from).unwrap());
+    
     for import_directive in import_directives.iter() {
         match import_directive {
             solidity::Import::Plain(solidity::ImportPath::Filename(filename), _) => {
                 let import_path = project.canonicalize_import_path(&source_unit_directory, &filename.string)?;
                 let import_path = PathBuf::from(import_path.to_string_lossy().to_string().trim_start_matches(&project.root_folder.as_ref().unwrap().to_string_lossy().to_string()));
 
-                println!("import path : {import_path:#?}");
                 let imported_module = project.find_module(&import_path);
-                println!("imported module : {imported_module:#?}");
                 if imported_module.is_none() {
                     panic!(
                         "{}ERROR: failed to resolve import directive from `{import_directive}`",
@@ -57,7 +54,6 @@ pub fn translate_import_directives(
 
             _ => panic!("Unsupported import directive: {import_directive:#?}"),
         }
-        println!("--------");
     }
 
     Ok(())

@@ -6,7 +6,6 @@ edition = "2024"
 [dependencies]
 clap = { version = "4.5.37", features = ["derive"] }
 solang-parser = "0.3.4"
-path-clean = "1.0.1"
 toml = "0.8.22"
 serde_yaml = "0.9.33"
 num-bigint = "0.4.6"

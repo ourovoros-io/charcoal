@@ -1,6 +1,13 @@
 use solang_parser::diagnostics::Diagnostic;
 use std::path::PathBuf;
 
+#[macro_export]
+macro_rules! wrapped_err {
+    ($e: expr) => {
+        $e.map_err(|e| crate::error::Error::Wrapped(Box::new(e)))
+    };
+}
+
 #[derive(Debug)]
 pub enum Error {
     Wrapped(Box<dyn std::error::Error>),

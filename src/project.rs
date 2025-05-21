@@ -1,8 +1,8 @@
 use std::{cell::RefCell, collections::HashMap, path::{Component, Path, PathBuf}, rc::Rc};
-use convert_case::Casing;
+use convert_case::{Case, Casing};
 use solang_parser::pt as solidity;
 
-use crate::{error::Error, translate};
+use crate::{cli::Args, error::Error, translate::{self, TranslatedModule}, wrapped_err};
 
 /// Represents the type of project as [ProjectKind] default is [ProjectKind::Unknown]
 #[derive(Clone, Debug, Default)]
@@ -32,30 +32,54 @@ impl ProjectKind {
 #[derive(Default)]
 pub struct Project {
     pub root_folder: Option<PathBuf>,
+    pub output_directory: Option<PathBuf>,
     pub kind: ProjectKind,
+    pub queue: Vec<PathBuf>,
     pub line_ranges: HashMap<PathBuf, Vec<(usize, usize)>>,
     pub solidity_source_units: HashMap<PathBuf, solidity::SourceUnit>,
     pub translated_modules: Vec<Rc<RefCell<TranslatedModule>>>,
 }
 
-#[derive(Default, Debug)]
-pub struct TranslatedModule {
-    pub name: String,
-    pub path: PathBuf,
-    pub submodules: Vec<Rc<RefCell<TranslatedModule>>>,
-}
-
 impl Project {
+    pub fn new(options: &Args) -> Result<Self, Error> {
+        let (kind, root_folder) = match options.root_folder.as_ref() {
+            Some(root_folder) => {
+                let kind = Self::detect_project_type(&root_folder)?;
+                let root_folder = wrapped_err!(std::fs::canonicalize(root_folder.clone()))?;
+                (kind, Some(root_folder))
+            },
+            None => {
+                if let Some(root_path) = Self::find_project_root_folder(options.target.as_path()) {
+                    let kind = Self::detect_project_type(&root_path)?;
+                    (kind, Some(root_path))
+                } else {
+                    (ProjectKind::Unknown, None)
+                }
+            },
+        };
+
+        let mut result = Self {
+            root_folder,
+            output_directory: options.output_directory.clone(),
+            kind,
+            ..Default::default()
+        };
+
+        result.queue = result.create_usage_queue()?;
+
+        Ok(result)
+    }
+
     /// Attempts to parse the file from the supplied `path`.
     #[inline]
-    pub fn parse_solidity_source_unit<P: AsRef<Path>>(&mut self, path: P) -> Result<(), Error> {
+    fn parse_solidity_source_unit<P: AsRef<Path>>(&mut self, path: P) -> Result<(), Error> {
         if !path.as_ref().exists() {
             return Err(Error::Wrapped(format!("File not found: {}", path.as_ref().to_string_lossy()).into()));
         }
 
-        let path = crate::utils::get_canonical_path(path, false, false).map_err(|e| Error::Wrapped(e.into()))?;
+        let path = wrapped_err!(path.as_ref().canonicalize())?;
 
-        let source = std::fs::read_to_string(path.clone()).map_err(|e| Error::Wrapped(e.into()))?;
+        let source = wrapped_err!(std::fs::read_to_string(path.clone()))?;
         
         self.load_line_ranges(&path, source.as_str());
         let line_ranges = self.line_ranges.get(&path).unwrap();
@@ -88,7 +112,6 @@ impl Project {
         }
     }
 
-
     #[inline]
     pub fn loc_to_line_and_column<P: AsRef<Path>>(&self, path: P, loc: &solidity::Loc) -> Option<(usize, usize)> {
         let line_ranges = self.line_ranges.get(path.as_ref())?;
@@ -112,41 +135,52 @@ impl Project {
     }
 
     /// Get the project type from the [PathBuf] and return a [ProjectKind]
-    pub fn detect_project_type<P: AsRef<Path>>(&mut self, path: P) -> Result<(), Error> {
+    fn detect_project_type<P: AsRef<Path>>(path: P) -> Result<ProjectKind, Error> {
         let path = path.as_ref();
-        
+        let mut kind = ProjectKind::Unknown;
         if path.join(ProjectKind::FOUNDRY_CONFIG_FILE).exists() {
-            self.kind = ProjectKind::Foundry {
+            kind = ProjectKind::Foundry {
                 remappings: HashMap::new(),
             };
 
-            let remappings = self.get_remappings(path).map_err(|e| Error::Wrapped(
-                format!("Failed to get remappings for Foundry project: {e:#?}").into()
-            ))?;
+            let remappings = wrapped_err!(Self::get_remappings(&kind, path))?;
 
-            self.kind = ProjectKind::Foundry { remappings };
+            kind = ProjectKind::Foundry { remappings };
         } else if path.join(ProjectKind::HARDHAT_CONFIG_FILE).exists() || path.join(ProjectKind::HARDHAT_CONFIG_FILE_TS).exists() {
-            self.kind = ProjectKind::Hardhat;
+            kind = ProjectKind::Hardhat;
         } else if path.join(ProjectKind::BROWNIE_CONFIG_FILE).exists() {
-            self.kind = ProjectKind::Brownie { remappings: HashMap::new() };
+            kind = ProjectKind::Brownie { remappings: HashMap::new() };
 
-            self.kind = ProjectKind::Brownie { remappings: self.get_remappings(path).map_err(|e| Error::Wrapped(
-                format!("Failed to get remappings for Brownie project: {e:#?}").into()
-            ))? };
+            kind = ProjectKind::Brownie { remappings: wrapped_err!(Self::get_remappings(&kind, path))? };
         } else if path.join(ProjectKind::TRUFFLE_CONFIG_FILE).exists() {
-            self.kind = ProjectKind::Truffle;
+            kind = ProjectKind::Truffle;
         } else if path.join(ProjectKind::DAPP_CONFIG_FILE).exists() {
-            self.kind = ProjectKind::Dapp;
-        } else {
-            self.kind = ProjectKind::Unknown;
+            kind = ProjectKind::Dapp;
         }
 
-        Ok(())
+        Ok(kind)
+    }
+
+    /// Find a key in a [toml::Table] and return the [toml::Value]
+    fn find_in_toml_value(value: &toml::Value, key: &str) -> Option<toml::Value> {
+        match value {
+            toml::Value::Table(table) => {
+                for (k, v) in table {
+                    if k == key {
+                        return Some(v.clone());
+                    }
+                    if let Some(val) = Self::find_in_toml_value(v, key) {
+                        return Some(val);
+                    }
+                }
+                None
+            },
+            _ => None,
+        }
     }
 
     /// Get the project type path from the [ProjectKind] and return a [PathBuf]
-    pub fn get_project_type_path(&self, source_unit_directory: &Path, filename: &str) -> Result<PathBuf, Error> {
-
+    fn get_project_type_path(&self, source_unit_directory: &Path, filename: &str) -> Result<PathBuf, Error> {
         let Some(project_root_folder) = self.root_folder.as_ref() else {
             // If we cant find a project root folder we return the filename as is
             return Ok(PathBuf::from(filename));
@@ -177,6 +211,11 @@ impl Project {
             }
 
             ProjectKind::Dapp => {
+                if filename.starts_with('.') {
+                    let result = source_unit_directory.join(filename);
+                    return Ok(result);
+                }
+
                 let filename = PathBuf::from(filename);
                 let mut components: Vec<_> = filename.components().collect();
                 
@@ -207,26 +246,23 @@ impl Project {
     }
 
     /// Get the re mappings from the re mappings file on the root folder of the project represented by the [PathBuf]
-    fn get_remappings(&self, root_folder_path: &Path) -> Result<HashMap<String, String>, Error> {
-        match &self.kind {
+    fn get_remappings(kind: &ProjectKind, root_folder_path: &Path) -> Result<HashMap<String, String>, Error> {
+        match kind {
             ProjectKind::Foundry { .. } => {
                 let remappings_filename = "remappings.txt";
                 
                 let lines: Vec<String> = if root_folder_path.join(remappings_filename).exists() {
                     // Get the remappings.txt file from the root of the project folder
-                    let remappings_content = std::fs::read_to_string(root_folder_path.join(remappings_filename))
-                        .map_err(|e| Error::Wrapped(e.into()))?;
+                    let remappings_content = wrapped_err!(std::fs::read_to_string(root_folder_path.join(remappings_filename)))?;
 
                     remappings_content.lines().map(str::to_string).collect()
                 } else {
                     // Get foundry toml file from the root of the project folder
-                    let remappings_from_toml_str = std::fs::read_to_string(root_folder_path.join(ProjectKind::FOUNDRY_CONFIG_FILE))
-                        .map_err(|e| Error::Wrapped(e.into()))?;
+                    let remappings_from_toml_str = wrapped_err!(std::fs::read_to_string(root_folder_path.join(ProjectKind::FOUNDRY_CONFIG_FILE)))?;
         
-                    let remappings_from_toml: toml::Value = toml::from_str(&remappings_from_toml_str)
-                        .map_err(|e| Error::Wrapped(e.into()))?;
+                    let remappings_from_toml: toml::Value = wrapped_err!(toml::from_str(&remappings_from_toml_str))?;
 
-                    let value = find_in_toml_value(&remappings_from_toml, remappings_filename.strip_suffix(".txt").unwrap());
+                    let value = Self::find_in_toml_value(&remappings_from_toml, remappings_filename.strip_suffix(".txt").unwrap());
 
                     let Some(value) = value.as_ref() else { return Ok(HashMap::new()) };
 
@@ -250,11 +286,9 @@ impl Project {
             }
 
             ProjectKind::Brownie { .. } => {
-                let remappings_from_yaml_str = std::fs::read_to_string(root_folder_path.join(ProjectKind::BROWNIE_CONFIG_FILE))
-                    .map_err(|e| Error::Wrapped(e.into()))?;
+                let remappings_from_yaml_str = wrapped_err!(std::fs::read_to_string(root_folder_path.join(ProjectKind::BROWNIE_CONFIG_FILE)))?;
 
-                let remappings_from_yaml: serde_yaml::Value = serde_yaml::from_str(&remappings_from_yaml_str)
-                    .map_err(|e| Error::Wrapped(e.into()))?;
+                let remappings_from_yaml: serde_yaml::Value = wrapped_err!(serde_yaml::from_str(&remappings_from_yaml_str))?;
                 
                 let Some(compiler) = remappings_from_yaml.get("compiler") else {
                     return Err(Error::Wrapped("compiler key not found in brownie-config.yaml".into()))
@@ -288,6 +322,204 @@ impl Project {
         }
     }
 
+    /// Recursively check to find the root folder of the project and return a [PathBuf]
+    fn find_project_root_folder<P: AsRef<Path>>(path: P) -> Option<PathBuf> {
+        let path = path.as_ref();
+
+        if path.join(ProjectKind::FOUNDRY_CONFIG_FILE).exists()
+        || path.join(ProjectKind::HARDHAT_CONFIG_FILE).exists()
+        || path.join(ProjectKind::HARDHAT_CONFIG_FILE_TS).exists()
+        || path.join(ProjectKind::BROWNIE_CONFIG_FILE).exists()
+        || path.join(ProjectKind::TRUFFLE_CONFIG_FILE).exists() {
+            return Some(path.to_path_buf());
+        }
+
+        if let Some(parent) = path.parent() {
+            return Self::find_project_root_folder(parent);
+        }
+
+        None
+    }
+
+    /// Recursively search for .sol files in the given directory
+    fn collect_source_unit_paths(
+        path: &Path,
+        project_kind: &ProjectKind,
+    ) -> Result<Vec<PathBuf>, Error> {
+        let mut source_unit_paths = vec![];
+
+        if let ProjectKind::Hardhat | ProjectKind::Truffle = project_kind {
+            // Skip the node_modules folder. Only translate things that are imported explicitly.
+            if path.to_string_lossy().replace('\\', "/").contains("/node_modules/") {
+                return Ok(vec![]);
+            }
+        }
+
+        if !path.is_dir() {
+            assert!(path.extension().unwrap() == "sol", "Only solidity files are supported.");
+            
+            if !path.exists() {
+                return Err(Error::Wrapped(Box::new(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!("File not found: {}", path.to_string_lossy()),
+                ))));
+            }
+
+            source_unit_paths.push(wrapped_err!(path.canonicalize())?);
+        } else {
+            for entry in wrapped_err!(std::fs::read_dir(path))? {
+                let entry = wrapped_err!(entry)?;
+                let path = entry.path();
+        
+                if path.is_dir() {
+                    source_unit_paths.extend(Self::collect_source_unit_paths(&path, project_kind)?);
+                    continue;
+                }
+                
+                if let Some(extension) = path.extension() {
+                    if extension == "sol" {
+                        source_unit_paths.push(wrapped_err!(path.canonicalize())?);
+                    }
+                }
+            }
+        }
+
+        Ok(source_unit_paths)
+    }
+
+    fn create_usage_queue(&mut self) -> Result<Vec<PathBuf>, Error> {
+        let paths = Self::collect_source_unit_paths(self.root_folder.as_ref().unwrap(), &self.kind)?;
+
+        // Build a mapping of file paths to import paths, and file paths to the number of times that that file is imported from another file
+        let mut import_paths = HashMap::new();
+        let mut import_counts = HashMap::new();
+
+        fn collect_imports(
+            project: &mut Project,
+            path: &Path,
+            import_paths: &mut HashMap<PathBuf, Vec<PathBuf>>,
+            import_counts: &mut HashMap<PathBuf, i32>,
+        ) {
+            import_counts.entry(path.into()).or_insert(0);
+
+            project.parse_solidity_source_unit(path).unwrap();
+            let ast = project.solidity_source_units.get(path).cloned().unwrap();
+            
+            if !import_paths.contains_key(path) {
+                let paths = project.get_import_paths(&ast, path).unwrap();
+
+                for import_path in paths.iter() {
+                    collect_imports(project, import_path, import_paths, import_counts);
+                    *import_counts.entry(import_path.clone()).or_insert(0) += 1;
+                }
+                
+                import_paths.insert(path.into(), paths);
+            }
+        }
+
+        for path in paths.iter() {
+            collect_imports(self, path, &mut import_paths, &mut import_counts);
+        }
+
+        // Start with all the files that have an import count of 0 (as in they are never imported by another file)
+        // When visiting a file you visit each of its imports first, inserting them higher in the queue before inserting the current file
+        // After visiting each import path, add the path of the current file
+        fn queue_imports(
+            project: &mut Project,
+            import_paths: &HashMap<PathBuf, Vec<PathBuf>>,
+            path: &Path,
+            queue: &mut Vec<PathBuf>,
+        ) {
+            let current_import_paths =  import_paths.get(path).unwrap();
+
+            for import_path in current_import_paths.iter() {
+                queue_imports(project, import_paths, import_path, queue);
+            }
+
+            if !queue.iter().any(|p| p == path) {
+                queue.push(path.into());
+            }
+        }
+
+        let mut queue = vec![];
+
+        for (path, _) in  import_counts.iter().filter(|&(_, x)| *x == 0) {
+            queue_imports(self, &import_paths, path, &mut queue);
+        }
+
+        Ok(queue)
+    }
+
+    /// Returns all the contract imports
+    fn get_contract_imports(source_unit: &solidity::SourceUnit) -> Option<Vec<solidity::Import>> {
+        let imports: Vec<solidity::Import> = source_unit
+            .0
+            .iter()
+            .filter_map(|part| match part {
+                solidity::SourceUnitPart::ImportDirective(import) => Some(import),
+                _ => None,
+            })
+            .cloned()
+            .collect();
+
+        (!imports.is_empty()).then_some(imports)
+    }
+
+    fn get_import_paths(
+        &mut self,
+        ast: &solidity::SourceUnit,
+        source_unit_path: &Path,
+    ) -> Result<Vec<PathBuf>, Error> {
+        let mut import_paths = Vec::new();
+        if let Some(import_directives) = Self::get_contract_imports(&ast) {
+            for import_directive in &import_directives {
+                let import_path = match import_directive {
+                    solang_parser::pt::Import::Plain(import_path, _) => import_path,
+                    solang_parser::pt::Import::GlobalSymbol(import_path, _, _) => import_path,
+                    solang_parser::pt::Import::Rename(import_path, _, _) => import_path,
+                };
+
+                let import_path = match import_path {
+                    solang_parser::pt::ImportPath::Filename(path) => {
+                        std::path::PathBuf::from(path.to_string())
+                    }
+                    solang_parser::pt::ImportPath::Path(path) => {
+                        std::path::PathBuf::from(path.to_string())
+                    }
+                };
+
+                // Clean the import path and remove quotes
+                let mut import_path = import_path.to_str().unwrap().replace('\"', "");
+
+                if let ProjectKind::Unknown = self.kind {
+                    // Join the import path with the source unit path
+                    import_path = source_unit_path
+                        .parent()
+                        .unwrap()
+                        .join(import_path)
+                        .to_str()
+                        .unwrap()
+                        .to_string();
+                } else {
+                    // If we have detected a framework we need to resolve the path based on the remappings if found
+                    import_path = self.get_project_type_path(
+                        source_unit_path.parent().unwrap(),
+                        &import_path,
+                    )?
+                    .to_str()
+                    .unwrap()
+                    .to_string();
+                }
+
+                // Normalize the import path
+                let import_path = wrapped_err!(std::fs::canonicalize(import_path))?;
+
+                import_paths.push(import_path);
+            }
+        }
+        Ok(import_paths)
+    }
+
     pub fn canonicalize_import_path(&self, source_unit_directory: &Path, path_string: &str) -> Result<PathBuf, Error> {
         let mut import_path = PathBuf::from(path_string);
 
@@ -297,8 +529,8 @@ impl Project {
             import_path = source_unit_directory.join(import_path);
         }
         
-        import_path = crate::utils::get_canonical_path(import_path, false, false).map_err(|e| Error::Wrapped(e.into()))?;
-        
+        import_path = wrapped_err!(import_path.canonicalize())?;
+
         if !import_path.exists() {
             return Err(Error::Wrapped(Box::new(
                 std::io::Error::new(
@@ -318,23 +550,19 @@ impl Project {
         for comp in path.components() {
             if let Component::RootDir = comp { continue; }
             
-            let comp = comp.as_os_str().to_string_lossy().to_string().to_case(convert_case::Case::Snake);
+            let comp = comp.as_os_str().to_string_lossy().to_string().to_case(Case::Snake);
             match parent_module.clone() {
                 Some(parent) => {
                     if let Some(module) = parent.borrow().submodules.iter().find(|s| s.borrow().name == comp) {
-                        println!("found {comp:#?}");
                         parent_module = Some(module.clone());
                     } else {
-                        println!("failed to find {comp:#?}");
                         return None;
                     }
                 },
                 None => {
                     if let Some(module) = self.translated_modules.iter().find(|t| t.borrow().name == comp) {
-                        println!("found {comp:#?}");
                         parent_module = Some(module.clone());
                     } else {
-                        println!("failed to find {comp:#?}");
                         return None;
                     }
                 },
@@ -345,55 +573,75 @@ impl Project {
     }
 
     pub fn find_or_create_module(&mut self, path: &Path) -> Rc<RefCell<TranslatedModule>> {
-        let mut parent_module: Option<Rc<RefCell<TranslatedModule>>> = None;
-
         let mut current_path = PathBuf::new();
 
-        for comp in path.components() {
-            let comp = if let Component::RootDir = comp { continue } else {
-                comp.as_os_str().to_string_lossy().to_string().to_case(convert_case::Case::Snake)
-            };
-            current_path.push(comp.clone());
+        let components = path.components().filter(|c| !matches!(c, Component::RootDir)).collect::<Vec<_>>();
+        current_path.push(components[0].clone());
 
-            match parent_module {
-                Some(parent) => {
-                    if let Some(module) = parent.borrow().submodules.iter().find(|s| s.borrow().name == comp) {
-                        parent_module = Some(module.clone());
-                    } else {
-                        parent.borrow_mut().submodules.push(Rc::new(RefCell::new(TranslatedModule { 
-                            name: comp,
-                            path: current_path.clone(), 
-                            .. Default::default()
-                        })));
+        let component = components[0].as_os_str().to_string_lossy().to_string().to_case(Case::Snake);
+            
+        let mut parent_module = match self.translated_modules.iter().find(|t| t.borrow().name == component) {
+            Some(result) => result.clone(),
+            None => {
+                self.translated_modules.push(Rc::new(RefCell::new(TranslatedModule { 
+                    name: component, 
+                    path: current_path.clone(), 
+                    ..Default::default() 
+                })));
+                
+                self.translated_modules.last().cloned().unwrap()
+            },
+        };
 
-                        parent_module = parent.borrow().submodules.last().cloned();
-                    }
-                },
+        for component in &components[1..] {
+            current_path.push(component.clone());
+            let component = component.as_os_str().to_string_lossy().to_string().to_case(Case::Snake);
+            
+            let found = parent_module.borrow().submodules.iter().find(|t| t.borrow().name == component).cloned();
+            
+            match found {
+                Some(result) => parent_module = result,
                 None => {
-                    if let Some(module) = self.translated_modules.iter().find(|t| t.borrow().name == comp) {
-                        module.borrow_mut().submodules.push(Rc::new(RefCell::new(TranslatedModule { 
-                            name: comp,
-                            path: current_path.clone(), 
-                            .. Default::default()
-                        })));
-
-                        parent_module = module.borrow_mut().submodules.last_mut().cloned();
-                    } else {
-                        self.translated_modules.push(Rc::new(RefCell::new(TranslatedModule { 
-                            name: comp,
-                            path: current_path.clone(), 
-                            .. Default::default()
-                        })));
-
-                        parent_module = self.translated_modules.last().cloned();
-                    }
+                    parent_module.borrow_mut().submodules.push(Rc::new(RefCell::new(TranslatedModule { 
+                        name: component, 
+                        path: current_path.clone(), 
+                        ..Default::default() 
+                    })));
+                    
+                    let child = parent_module.borrow().submodules.last().cloned().unwrap();
+                    parent_module = child;
                 },
             }
         }
-        parent_module.unwrap()
+
+        parent_module
     }
 
-    pub fn translate(&mut self, source_unit_path: &Path) -> Result<(), Error> {
+    pub fn translate(&mut self) -> Result<(), Error> {
+        for source_unit_path in self.queue.clone() {
+            self.translate_file(&source_unit_path)?;
+
+            match self.output_directory.clone() {
+                Some(output_directory) => {
+                    self.generate_forc_project(output_directory, source_unit_path)?;
+                }
+
+                None => {
+                    println!("{:#?}", self.translated_modules);
+                    // for translated_definition in project.collect_translated_definitions(options.definition_name.as_ref(), source_unit_path) {
+                    //     println!("// Translated from {}", translated_definition.path.to_string_lossy());
+                        
+                    //     let module: sway::Module = translated_definition.into();
+                    //     println!("{}", sway::TabbedDisplayer(&module));
+                    // }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn translate_file(&mut self, source_unit_path: &Path) -> Result<(), Error> {
         // Ensure the source unit has been parsed
         if !self.solidity_source_units.contains_key(source_unit_path) {
             self.parse_solidity_source_unit(source_unit_path)?;
@@ -475,44 +723,39 @@ impl Project {
 
         translate::translate_import_directives(self, translated_module.clone(), &import_directives)?;
 
+        for type_definition in toplevel_type_definitions {
+            translate::translate_type_definition(self, translated_module.clone(), &type_definition)?;
+        }
+
+        for toplevel_enum in toplevel_enums {
+            translate::translate_enum_definition(self, translated_module.clone(), &toplevel_enum)?;
+        }
+
+        for toplevel_struct in toplevel_structs {
+            translate::translate_struct_definition(self, translated_module.clone(), &toplevel_struct)?;
+        }
+
+        for toplevel_event in toplevel_events {
+            translate::translate_event_definition(self, translated_module.clone(), &toplevel_event)?;
+        }
+
+        for toplevel_error in toplevel_errors {
+            translate::translate_error_definition(self, translated_module.clone(), &toplevel_error)?;
+        }
+
+        for toplevel_function in toplevel_functions {
+
+        }
+
+
         Ok(())
     }
-
-}
-
-/// Recursively check to find the root folder of the project and return a [PathBuf]
-pub fn find_project_root_folder<P: AsRef<Path>>(path: P) -> Option<PathBuf> {
-    let path = path.as_ref();
-
-    if path.join(ProjectKind::FOUNDRY_CONFIG_FILE).exists()
-    || path.join(ProjectKind::HARDHAT_CONFIG_FILE).exists()
-    || path.join(ProjectKind::HARDHAT_CONFIG_FILE_TS).exists()
-    || path.join(ProjectKind::BROWNIE_CONFIG_FILE).exists()
-    || path.join(ProjectKind::TRUFFLE_CONFIG_FILE).exists() {
-        return Some(path.to_path_buf());
-    }
-
-    if let Some(parent) = path.parent() {
-        return find_project_root_folder(parent);
-    }
-
-    None
-}
-
-/// Find a key in a [toml::Table] and return the [toml::Value]
-fn find_in_toml_value(value: &toml::Value, key: &str) -> Option<toml::Value> {
-    match value {
-        toml::Value::Table(table) => {
-            for (k, v) in table {
-                if k == key {
-                    return Some(v.clone());
-                }
-                if let Some(val) = find_in_toml_value(v, key) {
-                    return Some(val);
-                }
-            }
-            None
-        },
-        _ => None,
+    
+    pub fn generate_forc_project<P1: AsRef<Path>, P2: AsRef<Path>>(
+        &mut self,
+        output_directory: P1,
+        source_unit_path: P2,
+    ) -> Result<(), Error> {
+        todo!()
     }
 }
