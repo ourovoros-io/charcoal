@@ -13,22 +13,25 @@ pub fn translate_struct_definition(
 
     for field in struct_definition.fields.iter() {
         // TODO: keep track of original struct name?
-        let name = translate_naming_convention(field.name.as_ref().unwrap().name.as_str(), Case::Snake);
+        let name =
+            translate_naming_convention(field.name.as_ref().unwrap().name.as_str(), Case::Snake);
         let mut type_name = translate_type_name(project, module.clone(), &field.ty, false, false);
 
-        if let sway::TypeName::Identifier { name, generic_parameters } = &type_name {
+        if let sway::TypeName::Identifier {
+            name,
+            generic_parameters,
+        } = &type_name
+        {
             match (name.as_str(), generic_parameters.as_ref()) {
                 ("StorageMap" | "StorageVec", Some(_)) => {
                     // HACK: wrap storage types in a StorageKey
                     type_name = sway::TypeName::Identifier {
                         name: "StorageKey".into(),
                         generic_parameters: Some(sway::GenericParameterList {
-                            entries: vec![
-                                sway::GenericParameter {
-                                    type_name,
-                                    implements: None,
-                                },
-                            ],
+                            entries: vec![sway::GenericParameter {
+                                type_name,
+                                implements: None,
+                            }],
                         }),
                     };
                 }
@@ -56,13 +59,16 @@ pub fn translate_struct_definition(
         });
     }
 
-    module.borrow_mut().structs.push(Rc::new(RefCell::new(sway::Struct {
-        attributes: None,
-        is_public: false,
-        name: struct_definition.name.as_ref().unwrap().name.clone(),
-        generic_parameters: None,
-        fields,
-    })));
+    module
+        .borrow_mut()
+        .structs
+        .push(Rc::new(RefCell::new(sway::Struct {
+            attributes: None,
+            is_public: false,
+            name: struct_definition.name.as_ref().unwrap().name.clone(),
+            generic_parameters: None,
+            fields,
+        })));
 
     Ok(())
 }

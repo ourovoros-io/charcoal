@@ -12,13 +12,13 @@ pub fn translate_return_type_name(
         sway::TypeName::StringSlice => {
             // Ensure `std::string::*` is imported
             module.borrow_mut().ensure_use_declared("std::string::*");
-    
+
             sway::TypeName::Identifier {
                 name: "String".into(),
                 generic_parameters: None,
             }
-        },
-        
+        }
+
         _ => {
             todo!();
             // Check if the parameter's type is an ABI and make it an Identity
@@ -57,23 +57,27 @@ pub fn translate_type_name(
             },
 
             solidity::Type::Payable => todo!("payable types (used for casting)"),
-            
+
             solidity::Type::Bool => sway::TypeName::Identifier {
                 name: "bool".into(),
                 generic_parameters: None,
             },
 
-            solidity::Type::String => if is_storage {
-                // Ensure `std::storage::storage_string::*` is imported
-                module.borrow_mut().ensure_use_declared("std::storage::storage_string::*");
+            solidity::Type::String => {
+                if is_storage {
+                    // Ensure `std::storage::storage_string::*` is imported
+                    module
+                        .borrow_mut()
+                        .ensure_use_declared("std::storage::storage_string::*");
 
-                sway::TypeName::Identifier {
-                    name: "StorageString".into(),
-                    generic_parameters: None,
+                    sway::TypeName::Identifier {
+                        name: "StorageString".into(),
+                        generic_parameters: None,
+                    }
+                } else {
+                    sway::TypeName::StringSlice
                 }
-            } else {
-                sway::TypeName::StringSlice
-            },
+            }
 
             solidity::Type::Int(bits) => {
                 module.borrow_mut().ensure_dependency_declared(
@@ -84,44 +88,68 @@ pub fn translate_type_name(
                     name: match *bits {
                         0..=8 => {
                             if *bits != 8 {
-                                eprintln!("WARNING: unsupported signed integer type `int{bits}`, using `I8`...");
+                                eprintln!(
+                                    "WARNING: unsupported signed integer type `int{bits}`, using `I8`..."
+                                );
                             }
-                            module.borrow_mut().ensure_use_declared("sway_libs::signed_integers::i8::*");
+                            module
+                                .borrow_mut()
+                                .ensure_use_declared("sway_libs::signed_integers::i8::*");
                             "I8".into()
                         }
                         9..=16 => {
                             if *bits != 16 {
-                                eprintln!("WARNING: unsupported signed integer type `int{bits}`, using `I16`...");
+                                eprintln!(
+                                    "WARNING: unsupported signed integer type `int{bits}`, using `I16`..."
+                                );
                             }
-                            module.borrow_mut().ensure_use_declared("sway_libs::signed_integers::i16::*");
+                            module
+                                .borrow_mut()
+                                .ensure_use_declared("sway_libs::signed_integers::i16::*");
                             "I16".into()
                         }
                         17..=32 => {
                             if *bits != 32 {
-                                eprintln!("WARNING: unsupported signed integer type `int{bits}`, using `I32`...");
+                                eprintln!(
+                                    "WARNING: unsupported signed integer type `int{bits}`, using `I32`..."
+                                );
                             }
-                            module.borrow_mut().ensure_use_declared("sway_libs::signed_integers::i32::*");
+                            module
+                                .borrow_mut()
+                                .ensure_use_declared("sway_libs::signed_integers::i32::*");
                             "I32".into()
                         }
                         33..=64 => {
                             if *bits != 64 {
-                                eprintln!("WARNING: unsupported signed integer type `int{bits}`, using `I64`...");
+                                eprintln!(
+                                    "WARNING: unsupported signed integer type `int{bits}`, using `I64`..."
+                                );
                             }
-                            module.borrow_mut().ensure_use_declared("sway_libs::signed_integers::i64::*");
+                            module
+                                .borrow_mut()
+                                .ensure_use_declared("sway_libs::signed_integers::i64::*");
                             "I64".into()
                         }
                         65..=128 => {
                             if *bits != 128 {
-                                eprintln!("WARNING: unsupported signed integer type `int{bits}`, using `I128`...");
+                                eprintln!(
+                                    "WARNING: unsupported signed integer type `int{bits}`, using `I128`..."
+                                );
                             }
-                            module.borrow_mut().ensure_use_declared("sway_libs::signed_integers::i128::*");
+                            module
+                                .borrow_mut()
+                                .ensure_use_declared("sway_libs::signed_integers::i128::*");
                             "I128".into()
                         }
                         129..=256 => {
                             if *bits != 256 {
-                                eprintln!("WARNING: unsupported signed integer type `int{bits}`, using `I256`...");
+                                eprintln!(
+                                    "WARNING: unsupported signed integer type `int{bits}`, using `I256`..."
+                                );
                             }
-                            module.borrow_mut().ensure_use_declared("sway_libs::signed_integers::i256::*");
+                            module
+                                .borrow_mut()
+                                .ensure_use_declared("sway_libs::signed_integers::i256::*");
                             "I256".into()
                         }
                         _ => panic!("Invalid uint type: {bits}"),
@@ -134,31 +162,41 @@ pub fn translate_type_name(
                 name: match *bits {
                     0..=8 => {
                         if *bits != 8 {
-                            eprintln!("WARNING: unsupported unsigned integer type `uint{bits}`, using `u8`...");
+                            eprintln!(
+                                "WARNING: unsupported unsigned integer type `uint{bits}`, using `u8`..."
+                            );
                         }
                         "u8".into()
                     }
                     9..=16 => {
                         if *bits != 16 {
-                            eprintln!("WARNING: unsupported unsigned integer type `uint{bits}`, using `u16`...");
+                            eprintln!(
+                                "WARNING: unsupported unsigned integer type `uint{bits}`, using `u16`..."
+                            );
                         }
                         "u16".into()
                     }
                     17..=32 => {
                         if *bits != 32 {
-                            eprintln!("WARNING: unsupported unsigned integer type `uint{bits}`, using `u32`...");
+                            eprintln!(
+                                "WARNING: unsupported unsigned integer type `uint{bits}`, using `u32`..."
+                            );
                         }
                         "u32".into()
                     }
                     33..=64 => {
                         if *bits != 64 {
-                            eprintln!("WARNING: unsupported unsigned integer type `uint{bits}`, using `u64`...");
+                            eprintln!(
+                                "WARNING: unsupported unsigned integer type `uint{bits}`, using `u64`..."
+                            );
                         }
                         "u64".into()
                     }
                     65..=256 => {
                         if *bits != 256 {
-                            eprintln!("WARNING: unsupported unsigned integer type `uint{bits}`, using `u256`...");
+                            eprintln!(
+                                "WARNING: unsupported unsigned integer type `uint{bits}`, using `u256`..."
+                            );
                         }
                         "u256".into()
                     }
@@ -180,7 +218,7 @@ pub fn translate_type_name(
                         generic_parameters: None,
                     }),
                     length: *length as usize,
-                }
+                },
             },
 
             solidity::Type::Rational => todo!("rational types"),
@@ -198,31 +236,41 @@ pub fn translate_type_name(
             solidity::Type::Mapping { key, value, .. } => {
                 // Ensure `std::hash::Hash` is imported
                 module.borrow_mut().ensure_use_declared("std::hash::Hash");
-        
+
                 if is_parameter {
                     sway::TypeName::Identifier {
                         name: "StorageKey".into(),
                         generic_parameters: Some(sway::GenericParameterList {
-                            entries: vec![
-                                sway::GenericParameter {
-                                    type_name: sway::TypeName::Identifier {
-                                        name: "StorageMap".into(),
-                                        generic_parameters: Some(sway::GenericParameterList {
-                                            entries: vec![
-                                                sway::GenericParameter {
-                                                    type_name: translate_type_name(project, module.clone(), key.as_ref(), is_storage, is_parameter),
-                                                    implements: None,
-                                                },
-                                                sway::GenericParameter {
-                                                    type_name: translate_type_name(project, module, value.as_ref(), is_storage, is_parameter),
-                                                    implements: None,
-                                                },
-                                            ],
-                                        }),
-                                    },
-                                    implements: None,
+                            entries: vec![sway::GenericParameter {
+                                type_name: sway::TypeName::Identifier {
+                                    name: "StorageMap".into(),
+                                    generic_parameters: Some(sway::GenericParameterList {
+                                        entries: vec![
+                                            sway::GenericParameter {
+                                                type_name: translate_type_name(
+                                                    project,
+                                                    module.clone(),
+                                                    key.as_ref(),
+                                                    is_storage,
+                                                    is_parameter,
+                                                ),
+                                                implements: None,
+                                            },
+                                            sway::GenericParameter {
+                                                type_name: translate_type_name(
+                                                    project,
+                                                    module,
+                                                    value.as_ref(),
+                                                    is_storage,
+                                                    is_parameter,
+                                                ),
+                                                implements: None,
+                                            },
+                                        ],
+                                    }),
                                 },
-                            ],
+                                implements: None,
+                            }],
                         }),
                     }
                 } else {
@@ -231,11 +279,23 @@ pub fn translate_type_name(
                         generic_parameters: Some(sway::GenericParameterList {
                             entries: vec![
                                 sway::GenericParameter {
-                                    type_name: translate_type_name(project, module.clone(), key.as_ref(), is_storage, is_parameter),
+                                    type_name: translate_type_name(
+                                        project,
+                                        module.clone(),
+                                        key.as_ref(),
+                                        is_storage,
+                                        is_parameter,
+                                    ),
                                     implements: None,
                                 },
                                 sway::GenericParameter {
-                                    type_name: translate_type_name(project, module, value.as_ref(), is_storage, is_parameter),
+                                    type_name: translate_type_name(
+                                        project,
+                                        module,
+                                        value.as_ref(),
+                                        is_storage,
+                                        is_parameter,
+                                    ),
                                     implements: None,
                                 },
                             ],
@@ -244,42 +304,64 @@ pub fn translate_type_name(
                 }
             }
 
-            solidity::Type::Function { params, returns, .. } => {
-                sway::TypeName::Function {
-                    generic_parameters: None,
-                    parameters: sway::ParameterList {
-                        entries: params.iter().map(|(_, p)| {
-                            p.as_ref().map(|p| sway::Parameter {
-                                is_ref: false,
-                                is_mut: false,
-                                name: p.name.as_ref().map_or("_".into(), |n| n.name.clone()),
-                                type_name: Some(translate_type_name(project, module.clone(), &p.ty, false, true)),
-                            }).unwrap_or_else(|| sway::Parameter {
-                                is_ref: false,
-                                is_mut: false,
-                                name: "_".into(),
-                                type_name: None,
+            solidity::Type::Function {
+                params, returns, ..
+            } => sway::TypeName::Function {
+                generic_parameters: None,
+                parameters: sway::ParameterList {
+                    entries: params
+                        .iter()
+                        .map(|(_, p)| {
+                            p.as_ref()
+                                .map(|p| sway::Parameter {
+                                    is_ref: false,
+                                    is_mut: false,
+                                    name: p.name.as_ref().map_or("_".into(), |n| n.name.clone()),
+                                    type_name: Some(translate_type_name(
+                                        project,
+                                        module.clone(),
+                                        &p.ty,
+                                        false,
+                                        true,
+                                    )),
+                                })
+                                .unwrap_or_else(|| sway::Parameter {
+                                    is_ref: false,
+                                    is_mut: false,
+                                    name: "_".into(),
+                                    type_name: None,
+                                })
+                        })
+                        .collect(),
+                },
+                return_type: {
+                    let returns: Option<Vec<sway::TypeName>> = returns.as_ref().map(|r| {
+                        r.0.iter()
+                            .map(|(_, p)| match p.as_ref() {
+                                Some(p) => {
+                                    translate_type_name(project, module.clone(), &p.ty, false, true)
+                                }
+                                None => sway::TypeName::Identifier {
+                                    name: "_".into(),
+                                    generic_parameters: None,
+                                },
                             })
-                        }).collect(),
-                    },
-                    return_type: {
-                        let returns: Option<Vec<sway::TypeName>> = returns.as_ref().map(|r| r.0.iter().map(|(_, p)| match p.as_ref() {
-                            Some(p) => translate_type_name(project, module.clone(), &p.ty, false, true),
-                            None => sway::TypeName::Identifier { name: "_".into(), generic_parameters: None },
-                        }).collect());
-                        
-                        match returns.as_ref() {
-                            Some(returns) => match returns.len() {
-                                0 => None,
-                                1 => Some(Box::new(returns[0].clone())),
-                                _ => Some(Box::new(sway::TypeName::Tuple { type_names: returns.clone() })),
-                            },
-                            None => None,
-                        }
+                            .collect()
+                    });
+
+                    match returns.as_ref() {
+                        Some(returns) => match returns.len() {
+                            0 => None,
+                            1 => Some(Box::new(returns[0].clone())),
+                            _ => Some(Box::new(sway::TypeName::Tuple {
+                                type_names: returns.clone(),
+                            })),
+                        },
+                        None => None,
                     }
-                }
-            }
-        }
+                },
+            },
+        },
 
         solidity::Expression::Variable(solidity::Identifier { name, .. }) => {
             // Check if type is a type definition
@@ -289,20 +371,33 @@ pub fn translate_type_name(
                     generic_parameters: None,
                 };
             }
-            
+
             // Check if type is a struct
-            if module.borrow().structs.iter().any(|n| n.borrow().name == *name) {
+            if module
+                .borrow()
+                .structs
+                .iter()
+                .any(|n| n.borrow().name == *name)
+            {
                 return sway::TypeName::Identifier {
                     name: name.clone(),
                     generic_parameters: None,
                 };
             }
-            
+
             // Check if type is an enum
-            if module.borrow().enums.iter().any(|t| match &t.type_definition.name {
-                sway::TypeName::Identifier { name: type_name, generic_parameters: None } => type_name == name,
-                _ => false,
-            }) {
+            if module
+                .borrow()
+                .enums
+                .iter()
+                .any(|t| match &t.type_definition.name {
+                    sway::TypeName::Identifier {
+                        name: type_name,
+                        generic_parameters: None,
+                    } => type_name == name,
+                    _ => false,
+                })
+            {
                 return sway::TypeName::Identifier {
                     name: name.clone(),
                     generic_parameters: None,
@@ -325,7 +420,12 @@ pub fn translate_type_name(
             todo!(
                 "{} - translate variable type expression: {} - {type_name:#?}",
                 match project.loc_to_line_and_column(&module.borrow().path, &type_name.loc()) {
-                    Some((line, col)) => format!("{}:{}:{}", module.borrow().path.to_string_lossy(), line, col),
+                    Some((line, col)) => format!(
+                        "{}:{}:{}",
+                        module.borrow().path.to_string_lossy(),
+                        line,
+                        col
+                    ),
                     None => format!("{}", module.borrow().path.to_string_lossy()),
                 },
                 type_name.to_string(),
@@ -334,9 +434,14 @@ pub fn translate_type_name(
 
         solidity::Expression::ArraySubscript(_, type_name, length) => match length.as_ref() {
             Some(length) => sway::TypeName::Array {
-                type_name: Box::new(translate_type_name(project, module, type_name, is_storage, is_parameter)),
+                type_name: Box::new(translate_type_name(
+                    project,
+                    module,
+                    type_name,
+                    is_storage,
+                    is_parameter,
+                )),
                 length: {
-                    
                     // Create an empty scope to translate the array length expression
                     todo!()
                     // let scope = Rc::new(RefCell::new(TranslationScope {
@@ -355,22 +460,28 @@ pub fn translate_type_name(
             None => sway::TypeName::Identifier {
                 name: if is_storage {
                     // Ensure that `std::storage::storage_vec::*` is imported
-                    module.borrow_mut().ensure_use_declared("std::storage::storage_vec::*");
+                    module
+                        .borrow_mut()
+                        .ensure_use_declared("std::storage::storage_vec::*");
 
                     "StorageVec".into()
                 } else {
                     "Vec".into()
                 },
                 generic_parameters: Some(sway::GenericParameterList {
-                    entries: vec![
-                        sway::GenericParameter {
-                            type_name: translate_type_name(project, module, type_name, is_storage, is_parameter),
-                            implements: None,
-                        },
-                    ],
+                    entries: vec![sway::GenericParameter {
+                        type_name: translate_type_name(
+                            project,
+                            module,
+                            type_name,
+                            is_storage,
+                            is_parameter,
+                        ),
+                        implements: None,
+                    }],
                 }),
             },
-        }
+        },
 
         solidity::Expression::MemberAccess(_, container, member) => match container.as_ref() {
             solidity::Expression::Variable(solidity::Identifier { name, .. }) => {
@@ -381,18 +492,32 @@ pub fn translate_type_name(
 
                 let mut check_definition = |external_definition: Rc<RefCell<TranslatedModule>>| {
                     // Check to see if member is an enum
-                    if let Some(external_enum) = external_definition.borrow().enums.iter().find(|e| {
-                        let sway::TypeName::Identifier { name, generic_parameters: None } = &e.type_definition.name else {
-                            panic!("Expected Identifier type name, found {:#?}", e.type_definition.name);
-                        };
+                    if let Some(external_enum) =
+                        external_definition.borrow().enums.iter().find(|e| {
+                            let sway::TypeName::Identifier {
+                                name,
+                                generic_parameters: None,
+                            } = &e.type_definition.name
+                            else {
+                                panic!(
+                                    "Expected Identifier type name, found {:#?}",
+                                    e.type_definition.name
+                                );
+                            };
 
-                        *name == member.name
-                    }) {
+                            *name == member.name
+                        })
+                    {
                         translated_enum = Some(external_enum.clone());
                         result = Some(external_enum.type_definition.name.clone());
                     }
                     // Check to see if member is a struct
-                    else if let Some(external_struct) = external_definition.borrow().structs.iter().find(|s| s.borrow().name == member.name) {
+                    else if let Some(external_struct) = external_definition
+                        .borrow()
+                        .structs
+                        .iter()
+                        .find(|s| s.borrow().name == member.name)
+                    {
                         translated_struct = Some(external_struct.clone());
                         result = Some(sway::TypeName::Identifier {
                             name: external_struct.borrow().name.clone(),
@@ -400,10 +525,18 @@ pub fn translate_type_name(
                         });
                     }
                     // Check to see if member is a user-defined type
-                    else if let Some(external_type) = external_definition.borrow().type_definitions.iter().find(|t| match &t.name {
-                        sway::TypeName::Identifier { name, generic_parameters: None } => *name == member.name,
-                        _ => false,
-                    }) {
+                    else if let Some(external_type) = external_definition
+                        .borrow()
+                        .type_definitions
+                        .iter()
+                        .find(|t| match &t.name {
+                            sway::TypeName::Identifier {
+                                name,
+                                generic_parameters: None,
+                            } => *name == member.name,
+                            _ => false,
+                        })
+                    {
                         translated_type = Some(external_type.clone());
                         result = Some(external_type.name.clone());
                     }
@@ -414,7 +547,11 @@ pub fn translate_type_name(
                     check_definition(module.clone());
                 }
                 // Check to see if container is referring to an external definition
-                else if let Some(external_definition) = project.translated_modules.iter().find(|d| d.borrow().name == *name) {
+                else if let Some(external_definition) = project
+                    .translated_modules
+                    .iter()
+                    .find(|d| d.borrow().name == *name)
+                {
                     check_definition(external_definition.clone());
                 }
 
@@ -435,7 +572,12 @@ pub fn translate_type_name(
                 todo!(
                     "{} - member access type name expression: {type_name}",
                     match project.loc_to_line_and_column(&module.borrow().path, &type_name.loc()) {
-                        Some((line, col)) => format!("{}:{}:{}", module.borrow().path.to_string_lossy(), line, col),
+                        Some((line, col)) => format!(
+                            "{}:{}:{}",
+                            module.borrow().path.to_string_lossy(),
+                            line,
+                            col
+                        ),
                         None => format!("{}", module.borrow().path.to_string_lossy()),
                     },
                 )
@@ -444,16 +586,26 @@ pub fn translate_type_name(
             _ => todo!(
                 "{} - member access type name expression: {type_name}",
                 match project.loc_to_line_and_column(&module.borrow().path, &type_name.loc()) {
-                    Some((line, col)) => format!("{}:{}:{}", module.borrow().path.to_string_lossy(), line, col),
+                    Some((line, col)) => format!(
+                        "{}:{}:{}",
+                        module.borrow().path.to_string_lossy(),
+                        line,
+                        col
+                    ),
                     None => format!("{}", module.borrow().path.to_string_lossy()),
                 },
-            )
-        }
+            ),
+        },
 
         _ => unimplemented!(
             "{} - type name expression: {type_name}",
             match project.loc_to_line_and_column(&module.borrow().path, &type_name.loc()) {
-                Some((line, col)) => format!("{}:{}:{}", module.borrow().path.to_string_lossy(), line, col),
+                Some((line, col)) => format!(
+                    "{}:{}:{}",
+                    module.borrow().path.to_string_lossy(),
+                    line,
+                    col
+                ),
                 None => format!("{}", module.borrow().path.to_string_lossy()),
             },
         ),

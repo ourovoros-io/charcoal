@@ -64,7 +64,9 @@ impl Module {
     /// Retrieves the `abi` item with the specified name from the module, creating it if it doesn't exist.
     pub fn get_or_create_abi(&mut self, abi_name: &str) -> &mut Abi {
         if !self.items.iter().any(|x| {
-            let ModuleItem::Abi(abi) = x else { return false };
+            let ModuleItem::Abi(abi) = x else {
+                return false;
+            };
             abi.name == abi_name
         }) {
             self.items.push(ModuleItem::Abi(Abi {
@@ -75,7 +77,9 @@ impl Module {
         }
 
         let Some(ModuleItem::Abi(result)) = self.items.iter_mut().find(|x| {
-            let ModuleItem::Abi(abi) = x else { return false };
+            let ModuleItem::Abi(abi) = x else {
+                return false;
+            };
             abi.name == abi_name
         }) else {
             panic!("Failed to find ABI item in module")
@@ -88,8 +92,20 @@ impl Module {
     pub fn get_or_create_impl_for(&mut self, impl_name: &str, for_name: &str) -> &mut Impl {
         if !self.items.iter().any(|x| {
             let ModuleItem::Impl(x) = x else { return false };
-            let TypeName::Identifier { name: impl_type_name, .. } = &x.type_name else { return false };
-            let Some(TypeName::Identifier { name: for_type_name, .. }) = x.for_type_name.as_ref() else { return false };
+            let TypeName::Identifier {
+                name: impl_type_name,
+                ..
+            } = &x.type_name
+            else {
+                return false;
+            };
+            let Some(TypeName::Identifier {
+                name: for_type_name,
+                ..
+            }) = x.for_type_name.as_ref()
+            else {
+                return false;
+            };
             impl_type_name == impl_name && for_type_name == for_name
         }) {
             self.items.push(ModuleItem::Impl(Impl {
@@ -108,8 +124,20 @@ impl Module {
 
         let Some(ModuleItem::Impl(result)) = self.items.iter_mut().find(|x| {
             let ModuleItem::Impl(x) = x else { return false };
-            let TypeName::Identifier { name: impl_type_name, .. } = &x.type_name else { return false };
-            let Some(TypeName::Identifier { name: for_type_name, .. }) = x.for_type_name.as_ref() else { return false };
+            let TypeName::Identifier {
+                name: impl_type_name,
+                ..
+            } = &x.type_name
+            else {
+                return false;
+            };
+            let Some(TypeName::Identifier {
+                name: for_type_name,
+                ..
+            }) = x.for_type_name.as_ref()
+            else {
+                return false;
+            };
             impl_type_name == impl_name && for_type_name == for_name
         }) else {
             panic!("Failed to find impl item in module");
@@ -120,31 +148,44 @@ impl Module {
 
     /// Retrieves the `storage` item from the module, creating it if it doesn't exist.
     pub fn get_or_create_storage(&mut self) -> &mut Storage {
-        if !self.items.iter().any(|x| matches!(x, ModuleItem::Storage(_))) {
+        if !self
+            .items
+            .iter()
+            .any(|x| matches!(x, ModuleItem::Storage(_)))
+        {
             self.items.push(ModuleItem::Storage(Storage::default()));
         }
-        
-        let Some(ModuleItem::Storage(result)) = self.items.iter_mut().find(|x| {
-            matches!(x, ModuleItem::Storage(_))
-        }) else {
+
+        let Some(ModuleItem::Storage(result)) = self
+            .items
+            .iter_mut()
+            .find(|x| matches!(x, ModuleItem::Storage(_)))
+        else {
             panic!("Failed to find storage item in module")
         };
-        
+
         result
     }
 
     /// Retrieves the `configurable` item from the module, creating it if it doesn't exist.
     pub fn get_or_create_configurable(&mut self) -> &mut Configurable {
-        if !self.items.iter().any(|x| matches!(x, ModuleItem::Configurable(_))) {
-            self.items.push(ModuleItem::Configurable(Configurable::default()));
+        if !self
+            .items
+            .iter()
+            .any(|x| matches!(x, ModuleItem::Configurable(_)))
+        {
+            self.items
+                .push(ModuleItem::Configurable(Configurable::default()));
         }
-        
-        let Some(ModuleItem::Configurable(result)) = self.items.iter_mut().find(|x| {
-            matches!(x, ModuleItem::Configurable(_))
-        }) else {
+
+        let Some(ModuleItem::Configurable(result)) = self
+            .items
+            .iter_mut()
+            .find(|x| matches!(x, ModuleItem::Configurable(_)))
+        else {
             panic!("Failed to find configurable item in module")
         };
-        
+
         result
     }
 }
@@ -159,8 +200,11 @@ impl TabbedDisplay for Module {
         for (i, item) in self.items.iter().enumerate() {
             if let Some(prev_item) = prev_item {
                 if !(matches!(prev_item, ModuleItem::Use(_)) && matches!(item, ModuleItem::Use(_))
-                || matches!(prev_item, ModuleItem::Constant(_)) && matches!(item, ModuleItem::Constant(_))
-                || matches!(prev_item, ModuleItem::TypeDefinition(_)) && matches!(item, ModuleItem::TypeDefinition(_))) {
+                    || matches!(prev_item, ModuleItem::Constant(_))
+                        && matches!(item, ModuleItem::Constant(_))
+                    || matches!(prev_item, ModuleItem::TypeDefinition(_))
+                        && matches!(item, ModuleItem::TypeDefinition(_)))
+                {
                     writeln!(f)?;
                 }
             } else if i > 0 {
@@ -194,8 +238,11 @@ impl TabbedDisplay for Submodule {
         for (i, item) in self.items.iter().enumerate() {
             if let Some(prev_item) = prev_item {
                 if !(matches!(prev_item, ModuleItem::Use(_)) && matches!(item, ModuleItem::Use(_))
-                || matches!(prev_item, ModuleItem::Constant(_)) && matches!(item, ModuleItem::Constant(_))
-                || matches!(prev_item, ModuleItem::TypeDefinition(_)) && matches!(item, ModuleItem::TypeDefinition(_))) {
+                    || matches!(prev_item, ModuleItem::Constant(_))
+                        && matches!(item, ModuleItem::Constant(_))
+                    || matches!(prev_item, ModuleItem::TypeDefinition(_))
+                        && matches!(item, ModuleItem::TypeDefinition(_)))
+                {
                     writeln!(f)?;
                 }
             } else if i > 0 {
@@ -292,7 +339,15 @@ impl Display for UseTree {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             UseTree::Path { prefix, suffix } => write!(f, "{prefix}::{suffix}"),
-            UseTree::Group { imports } => write!(f, "{{{}}}", imports.iter().map(|x| format!("{x}")).collect::<Vec<_>>().join(", ")),
+            UseTree::Group { imports } => write!(
+                f,
+                "{{{}}}",
+                imports
+                    .iter()
+                    .map(|x| format!("{x}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
             UseTree::Name { name } => write!(f, "{name}"),
             UseTree::Rename { name, alias } => write!(f, "{name} as {alias}"),
             UseTree::Glob => write!(f, "*"),
@@ -313,7 +368,15 @@ impl Display for GenericParameter {
         write!(f, "{}", self.type_name)?;
 
         if let Some(implements) = self.implements.as_ref() {
-            write!(f, ": {}", implements.iter().map(|x| format!("{x}")).collect::<Vec<_>>().join(" + "))?;
+            write!(
+                f,
+                ": {}",
+                implements
+                    .iter()
+                    .map(|x| format!("{x}"))
+                    .collect::<Vec<_>>()
+                    .join(" + ")
+            )?;
         }
 
         Ok(())
@@ -329,7 +392,15 @@ pub struct GenericParameterList {
 
 impl Display for GenericParameterList {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "<{}>", self.entries.iter().map(|x| format!("{x}")).collect::<Vec<_>>().join(", "))
+        write!(
+            f,
+            "<{}>",
+            self.entries
+                .iter()
+                .map(|x| format!("{x}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
     }
 }
 
@@ -344,7 +415,7 @@ pub struct Attribute {
 impl Display for Attribute {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.name)?;
-        
+
         if let Some(parameters) = self.parameters.as_ref() {
             write!(f, "({})", parameters.join(", "))?;
         }
@@ -362,7 +433,15 @@ pub struct AttributeList {
 
 impl Display for AttributeList {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "#[{}]", self.attributes.iter().map(|a| format!("{a}")).collect::<Vec<_>>().join(", "))
+        write!(
+            f,
+            "#[{}]",
+            self.attributes
+                .iter()
+                .map(|a| format!("{a}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
     }
 }
 
@@ -392,19 +471,42 @@ pub enum TypeName {
         generic_parameters: Option<GenericParameterList>,
         parameters: ParameterList,
         return_type: Option<Box<TypeName>>,
-    }
+    },
 }
 
 impl Display for TypeName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             TypeName::Undefined => panic!("Undefined type name"),
-            TypeName::Identifier { name, generic_parameters } => write!(f, "{name}{}", if let Some(p) = generic_parameters.as_ref() { format!("{p}") } else { String::new() }),
+            TypeName::Identifier {
+                name,
+                generic_parameters,
+            } => write!(
+                f,
+                "{name}{}",
+                if let Some(p) = generic_parameters.as_ref() {
+                    format!("{p}")
+                } else {
+                    String::new()
+                }
+            ),
             TypeName::Array { type_name, length } => write!(f, "[{type_name}; {length}]"),
-            TypeName::Tuple { type_names } => write!(f, "({})", type_names.iter().map(|t| format!("{t}")).collect::<Vec<_>>().join(", ")),
+            TypeName::Tuple { type_names } => write!(
+                f,
+                "({})",
+                type_names
+                    .iter()
+                    .map(|t| format!("{t}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
             TypeName::StringSlice => write!(f, "str"),
             TypeName::StringArray { length } => write!(f, "str[{length}]"),
-            TypeName::Function { generic_parameters, parameters, return_type } => {
+            TypeName::Function {
+                generic_parameters,
+                parameters,
+                return_type,
+            } => {
                 write!(
                     f,
                     "fn{}{}{}",
@@ -427,8 +529,14 @@ impl TypeName {
     /// Checks if the type name is an unsigned integer type
     pub fn is_uint(&self) -> bool {
         match self {
-            TypeName::Identifier { name, generic_parameters: None } => {
-                matches!(name.as_str(), "u8" | "u16" | "u32" | "u64" | "u256" | "U128" | "U256")
+            TypeName::Identifier {
+                name,
+                generic_parameters: None,
+            } => {
+                matches!(
+                    name.as_str(),
+                    "u8" | "u16" | "u32" | "u64" | "u256" | "U128" | "U256"
+                )
             }
 
             _ => false,
@@ -437,14 +545,20 @@ impl TypeName {
 
     pub fn uint_bits(&self) -> Option<usize> {
         match self {
-            TypeName::Identifier { name, generic_parameters: None } => match name.as_str() {
-                "u8" | "u16" | "u32" | "u64" | "u256" | "U128" | "U256" => {
-                    Some(name.trim_start_matches("u").trim_start_matches("U").parse().unwrap())
-                }
+            TypeName::Identifier {
+                name,
+                generic_parameters: None,
+            } => match name.as_str() {
+                "u8" | "u16" | "u32" | "u64" | "u256" | "U128" | "U256" => Some(
+                    name.trim_start_matches("u")
+                        .trim_start_matches("U")
+                        .parse()
+                        .unwrap(),
+                ),
 
                 _ => None,
-            }
-            
+            },
+
             _ => None,
         }
     }
@@ -452,8 +566,14 @@ impl TypeName {
     /// Checks if the type name is a signed integer type
     pub fn is_int(&self) -> bool {
         match self {
-            TypeName::Identifier { name, generic_parameters: None } => {
-                matches!(name.as_str(), "I8" | "I16" | "I32" | "I64" | "I128" | "I256")
+            TypeName::Identifier {
+                name,
+                generic_parameters: None,
+            } => {
+                matches!(
+                    name.as_str(),
+                    "I8" | "I16" | "I32" | "I64" | "I128" | "I256"
+                )
             }
 
             _ => false,
@@ -462,13 +582,16 @@ impl TypeName {
 
     pub fn int_bits(&self) -> Option<usize> {
         match self {
-            TypeName::Identifier { name, generic_parameters: None } => match name.as_str() {
+            TypeName::Identifier {
+                name,
+                generic_parameters: None,
+            } => match name.as_str() {
                 "I8" | "I16" | "I32" | "I64" | "I128" | "I256" => {
                     Some(name.trim_start_matches("I").parse().unwrap())
                 }
 
                 _ => None,
-            }
+            },
 
             _ => None,
         }
@@ -476,14 +599,20 @@ impl TypeName {
 
     pub fn is_b256(&self) -> bool {
         match self {
-            TypeName::Identifier { name, generic_parameters: None } => name == "b256",
+            TypeName::Identifier {
+                name,
+                generic_parameters: None,
+            } => name == "b256",
             _ => false,
         }
     }
 
     pub fn is_u64(&self) -> bool {
         match self {
-            TypeName::Identifier { name, generic_parameters: None } => name == "u64",
+            TypeName::Identifier {
+                name,
+                generic_parameters: None,
+            } => name == "u64",
             _ => false,
         }
     }
@@ -491,7 +620,10 @@ impl TypeName {
     /// Checks if the type name is `Identity`
     pub fn is_identity(&self) -> bool {
         match self {
-            TypeName::Identifier { name, generic_parameters: None } => name == "Identity",
+            TypeName::Identifier {
+                name,
+                generic_parameters: None,
+            } => name == "Identity",
             _ => false,
         }
     }
@@ -502,7 +634,10 @@ impl TypeName {
 
     pub fn is_string(&self) -> bool {
         match self {
-            TypeName::Identifier { name, generic_parameters: None } => name == "String",
+            TypeName::Identifier {
+                name,
+                generic_parameters: None,
+            } => name == "String",
             TypeName::StringSlice => true,
             TypeName::StringArray { .. } => true,
             _ => false,
@@ -512,9 +647,12 @@ impl TypeName {
     pub fn u8_array_length(&self) -> Option<usize> {
         match self {
             TypeName::Array { type_name, length } => match type_name.as_ref() {
-                TypeName::Identifier { name, generic_parameters: None } if name == "u8" => Some(*length),
+                TypeName::Identifier {
+                    name,
+                    generic_parameters: None,
+                } if name == "u8" => Some(*length),
                 _ => None,
-            }
+            },
 
             _ => None,
         }
@@ -539,7 +677,10 @@ impl TypeName {
 
     pub fn option_type(&self) -> Option<TypeName> {
         match self {
-            TypeName::Identifier { name, generic_parameters: Some(generic_parameters) } => {
+            TypeName::Identifier {
+                name,
+                generic_parameters: Some(generic_parameters),
+            } => {
                 if name == "Option" && generic_parameters.entries.len() == 1 {
                     Some(generic_parameters.entries[0].type_name.clone())
                 } else {
@@ -558,7 +699,10 @@ impl TypeName {
 
     pub fn storage_key_type(&self) -> Option<TypeName> {
         match self {
-            TypeName::Identifier { name, generic_parameters: Some(generic_parameters) } => {
+            TypeName::Identifier {
+                name,
+                generic_parameters: Some(generic_parameters),
+            } => {
                 if name == "StorageKey" && generic_parameters.entries.len() == 1 {
                     Some(generic_parameters.entries[0].type_name.clone())
                 } else {
@@ -577,9 +721,15 @@ impl TypeName {
 
     pub fn storage_map_type(&self) -> Option<(TypeName, TypeName)> {
         match self {
-            TypeName::Identifier { name, generic_parameters: Some(generic_parameters) } => {
+            TypeName::Identifier {
+                name,
+                generic_parameters: Some(generic_parameters),
+            } => {
                 if name == "StorageMap" && generic_parameters.entries.len() == 2 {
-                    Some((generic_parameters.entries[0].type_name.clone(), generic_parameters.entries[1].type_name.clone()))
+                    Some((
+                        generic_parameters.entries[0].type_name.clone(),
+                        generic_parameters.entries[1].type_name.clone(),
+                    ))
                 } else {
                     None
                 }
@@ -596,7 +746,10 @@ impl TypeName {
 
     pub fn storage_vec_type(&self) -> Option<TypeName> {
         match self {
-            TypeName::Identifier { name, generic_parameters: Some(generic_parameters) } => {
+            TypeName::Identifier {
+                name,
+                generic_parameters: Some(generic_parameters),
+            } => {
                 if name == "StorageVec" && generic_parameters.entries.len() == 1 {
                     Some(generic_parameters.entries[0].type_name.clone())
                 } else {
@@ -610,7 +763,10 @@ impl TypeName {
 
     pub fn is_storage_string(&self) -> bool {
         match self {
-            TypeName::Identifier { name, generic_parameters: None } => name == "StorageString",
+            TypeName::Identifier {
+                name,
+                generic_parameters: None,
+            } => name == "StorageString",
             _ => false,
         }
     }
@@ -622,7 +778,10 @@ impl TypeName {
 
     pub fn vec_type(&self) -> Option<TypeName> {
         match self {
-            TypeName::Identifier { name, generic_parameters: Some(generic_parameters) } => {
+            TypeName::Identifier {
+                name,
+                generic_parameters: Some(generic_parameters),
+            } => {
                 if name == "Vec" && generic_parameters.entries.len() == 1 {
                     Some(generic_parameters.entries[0].type_name.clone())
                 } else {
@@ -642,25 +801,35 @@ impl TypeName {
     /// Checks to see if the type name is compatible with another type name
     pub fn is_compatible_with(&self, other: &TypeName) -> bool {
         match self {
-            TypeName::Array { type_name: lhs_type_name, length: lhs_length } => match other {
-                TypeName::Array { type_name: rhs_type_name, length: rhs_length } => {
+            TypeName::Array {
+                type_name: lhs_type_name,
+                length: lhs_length,
+            } => match other {
+                TypeName::Array {
+                    type_name: rhs_type_name,
+                    length: rhs_length,
+                } => {
                     if !lhs_type_name.is_compatible_with(rhs_type_name) {
                         return false;
                     }
 
                     if *lhs_length == *rhs_length {
-                        return true
+                        return true;
                     }
                 }
 
                 _ => {}
-            }
+            },
 
             _ => {}
         }
 
         // HACK: Don't check todo! value types
-        if let TypeName::Identifier { name, generic_parameters: None } = self {
+        if let TypeName::Identifier {
+            name,
+            generic_parameters: None,
+        } = self
+        {
             if name == "todo!" {
                 return true;
             }
@@ -668,21 +837,32 @@ impl TypeName {
 
         // HACK: Don't check parameter names of function types
         if let (
-            TypeName::Function { parameters: lhs_parameters, return_type: lhs_return_type, .. },
-            TypeName::Function { parameters: rhs_parameters, return_type: rhs_return_type, .. },
-        ) = (self, other) {
+            TypeName::Function {
+                parameters: lhs_parameters,
+                return_type: lhs_return_type,
+                ..
+            },
+            TypeName::Function {
+                parameters: rhs_parameters,
+                return_type: rhs_return_type,
+                ..
+            },
+        ) = (self, other)
+        {
             if lhs_parameters.entries.len() == rhs_parameters.entries.len() {
-                if lhs_parameters.entries.iter()
-                .zip(rhs_parameters.entries.iter())
-                .all(|(lhs, rhs)| {
-                    lhs.type_name.is_some() == rhs.type_name.is_some()
-                    && lhs.type_name.as_ref().map_or(true, |x| x.is_compatible_with(rhs.type_name.as_ref().unwrap()))
-                }) {
+                if lhs_parameters
+                    .entries
+                    .iter()
+                    .zip(rhs_parameters.entries.iter())
+                    .all(|(lhs, rhs)| {
+                        lhs.type_name.is_some() == rhs.type_name.is_some()
+                            && lhs.type_name.as_ref().map_or(true, |x| {
+                                x.is_compatible_with(rhs.type_name.as_ref().unwrap())
+                            })
+                    })
+                {
                     match (lhs_return_type.as_ref(), rhs_return_type.as_ref()) {
-                        (
-                            Some(lhs_return_type),
-                            Some(rhs_return_type),
-                        ) => {
+                        (Some(lhs_return_type), Some(rhs_return_type)) => {
                             if lhs_return_type.is_compatible_with(rhs_return_type) {
                                 return true;
                             }
@@ -702,78 +882,89 @@ impl TypeName {
     }
 
     /// Gets the parameters and return type name for the getter function of the type name
-    pub fn getter_function_parameters_and_return_type(&self) -> Option<(Vec<(Parameter, bool)>, TypeName)> {
+    pub fn getter_function_parameters_and_return_type(
+        &self,
+    ) -> Option<(Vec<(Parameter, bool)>, TypeName)> {
         match self {
             TypeName::Undefined => panic!("Undefined type name"),
 
-            TypeName::Identifier { name, generic_parameters: Some(generic_parameters) } => match name.as_str() {
+            TypeName::Identifier {
+                name,
+                generic_parameters: Some(generic_parameters),
+            } => match name.as_str() {
                 "StorageMap" => {
-                    let mut parameters = vec![
-                        (
-                            Parameter {
-                                name: "_".into(),
-                                type_name: Some(generic_parameters.entries[0].type_name.clone()),
-                                ..Default::default()
-                            },
-                            false
-                        ),
-                    ];
-    
+                    let mut parameters = vec![(
+                        Parameter {
+                            name: "_".into(),
+                            type_name: Some(generic_parameters.entries[0].type_name.clone()),
+                            ..Default::default()
+                        },
+                        false,
+                    )];
+
                     let mut return_type = generic_parameters.entries[1].type_name.clone();
-    
-                    if let Some((inner_parameters, inner_return_type)) = generic_parameters.entries[1].type_name.getter_function_parameters_and_return_type() {
+
+                    if let Some((inner_parameters, inner_return_type)) = generic_parameters.entries
+                        [1]
+                    .type_name
+                    .getter_function_parameters_and_return_type()
+                    {
                         parameters.extend(inner_parameters);
                         return_type = inner_return_type;
                     }
-    
-                    let parameter_names: Vec<String> = ('a'..='z').enumerate()
+
+                    let parameter_names: Vec<String> = ('a'..='z')
+                        .enumerate()
                         .take_while(|(i, _)| *i < parameters.len())
                         .map(|(_, c)| c.into())
                         .collect();
-    
+
                     for (i, name) in parameter_names.into_iter().enumerate() {
                         parameters[i].0.name = name;
                     }
-    
+
                     Some((parameters, return_type))
                 }
 
                 "StorageVec" => {
-                    let mut parameters = vec![
-                        (
-                            Parameter {
-                                name: "_".into(),
-                                type_name: Some(TypeName::Identifier {
-                                    name: "u64".into(),
-                                    generic_parameters: None,
-                                }),
-                                ..Default::default()
-                            },
-                            true
-                        )
-                    ];
-    
+                    let mut parameters = vec![(
+                        Parameter {
+                            name: "_".into(),
+                            type_name: Some(TypeName::Identifier {
+                                name: "u64".into(),
+                                generic_parameters: None,
+                            }),
+                            ..Default::default()
+                        },
+                        true,
+                    )];
+
                     let mut return_type = generic_parameters.entries[0].type_name.clone();
-    
-                    if let Some((inner_parameters, inner_return_type)) = generic_parameters.entries[0].type_name.getter_function_parameters_and_return_type() {
+
+                    if let Some((inner_parameters, inner_return_type)) = generic_parameters.entries
+                        [0]
+                    .type_name
+                    .getter_function_parameters_and_return_type()
+                    {
                         parameters.extend(inner_parameters);
                         return_type = inner_return_type;
                     }
-    
-                    let parameter_names: Vec<String> = ('a'..='z').enumerate()
+
+                    let parameter_names: Vec<String> = ('a'..='z')
+                        .enumerate()
                         .take_while(|(i, _)| *i < parameters.len())
                         .map(|(_, c)| c.into())
                         .collect();
-    
+
                     for (i, name) in parameter_names.into_iter().enumerate() {
                         parameters[i].0.name = name;
                     }
-    
+
                     Some((parameters, return_type))
                 }
 
                 _ => None,
-            }
+            },
 
             _ => None,
         }
@@ -846,7 +1037,7 @@ impl TabbedDisplay for Literal {
     fn tabbed_fmt(&self, _depth: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Literal::Bool(x) => write!(f, "{x}"),
-            
+
             Literal::DecInt(x, suffix) => write!(
                 f,
                 "{}{}",
@@ -894,7 +1085,7 @@ impl TabbedDisplay for Struct {
             writeln!(f, "{attributes}")?;
             "".tabbed_fmt(depth, f)?;
         }
-        
+
         if self.is_public {
             write!(f, "pub ")?;
         }
@@ -955,7 +1146,7 @@ impl TabbedDisplay for Enum {
             writeln!(f, "{attributes}")?;
             "".tabbed_fmt(depth, f)?;
         }
-        
+
         if self.is_public {
             write!(f, "pub ")?;
         }
@@ -1017,7 +1208,7 @@ impl TabbedDisplay for Abi {
             if i > 0 {
                 writeln!(f)?;
             }
-            
+
             "".tabbed_fmt(depth + 1, f)?;
             function.tabbed_fmt(depth + 1, f)?;
             writeln!(f)?;
@@ -1051,7 +1242,7 @@ impl TabbedDisplay for Trait {
             writeln!(f, "{attributes}")?;
             "".tabbed_fmt(depth, f)?;
         }
-        
+
         if self.is_public {
             write!(f, "pub ")?;
         }
@@ -1225,7 +1416,7 @@ impl TabbedDisplay for Function {
             writeln!(f, "{attributes}")?;
             "".tabbed_fmt(depth, f)?;
         }
-        
+
         if self.is_public {
             write!(f, "pub ")?;
         }
@@ -1276,7 +1467,7 @@ impl Display for Parameter {
         if self.is_mut {
             write!(f, "mut ")?;
         }
-        
+
         write!(f, "{}", self.name)?;
 
         if let Some(type_name) = self.type_name.as_ref() {
@@ -1296,7 +1487,15 @@ pub struct ParameterList {
 
 impl Display for ParameterList {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "({})", self.entries.iter().map(|x| format!("{x}")).collect::<Vec<_>>().join(", "))
+        write!(
+            f,
+            "({})",
+            self.entries
+                .iter()
+                .map(|x| format!("{x}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
     }
 }
 
@@ -1389,7 +1588,7 @@ impl TabbedDisplay for Block {
             final_expr.tabbed_fmt(depth + 1, f)?;
             writeln!(f)?;
         }
-        
+
         "}".tabbed_fmt(depth, f)
     }
 }
@@ -1400,8 +1599,7 @@ impl TabbedDisplay for Block {
 pub enum Statement {
     Let(Let),
     Expression(Expression),
-    Commented(String, Option<Box<Statement>>)
-    // TODO: finish
+    Commented(String, Option<Box<Statement>>), // TODO: finish
 }
 
 impl TabbedDisplay for Statement {
@@ -1415,21 +1613,26 @@ impl TabbedDisplay for Statement {
             Statement::Expression(x) => {
                 x.tabbed_fmt(depth, f)?;
 
-                if !matches!(x, Expression::Block(_) | Expression::If(_) | Expression::Match(_) | Expression::While(_) | Expression::AsmBlock(_)) {
+                if !matches!(
+                    x,
+                    Expression::Block(_)
+                        | Expression::If(_)
+                        | Expression::Match(_)
+                        | Expression::While(_)
+                        | Expression::AsmBlock(_)
+                ) {
                     write!(f, ";")?;
                 }
 
                 Ok(())
             }
-            Statement::Commented(comment, statement) => {
-                match statement.as_ref() {
-                    Some(statement) => {
-                        writeln!(f, "/* {comment} */")?;
-                        statement.tabbed_fmt(depth, f)
-                    },
-                    None => write!(f, "/* {comment} */"),
+            Statement::Commented(comment, statement) => match statement.as_ref() {
+                Some(statement) => {
+                    writeln!(f, "/* {comment} */")?;
+                    statement.tabbed_fmt(depth, f)
                 }
-            }
+                None => write!(f, "/* {comment} */"),
+            },
         }
     }
 }
@@ -1481,7 +1684,14 @@ impl Display for LetPattern {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             LetPattern::Identifier(id) => write!(f, "{id}"),
-            LetPattern::Tuple(ids) => write!(f, "({})", ids.iter().map(|id| format!("{id}")).collect::<Vec<_>>().join(", ")),
+            LetPattern::Tuple(ids) => write!(
+                f,
+                "({})",
+                ids.iter()
+                    .map(|id| format!("{id}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
         }
     }
 }
@@ -1704,34 +1914,46 @@ impl_expr_box_from!(AsmBlock);
 impl Expression {
     #[inline(always)]
     pub fn create_todo(msg: Option<String>) -> Expression {
-        Expression::create_function_calls(None, &[
-            ("todo!", Some((None, if let Some(msg) = msg {
-                vec![
-                    Expression::Literal(Literal::String(msg.replace('\\', "\\\\").replace('\"', "\\\""))),
-                ]
-            } else {
-                vec![]
-            }))),
-        ])
+        Expression::create_function_calls(
+            None,
+            &[(
+                "todo!",
+                Some((
+                    None,
+                    if let Some(msg) = msg {
+                        vec![Expression::Literal(Literal::String(
+                            msg.replace('\\', "\\\\").replace('\"', "\\\""),
+                        ))]
+                    } else {
+                        vec![]
+                    },
+                )),
+            )],
+        )
     }
 
     #[inline(always)]
     pub fn create_unimplemented(msg: Option<String>) -> Expression {
-        Expression::create_function_calls(None, &[
-            ("unimplemented!", Some((None, if let Some(msg) = msg {
-                vec![
-                    Expression::Literal(Literal::String(msg)),
-                ]
-            } else {
-                vec![]
-            }))),
-        ])
+        Expression::create_function_calls(
+            None,
+            &[(
+                "unimplemented!",
+                Some((
+                    None,
+                    if let Some(msg) = msg {
+                        vec![Expression::Literal(Literal::String(msg))]
+                    } else {
+                        vec![]
+                    },
+                )),
+            )],
+        )
     }
 
     #[inline(always)]
     pub fn create_identifier(name: String) -> Expression {
         assert!(!name.is_empty());
-        
+
         Expression::PathExpr(PathExpr {
             root: PathExprRoot::Identifier(name),
             segments: vec![],
@@ -1769,12 +1991,15 @@ impl Expression {
 
     pub fn create_function_calls(
         container: Option<Expression>,
-        member_calls: &[(&str, Option<(Option<GenericParameterList>, Vec<Expression>)>)],
+        member_calls: &[(
+            &str,
+            Option<(Option<GenericParameterList>, Vec<Expression>)>,
+        )],
     ) -> Expression {
         if container.is_none() {
             assert!(!member_calls.is_empty());
         }
-        
+
         let mut result = container;
 
         for (member, call_data) in member_calls {
@@ -1791,10 +2016,13 @@ impl Expression {
 
             let path = PathExpr {
                 root,
-                segments: member_parts.iter().map(|p| PathExprSegment {
-                    name: p.to_string(),
-                    generic_parameters: None
-                }).collect()
+                segments: member_parts
+                    .iter()
+                    .map(|p| PathExprSegment {
+                        name: p.to_string(),
+                        generic_parameters: None,
+                    })
+                    .collect(),
             };
 
             if let Some(container) = result {
@@ -1832,7 +2060,7 @@ pub struct FunctionCall {
 impl TabbedDisplay for FunctionCall {
     fn tabbed_fmt(&self, depth: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.function.tabbed_fmt(depth, f)?;
-        
+
         if let Some(generic_parameters) = self.generic_parameters.as_ref() {
             write!(f, "::{generic_parameters}")?;
         }
@@ -1864,7 +2092,7 @@ pub struct FunctionCallBlock {
 impl TabbedDisplay for FunctionCallBlock {
     fn tabbed_fmt(&self, depth: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.function.tabbed_fmt(depth, f)?;
-        
+
         if let Some(generic_parameters) = self.generic_parameters.as_ref() {
             write!(f, "::{generic_parameters}")?;
         }
@@ -2199,7 +2427,7 @@ pub struct AsmFinalExpression {
 impl Display for AsmFinalExpression {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.register)?;
-        
+
         if let Some(type_name) = self.type_name.as_ref() {
             write!(f, ": {type_name}")?;
         }
@@ -2251,9 +2479,7 @@ mod tests {
             parameters: ParameterList::default(),
             return_type: None,
             body: Some(Block {
-                statements: vec![
-                    Statement::Expression(Expression::Return(None)),
-                ],
+                statements: vec![Statement::Expression(Expression::Return(None))],
                 final_expr: None,
             }),
         }));

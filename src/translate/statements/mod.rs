@@ -1,0 +1,110 @@
+use crate::{error::Error, project::Project, translate::*};
+use solang_parser::pt as solidity;
+use std::{cell::RefCell, rc::Rc};
+
+mod arguments;
+mod block;
+mod do_while;
+mod emit;
+mod expression;
+mod r#for;
+mod r#if;
+mod r#return;
+mod revert;
+mod try_catch;
+mod variable;
+mod r#while;
+pub use arguments::*;
+pub use block::*;
+pub use do_while::*;
+pub use emit::*;
+pub use expression::*;
+pub use r#for::*;
+pub use r#if::*;
+pub use r#return::*;
+pub use revert::*;
+pub use try_catch::*;
+pub use variable::*;
+pub use r#while::*;
+
+#[inline(always)]
+pub fn translate_statement(
+    project: &mut Project,
+    module: Rc<RefCell<TranslatedModule>>,
+    scope: &Rc<RefCell<TranslationScope>>,
+    statement: &solidity::Statement,
+) -> Result<sway::Statement, Error> {
+    match statement {
+        solidity::Statement::Block { statements, .. } => {
+            translate_block_statement(project, module, scope, statements)
+        }
+        solidity::Statement::Assembly {
+            dialect,
+            flags,
+            block,
+            ..
+        } => translate_assembly_statement(project, module, scope, dialect, flags, block),
+        solidity::Statement::Args(_, named_arguments) => {
+            translate_args_statement(project, module, scope, named_arguments)
+        }
+        solidity::Statement::If(_, condition, then_body, else_if) => {
+            translate_if_statement(project, module, scope, condition, then_body, else_if)
+        }
+        solidity::Statement::While(_, condition, body) => {
+            translate_while_statement(project, module, scope, condition, body)
+        }
+        solidity::Statement::Expression(_, expression) => {
+            translate_expression_statement(project, module, scope, expression)
+        }
+        solidity::Statement::VariableDefinition(_, variable_declaration, initializer) => {
+            translate_variable_definition_statement(
+                project,
+                module,
+                scope,
+                variable_declaration,
+                initializer.as_ref(),
+            )
+        }
+        solidity::Statement::For(_, initialization, condition, update, body) => {
+            translate_for_statement(
+                project,
+                module,
+                scope,
+                initialization,
+                condition,
+                update,
+                body,
+            )
+        }
+        solidity::Statement::DoWhile(_, body, condition) => {
+            translate_do_while_statement(project, module, scope, body, condition)
+        }
+        solidity::Statement::Continue(_) => Ok(sway::Statement::from(sway::Expression::Continue)),
+        solidity::Statement::Break(_) => Ok(sway::Statement::from(sway::Expression::Break)),
+        solidity::Statement::Return(_, expression) => {
+            translate_return_statement(project, module, scope, expression)
+        }
+        solidity::Statement::Revert(_, error_type, parameters) => {
+            translate_revert_statement(project, module, scope, error_type, parameters)
+        }
+        solidity::Statement::RevertNamedArgs(_, path, named_args) => {
+            translate_revert_named_arguments(project, module, scope, path, named_args)
+        }
+        solidity::Statement::Emit(_, expression) => {
+            translate_emit_statement(project, module, scope, expression)
+        }
+        solidity::Statement::Try(_, expr, params_and_body, catch_clauses) => {
+            translate_try_catch_statement(
+                project,
+                module,
+                scope,
+                expr,
+                params_and_body,
+                catch_clauses,
+            )
+        }
+        solidity::Statement::Error(_) => {
+            panic!("Encountered a statement that was not parsed correctly")
+        }
+    }
+}
