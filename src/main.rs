@@ -4,11 +4,11 @@ use clap::Parser;
 use error::Error;
 use project::Project;
 
-mod cli;
-mod error;
-mod project;
-mod sway;
-mod translate;
+pub mod cli;
+pub mod error;
+pub mod project;
+pub mod sway;
+pub mod translate;
 
 fn main() {
     if let Err(e) = translate_project() {
