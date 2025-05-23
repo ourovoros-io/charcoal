@@ -50,14 +50,14 @@ pub fn translate_pre_operator_expression(
 ) -> Result<sway::Expression, Error> {
     let assignment = sway::Statement::from(translate_assignment_expression(
         project,
-        module,
+        module.clone(),
         scope,
         operator,
         x,
         &solidity::Expression::NumberLiteral(*loc, "1".into(), String::new(), None),
     )?);
 
-    let (variable, expression) = translate_variable_access_expression(project, module, scope, x)?;
+    let (variable, expression) = translate_variable_access_expression(project, module.clone(), scope, x)?;
 
     let Some(variable) = variable else {
         panic!("Variable not found: {}", sway::TabbedDisplayer(&expression));
@@ -90,14 +90,14 @@ pub fn translate_post_operator_expression(
 ) -> Result<sway::Expression, Error> {
     let assignment = sway::Statement::from(translate_assignment_expression(
         project,
-        module,
+        module.clone(),
         scope,
         operator,
         x,
         &solidity::Expression::NumberLiteral(*loc, "1".into(), String::new(), None),
     )?);
 
-    let (variable, expression) = translate_variable_access_expression(project, module, scope, x)?;
+    let (variable, expression) = translate_variable_access_expression(project, module.clone(), scope, x)?;
     if variable.is_none() {
         panic!("Variable not found: {}", sway::TabbedDisplayer(&expression));
     }

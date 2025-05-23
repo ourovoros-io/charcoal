@@ -747,10 +747,10 @@ impl Project {
 
             None => {
                 println!("{:#?}", self.translated_modules);
-                // for translated_definition in project.collect_translated_definitions(options.definition_name.as_ref(), source_unit_path) {
-                //     println!("// Translated from {}", translated_definition.path.to_string_lossy());
+                // for module in project.collect_translated_definitions(options.definition_name.as_ref(), source_unit_path) {
+                //     println!("// Translated from {}", module.path.to_string_lossy());
 
-                //     let module: sway::Module = translated_definition.into();
+                //     let module: sway::Module = module.into();
                 //     println!("{}", sway::TabbedDisplayer(&module));
                 // }
             }

@@ -4,10 +4,36 @@ use num_traits::{Num, Zero};
 use solang_parser::pt as solidity;
 use std::{cell::RefCell, rc::Rc};
 
+mod address_call;
+mod array;
 mod assignment;
+mod conditional;
+mod delete;
+mod expression_type;
+mod function_call;
+mod list;
+mod literals;
+mod member_access;
+mod new;
+mod parenthesis;
 mod pre_post;
+mod unary;
+mod variable;
+pub use address_call::*;
+pub use array::*;
 pub use assignment::*;
+pub use conditional::*;
+pub use delete::*;
+pub use expression_type::*;
+pub use function_call::*;
+pub use list::*;
+pub use literals::*;
+pub use member_access::*;
+pub use new::*;
+pub use parenthesis::*;
 pub use pre_post::*;
+pub use unary::*;
+pub use variable::*;
 
 pub fn evaluate_expression(
     module: Rc<RefCell<TranslatedModule>>,
@@ -281,9 +307,9 @@ pub fn translate_expression(
 ) -> Result<sway::Expression, Error> {
     // println!(
     //     "Translating expression: {expression}; from {}",
-    //     match project.loc_to_line_and_column(&translated_definition.path, &expression.loc()) {
-    //         Some((line, col)) => format!("{}:{}:{} - ", translated_definition.path.to_string_lossy(), line, col),
-    //         None => format!("{} - ", translated_definition.path.to_string_lossy()),
+    //     match project.loc_to_line_and_column(&module.path, &expression.loc()) {
+    //         Some((line, col)) => format!("{}:{}:{} - ", module.path.to_string_lossy(), line, col),
+    //         None => format!("{} - ", module.path.to_string_lossy()),
     //     },
     // );
 
@@ -295,59 +321,62 @@ pub fn translate_expression(
         | solidity::Expression::AddressLiteral(_, _)
         | solidity::Expression::HexLiteral(_)
         | solidity::Expression::StringLiteral(_) => {
-            literal::translate_literal_expression(project, expression)
+            translate_literal_expression(project, expression)
         }
 
         solidity::Expression::Type(_, _) => {
-            expression_type::translate_type_expression(project, module, scope, expression)
+            translate_type_expression(project, module, scope, expression)
         }
+
         solidity::Expression::Variable(_) => {
-            variable::translate_variable_expression(project, module, scope, expression)
+            translate_variable_expression(project, module, scope, expression)
         }
 
         solidity::Expression::ArrayLiteral(_, expressions) => {
-            array::translate_array_literal_expression(
+            translate_array_literal_expression(
                 project,
                 module,
                 scope,
                 expressions.as_slice(),
             )
         }
+
         solidity::Expression::ArraySubscript(_, _, _) => {
-            array::translate_array_subscript_expression(project, module, scope, expression)
+            translate_array_subscript_expression(project, module, scope, expression)
         }
+
         solidity::Expression::ArraySlice(_, _, _, _) => {
-            array::translate_array_slice_expression(project, module, scope, expression)
+            translate_array_slice_expression(project, module, scope, expression)
         }
+
         solidity::Expression::List(_, parameters) => {
-            list::translate_list_expression(project, module, scope, parameters.as_slice())
+            translate_list_expression(project, module, scope, parameters.as_slice())
         }
+
         solidity::Expression::Parenthesis(_, expression) => {
-            parenthesis::translate_parenthesis_expression(project, module, scope, expression)
+            translate_parenthesis_expression(project, module, scope, expression)
         }
 
         solidity::Expression::MemberAccess(_, container, member) => {
-            member_access::translate_member_access_expression(
+            translate_member_access_expression(
                 project, module, scope, expression, container, member,
             )
         }
 
         solidity::Expression::FunctionCall(_, function, arguments) => {
-            let result = function_call::translate_function_call_expression(
+            translate_function_call_expression(
                 project, module, scope, expression, function, None, arguments,
-            )?;
-            // println!("Translated function call from {} to {}", expression, sway::TabbedDisplayer(&result));
-            Ok(result)
+            )
         }
 
         solidity::Expression::FunctionCallBlock(_, function, block) => {
-            function_call::translate_function_call_block_expression(
+            translate_function_call_block_expression(
                 project, module, scope, function, block,
             )
         }
 
         solidity::Expression::NamedFunctionCall(_, function, named_arguments) => {
-            let result = function_call::translate_function_call_expression(
+            translate_function_call_expression(
                 project,
                 module,
                 scope,
@@ -355,87 +384,106 @@ pub fn translate_expression(
                 function,
                 Some(named_arguments),
                 &[],
-            )?;
-            // println!("Translated named function call from {} to {}", expression, sway::TabbedDisplayer(&result));
-            Ok(result)
+            )
         }
 
         solidity::Expression::Not(_, x) => {
-            binary_unary::translate_unary_expression(project, module, scope, "!", x)
+            translate_unary_expression(project, module, scope, "!", x)
         }
+
         solidity::Expression::BitwiseNot(_, x) => {
-            binary_unary::translate_unary_expression(project, module, scope, "!", x)
+            translate_unary_expression(project, module, scope, "!", x)
         }
+        
         solidity::Expression::UnaryPlus(_, x) => translate_expression(project, module, scope, x),
+
         solidity::Expression::Negate(_, x) => {
-            binary_unary::translate_unary_expression(project, module, scope, "-", x)
+            translate_unary_expression(project, module, scope, "-", x)
         }
 
         solidity::Expression::Power(_, lhs, rhs) => {
-            binary_unary::translate_power_expression(project, module, scope, lhs, rhs)
+            translate_power_expression(project, module, scope, lhs, rhs)
         }
+
         solidity::Expression::Multiply(_, lhs, rhs) => {
-            binary_unary::translate_binary_expression(project, module, scope, "*", lhs, rhs)
+            translate_binary_expression(project, module, scope, "*", lhs, rhs)
         }
+
         solidity::Expression::Divide(_, lhs, rhs) => {
-            binary_unary::translate_binary_expression(project, module, scope, "/", lhs, rhs)
+            translate_binary_expression(project, module, scope, "/", lhs, rhs)
         }
+
         solidity::Expression::Modulo(_, lhs, rhs) => {
-            binary_unary::translate_binary_expression(project, module, scope, "%", lhs, rhs)
+            translate_binary_expression(project, module, scope, "%", lhs, rhs)
         }
+
         solidity::Expression::Add(_, lhs, rhs) => {
-            binary_unary::translate_binary_expression(project, module, scope, "+", lhs, rhs)
+            translate_binary_expression(project, module, scope, "+", lhs, rhs)
         }
+
         solidity::Expression::Subtract(_, lhs, rhs) => {
-            binary_unary::translate_binary_expression(project, module, scope, "-", lhs, rhs)
+            translate_binary_expression(project, module, scope, "-", lhs, rhs)
         }
+
         solidity::Expression::ShiftLeft(_, lhs, rhs) => {
-            binary_unary::translate_binary_expression(project, module, scope, "<<", lhs, rhs)
+            translate_binary_expression(project, module, scope, "<<", lhs, rhs)
         }
+
         solidity::Expression::ShiftRight(_, lhs, rhs) => {
-            binary_unary::translate_binary_expression(project, module, scope, ">>", lhs, rhs)
+            translate_binary_expression(project, module, scope, ">>", lhs, rhs)
         }
+
         solidity::Expression::BitwiseAnd(_, lhs, rhs) => {
-            binary_unary::translate_binary_expression(project, module, scope, "&", lhs, rhs)
+            translate_binary_expression(project, module, scope, "&", lhs, rhs)
         }
+
         solidity::Expression::BitwiseXor(_, lhs, rhs) => {
-            binary_unary::translate_binary_expression(project, module, scope, "^", lhs, rhs)
+            translate_binary_expression(project, module, scope, "^", lhs, rhs)
         }
+
         solidity::Expression::BitwiseOr(_, lhs, rhs) => {
-            binary_unary::translate_binary_expression(project, module, scope, "|", lhs, rhs)
+            translate_binary_expression(project, module, scope, "|", lhs, rhs)
         }
+
         solidity::Expression::Less(_, lhs, rhs) => {
-            binary_unary::translate_binary_expression(project, module, scope, "<", lhs, rhs)
+            translate_binary_expression(project, module, scope, "<", lhs, rhs)
         }
+
         solidity::Expression::More(_, lhs, rhs) => {
-            binary_unary::translate_binary_expression(project, module, scope, ">", lhs, rhs)
+            translate_binary_expression(project, module, scope, ">", lhs, rhs)
         }
+
         solidity::Expression::LessEqual(_, lhs, rhs) => {
-            binary_unary::translate_binary_expression(project, module, scope, "<=", lhs, rhs)
+            translate_binary_expression(project, module, scope, "<=", lhs, rhs)
         }
+
         solidity::Expression::MoreEqual(_, lhs, rhs) => {
-            binary_unary::translate_binary_expression(project, module, scope, ">=", lhs, rhs)
+            translate_binary_expression(project, module, scope, ">=", lhs, rhs)
         }
+
         solidity::Expression::Equal(_, lhs, rhs) => {
-            binary_unary::translate_binary_expression(project, module, scope, "==", lhs, rhs)
+            translate_binary_expression(project, module, scope, "==", lhs, rhs)
         }
+
         solidity::Expression::NotEqual(_, lhs, rhs) => {
-            binary_unary::translate_binary_expression(project, module, scope, "!=", lhs, rhs)
+            translate_binary_expression(project, module, scope, "!=", lhs, rhs)
         }
+
         solidity::Expression::And(_, lhs, rhs) => {
-            binary_unary::translate_binary_expression(project, module, scope, "&&", lhs, rhs)
+            translate_binary_expression(project, module, scope, "&&", lhs, rhs)
         }
+
         solidity::Expression::Or(_, lhs, rhs) => {
-            binary_unary::translate_binary_expression(project, module, scope, "||", lhs, rhs)
+            translate_binary_expression(project, module, scope, "||", lhs, rhs)
         }
 
         solidity::Expression::ConditionalOperator(_, condition, then_value, else_value) => {
-            conditional::translate_conditional_operator_expression(
+            translate_conditional_operator_expression(
                 project, module, scope, condition, then_value, else_value,
             )
         }
 
-        solidity::Expression::Assign(_, lhs, rhs) => assignment::translate_assignment_expression(
+        solidity::Expression::Assign(_, lhs, rhs) => translate_assignment_expression(
             project,
             module,
             scope,
@@ -443,7 +491,8 @@ pub fn translate_expression(
             lhs.as_ref(),
             rhs.as_ref(),
         ),
-        solidity::Expression::AssignOr(_, lhs, rhs) => assignment::translate_assignment_expression(
+
+        solidity::Expression::AssignOr(_, lhs, rhs) => translate_assignment_expression(
             project,
             module,
             scope,
@@ -451,8 +500,9 @@ pub fn translate_expression(
             lhs.as_ref(),
             rhs.as_ref(),
         ),
+
         solidity::Expression::AssignAnd(_, lhs, rhs) => {
-            assignment::translate_assignment_expression(
+            translate_assignment_expression(
                 project,
                 module,
                 scope,
@@ -461,8 +511,9 @@ pub fn translate_expression(
                 rhs.as_ref(),
             )
         }
+
         solidity::Expression::AssignXor(_, lhs, rhs) => {
-            assignment::translate_assignment_expression(
+            translate_assignment_expression(
                 project,
                 module,
                 scope,
@@ -471,8 +522,9 @@ pub fn translate_expression(
                 rhs.as_ref(),
             )
         }
+
         solidity::Expression::AssignShiftLeft(_, lhs, rhs) => {
-            assignment::translate_assignment_expression(
+            translate_assignment_expression(
                 project,
                 module,
                 scope,
@@ -481,8 +533,9 @@ pub fn translate_expression(
                 rhs.as_ref(),
             )
         }
+
         solidity::Expression::AssignShiftRight(_, lhs, rhs) => {
-            assignment::translate_assignment_expression(
+            translate_assignment_expression(
                 project,
                 module,
                 scope,
@@ -491,8 +544,9 @@ pub fn translate_expression(
                 rhs.as_ref(),
             )
         }
+
         solidity::Expression::AssignAdd(_, lhs, rhs) => {
-            assignment::translate_assignment_expression(
+            translate_assignment_expression(
                 project,
                 module,
                 scope,
@@ -501,8 +555,9 @@ pub fn translate_expression(
                 rhs.as_ref(),
             )
         }
+
         solidity::Expression::AssignSubtract(_, lhs, rhs) => {
-            assignment::translate_assignment_expression(
+            translate_assignment_expression(
                 project,
                 module,
                 scope,
@@ -511,8 +566,9 @@ pub fn translate_expression(
                 rhs.as_ref(),
             )
         }
+
         solidity::Expression::AssignMultiply(_, lhs, rhs) => {
-            assignment::translate_assignment_expression(
+            translate_assignment_expression(
                 project,
                 module,
                 scope,
@@ -521,8 +577,9 @@ pub fn translate_expression(
                 rhs.as_ref(),
             )
         }
+
         solidity::Expression::AssignDivide(_, lhs, rhs) => {
-            assignment::translate_assignment_expression(
+            translate_assignment_expression(
                 project,
                 module,
                 scope,
@@ -531,8 +588,9 @@ pub fn translate_expression(
                 rhs.as_ref(),
             )
         }
+
         solidity::Expression::AssignModulo(_, lhs, rhs) => {
-            assignment::translate_assignment_expression(
+            translate_assignment_expression(
                 project,
                 module,
                 scope,
@@ -546,16 +604,17 @@ pub fn translate_expression(
         | solidity::Expression::PostIncrement(_, _)
         | solidity::Expression::PreDecrement(_, _)
         | solidity::Expression::PostDecrement(_, _) => {
-            pre_post::translate_pre_or_post_operator_value_expression(
+            translate_pre_or_post_operator_value_expression(
                 project, module, scope, expression,
             )
         }
 
         solidity::Expression::New(_, expression) => {
-            new::translate_new_expression(project, module, scope, expression)
+            translate_new_expression(project, module, scope, expression)
         }
+
         solidity::Expression::Delete(_, expression) => {
-            delete::translate_delete_expression(project, module, scope, expression)
+            translate_delete_expression(project, module, scope, expression)
         }
     }
 }

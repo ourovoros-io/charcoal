@@ -624,11 +624,11 @@ pub fn translate_function_definition(
 
     // println!(
     //     "Translating {}.{} {}",
-    //     translated_definition.name,
+    //     module.name,
     //     function_definition.name.as_ref().map(|n| n.name.as_str()).unwrap_or_else(|| new_name_2.as_str()),
-    //     match project.loc_to_line_and_column(&translated_definition.path, &function_definition.loc) {
-    //         Some((line, col)) => format!("at {}:{}:{}", translated_definition.path.to_string_lossy(), line, col),
-    //         None => format!("in {}...", translated_definition.path.to_string_lossy()),
+    //     match project.loc_to_line_and_column(&module.path, &function_definition.loc) {
+    //         Some((line, col)) => format!("at {}:{}:{}", module.path.to_string_lossy(), line, col),
+    //         None => format!("in {}...", module.path.to_string_lossy()),
     //     },
     // );
 
