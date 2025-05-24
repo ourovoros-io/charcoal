@@ -41,14 +41,14 @@ pub fn translate_variable_expression(
     else {
         panic!(
             "{}ERROR: Variable not found in scope: \"{}\"",
-            match project.loc_to_line_and_column(&module.borrow().path, &expression.loc()) {
+            match project.loc_to_line_and_column(module.clone(), &expression.loc()) {
                 Some((line, col)) => format!(
-                    "{}:{}:{} - ",
+                    "{}:{}:{}: ",
                     module.borrow().path.to_string_lossy(),
                     line,
                     col
                 ),
-                None => format!("{} - ", module.borrow().path.to_string_lossy()),
+                None => format!("{}: ", module.borrow().path.to_string_lossy()),
             },
             sway::TabbedDisplayer(&expression),
         );
@@ -92,9 +92,9 @@ pub fn translate_variable_access_expression(
 ) -> Result<(Option<Rc<RefCell<TranslatedVariable>>>, sway::Expression), Error> {
     // println!(
     //     "{}Translating variable access expression: {solidity_expression}",
-    //     match project.loc_to_line_and_column(&module.borrow().path, &solidity_expression.loc()) {
-    //         Some((line, col)) => format!("{}:{}:{} - ", module.borrow().path.to_string_lossy(), line, col),
-    //         None => format!("{} - ", module.borrow().path.to_string_lossy()),
+    //     match project.loc_to_line_and_column(module.clone(), &solidity_expression.loc()) {
+    //         Some((line, col)) => format!("{}:{}:{}: ", module.borrow().path.to_string_lossy(), line, col),
+    //         None => format!("{}: ", module.borrow().path.to_string_lossy()),
     //     }
     // );
 
@@ -136,16 +136,15 @@ pub fn translate_variable_access_expression(
                 std::io::ErrorKind::NotFound,
                 format!(
                     "{}error: Variable not found in scope: \"{name}\" - {solidity_expression}",
-                    match project
-                        .loc_to_line_and_column(&module.borrow().path, &solidity_expression.loc())
+                    match project.loc_to_line_and_column(module.clone(), &solidity_expression.loc())
                     {
                         Some((line, col)) => format!(
-                            "{}:{}:{} - ",
-                            module.borrow().path.to_string_lossy(),
+                            "{}:{}:{}: ",
+                            project.root_folder.clone().unwrap().join(module.borrow().path.clone()).with_extension("sol").to_string_lossy(),
                             line,
                             col
                         ),
-                        None => format!("{} - ", module.borrow().path.to_string_lossy()),
+                        None => format!("{}: ", module.borrow().path.to_string_lossy()),
                     }
                 ),
             ))));
@@ -250,17 +249,17 @@ pub fn translate_variable_access_expression(
                                     (name, _) => todo!(
                                         "{}TODO: translate {name} array subscript expression: {solidity_expression} - {} {expression:#?}",
                                         match project.loc_to_line_and_column(
-                                            &module.borrow().path,
+                                            module.clone(),
                                             &solidity_expression.loc()
                                         ) {
                                             Some((line, col)) => format!(
-                                                "{}:{}:{} - ",
+                                                "{}:{}:{}: ",
                                                 module.borrow().path.to_string_lossy(),
                                                 line,
                                                 col
                                             ),
                                             None => format!(
-                                                "{} - ",
+                                                "{}: ",
                                                 module.borrow().path.to_string_lossy()
                                             ),
                                         },
@@ -271,17 +270,17 @@ pub fn translate_variable_access_expression(
                                 _ => todo!(
                                     "{}TODO: translate {name} array subscript expression: {solidity_expression} - {} {expression:#?}",
                                     match project.loc_to_line_and_column(
-                                        &module.borrow().path,
+                                        module.clone(),
                                         &solidity_expression.loc()
                                     ) {
                                         Some((line, col)) => format!(
-                                            "{}:{}:{} - ",
+                                            "{}:{}:{}: ",
                                             module.borrow().path.to_string_lossy(),
                                             line,
                                             col
                                         ),
                                         None =>
-                                            format!("{} - ", module.borrow().path.to_string_lossy()),
+                                            format!("{}: ", module.borrow().path.to_string_lossy()),
                                     },
                                     sway::TabbedDisplayer(&expression),
                                 ),
@@ -310,17 +309,16 @@ pub fn translate_variable_access_expression(
 
                         (name, _) => todo!(
                             "{}TODO: translate {name} array subscript expression: {solidity_expression} - {} {expression:#?}",
-                            match project.loc_to_line_and_column(
-                                &module.borrow().path,
-                                &solidity_expression.loc()
-                            ) {
+                            match project
+                                .loc_to_line_and_column(module.clone(), &solidity_expression.loc())
+                            {
                                 Some((line, col)) => format!(
-                                    "{}:{}:{} - ",
+                                    "{}:{}:{}: ",
                                     module.borrow().path.to_string_lossy(),
                                     line,
                                     col
                                 ),
-                                None => format!("{} - ", module.borrow().path.to_string_lossy()),
+                                None => format!("{}: ", module.borrow().path.to_string_lossy()),
                             },
                             sway::TabbedDisplayer(&expression),
                         ),
@@ -442,16 +440,14 @@ pub fn translate_variable_access_expression(
 
             todo!(
                 "{}TODO: translate variable {container_type_name_string} member access expression: {solidity_expression} - {solidity_expression:#?}",
-                match project
-                    .loc_to_line_and_column(&module.borrow().path, &solidity_expression.loc())
-                {
+                match project.loc_to_line_and_column(module.clone(), &solidity_expression.loc()) {
                     Some((line, col)) => format!(
-                        "{}:{}:{} - ",
+                        "{}:{}:{}: ",
                         module.borrow().path.to_string_lossy(),
                         line,
                         col
                     ),
-                    None => format!("{} - ", module.borrow().path.to_string_lossy()),
+                    None => format!("{}: ", module.borrow().path.to_string_lossy()),
                 },
             )
         }

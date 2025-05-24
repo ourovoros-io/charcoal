@@ -419,7 +419,7 @@ pub fn translate_type_name(
 
             todo!(
                 "{} - translate variable type expression: {} - {type_name:#?}",
-                match project.loc_to_line_and_column(&module.borrow().path, &type_name.loc()) {
+                match project.loc_to_line_and_column(module.clone(), &type_name.loc()) {
                     Some((line, col)) => format!(
                         "{}:{}:{}",
                         module.borrow().path.to_string_lossy(),
@@ -571,7 +571,7 @@ pub fn translate_type_name(
 
                 todo!(
                     "{} - member access type name expression: {type_name}",
-                    match project.loc_to_line_and_column(&module.borrow().path, &type_name.loc()) {
+                    match project.loc_to_line_and_column(module.clone(), &type_name.loc()) {
                         Some((line, col)) => format!(
                             "{}:{}:{}",
                             module.borrow().path.to_string_lossy(),
@@ -585,7 +585,7 @@ pub fn translate_type_name(
 
             _ => todo!(
                 "{} - member access type name expression: {type_name}",
-                match project.loc_to_line_and_column(&module.borrow().path, &type_name.loc()) {
+                match project.loc_to_line_and_column(module.clone(), &type_name.loc()) {
                     Some((line, col)) => format!(
                         "{}:{}:{}",
                         module.borrow().path.to_string_lossy(),
@@ -599,7 +599,7 @@ pub fn translate_type_name(
 
         _ => unimplemented!(
             "{} - type name expression: {type_name}",
-            match project.loc_to_line_and_column(&module.borrow().path, &type_name.loc()) {
+            match project.loc_to_line_and_column(module.clone(), &type_name.loc()) {
                 Some((line, col)) => format!(
                     "{}:{}:{}",
                     module.borrow().path.to_string_lossy(),

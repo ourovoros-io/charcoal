@@ -15,8 +15,8 @@ pub fn translate_assignment_expression(
     // println!(
     //     "Translating assignment expression: {lhs} {operator} {rhs}; from {}",
     //     match project.loc_to_line_and_column(&module.path, &lhs.loc()) {
-    //         Some((line, col)) => format!("{}:{}:{} - ", module.path.to_string_lossy(), line, col),
-    //         None => format!("{} - ", module.path.to_string_lossy()),
+    //         Some((line, col)) => format!("{}:{}:{}: ", module.path.to_string_lossy(), line, col),
+    //         None => format!("{}: ", module.path.to_string_lossy()),
     //     },
     // );
 

@@ -61,8 +61,11 @@ pub fn translate_state_variable(
         generic_parameters: None,
     } = &variable_type_name
     {
-        todo!()
-        // // Check if type is a contract that hasn't been defined yet
+        //
+        // TODO:
+        // Check if type is a contract that hasn't been defined yet
+        //
+
         // if project.find_definition_with_abi(name.as_str()).is_none()
         //     && module.contract_names.iter().any(|n| n == name)
         // {

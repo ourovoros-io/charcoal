@@ -76,33 +76,35 @@ impl Project {
 
     /// Attempts to parse the file from the supplied `path`.
     #[inline]
-    fn parse_solidity_source_unit<P: AsRef<Path>>(&mut self, path: P) -> Result<(), Error> {
-        if !path.as_ref().exists() {
-            return Err(Error::Wrapped(
-                format!("File not found: {}", path.as_ref().to_string_lossy()).into(),
-            ));
+    fn parse_solidity_source_unit<P: AsRef<Path>>(
+        &mut self,
+        path: P,
+    ) -> Result<&solidity::SourceUnit, Error> {
+        if self.solidity_source_units.contains_key(path.as_ref()) {
+            return Ok(self.solidity_source_units.get(path.as_ref()).unwrap());
         }
 
         let path = wrapped_err!(path.as_ref().canonicalize())?;
-
         let source = wrapped_err!(std::fs::read_to_string(path.clone()))?;
-
-        self.load_line_ranges(&path, source.as_str());
-        let line_ranges = self.line_ranges.get(&path).unwrap();
+        let line_ranges = self.load_line_ranges(&path, source.as_str());
 
         let (source_unit, _comments) = solang_parser::parse(source.as_str(), 0)
             .map_err(|e| Error::SolangDiagnostics(path.clone(), line_ranges.clone(), e))?;
 
         // TODO: do we need the comments for anything?
 
-        self.solidity_source_units.insert(path, source_unit);
+        self.solidity_source_units.insert(path.clone(), source_unit);
 
-        Ok(())
+        Ok(self.solidity_source_units.get(&path).unwrap())
     }
 
     /// Loads line ranges in a specific file `path` from the provided `source` text.
     #[inline]
-    fn load_line_ranges(&mut self, path: &PathBuf, source: &str) {
+    fn load_line_ranges(&mut self, path: &PathBuf, source: &str) -> &Vec<(usize, usize)> {
+        if self.line_ranges.contains_key(path) {
+            return self.line_ranges.get(path).unwrap();
+        }
+
         let mut line_range = (0usize, 0usize);
 
         for (i, c) in source.chars().enumerate() {
@@ -122,15 +124,24 @@ impl Project {
                 .or_default()
                 .push(line_range);
         }
+
+        self.line_ranges.get(path).unwrap()
     }
 
     #[inline]
-    pub fn loc_to_line_and_column<P: AsRef<Path>>(
+    pub fn loc_to_line_and_column(
         &self,
-        path: P,
+        module: Rc<RefCell<TranslatedModule>>,
         loc: &solidity::Loc,
     ) -> Option<(usize, usize)> {
-        let line_ranges = self.line_ranges.get(path.as_ref())?;
+        let path = self
+            .root_folder
+            .clone()
+            .unwrap()
+            .join(module.borrow().path.clone())
+            .with_extension("sol");
+
+        let line_ranges = self.line_ranges.get(&path)?;
 
         let start = match loc {
             solidity::Loc::Builtin
@@ -471,8 +482,7 @@ impl Project {
         ) {
             import_counts.entry(path.into()).or_insert(0);
 
-            project.parse_solidity_source_unit(path).unwrap();
-            let ast = project.solidity_source_units.get(path).cloned().unwrap();
+            let ast = project.parse_solidity_source_unit(path).cloned().unwrap();
 
             if !import_paths.contains_key(path) {
                 let paths = project.get_import_paths(&ast, path).unwrap();
@@ -754,16 +764,8 @@ impl Project {
     }
 
     fn translate_file(&mut self, source_unit_path: &Path) -> Result<(), Error> {
-        // Ensure the source unit has been parsed
-        if !self.solidity_source_units.contains_key(source_unit_path) {
-            self.parse_solidity_source_unit(source_unit_path)?;
-        }
-        // Get the parsed source unit
-        let source_unit = self
-            .solidity_source_units
-            .get(source_unit_path)
-            .unwrap()
-            .clone();
+        // Parse the source unit
+        let source_unit = self.parse_solidity_source_unit(source_unit_path)?;
 
         // Collect toplevel items ahead of time for contextual reasons
         let mut import_directives = vec![];
@@ -858,7 +860,7 @@ impl Project {
         //
         // I think we should refactor the corresponding `TranslatedX` structs to have some kind
         // of implementation status, like so:
-        // 
+        //
         // pub struct TranslatedTypeDefinition {
         //     /// The signature of the type definition. This is populated before translation
         //     pub signature: sway::TypeName,

@@ -394,14 +394,14 @@ pub fn translate_builtin_function_call(
 
             panic!(
                 "{}error: Failed to find function `{old_name}({})` in scope: {function}({})",
-                match project.loc_to_line_and_column(&module.borrow().path, &function.loc()) {
+                match project.loc_to_line_and_column(module.clone(), &function.loc()) {
                     Some((line, col)) => format!(
-                        "{}:{}:{} - ",
+                        "{}:{}:{}: ",
                         module.borrow().path.to_string_lossy(),
                         line,
                         col
                     ),
-                    None => format!("{} - ", module.borrow().path.to_string_lossy()),
+                    None => format!("{}: ", module.borrow().path.to_string_lossy()),
                 },
                 parameter_types
                     .iter()

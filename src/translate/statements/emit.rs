@@ -192,14 +192,14 @@ pub fn translate_emit_statement(
 
         _ => panic!(
             "{}TODO: translate emit statement: {expression} - {expression:#?}",
-            match project.loc_to_line_and_column(&module.borrow().path, &expression.loc()) {
+            match project.loc_to_line_and_column(module.clone(), &expression.loc()) {
                 Some((line, col)) => format!(
-                    "{}:{}:{} - ",
+                    "{}:{}:{}: ",
                     module.borrow().path.to_string_lossy(),
                     line,
                     col
                 ),
-                None => format!("{} - ", module.borrow().path.to_string_lossy()),
+                None => format!("{}: ", module.borrow().path.to_string_lossy()),
             },
         ),
     }

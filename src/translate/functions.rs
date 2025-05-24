@@ -278,8 +278,16 @@ pub fn translate_modifier_definition(
     let scope = Rc::new(RefCell::new(TranslationScope::default()));
 
     for (_, p) in function_definition.params.iter() {
-        let old_name = p.as_ref().unwrap().name.as_ref().unwrap().name.clone();
-        let new_name = translate_naming_convention(old_name.as_str(), Case::Snake);
+        let old_name = p.as_ref().unwrap().name.as_ref().map(|p| p.name.clone()).unwrap_or_else(String::new);
+        
+        let new_name = if old_name.is_empty() {
+            println!("WARNING: found unnamed parameter");
+            // TODO: we should generate a unique parameter name
+            "_".to_string()
+        } else {
+            translate_naming_convention(old_name.as_str(), Case::Snake)
+        };
+
         let type_name = translate_type_name(
             project,
             module.clone(),
@@ -523,7 +531,22 @@ pub fn translate_modifier_definition(
         }
 
         (None, None) => {
-            panic!("Malformed modifier missing pre and post bodies");
+            // let path = project
+            //     .root_folder
+            //     .clone()
+            //     .unwrap()
+            //     .join(module.borrow().path.clone())
+            //     .with_extension("sol");
+
+            // panic!(
+            //     "{}: Malformed modifier missing pre and post bodies",
+            //     match project.loc_to_line_and_column(&path, &function_definition.loc) {
+            //         Some((line, col)) => format!("{}:{}:{}", path.to_string_lossy(), line, col),
+            //         None => path.to_string_lossy().to_string(),
+            //     },
+            // );
+
+            return Ok(());
         }
     }
 

@@ -589,8 +589,8 @@ pub fn translate_member_access_expression(
         return Ok(sway::Expression::create_todo(Some(format!("{s}.{member}"))))
     }
 
-    todo!("{}translate {container_type_name_string} member access expression: {expression} - {expression:#?}", match project.loc_to_line_and_column(&module.borrow().path, &expression.loc()) {
-        Some((line, col)) => format!("{}:{}:{} - ", module.borrow().path.to_string_lossy(), line, col),
-        None => format!("{} - ", module.borrow().path.to_string_lossy()),
+    todo!("{}translate {container_type_name_string} member access expression: {expression} - {expression:#?}", match project.loc_to_line_and_column(module.clone(), &expression.loc()) {
+        Some((line, col)) => format!("{}:{}:{}: ", module.borrow().path.to_string_lossy(), line, col),
+        None => format!("{}: ", module.borrow().path.to_string_lossy()),
     },)
 }

@@ -575,9 +575,9 @@ pub fn translate_identity_member_access_function_call(
 
     todo!(
         "{}translate Identity member function call `{member}`: {} - {container:#?}",
-        match project.loc_to_line_and_column(&module.borrow().path, &function.loc()) {
-            Some((line, col)) => format!("{}:{}:{} - ", module.borrow().path.to_string_lossy(), line, col),
-            None => format!("{} - ", module.borrow().path.to_string_lossy()),
+        match project.loc_to_line_and_column(module.clone(), &function.loc()) {
+            Some((line, col)) => format!("{}:{}:{}: ", module.borrow().path.to_string_lossy(), line, col),
+            None => format!("{}: ", module.borrow().path.to_string_lossy()),
         },
         sway::TabbedDisplayer(&container),
     )
@@ -1132,14 +1132,14 @@ pub fn translate_super_member_access_function_call(
 
     panic!(
         "{}TODO: handle super member access function `{member:#?}`",
-        match project.loc_to_line_and_column(&module.borrow().path, &member.loc()) {
+        match project.loc_to_line_and_column(module.clone(), &member.loc()) {
             Some((line, col)) => format!(
-                "{}:{}:{} - ",
+                "{}:{}:{}: ",
                 module.borrow().path.to_string_lossy(),
                 line,
                 col
             ),
-            None => format!("{} - ", module.borrow().path.to_string_lossy()),
+            None => format!("{}: ", module.borrow().path.to_string_lossy()),
         },
     )
 }

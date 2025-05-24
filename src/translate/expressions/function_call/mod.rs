@@ -27,9 +27,9 @@ pub fn translate_function_call_expression(
 
     // println!(
     //     "Translating function call: {expression}; from {}",
-    //     match project.loc_to_line_and_column(&module.borrow().path, &expression.loc()) {
-    //         Some((line, col)) => format!("{}:{}:{} - ", module.borrow().path.to_string_lossy(), line, col),
-    //         None => format!("{} - ", module.borrow().path.to_string_lossy()),
+    //     match project.loc_to_line_and_column(module.clone(), &expression.loc()) {
+    //         Some((line, col)) => format!("{}:{}:{}: ", module.borrow().path.to_string_lossy(), line, col),
+    //         None => format!("{}: ", module.borrow().path.to_string_lossy()),
     //     },
     // );
 
@@ -713,18 +713,15 @@ pub fn translate_function_call_expression(
 
                                 todo!(
                                     "{}translate {name} member function call: {}.{member}({}) - {container:#?}",
-                                    match project.loc_to_line_and_column(
-                                        &module.borrow().path,
-                                        &function.loc()
-                                    ) {
+                                    match project.loc_to_line_and_column(module.clone(), &function.loc()) {
                                         Some((line, col)) => format!(
-                                            "{}:{}:{} - ",
+                                            "{}:{}:{}: ",
                                             module.borrow().path.to_string_lossy(),
                                             line,
                                             col
                                         ),
                                         None =>
-                                            format!("{} - ", module.borrow().path.to_string_lossy()),
+                                            format!("{}: ", module.borrow().path.to_string_lossy()),
                                     },
                                     sway::TabbedDisplayer(&container),
                                     parameter_types
@@ -800,16 +797,16 @@ pub fn translate_function_call_expression(
                             todo!(
                                 "{}translate array member function call: {} - {}",
                                 match project
-                                    .loc_to_line_and_column(&module.borrow().path, &function.loc())
+                                    .loc_to_line_and_column(module.clone(), &function.loc())
                                 {
                                     Some((line, col)) => format!(
-                                        "{}:{}:{} - ",
+                                        "{}:{}:{}: ",
                                         module.borrow().path.to_string_lossy(),
                                         line,
                                         col
                                     ),
                                     None =>
-                                        format!("{} - ", module.borrow().path.to_string_lossy()),
+                                        format!("{}: ", module.borrow().path.to_string_lossy()),
                                 },
                                 expression,
                                 sway::TabbedDisplayer(&container),
@@ -879,16 +876,16 @@ pub fn translate_function_call_expression(
                             panic!(
                                 "{}TODO: translate string slice member function call: {function}({})",
                                 match project
-                                    .loc_to_line_and_column(&module.borrow().path, &function.loc())
+                                    .loc_to_line_and_column(module.clone(), &function.loc())
                                 {
                                     Some((line, col)) => format!(
-                                        "{}:{}:{} - ",
+                                        "{}:{}:{}: ",
                                         module.borrow().path.to_string_lossy(),
                                         line,
                                         col
                                     ),
                                     None =>
-                                        format!("{} - ", module.borrow().path.to_string_lossy()),
+                                        format!("{}: ", module.borrow().path.to_string_lossy()),
                                 },
                                 parameter_types
                                     .iter()
@@ -962,14 +959,14 @@ pub fn translate_function_call_block_expression(
 
     panic!(
         "{}TODO: Translate function call block expression: `{function}{block}`",
-        match project.loc_to_line_and_column(&module.borrow().path, &function.loc()) {
+        match project.loc_to_line_and_column(module.clone(), &function.loc()) {
             Some((line, col)) => format!(
-                "{}:{}:{} - ",
+                "{}:{}:{}: ",
                 module.borrow().path.to_string_lossy(),
                 line,
                 col
             ),
-            None => format!("{} - ", module.borrow().path.to_string_lossy()),
+            None => format!("{}: ", module.borrow().path.to_string_lossy()),
         },
     )
 }

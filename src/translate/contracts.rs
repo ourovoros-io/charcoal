@@ -46,15 +46,15 @@ pub fn translate_using_directive(
                 panic!(
                     "Failed to find translated library: \"{library_name}\"; from {}",
                     match project
-                        .loc_to_line_and_column(&module.borrow().path, &using_directive.loc)
+                        .loc_to_line_and_column(module.clone(), &using_directive.loc)
                     {
                         Some((line, col)) => format!(
-                            "{}:{}:{} - ",
+                            "{}:{}:{}: ",
                             module.borrow().path.to_string_lossy(),
                             line,
                             col
                         ),
-                        None => format!("{} - ", module.borrow().path.to_string_lossy()),
+                        None => format!("{}: ", module.borrow().path.to_string_lossy()),
                     },
                 )
             };

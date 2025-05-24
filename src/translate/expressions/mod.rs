@@ -103,6 +103,94 @@ pub fn evaluate_expression(
         sway::Expression::FunctionCall(function_call) => match &function_call.function {
             sway::Expression::PathExpr(path_expr) => {
                 let Some(identifier) = path_expr.as_identifier() else {
+                    match path_expr.to_string().as_str() {
+                        "Address::from" => {
+                            return sway::Expression::from(sway::FunctionCall {
+                                function: function_call.function.clone(),
+                                generic_parameters: function_call.generic_parameters.clone(),
+                                parameters: function_call
+                                    .parameters
+                                    .iter()
+                                    .map(|p| {
+                                        evaluate_expression(module.clone(), scope.clone(), type_name, p)
+                                    })
+                                    .collect(),
+                            });
+                        }
+
+                        "b256::from_be_bytes" => {
+                            // TODO: sigh...
+                            return expression.clone();
+                        }
+
+                        "keccak256" | "std::hash::keccak256" if function_call.parameters.len() == 1 => {
+                            match &function_call.parameters[0] {
+                                sway::Expression::Literal(sway::Literal::String(s)) => {
+                                    use sha3::Digest;
+
+                                    let mut hasher = sha3::Keccak256::new();
+                                    hasher.update(s.as_bytes());
+
+                                    let value = BigUint::from_str_radix(
+                                        hex::encode(hasher.finalize()).as_str(),
+                                        16,
+                                    )
+                                    .unwrap();
+
+                                    return sway::Expression::Commented(
+                                        format!("{}", sway::TabbedDisplayer(expression)),
+                                        Box::new(if value.is_zero() {
+                                            sway::Expression::create_function_calls(
+                                                None,
+                                                &[("b256::zero", Some((None, vec![])))],
+                                            )
+                                        } else {
+                                            sway::Expression::from(sway::Literal::HexInt(value, None))
+                                        }),
+                                    );
+                                }
+
+                                _ => todo!("evaluate function call: {expression:#?}"),
+                            }
+                        }
+
+                        "I8::from_uint" | "I16::from_uint" | "I32::from_uint" | "I64::from_uint"
+                        | "I128::from_uint" | "I256::from_uint" => {
+                            return evaluate_expression(module, scope, type_name, &function_call.parameters[0]);
+                        }
+
+                        "Identity::Address" | "Identity::ContractId" => {
+                            return sway::Expression::from(sway::FunctionCall {
+                                function: function_call.function.clone(),
+                                generic_parameters: function_call.generic_parameters.clone(),
+                                parameters: function_call
+                                    .parameters
+                                    .iter()
+                                    .map(|p| {
+                                        evaluate_expression(module.clone(), scope.clone(), type_name, p)
+                                    })
+                                    .collect(),
+                            });
+                        }
+
+                        "u64::max" => {
+                            assert!(function_call.parameters.is_empty());
+                            return sway::Expression::from(sway::Literal::DecInt(u64::MAX.into(), None));
+                        }
+
+                        "u64::min" => {
+                            assert!(function_call.parameters.is_empty());
+                            return sway::Expression::from(sway::Literal::DecInt(u64::MIN.into(), None));
+                        }
+
+                        "u256::from_be_bytes" => {
+                            // TODO: sigh...
+                            return expression.clone();
+                        }
+
+                        _ => {}
+                    }
+
                     todo!(
                         "evaluate non-identifier path function call expression: {path_expr}({}) - {path_expr:#?}",
                         function_call
@@ -125,83 +213,6 @@ pub fn evaluate_expression(
                         "{}",
                         sway::TabbedDisplayer(expression)
                     ))),
-
-                    "Address::from" => sway::Expression::from(sway::FunctionCall {
-                        function: function_call.function.clone(),
-                        generic_parameters: function_call.generic_parameters.clone(),
-                        parameters: function_call
-                            .parameters
-                            .iter()
-                            .map(|p| {
-                                evaluate_expression(module.clone(), scope.clone(), type_name, p)
-                            })
-                            .collect(),
-                    }),
-
-                    "b256::from_be_bytes" => {
-                        // TODO: sigh...
-                        expression.clone()
-                    }
-
-                    "keccak256" | "std::hash::keccak256" if function_call.parameters.len() == 1 => {
-                        match &function_call.parameters[0] {
-                            sway::Expression::Literal(sway::Literal::String(s)) => {
-                                use sha3::Digest;
-
-                                let mut hasher = sha3::Keccak256::new();
-                                hasher.update(s.as_bytes());
-
-                                let value = BigUint::from_str_radix(
-                                    hex::encode(hasher.finalize()).as_str(),
-                                    16,
-                                )
-                                .unwrap();
-
-                                return sway::Expression::Commented(
-                                    format!("{}", sway::TabbedDisplayer(expression)),
-                                    Box::new(if value.is_zero() {
-                                        sway::Expression::create_function_calls(
-                                            None,
-                                            &[("b256::zero", Some((None, vec![])))],
-                                        )
-                                    } else {
-                                        sway::Expression::from(sway::Literal::HexInt(value, None))
-                                    }),
-                                );
-                            }
-
-                            _ => todo!("evaluate function call: {expression:#?}"),
-                        }
-                    }
-
-                    "I8::from_uint" | "I16::from_uint" | "I32::from_uint" | "I64::from_uint"
-                    | "I128::from_uint" | "I256::from_uint" => {
-                        evaluate_expression(module, scope, type_name, &function_call.parameters[0])
-                    }
-
-                    "Identity::Address" | "Identity::ContractId" => {
-                        sway::Expression::from(sway::FunctionCall {
-                            function: function_call.function.clone(),
-                            generic_parameters: function_call.generic_parameters.clone(),
-                            parameters: function_call
-                                .parameters
-                                .iter()
-                                .map(|p| {
-                                    evaluate_expression(module.clone(), scope.clone(), type_name, p)
-                                })
-                                .collect(),
-                        })
-                    }
-
-                    "u64::max" => {
-                        assert!(function_call.parameters.is_empty());
-                        sway::Expression::from(sway::Literal::DecInt(u64::MAX.into(), None))
-                    }
-
-                    "u64::min" => {
-                        assert!(function_call.parameters.is_empty());
-                        sway::Expression::from(sway::Literal::DecInt(u64::MIN.into(), None))
-                    }
 
                     "__to_str_array" => expression.clone(),
 
@@ -308,8 +319,8 @@ pub fn translate_expression(
     // println!(
     //     "Translating expression: {expression}; from {}",
     //     match project.loc_to_line_and_column(&module.path, &expression.loc()) {
-    //         Some((line, col)) => format!("{}:{}:{} - ", module.path.to_string_lossy(), line, col),
-    //         None => format!("{} - ", module.path.to_string_lossy()),
+    //         Some((line, col)) => format!("{}:{}:{}: ", module.path.to_string_lossy(), line, col),
+    //         None => format!("{}: ", module.path.to_string_lossy()),
     //     },
     // );
 

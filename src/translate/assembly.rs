@@ -159,14 +159,14 @@ pub fn translate_yul_assign_statement(
         let Some(variable) = scope.borrow().get_variable_from_new_name(name) else {
             panic!(
                 "{}error: Variable not found in scope: \"{name}\"",
-                match project.loc_to_line_and_column(&module.borrow().path, &identifiers[i].loc()) {
+                match project.loc_to_line_and_column(module.clone(), &identifiers[i].loc()) {
                     Some((line, col)) => format!(
-                        "{}:{}:{} - ",
+                        "{}:{}:{}: ",
                         module.borrow().path.to_string_lossy(),
                         line,
                         col
                     ),
-                    None => format!("{} - ", module.borrow().path.to_string_lossy()),
+                    None => format!("{}: ", module.borrow().path.to_string_lossy()),
                 }
             );
         };
@@ -531,14 +531,14 @@ pub fn translate_yul_variable_expression(
     let Some(variable) = scope.borrow().get_variable_from_old_name(name) else {
         panic!(
             "{}error: Variable not found in scope: \"{name}\"",
-            match project.loc_to_line_and_column(&module.borrow().path, &expression.loc()) {
+            match project.loc_to_line_and_column(module.clone(), &expression.loc()) {
                 Some((line, col)) => format!(
-                    "{}:{}:{} - ",
+                    "{}:{}:{}: ",
                     module.borrow().path.to_string_lossy(),
                     line,
                     col
                 ),
-                None => format!("{} - ", module.borrow().path.to_string_lossy()),
+                None => format!("{}: ", module.borrow().path.to_string_lossy()),
             }
         );
     };

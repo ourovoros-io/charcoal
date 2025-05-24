@@ -965,6 +965,19 @@ impl TranslatedModule {
                 });
             }
 
+            "Address::from" => {
+                assert!(
+                    parameters.len() == 1,
+                    "Malformed `Address::from` call, expected 1 parameter, found {}",
+                    parameters.len()
+                );
+
+                return Ok(sway::TypeName::Identifier {
+                    name: "Address".into(),
+                    generic_parameters: None,
+                });
+            }
+            
             "AssetId::default" => {
                 return Ok(sway::TypeName::Identifier {
                     name: "AssetId".into(),
@@ -1135,9 +1148,184 @@ impl TranslatedModule {
                 });
             }
 
-            "std::registers::return_length" => {
+            "std::registers::balance" => {
+                assert!(
+                    parameters.is_empty(),
+                    "Malformed `std::registers::balance` call, expected 0 parameters, found {}",
+                    parameters.len()
+                );
+
                 return Ok(sway::TypeName::Identifier {
                     name: "u64".into(),
+                    generic_parameters: None,
+                });
+            }
+
+            "std::registers::context_gas" => {
+                assert!(
+                    parameters.is_empty(),
+                    "Malformed `std::registers::context_gas` call, expected 0 parameters, found {}",
+                    parameters.len()
+                );
+
+                return Ok(sway::TypeName::Identifier {
+                    name: "u64".into(),
+                    generic_parameters: None,
+                });
+            }
+
+            "std::registers::error" => {
+                assert!(
+                    parameters.is_empty(),
+                    "Malformed `std::registers::error` call, expected 0 parameters, found {}",
+                    parameters.len()
+                );
+
+                return Ok(sway::TypeName::Identifier {
+                    name: "u64".into(),
+                    generic_parameters: None,
+                });
+            }
+
+            "std::registers::flags" => {
+                assert!(
+                    parameters.is_empty(),
+                    "Malformed `std::registers::flags` call, expected 0 parameters, found {}",
+                    parameters.len()
+                );
+
+                return Ok(sway::TypeName::Identifier {
+                    name: "u64".into(),
+                    generic_parameters: None,
+                });
+            }
+
+            "std::registers::frame_ptr" => {
+                assert!(
+                    parameters.is_empty(),
+                    "Malformed `std::registers::frame_ptr` call, expected 0 parameters, found {}",
+                    parameters.len()
+                );
+
+                return Ok(sway::TypeName::Identifier {
+                    name: "raw_ptr".into(),
+                    generic_parameters: None,
+                });
+            }
+
+            "std::registers::global_gas" => {
+                assert!(
+                    parameters.is_empty(),
+                    "Malformed `std::registers::global_gas` call, expected 0 parameters, found {}",
+                    parameters.len()
+                );
+
+                return Ok(sway::TypeName::Identifier {
+                    name: "u64".into(),
+                    generic_parameters: None,
+                });
+            }
+
+            "std::registers::heap_ptr" => {
+                assert!(
+                    parameters.is_empty(),
+                    "Malformed `std::registers::heap_ptr` call, expected 0 parameters, found {}",
+                    parameters.len()
+                );
+
+                return Ok(sway::TypeName::Identifier {
+                    name: "raw_ptr".into(),
+                    generic_parameters: None,
+                });
+            }
+
+            "std::registers::instrs_start" => {
+                assert!(
+                    parameters.is_empty(),
+                    "Malformed `std::registers::instrs_start` call, expected 0 parameters, found {}",
+                    parameters.len()
+                );
+
+                return Ok(sway::TypeName::Identifier {
+                    name: "raw_ptr".into(),
+                    generic_parameters: None,
+                });
+            }
+
+            "std::registers::overflow" => {
+                assert!(
+                    parameters.is_empty(),
+                    "Malformed `std::registers::overflow` call, expected 0 parameters, found {}",
+                    parameters.len()
+                );
+
+                return Ok(sway::TypeName::Identifier {
+                    name: "u64".into(),
+                    generic_parameters: None,
+                });
+            }
+
+            "std::registers::program_counter" => {
+                assert!(
+                    parameters.is_empty(),
+                    "Malformed `std::registers::program_counter` call, expected 0 parameters, found {}",
+                    parameters.len()
+                );
+
+                return Ok(sway::TypeName::Identifier {
+                    name: "raw_ptr".into(),
+                    generic_parameters: None,
+                });
+            }
+
+            "std::registers::return_value" => {
+                assert!(
+                    parameters.is_empty(),
+                    "Malformed `std::registers::return_value` call, expected 0 parameters, found {}",
+                    parameters.len()
+                );
+
+                return Ok(sway::TypeName::Identifier {
+                    name: "u64".into(),
+                    generic_parameters: None,
+                });
+            }
+
+            "std::registers::return_length" => {
+                assert!(
+                    parameters.is_empty(),
+                    "Malformed `std::registers::return_length` call, expected 0 parameters, found {}",
+                    parameters.len()
+                );
+
+                return Ok(sway::TypeName::Identifier {
+                    name: "u64".into(),
+                    generic_parameters: None,
+                });
+            }
+
+            "std::registers::stack_ptr" => {
+                assert!(
+                    parameters.is_empty(),
+                    "Malformed `std::registers::stack_ptr` call, expected 0 parameters, found {}",
+                    parameters.len()
+                );
+
+                return Ok(sway::TypeName::Identifier {
+                    name: "raw_ptr".into(),
+                    generic_parameters: None,
+                });
+            }
+
+            "std::registers::stack_start_ptr" => {
+                assert!(
+                    parameters.is_empty(),
+                    "Malformed `std::registers::stack_start_ptr` call, expected 0 parameters, found {}",
+                    parameters.len()
+                );
+
+                return Ok(sway::TypeName::Identifier {
+                    name: "raw_ptr".into(),
                     generic_parameters: None,
                 });
             }

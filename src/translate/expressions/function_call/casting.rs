@@ -190,44 +190,44 @@ pub fn translate_address_type_cast_function_call(
                         _ => panic!(
                             "{}translate cast from {value_type_name} to address: {expression} - {value_type_name:#?}",
                             match project
-                                .loc_to_line_and_column(&module.borrow().path, &argument.loc())
+                                .loc_to_line_and_column(module.clone(), &argument.loc())
                             {
                                 Some((line, col)) => format!(
-                                    "{}:{}:{} - ",
+                                    "{}:{}:{}: ",
                                     module.borrow().path.to_string_lossy(),
                                     line,
                                     col
                                 ),
-                                None => format!("{} - ", module.borrow().path.to_string_lossy()),
+                                None => format!("{}: ", module.borrow().path.to_string_lossy()),
                             },
                         ),
                     },
 
                     _ => panic!(
                         "{}translate cast from {value_type_name} to address: {expression} - {value_type_name:#?}",
-                        match project.loc_to_line_and_column(&module.borrow().path, &argument.loc())
+                        match project.loc_to_line_and_column(module.clone(), &argument.loc())
                         {
                             Some((line, col)) => format!(
-                                "{}:{}:{} - ",
+                                "{}:{}:{}: ",
                                 module.borrow().path.to_string_lossy(),
                                 line,
                                 col
                             ),
-                            None => format!("{} - ", module.borrow().path.to_string_lossy()),
+                            None => format!("{}: ", module.borrow().path.to_string_lossy()),
                         },
                     ),
                 },
 
                 _ => panic!(
                     "{}translate cast from {value_type_name} to address: {expression} - {value_type_name:#?}",
-                    match project.loc_to_line_and_column(&module.borrow().path, &argument.loc()) {
+                    match project.loc_to_line_and_column(module.clone(), &argument.loc()) {
                         Some((line, col)) => format!(
-                            "{}:{}:{} - ",
+                            "{}:{}:{}: ",
                             module.borrow().path.to_string_lossy(),
                             line,
                             col
                         ),
-                        None => format!("{} - ", module.borrow().path.to_string_lossy()),
+                        None => format!("{}: ", module.borrow().path.to_string_lossy()),
                     },
                 ),
             }
@@ -705,14 +705,14 @@ pub fn translate_uint_types_cast_function_call(
 
             _ => panic!(
                 "{}translate from {value_type_name} to u{bits}: {value_expression:#?}",
-                match project.loc_to_line_and_column(&module.borrow().path, &argument.loc()) {
+                match project.loc_to_line_and_column(module.clone(), &argument.loc()) {
                     Some((line, col)) => format!(
-                        "{}:{}:{} - ",
+                        "{}:{}:{}: ",
                         module.borrow().path.to_string_lossy(),
                         line,
                         col
                     ),
-                    None => format!("{} - ", module.borrow().path.to_string_lossy()),
+                    None => format!("{}: ", module.borrow().path.to_string_lossy()),
                 },
             ),
         },
@@ -1052,14 +1052,14 @@ pub fn translate_bytes_type_cast_function_call(
 
             _ => panic!(
                 "{}TODO: translate from {value_type_name} to bytes{byte_count}",
-                match project.loc_to_line_and_column(&module.borrow().path, &function.loc()) {
+                match project.loc_to_line_and_column(module.clone(), &function.loc()) {
                     Some((line, col)) => format!(
-                        "{}:{}:{} - ",
+                        "{}:{}:{}: ",
                         module.borrow().path.to_string_lossy(),
                         line,
                         col
                     ),
-                    None => format!("{} - ", module.borrow().path.to_string_lossy()),
+                    None => format!("{}: ", module.borrow().path.to_string_lossy()),
                 },
             ),
         },

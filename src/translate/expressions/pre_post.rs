@@ -27,8 +27,8 @@ pub fn translate_pre_or_post_operator_value_expression(
             // println!(
             //     "Translating pre- or post-operator value expression: {expression}; from {} - {expression:#?}",
             //     match project.loc_to_line_and_column(&module.path, &expression.loc()) {
-            //         Some((line, col)) => format!("{}:{}:{} - ", module.path.to_string_lossy(), line, col),
-            //         None => format!("{} - ", module.path.to_string_lossy()),
+            //         Some((line, col)) => format!("{}:{}:{}: ", module.path.to_string_lossy(), line, col),
+            //         None => format!("{}: ", module.path.to_string_lossy()),
             //     },
             // );
 

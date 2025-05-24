@@ -41,9 +41,9 @@ pub fn translate_new_expression(
 
                     arg => println!(
                         "{}WARNING: unsupported function call block arg: {arg}",
-                        match project.loc_to_line_and_column(&module.borrow().path, &block_arg.loc()) {
-                            Some((line, col)) => format!("{}:{}:{} - ", module.borrow().path.to_string_lossy(), line, col),
-                            None => format!("{} - ", module.borrow().path.to_string_lossy()),
+                        match project.loc_to_line_and_column(module.clone(), &block_arg.loc()) {
+                            Some((line, col)) => format!("{}:{}:{}: ", module.borrow().path.to_string_lossy(), line, col),
+                            None => format!("{}: ", module.borrow().path.to_string_lossy()),
                         }
                     ),
                 }
@@ -306,9 +306,9 @@ pub fn translate_new_expression(
         _ => {
             // println!(
             //     "{}WARNING: unsupported function call block arg: {expr}",
-            //     match project.loc_to_line_and_column(&module.borrow().path, &expr.loc()) {
-            //         Some((line, col)) => format!("{}:{}:{} - ", module.borrow().path.to_string_lossy(), line, col),
-            //         None => format!("{} - ", module.borrow().path.to_string_lossy()),
+            //     match project.loc_to_line_and_column(module.clone(), &expr.loc()) {
+            //         Some((line, col)) => format!("{}:{}:{}: ", module.borrow().path.to_string_lossy(), line, col),
+            //         None => format!("{}: ", module.borrow().path.to_string_lossy()),
             //     }
             // );
             

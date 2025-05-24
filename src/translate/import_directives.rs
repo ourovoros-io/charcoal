@@ -42,17 +42,17 @@ pub fn translate_import_directives(
                     panic!(
                         "{}ERROR: failed to resolve import directive from `{import_directive}`",
                         match project.loc_to_line_and_column(
-                            &translated_module.borrow().path,
+                            translated_module.clone(),
                             &import_directive.loc()
                         ) {
                             Some((line, col)) => format!(
-                                "{}:{}:{} - ",
+                                "{}:{}:{}: ",
                                 translated_module.borrow().path.to_string_lossy(),
                                 line,
                                 col
                             ),
                             None =>
-                                format!("{} - ", translated_module.borrow().path.to_string_lossy()),
+                                format!("{}: ", translated_module.borrow().path.to_string_lossy()),
                         }
                     );
                 }
@@ -74,8 +74,8 @@ pub fn translate_import_directives(
                     //     panic!(
                     //         "{}ERROR: failed to resolve import directive from `{import_directive}`",
                     //         match project.loc_to_line_and_column(&translated_module.path, &import_directive.loc()) {
-                    //             Some((line, col)) => format!("{}:{}:{} - ", translated_module.path.to_string_lossy(), line, col),
-                    //             None => format!("{} - ", translated_module.path.to_string_lossy()),
+                    //             Some((line, col)) => format!("{}:{}:{}: ", translated_module.path.to_string_lossy(), line, col),
+                    //             None => format!("{}: ", translated_module.path.to_string_lossy()),
                     //         }
                     //     );
                     // }

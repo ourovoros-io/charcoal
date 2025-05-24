@@ -74,23 +74,23 @@ pub fn translate_event_definition(
             false,
             false,
         ) {
-            sway::TypeName::Identifier {
-                name,
-                generic_parameters,
-            } => {
-                todo!();
-                // if project.find_definition_with_abi(name.as_str()).is_some() {
-                //     sway::TypeName::Identifier {
-                //         name: "Identity".into(),
-                //         generic_parameters: None,
-                //     }
-                // }
+            // sway::TypeName::Identifier {
+            //     name,
+            //     generic_parameters,
+            // } => {
+            //     todo!();
+            //     // if project.find_definition_with_abi(name.as_str()).is_some() {
+            //     //     sway::TypeName::Identifier {
+            //     //         name: "Identity".into(),
+            //     //         generic_parameters: None,
+            //     //     }
+            //     // }
 
-                sway::TypeName::Identifier {
-                    name,
-                    generic_parameters,
-                }
-            }
+            //     sway::TypeName::Identifier {
+            //         name,
+            //         generic_parameters,
+            //     }
+            // }
 
             type_name => type_name,
         }
@@ -101,23 +101,23 @@ pub fn translate_event_definition(
                 .iter()
                 .map(|f| {
                     match translate_type_name(project, module.clone(), &f.ty, false, false) {
-                        sway::TypeName::Identifier {
-                            name,
-                            generic_parameters,
-                        } => {
-                            todo!();
-                            // if project.find_definition_with_abi(name.as_str()).is_some() {
-                            //     sway::TypeName::Identifier {
-                            //         name: "Identity".into(),
-                            //         generic_parameters: None,
-                            //     }
-                            // }
+                        // sway::TypeName::Identifier {
+                        //     name,
+                        //     generic_parameters,
+                        // } => {
+                        //     todo!();
+                        //     // if project.find_definition_with_abi(name.as_str()).is_some() {
+                        //     //     sway::TypeName::Identifier {
+                        //     //         name: "Identity".into(),
+                        //     //         generic_parameters: None,
+                        //     //     }
+                        //     // }
 
-                            sway::TypeName::Identifier {
-                                name,
-                                generic_parameters,
-                            }
-                        }
+                        //     sway::TypeName::Identifier {
+                        //         name,
+                        //         generic_parameters,
+                        //     }
+                        // }
 
                         type_name => type_name,
                     }
