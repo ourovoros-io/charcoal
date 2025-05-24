@@ -1,3 +1,4 @@
+use crate::{cli::Args, error::Error, translate::*, wrapped_err};
 use convert_case::{Case, Casing};
 use solang_parser::pt as solidity;
 use std::{
@@ -5,13 +6,6 @@ use std::{
     collections::HashMap,
     path::{Component, Path, PathBuf},
     rc::Rc,
-};
-
-use crate::{
-    cli::Args,
-    error::Error,
-    translate::{self, TranslatedModule},
-    wrapped_err,
 };
 
 /// Represents the type of project as [ProjectKind] default is [ProjectKind::Unknown]
@@ -773,15 +767,15 @@ impl Project {
 
         // Collect toplevel items ahead of time for contextual reasons
         let mut import_directives = vec![];
-        let mut toplevel_using_directives = vec![];
-        let mut toplevel_type_definitions = vec![];
-        let mut toplevel_enums = vec![];
-        let mut toplevel_structs = vec![];
-        let mut toplevel_events = vec![];
-        let mut toplevel_errors = vec![];
-        let mut toplevel_functions = vec![];
-        let mut toplevel_variables = vec![];
-        let mut contract_names = vec![];
+        let mut using_directives = vec![];
+        let mut type_definitions = vec![];
+        let mut enum_definitions = vec![];
+        let mut struct_definitions = vec![];
+        let mut event_definitions = vec![];
+        let mut error_definitions = vec![];
+        let mut function_definitions = vec![];
+        let mut variable_definitions = vec![];
+        let mut contract_definitions = vec![];
 
         for source_unit_part in source_unit.0.iter() {
             match source_unit_part {
@@ -794,35 +788,35 @@ impl Project {
                 }
 
                 solidity::SourceUnitPart::ContractDefinition(contract_definition) => {
-                    contract_names.push(contract_definition.name.as_ref().unwrap().name.clone());
+                    contract_definitions.push(contract_definition.clone());
                 }
 
                 solidity::SourceUnitPart::EnumDefinition(enum_definition) => {
-                    toplevel_enums.push(enum_definition.as_ref().clone());
+                    enum_definitions.push(enum_definition.as_ref().clone());
                 }
 
                 solidity::SourceUnitPart::StructDefinition(struct_definition) => {
-                    toplevel_structs.push(struct_definition.as_ref().clone());
+                    struct_definitions.push(struct_definition.as_ref().clone());
                 }
 
                 solidity::SourceUnitPart::EventDefinition(event_definition) => {
-                    toplevel_events.push(event_definition.as_ref().clone());
+                    event_definitions.push(event_definition.as_ref().clone());
                 }
 
                 solidity::SourceUnitPart::ErrorDefinition(error_definition) => {
-                    toplevel_errors.push(error_definition.as_ref().clone());
+                    error_definitions.push(error_definition.as_ref().clone());
                 }
 
                 solidity::SourceUnitPart::FunctionDefinition(function_definition) => {
-                    toplevel_functions.push(function_definition.as_ref().clone());
+                    function_definitions.push(function_definition.as_ref().clone());
                 }
 
                 solidity::SourceUnitPart::VariableDefinition(variable_definition) => {
-                    toplevel_variables.push(variable_definition.as_ref().clone());
+                    variable_definitions.push(variable_definition.as_ref().clone());
                 }
 
                 solidity::SourceUnitPart::TypeDefinition(type_definition) => {
-                    toplevel_type_definitions.push(type_definition.as_ref().clone());
+                    type_definitions.push(type_definition.as_ref().clone());
                 }
 
                 solidity::SourceUnitPart::Annotation(_) => {
@@ -830,7 +824,7 @@ impl Project {
                 }
 
                 solidity::SourceUnitPart::Using(using_directive) => {
-                    toplevel_using_directives.push(using_directive.as_ref().clone());
+                    using_directives.push(using_directive.as_ref().clone());
                 }
 
                 solidity::SourceUnitPart::StraySemicolon(_) => {
@@ -839,63 +833,75 @@ impl Project {
             }
         }
 
-        let relative_path = PathBuf::from(
-            source_unit_path.to_string_lossy().trim_start_matches(
-                &self
-                    .root_folder
-                    .as_ref()
-                    .unwrap()
-                    .to_string_lossy()
-                    .to_string(),
-            ),
-        )
-        .with_extension("");
+        // Create a new module to store the translated items in
+        let module = self.find_or_create_module(
+            &PathBuf::from(
+                source_unit_path.to_string_lossy().trim_start_matches(
+                    &self
+                        .root_folder
+                        .as_ref()
+                        .unwrap()
+                        .to_string_lossy()
+                        .to_string(),
+                ),
+            )
+            .with_extension(""),
+        );
 
-        let translated_module = self.find_or_create_module(&relative_path);
+        //
+        // TODO:
+        //
+        // We will need to build a complete list of types defined in the module, followed by
+        // a complete list of all function signatures defined in the module before we begin
+        // translating. This is because Solidity allows specifying things out of order, so we
+        // can encounter a type name or function that has not been translated yet.
+        //
+        // I think we should refactor the corresponding `TranslatedX` structs to have some kind
+        // of implementation status, like so:
+        // 
+        // pub struct TranslatedTypeDefinition {
+        //     /// The signature of the type definition. This is populated before translation
+        //     pub signature: sway::TypeName,
+        //
+        //     /// The translation of the type definition. This is `None` initially and gets set to `Some(_)` after translation.
+        //     pub translation: Option<sway::TypeDefinition>,
+        // }
+        //
 
-        translate::translate_import_directives(
-            self,
-            translated_module.clone(),
-            &import_directives,
-        )?;
+        // Translate each item
+        translate_import_directives(self, module.clone(), &import_directives)?;
 
-        for type_definition in toplevel_type_definitions {
-            translate::translate_type_definition(
-                self,
-                translated_module.clone(),
-                &type_definition,
-            )?;
+        for type_definition in type_definitions {
+            translate_type_definition(self, module.clone(), &type_definition)?;
         }
 
-        for toplevel_enum in toplevel_enums {
-            translate::translate_enum_definition(self, translated_module.clone(), &toplevel_enum)?;
+        for enum_definition in enum_definitions {
+            translate_enum_definition(self, module.clone(), &enum_definition)?;
         }
 
-        for toplevel_struct in toplevel_structs {
-            translate::translate_struct_definition(
-                self,
-                translated_module.clone(),
-                &toplevel_struct,
-            )?;
+        for struct_definition in struct_definitions {
+            translate_struct_definition(self, module.clone(), &struct_definition)?;
         }
 
-        for toplevel_event in toplevel_events {
-            translate::translate_event_definition(
-                self,
-                translated_module.clone(),
-                &toplevel_event,
-            )?;
+        for event_definition in event_definitions {
+            translate_event_definition(self, module.clone(), &event_definition)?;
         }
 
-        for toplevel_error in toplevel_errors {
-            translate::translate_error_definition(
-                self,
-                translated_module.clone(),
-                &toplevel_error,
-            )?;
+        for error_definition in error_definitions {
+            translate_error_definition(self, module.clone(), &error_definition)?;
         }
 
-        for toplevel_function in toplevel_functions {}
+        for function_definition in function_definitions {
+            translate_function_definition(self, module.clone(), None, &function_definition)?;
+        }
+
+        for variable_definition in variable_definitions {
+            translate_state_variable(self, module.clone(), &variable_definition)?;
+        }
+
+        for contract_definition in contract_definitions {
+            translate_contract_definition(self, module.clone(), &contract_definition)?;
+        }
 
         Ok(())
     }
