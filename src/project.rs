@@ -74,93 +74,6 @@ impl Project {
         Ok(result)
     }
 
-    /// Attempts to parse the file from the supplied `path`.
-    #[inline]
-    fn parse_solidity_source_unit<P: AsRef<Path>>(
-        &mut self,
-        path: P,
-    ) -> Result<&solidity::SourceUnit, Error> {
-        if self.solidity_source_units.contains_key(path.as_ref()) {
-            return Ok(self.solidity_source_units.get(path.as_ref()).unwrap());
-        }
-
-        let path = wrapped_err!(path.as_ref().canonicalize())?;
-        let source = wrapped_err!(std::fs::read_to_string(path.clone()))?;
-        let line_ranges = self.load_line_ranges(&path, source.as_str());
-
-        let (source_unit, _comments) = solang_parser::parse(source.as_str(), 0)
-            .map_err(|e| Error::SolangDiagnostics(path.clone(), line_ranges.clone(), e))?;
-
-        // TODO: do we need the comments for anything?
-
-        self.solidity_source_units.insert(path.clone(), source_unit);
-
-        Ok(self.solidity_source_units.get(&path).unwrap())
-    }
-
-    /// Loads line ranges in a specific file `path` from the provided `source` text.
-    #[inline]
-    fn load_line_ranges(&mut self, path: &PathBuf, source: &str) -> &Vec<(usize, usize)> {
-        if self.line_ranges.contains_key(path) {
-            return self.line_ranges.get(path).unwrap();
-        }
-
-        let mut line_range = (0usize, 0usize);
-
-        for (i, c) in source.chars().enumerate() {
-            if c == '\n' {
-                line_range.1 = i;
-                self.line_ranges
-                    .entry(path.clone())
-                    .or_default()
-                    .push(line_range);
-                line_range = (i + 1, 0);
-            }
-        }
-
-        if line_range.1 > line_range.0 {
-            self.line_ranges
-                .entry(path.clone())
-                .or_default()
-                .push(line_range);
-        }
-
-        self.line_ranges.get(path).unwrap()
-    }
-
-    #[inline]
-    pub fn loc_to_line_and_column(
-        &self,
-        module: Rc<RefCell<TranslatedModule>>,
-        loc: &solidity::Loc,
-    ) -> Option<(usize, usize)> {
-        let path = self
-            .root_folder
-            .clone()
-            .unwrap()
-            .join(module.borrow().path.clone())
-            .with_extension("sol");
-
-        let line_ranges = self.line_ranges.get(&path)?;
-
-        let start = match loc {
-            solidity::Loc::Builtin
-            | solidity::Loc::CommandLine
-            | solidity::Loc::Implicit
-            | solidity::Loc::Codegen => return None,
-
-            solidity::Loc::File(_, start, _) => start,
-        };
-
-        for (i, (line_start, line_end)) in line_ranges.iter().enumerate() {
-            if start >= line_start && start < line_end {
-                return Some((i + 1, (start - line_start) + 1));
-            }
-        }
-
-        None
-    }
-
     /// Get the project type from the [PathBuf] and return a [ProjectKind]
     fn detect_project_type<P: AsRef<Path>>(path: P) -> Result<ProjectKind, Error> {
         let path = path.as_ref();
@@ -402,6 +315,7 @@ impl Project {
             || path.join(ProjectKind::HARDHAT_CONFIG_FILE_TS).exists()
             || path.join(ProjectKind::BROWNIE_CONFIG_FILE).exists()
             || path.join(ProjectKind::TRUFFLE_CONFIG_FILE).exists()
+            || path.join(ProjectKind::DAPP_CONFIG_FILE).exists()
         {
             return Some(path.to_path_buf());
         }
@@ -620,6 +534,93 @@ impl Project {
         }
 
         Ok(import_path)
+    }
+
+    /// Attempts to parse the file from the supplied `path`.
+    #[inline]
+    fn parse_solidity_source_unit<P: AsRef<Path>>(
+        &mut self,
+        path: P,
+    ) -> Result<&solidity::SourceUnit, Error> {
+        if self.solidity_source_units.contains_key(path.as_ref()) {
+            return Ok(self.solidity_source_units.get(path.as_ref()).unwrap());
+        }
+
+        let path = wrapped_err!(path.as_ref().canonicalize())?;
+        let source = wrapped_err!(std::fs::read_to_string(path.clone()))?;
+        let line_ranges = self.load_line_ranges(&path, source.as_str());
+
+        let (source_unit, _comments) = solang_parser::parse(source.as_str(), 0)
+            .map_err(|e| Error::SolangDiagnostics(path.clone(), line_ranges.clone(), e))?;
+
+        // TODO: do we need the comments for anything?
+
+        self.solidity_source_units.insert(path.clone(), source_unit);
+
+        Ok(self.solidity_source_units.get(&path).unwrap())
+    }
+
+    /// Loads line ranges in a specific file `path` from the provided `source` text.
+    #[inline]
+    fn load_line_ranges(&mut self, path: &PathBuf, source: &str) -> &Vec<(usize, usize)> {
+        if self.line_ranges.contains_key(path) {
+            return self.line_ranges.get(path).unwrap();
+        }
+
+        let mut line_range = (0usize, 0usize);
+
+        for (i, c) in source.chars().enumerate() {
+            if c == '\n' {
+                line_range.1 = i;
+                self.line_ranges
+                    .entry(path.clone())
+                    .or_default()
+                    .push(line_range);
+                line_range = (i + 1, 0);
+            }
+        }
+
+        if line_range.1 > line_range.0 {
+            self.line_ranges
+                .entry(path.clone())
+                .or_default()
+                .push(line_range);
+        }
+
+        self.line_ranges.get(path).unwrap()
+    }
+
+    #[inline]
+    pub fn loc_to_line_and_column(
+        &self,
+        module: Rc<RefCell<TranslatedModule>>,
+        loc: &solidity::Loc,
+    ) -> Option<(usize, usize)> {
+        let path = self
+            .root_folder
+            .clone()
+            .unwrap()
+            .join(module.borrow().path.clone())
+            .with_extension("sol");
+
+        let line_ranges = self.line_ranges.get(&path)?;
+
+        let start = match loc {
+            solidity::Loc::Builtin
+            | solidity::Loc::CommandLine
+            | solidity::Loc::Implicit
+            | solidity::Loc::Codegen => return None,
+
+            solidity::Loc::File(_, start, _) => start,
+        };
+
+        for (i, (line_start, line_end)) in line_ranges.iter().enumerate() {
+            if start >= line_start && start < line_end {
+                return Some((i + 1, (start - line_start) + 1));
+            }
+        }
+
+        None
     }
 
     pub fn find_module(&mut self, path: &Path) -> Option<Rc<RefCell<TranslatedModule>>> {
@@ -908,7 +909,7 @@ impl Project {
         Ok(())
     }
 
-    pub fn generate_forc_project<P1: AsRef<Path>, P2: AsRef<Path>>(
+    fn generate_forc_project<P1: AsRef<Path>, P2: AsRef<Path>>(
         &mut self,
         output_directory: P1,
         source_unit_path: P2,
