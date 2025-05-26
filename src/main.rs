@@ -19,10 +19,7 @@ fn main() {
 fn translate_project() -> Result<(), Error> {
     let mut options = cli::Args::parse();
 
-    // If an output directory was supplied, canonicalize it
-    if let Some(output_directory) = options.output_directory.as_mut() {
-        *output_directory = wrapped_err!(output_directory.canonicalize())?;
-    }
+    options.canonicalize()?;
 
     Project::new(&options)?.translate()
 }

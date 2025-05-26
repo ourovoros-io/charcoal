@@ -8,9 +8,9 @@ use std::{
     rc::Rc,
 };
 
-/// Represents the type of project as [ProjectKind] default is [ProjectKind::Unknown]
+/// Represents the type of project as [Framework] default is [Framework::Unknown]
 #[derive(Clone, Debug, Default)]
-pub enum ProjectKind {
+pub enum Framework {
     Foundry {
         remappings: HashMap<String, String>,
     },
@@ -24,7 +24,7 @@ pub enum ProjectKind {
     Unknown,
 }
 
-impl ProjectKind {
+impl Framework {
     pub const FOUNDRY_CONFIG_FILE: &'static str = "foundry.toml";
     pub const HARDHAT_CONFIG_FILE: &'static str = "hardhat.config.js";
     pub const HARDHAT_CONFIG_FILE_TS: &'static str = "hardhat.config.ts";
@@ -37,7 +37,7 @@ impl ProjectKind {
 pub struct Project {
     pub root_folder: Option<PathBuf>,
     pub output_directory: Option<PathBuf>,
-    pub kind: ProjectKind,
+    pub framework: Framework,
     pub queue: Vec<PathBuf>,
     pub line_ranges: HashMap<PathBuf, Vec<(usize, usize)>>,
     pub solidity_source_units: HashMap<PathBuf, solidity::SourceUnit>,
@@ -46,18 +46,17 @@ pub struct Project {
 
 impl Project {
     pub fn new(options: &Args) -> Result<Self, Error> {
-        let (kind, root_folder) = match options.root_folder.as_ref() {
+        let (framework, root_folder) = match options.root_folder.as_ref() {
             Some(root_folder) => {
-                let kind = Self::detect_project_type(&root_folder)?;
-                let root_folder = wrapped_err!(std::fs::canonicalize(root_folder.clone()))?;
-                (kind, Some(root_folder))
+                let framework = Self::detect_project_type(&root_folder)?;
+                (framework, Some(root_folder.clone()))
             }
             None => {
                 if let Some(root_path) = Self::find_project_root_folder(options.target.as_path()) {
-                    let kind = Self::detect_project_type(&root_path)?;
-                    (kind, Some(root_path))
+                    let framework = Self::detect_project_type(&root_path)?;
+                    (framework, Some(root_path))
                 } else {
-                    (ProjectKind::Unknown, None)
+                    (Framework::Unknown, None)
                 }
             }
         };
@@ -65,7 +64,7 @@ impl Project {
         let mut result = Self {
             root_folder,
             output_directory: options.output_directory.clone(),
-            kind,
+            framework,
             ..Default::default()
         };
 
@@ -74,37 +73,37 @@ impl Project {
         Ok(result)
     }
 
-    /// Get the project type from the [PathBuf] and return a [ProjectKind]
-    fn detect_project_type<P: AsRef<Path>>(path: P) -> Result<ProjectKind, Error> {
+    /// Get the project type from the [PathBuf] and return a [Framework]
+    fn detect_project_type<P: AsRef<Path>>(path: P) -> Result<Framework, Error> {
         let path = path.as_ref();
-        let mut kind = ProjectKind::Unknown;
-        if path.join(ProjectKind::FOUNDRY_CONFIG_FILE).exists() {
-            kind = ProjectKind::Foundry {
+        let mut framework = Framework::Unknown;
+        if path.join(Framework::FOUNDRY_CONFIG_FILE).exists() {
+            framework = Framework::Foundry {
                 remappings: HashMap::new(),
             };
 
-            let remappings = wrapped_err!(Self::get_remappings(&kind, path))?;
+            let remappings = wrapped_err!(Self::get_remappings(&framework, path))?;
 
-            kind = ProjectKind::Foundry { remappings };
-        } else if path.join(ProjectKind::HARDHAT_CONFIG_FILE).exists()
-            || path.join(ProjectKind::HARDHAT_CONFIG_FILE_TS).exists()
+            framework = Framework::Foundry { remappings };
+        } else if path.join(Framework::HARDHAT_CONFIG_FILE).exists()
+            || path.join(Framework::HARDHAT_CONFIG_FILE_TS).exists()
         {
-            kind = ProjectKind::Hardhat;
-        } else if path.join(ProjectKind::BROWNIE_CONFIG_FILE).exists() {
-            kind = ProjectKind::Brownie {
+            framework = Framework::Hardhat;
+        } else if path.join(Framework::BROWNIE_CONFIG_FILE).exists() {
+            framework = Framework::Brownie {
                 remappings: HashMap::new(),
             };
 
-            kind = ProjectKind::Brownie {
-                remappings: wrapped_err!(Self::get_remappings(&kind, path))?,
+            framework = Framework::Brownie {
+                remappings: wrapped_err!(Self::get_remappings(&framework, path))?,
             };
-        } else if path.join(ProjectKind::TRUFFLE_CONFIG_FILE).exists() {
-            kind = ProjectKind::Truffle;
-        } else if path.join(ProjectKind::DAPP_CONFIG_FILE).exists() {
-            kind = ProjectKind::Dapp;
+        } else if path.join(Framework::TRUFFLE_CONFIG_FILE).exists() {
+            framework = Framework::Truffle;
+        } else if path.join(Framework::DAPP_CONFIG_FILE).exists() {
+            framework = Framework::Dapp;
         }
 
-        Ok(kind)
+        Ok(framework)
     }
 
     /// Find a key in a [toml::Table] and return the [toml::Value]
@@ -125,7 +124,7 @@ impl Project {
         }
     }
 
-    /// Get the project type path from the [ProjectKind] and return a [PathBuf]
+    /// Get the project type path from the [Framework] and return a [PathBuf]
     fn get_project_type_path(
         &self,
         source_unit_directory: &Path,
@@ -136,9 +135,9 @@ impl Project {
             return Ok(PathBuf::from(filename));
         };
 
-        match &self.kind {
+        match &self.framework {
             // Remappings in foundry and brownie are handled using the same pattern
-            ProjectKind::Foundry { remappings } | ProjectKind::Brownie { remappings } => {
+            Framework::Foundry { remappings } | Framework::Brownie { remappings } => {
                 for (k, v) in remappings {
                     if filename.starts_with(k) {
                         let project_full_path = project_root_folder.join(v);
@@ -152,7 +151,7 @@ impl Project {
             }
 
             // Remappings in hardhat and truffle are done using the @ symbol and the node_modules folder
-            ProjectKind::Hardhat | ProjectKind::Truffle => {
+            Framework::Hardhat | Framework::Truffle => {
                 if filename.starts_with('.') {
                     Ok(source_unit_directory.join(filename))
                 } else if filename.starts_with('@') {
@@ -162,7 +161,7 @@ impl Project {
                 }
             }
 
-            ProjectKind::Dapp => {
+            Framework::Dapp => {
                 if filename.starts_with('.') {
                     let result = source_unit_directory.join(filename);
                     return Ok(result);
@@ -190,7 +189,7 @@ impl Project {
             }
 
             // If we find that the project type is unknown we return the filename as is
-            ProjectKind::Unknown => {
+            Framework::Unknown => {
                 println!("Charcoal was unable to detect the project type.");
                 println!(
                     "Please make sure you are targeting the root folder of the project (do not target the contracts folder itself)."
@@ -202,11 +201,11 @@ impl Project {
 
     /// Get the re mappings from the re mappings file on the root folder of the project represented by the [PathBuf]
     fn get_remappings(
-        kind: &ProjectKind,
+        framework: &Framework,
         root_folder_path: &Path,
     ) -> Result<HashMap<String, String>, Error> {
-        match kind {
-            ProjectKind::Foundry { .. } => {
+        match framework {
+            Framework::Foundry { .. } => {
                 let remappings_filename = "remappings.txt";
 
                 let lines: Vec<String> = if root_folder_path.join(remappings_filename).exists() {
@@ -219,7 +218,7 @@ impl Project {
                 } else {
                     // Get foundry toml file from the root of the project folder
                     let remappings_from_toml_str = wrapped_err!(std::fs::read_to_string(
-                        root_folder_path.join(ProjectKind::FOUNDRY_CONFIG_FILE)
+                        root_folder_path.join(Framework::FOUNDRY_CONFIG_FILE)
                     ))?;
 
                     let remappings_from_toml: toml::Value =
@@ -255,9 +254,9 @@ impl Project {
                 Ok(remappings)
             }
 
-            ProjectKind::Brownie { .. } => {
+            Framework::Brownie { .. } => {
                 let remappings_from_yaml_str = wrapped_err!(std::fs::read_to_string(
-                    root_folder_path.join(ProjectKind::BROWNIE_CONFIG_FILE)
+                    root_folder_path.join(Framework::BROWNIE_CONFIG_FILE)
                 ))?;
 
                 let remappings_from_yaml: serde_yaml::Value =
@@ -310,12 +309,12 @@ impl Project {
     fn find_project_root_folder<P: AsRef<Path>>(path: P) -> Option<PathBuf> {
         let path = path.as_ref();
 
-        if path.join(ProjectKind::FOUNDRY_CONFIG_FILE).exists()
-            || path.join(ProjectKind::HARDHAT_CONFIG_FILE).exists()
-            || path.join(ProjectKind::HARDHAT_CONFIG_FILE_TS).exists()
-            || path.join(ProjectKind::BROWNIE_CONFIG_FILE).exists()
-            || path.join(ProjectKind::TRUFFLE_CONFIG_FILE).exists()
-            || path.join(ProjectKind::DAPP_CONFIG_FILE).exists()
+        if path.join(Framework::FOUNDRY_CONFIG_FILE).exists()
+            || path.join(Framework::HARDHAT_CONFIG_FILE).exists()
+            || path.join(Framework::HARDHAT_CONFIG_FILE_TS).exists()
+            || path.join(Framework::BROWNIE_CONFIG_FILE).exists()
+            || path.join(Framework::TRUFFLE_CONFIG_FILE).exists()
+            || path.join(Framework::DAPP_CONFIG_FILE).exists()
         {
             return Some(path.to_path_buf());
         }
@@ -330,11 +329,11 @@ impl Project {
     /// Recursively search for .sol files in the given directory
     fn collect_source_unit_paths(
         path: &Path,
-        project_kind: &ProjectKind,
+        framework: &Framework,
     ) -> Result<Vec<PathBuf>, Error> {
         let mut source_unit_paths = vec![];
 
-        if let ProjectKind::Hardhat | ProjectKind::Truffle = project_kind {
+        if let Framework::Hardhat | Framework::Truffle = framework {
             // Skip the node_modules folder. Only translate things that are imported explicitly.
             if path
                 .to_string_lossy()
@@ -365,7 +364,7 @@ impl Project {
                 let path = entry.path();
 
                 if path.is_dir() {
-                    source_unit_paths.extend(Self::collect_source_unit_paths(&path, project_kind)?);
+                    source_unit_paths.extend(Self::collect_source_unit_paths(&path, framework)?);
                     continue;
                 }
 
@@ -382,7 +381,7 @@ impl Project {
 
     fn create_usage_queue(&mut self) -> Result<Vec<PathBuf>, Error> {
         let paths =
-            Self::collect_source_unit_paths(self.root_folder.as_ref().unwrap(), &self.kind)?;
+            Self::collect_source_unit_paths(self.root_folder.as_ref().unwrap(), &self.framework)?;
 
         // Build a mapping of file paths to import paths, and file paths to the number of times that that file is imported from another file
         let mut import_paths = HashMap::new();
@@ -484,7 +483,7 @@ impl Project {
                 // Clean the import path and remove quotes
                 let mut import_path = import_path.to_str().unwrap().replace('\"', "");
 
-                if let ProjectKind::Unknown = self.kind {
+                if let Framework::Unknown = self.framework {
                     // Join the import path with the source unit path
                     import_path = source_unit_path
                         .parent()
