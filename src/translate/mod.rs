@@ -226,7 +226,7 @@ pub struct TranslatedModule {
     pub configurable: Option<sway::Configurable>,
     pub storage: Option<sway::Storage>,
     pub modifiers: Vec<TranslatedModifier>,
-    pub functions: Vec<sway::Function>,
+    pub functions: Vec<TranslatedItem<sway::Function>>,
     pub impls: Vec<sway::Impl>,
 
     pub function_name_counts: HashMap<String, usize>,

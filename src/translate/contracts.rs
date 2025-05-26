@@ -69,6 +69,9 @@ pub fn translate_using_directive(
                 if translated_using_directive.for_type.is_some()
                     && translated_using_directive.for_type
                         != function
+                            .implementation
+                            .as_ref()
+                            .unwrap()
                             .parameters
                             .entries
                             .first()
@@ -80,7 +83,7 @@ pub fn translate_using_directive(
                 // Add the function to the translated using directive so we know where it came from
                 translated_using_directive
                     .functions
-                    .push(function.name.clone());
+                    .push(function.implementation.as_ref().unwrap().name.clone());
             }
 
             // Add the using directive to the current definition
@@ -264,7 +267,8 @@ pub fn translate_contract_definition(
         translate_modifier_definition(project, module.clone(), function_definition)?;
     }
 
-    // Translate each function
+    let mut function_definitions = vec![];
+
     for part in contract_definition.parts.iter() {
         let solidity::ContractPart::FunctionDefinition(function_definition) = part else {
             continue;
@@ -276,12 +280,25 @@ pub fn translate_contract_definition(
             continue;
         }
 
-        translate_function_definition(
+        let signature =
+            translate_function_declaration(project, module.clone(), function_definition)?.type_name;
+
+        module.borrow_mut().functions.push(TranslatedItem {
+            signature,
+            implementation: None,
+        });
+
+        function_definitions.push(function_definition.clone());
+    }
+
+    // Translate each function
+    for (i, function_definition) in function_definitions.into_iter().enumerate() {
+        module.borrow_mut().functions[i].implementation = Some(translate_function_definition(
             project,
             module.clone(),
             contract_definition.name.as_ref().map(|n| n.name.clone()),
-            function_definition,
-        )?;
+            &function_definition,
+        )?);
     }
 
     // // Propagate deferred initializations into the constructor

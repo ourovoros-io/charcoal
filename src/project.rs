@@ -919,16 +919,24 @@ impl Project {
             translate_error_definition(self, module.clone(), &error_definition)?;
         }
 
-        //
-        // TODO:
-        //
-        // We will need to build a complete list of function signatures defined in the module before we begin
-        // translating. This is because Solidity allows specifying things out of order, so we
-        // can encounter a type name or function that has not been translated yet.
-        //
+        for function_definition in function_definitions.iter() {
+            let signature =
+                translate_function_declaration(self, module.clone(), function_definition)?
+                    .type_name;
 
-        for function_definition in function_definitions {
-            translate_function_definition(self, module.clone(), None, &function_definition)?;
+            module.borrow_mut().functions.push(TranslatedItem {
+                signature,
+                implementation: None,
+            });
+        }
+
+        for (i, function_definition) in function_definitions.into_iter().enumerate() {
+            module.borrow_mut().functions[i].implementation = Some(translate_function_definition(
+                self,
+                module.clone(),
+                None,
+                &function_definition,
+            )?);
         }
 
         for variable_definition in variable_definitions {
