@@ -112,7 +112,12 @@ pub fn evaluate_expression(
                                     .parameters
                                     .iter()
                                     .map(|p| {
-                                        evaluate_expression(module.clone(), scope.clone(), type_name, p)
+                                        evaluate_expression(
+                                            module.clone(),
+                                            scope.clone(),
+                                            type_name,
+                                            p,
+                                        )
                                     })
                                     .collect(),
                             });
@@ -123,7 +128,9 @@ pub fn evaluate_expression(
                             return expression.clone();
                         }
 
-                        "keccak256" | "std::hash::keccak256" if function_call.parameters.len() == 1 => {
+                        "keccak256" | "std::hash::keccak256"
+                            if function_call.parameters.len() == 1 =>
+                        {
                             match &function_call.parameters[0] {
                                 sway::Expression::Literal(sway::Literal::String(s)) => {
                                     use sha3::Digest;
@@ -145,7 +152,9 @@ pub fn evaluate_expression(
                                                 &[("b256::zero", Some((None, vec![])))],
                                             )
                                         } else {
-                                            sway::Expression::from(sway::Literal::HexInt(value, None))
+                                            sway::Expression::from(sway::Literal::HexInt(
+                                                value, None,
+                                            ))
                                         }),
                                     );
                                 }
@@ -154,9 +163,14 @@ pub fn evaluate_expression(
                             }
                         }
 
-                        "I8::from_uint" | "I16::from_uint" | "I32::from_uint" | "I64::from_uint"
-                        | "I128::from_uint" | "I256::from_uint" => {
-                            return evaluate_expression(module, scope, type_name, &function_call.parameters[0]);
+                        "I8::from_uint" | "I16::from_uint" | "I32::from_uint"
+                        | "I64::from_uint" | "I128::from_uint" | "I256::from_uint" => {
+                            return evaluate_expression(
+                                module,
+                                scope,
+                                type_name,
+                                &function_call.parameters[0],
+                            );
                         }
 
                         "Identity::Address" | "Identity::ContractId" => {
@@ -167,7 +181,12 @@ pub fn evaluate_expression(
                                     .parameters
                                     .iter()
                                     .map(|p| {
-                                        evaluate_expression(module.clone(), scope.clone(), type_name, p)
+                                        evaluate_expression(
+                                            module.clone(),
+                                            scope.clone(),
+                                            type_name,
+                                            p,
+                                        )
                                     })
                                     .collect(),
                             });
@@ -175,12 +194,18 @@ pub fn evaluate_expression(
 
                         "u64::max" => {
                             assert!(function_call.parameters.is_empty());
-                            return sway::Expression::from(sway::Literal::DecInt(u64::MAX.into(), None));
+                            return sway::Expression::from(sway::Literal::DecInt(
+                                u64::MAX.into(),
+                                None,
+                            ));
                         }
 
                         "u64::min" => {
                             assert!(function_call.parameters.is_empty());
-                            return sway::Expression::from(sway::Literal::DecInt(u64::MIN.into(), None));
+                            return sway::Expression::from(sway::Literal::DecInt(
+                                u64::MIN.into(),
+                                None,
+                            ));
                         }
 
                         "u256::from_be_bytes" => {
@@ -344,12 +369,7 @@ pub fn translate_expression(
         }
 
         solidity::Expression::ArrayLiteral(_, expressions) => {
-            translate_array_literal_expression(
-                project,
-                module,
-                scope,
-                expressions.as_slice(),
-            )
+            translate_array_literal_expression(project, module, scope, expressions.as_slice())
         }
 
         solidity::Expression::ArraySubscript(_, _, _) => {
@@ -381,9 +401,7 @@ pub fn translate_expression(
         }
 
         solidity::Expression::FunctionCallBlock(_, function, block) => {
-            translate_function_call_block_expression(
-                project, module, scope, function, block,
-            )
+            translate_function_call_block_expression(project, module, scope, function, block)
         }
 
         solidity::Expression::NamedFunctionCall(_, function, named_arguments) => {
@@ -405,7 +423,7 @@ pub fn translate_expression(
         solidity::Expression::BitwiseNot(_, x) => {
             translate_unary_expression(project, module, scope, "!", x)
         }
-        
+
         solidity::Expression::UnaryPlus(_, x) => translate_expression(project, module, scope, x),
 
         solidity::Expression::Negate(_, x) => {
@@ -494,14 +512,9 @@ pub fn translate_expression(
             )
         }
 
-        solidity::Expression::Assign(_, lhs, rhs) => translate_assignment_expression(
-            project,
-            module,
-            scope,
-            "=",
-            lhs.as_ref(),
-            rhs.as_ref(),
-        ),
+        solidity::Expression::Assign(_, lhs, rhs) => {
+            translate_assignment_expression(project, module, scope, "=", lhs.as_ref(), rhs.as_ref())
+        }
 
         solidity::Expression::AssignOr(_, lhs, rhs) => translate_assignment_expression(
             project,
@@ -512,112 +525,92 @@ pub fn translate_expression(
             rhs.as_ref(),
         ),
 
-        solidity::Expression::AssignAnd(_, lhs, rhs) => {
-            translate_assignment_expression(
-                project,
-                module,
-                scope,
-                "&=",
-                lhs.as_ref(),
-                rhs.as_ref(),
-            )
-        }
+        solidity::Expression::AssignAnd(_, lhs, rhs) => translate_assignment_expression(
+            project,
+            module,
+            scope,
+            "&=",
+            lhs.as_ref(),
+            rhs.as_ref(),
+        ),
 
-        solidity::Expression::AssignXor(_, lhs, rhs) => {
-            translate_assignment_expression(
-                project,
-                module,
-                scope,
-                "^=",
-                lhs.as_ref(),
-                rhs.as_ref(),
-            )
-        }
+        solidity::Expression::AssignXor(_, lhs, rhs) => translate_assignment_expression(
+            project,
+            module,
+            scope,
+            "^=",
+            lhs.as_ref(),
+            rhs.as_ref(),
+        ),
 
-        solidity::Expression::AssignShiftLeft(_, lhs, rhs) => {
-            translate_assignment_expression(
-                project,
-                module,
-                scope,
-                "<<=",
-                lhs.as_ref(),
-                rhs.as_ref(),
-            )
-        }
+        solidity::Expression::AssignShiftLeft(_, lhs, rhs) => translate_assignment_expression(
+            project,
+            module,
+            scope,
+            "<<=",
+            lhs.as_ref(),
+            rhs.as_ref(),
+        ),
 
-        solidity::Expression::AssignShiftRight(_, lhs, rhs) => {
-            translate_assignment_expression(
-                project,
-                module,
-                scope,
-                ">>=",
-                lhs.as_ref(),
-                rhs.as_ref(),
-            )
-        }
+        solidity::Expression::AssignShiftRight(_, lhs, rhs) => translate_assignment_expression(
+            project,
+            module,
+            scope,
+            ">>=",
+            lhs.as_ref(),
+            rhs.as_ref(),
+        ),
 
-        solidity::Expression::AssignAdd(_, lhs, rhs) => {
-            translate_assignment_expression(
-                project,
-                module,
-                scope,
-                "+=",
-                lhs.as_ref(),
-                rhs.as_ref(),
-            )
-        }
+        solidity::Expression::AssignAdd(_, lhs, rhs) => translate_assignment_expression(
+            project,
+            module,
+            scope,
+            "+=",
+            lhs.as_ref(),
+            rhs.as_ref(),
+        ),
 
-        solidity::Expression::AssignSubtract(_, lhs, rhs) => {
-            translate_assignment_expression(
-                project,
-                module,
-                scope,
-                "-=",
-                lhs.as_ref(),
-                rhs.as_ref(),
-            )
-        }
+        solidity::Expression::AssignSubtract(_, lhs, rhs) => translate_assignment_expression(
+            project,
+            module,
+            scope,
+            "-=",
+            lhs.as_ref(),
+            rhs.as_ref(),
+        ),
 
-        solidity::Expression::AssignMultiply(_, lhs, rhs) => {
-            translate_assignment_expression(
-                project,
-                module,
-                scope,
-                "*=",
-                lhs.as_ref(),
-                rhs.as_ref(),
-            )
-        }
+        solidity::Expression::AssignMultiply(_, lhs, rhs) => translate_assignment_expression(
+            project,
+            module,
+            scope,
+            "*=",
+            lhs.as_ref(),
+            rhs.as_ref(),
+        ),
 
-        solidity::Expression::AssignDivide(_, lhs, rhs) => {
-            translate_assignment_expression(
-                project,
-                module,
-                scope,
-                "/=",
-                lhs.as_ref(),
-                rhs.as_ref(),
-            )
-        }
+        solidity::Expression::AssignDivide(_, lhs, rhs) => translate_assignment_expression(
+            project,
+            module,
+            scope,
+            "/=",
+            lhs.as_ref(),
+            rhs.as_ref(),
+        ),
 
-        solidity::Expression::AssignModulo(_, lhs, rhs) => {
-            translate_assignment_expression(
-                project,
-                module,
-                scope,
-                "%=",
-                lhs.as_ref(),
-                rhs.as_ref(),
-            )
-        }
+        solidity::Expression::AssignModulo(_, lhs, rhs) => translate_assignment_expression(
+            project,
+            module,
+            scope,
+            "%=",
+            lhs.as_ref(),
+            rhs.as_ref(),
+        ),
 
         solidity::Expression::PreIncrement(_, _)
         | solidity::Expression::PostIncrement(_, _)
         | solidity::Expression::PreDecrement(_, _)
         | solidity::Expression::PostDecrement(_, _) => {
-            translate_pre_or_post_operator_value_expression(
-                project, module, scope, expression,
-            )
+            translate_pre_or_post_operator_value_expression(project, module, scope, expression)
         }
 
         solidity::Expression::New(_, expression) => {
@@ -1018,7 +1011,7 @@ pub fn create_value_expression(
                     let sway::TypeName::Identifier {
                         name: type_name,
                         generic_parameters: None,
-                    } = &s.name
+                    } = &s.implementation.as_ref().unwrap().name
                     else {
                         return false;
                     };
@@ -1032,14 +1025,19 @@ pub fn create_value_expression(
                     let sway::TypeName::Identifier {
                         name: enum_name,
                         generic_parameters: None,
-                    } = &s.type_definition.name
+                    } = &s.implementation.as_ref().unwrap().type_definition.name
                     else {
                         return false;
                     };
                     enum_name == name
                 }) {
-                    let Some(sway::ImplItem::Constant(value)) =
-                        translated_enum.variants_impl.items.first()
+                    let Some(sway::ImplItem::Constant(value)) = translated_enum
+                        .implementation
+                        .as_ref()
+                        .unwrap()
+                        .variants_impl
+                        .items
+                        .first()
                     else {
                         let underlying_type = module.borrow().get_underlying_type(type_name);
                         return create_value_expression(
@@ -1060,7 +1058,8 @@ pub fn create_value_expression(
                     .borrow()
                     .structs
                     .iter()
-                    .find(|s| s.borrow().name == *name)
+                    .find(|s| s.implementation.as_ref().unwrap().borrow().name == *name)
+                    .map(|s| s.implementation.as_ref().unwrap())
                     .cloned()
                 {
                     return sway::Expression::from(sway::Constructor {

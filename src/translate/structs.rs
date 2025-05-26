@@ -8,7 +8,7 @@ pub fn translate_struct_definition(
     project: &mut Project,
     module: Rc<RefCell<TranslatedModule>>,
     struct_definition: &solidity::StructDefinition,
-) -> Result<(), Error> {
+) -> Result<Rc<RefCell<sway::Struct>>, Error> {
     let mut fields = vec![];
 
     for field in struct_definition.fields.iter() {
@@ -59,16 +59,11 @@ pub fn translate_struct_definition(
         });
     }
 
-    module
-        .borrow_mut()
-        .structs
-        .push(Rc::new(RefCell::new(sway::Struct {
-            attributes: None,
-            is_public: false,
-            name: struct_definition.name.as_ref().unwrap().name.clone(),
-            generic_parameters: None,
-            fields,
-        })));
-
-    Ok(())
+    Ok(Rc::new(RefCell::new(sway::Struct {
+        attributes: None,
+        is_public: false,
+        name: struct_definition.name.as_ref().unwrap().name.clone(),
+        generic_parameters: None,
+        fields,
+    })))
 }

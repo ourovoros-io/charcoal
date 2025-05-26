@@ -200,6 +200,12 @@ impl TranslationScope {
     }
 }
 
+#[derive(Debug)]
+pub struct TranslatedItem<T> {
+    pub signature: sway::TypeName,
+    pub implementation: Option<T>,
+}
+
 #[derive(Default, Debug)]
 pub struct TranslatedModule {
     pub name: String,
@@ -209,9 +215,9 @@ pub struct TranslatedModule {
     pub dependencies: Vec<String>,
     pub uses: Vec<sway::Use>,
     pub using_directives: Vec<TranslatedUsingDirective>,
-    pub type_definitions: Vec<sway::TypeDefinition>,
-    pub structs: Vec<Rc<RefCell<sway::Struct>>>,
-    pub enums: Vec<TranslatedEnum>,
+    pub type_definitions: Vec<TranslatedItem<sway::TypeDefinition>>,
+    pub structs: Vec<TranslatedItem<Rc<RefCell<sway::Struct>>>>,
+    pub enums: Vec<TranslatedItem<TranslatedEnum>>,
     pub events_enums: Vec<(Rc<RefCell<sway::Enum>>, Rc<RefCell<sway::Impl>>)>,
     pub errors_enums: Vec<(Rc<RefCell<sway::Enum>>, Rc<RefCell<sway::Impl>>)>,
     pub constants: Vec<sway::Constant>,
@@ -395,16 +401,34 @@ impl TranslatedModule {
     pub fn get_underlying_type(&self, type_name: &sway::TypeName) -> sway::TypeName {
         // Check to see if the expression's type is a type definition and get the underlying type
         for type_definition in self.type_definitions.iter() {
-            if &type_definition.name == type_name {
-                return self.get_underlying_type(type_definition.underlying_type.as_ref().unwrap());
+            if &type_definition.implementation.as_ref().unwrap().name == type_name {
+                return self.get_underlying_type(
+                    type_definition
+                        .implementation
+                        .as_ref()
+                        .unwrap()
+                        .underlying_type
+                        .as_ref()
+                        .unwrap(),
+                );
             }
         }
 
         // If we didn't find a type definition, check to see if an enum exists and get its underlying type
         for translated_enum in self.enums.iter() {
-            if &translated_enum.type_definition.name == type_name {
+            if &translated_enum
+                .implementation
+                .as_ref()
+                .unwrap()
+                .type_definition
+                .name
+                == type_name
+            {
                 return self.get_underlying_type(
                     translated_enum
+                        .implementation
+                        .as_ref()
+                        .unwrap()
                         .type_definition
                         .underlying_type
                         .as_ref()
@@ -537,18 +561,26 @@ impl TranslatedModule {
                     let sway::TypeName::Identifier {
                         name,
                         generic_parameters: None,
-                    } = &e.type_definition.name
+                    } = &e.implementation.as_ref().unwrap().type_definition.name
                     else {
                         return false;
                     };
 
-                    if !e.variants_impl.items.iter().any(|i| {
-                        let sway::ImplItem::Constant(variant) = i else {
-                            return false;
-                        };
+                    if !e
+                        .implementation
+                        .as_ref()
+                        .unwrap()
+                        .variants_impl
+                        .items
+                        .iter()
+                        .any(|i| {
+                            let sway::ImplItem::Constant(variant) = i else {
+                                return false;
+                            };
 
-                        variant.name == variant_name
-                    }) {
+                            variant.name == variant_name
+                        })
+                    {
                         return false;
                     }
 
@@ -783,9 +815,15 @@ impl TranslatedModule {
             generic_parameters: None,
         } = &container_type
         {
-            if let Some(struct_definition) = self.structs.iter().find(|s| s.borrow().name == *name)
+            if let Some(struct_definition) = self
+                .structs
+                .iter()
+                .find(|s| s.implementation.as_ref().unwrap().borrow().name == *name)
             {
                 if let Some(field) = struct_definition
+                    .implementation
+                    .as_ref()
+                    .unwrap()
                     .borrow()
                     .fields
                     .iter()
@@ -1714,9 +1752,21 @@ impl TranslatedModule {
 
         // Check to see if the container's type is a translated enum and switch to its underlying type
         for enum_definition in self.enums.iter() {
-            if enum_definition.type_definition.name == container_type {
-                if let Some(underlying_type) =
-                    enum_definition.type_definition.underlying_type.as_ref()
+            if enum_definition
+                .implementation
+                .as_ref()
+                .unwrap()
+                .type_definition
+                .name
+                == container_type
+            {
+                if let Some(underlying_type) = enum_definition
+                    .implementation
+                    .as_ref()
+                    .unwrap()
+                    .type_definition
+                    .underlying_type
+                    .as_ref()
                 {
                     container_type = underlying_type.clone();
                     break;
@@ -1726,8 +1776,14 @@ impl TranslatedModule {
 
         // Check to see if the container's type is a UDT and switch to its underlying type
         for type_definition in self.type_definitions.iter() {
-            if type_definition.name == container_type {
-                if let Some(underlying_type) = type_definition.underlying_type.as_ref() {
+            if type_definition.implementation.as_ref().unwrap().name == container_type {
+                if let Some(underlying_type) = type_definition
+                    .implementation
+                    .as_ref()
+                    .unwrap()
+                    .underlying_type
+                    .as_ref()
+                {
                     container_type = underlying_type.clone();
                     break;
                 }

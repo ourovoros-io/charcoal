@@ -856,41 +856,59 @@ impl Project {
             .with_extension(""),
         );
 
-        Self::collect_types_fn_signatures(&contract_definitions, &variable_definitions)?;
-
-        //
-        // TODO:
-        //
-        // We will need to build a complete list of types defined in the module, followed by
-        // a complete list of all function signatures defined in the module before we begin
-        // translating. This is because Solidity allows specifying things out of order, so we
-        // can encounter a type name or function that has not been translated yet.
-        //
-        // I think we should refactor the corresponding `TranslatedX` structs to have some kind
-        // of implementation status, like so:
-        //
-        // pub struct TranslatedTypeDefinition {
-        //     /// The signature of the type definition. This is populated before translation
-        //     pub signature: sway::TypeName,
-        //
-        //     /// The translation of the type definition. This is `None` initially and gets set to `Some(_)` after translation.
-        //     pub translation: Option<sway::TypeDefinition>,
-        // }
-        //
-
         // Translate each item
         translate_import_directives(self, module.clone(), &import_directives)?;
 
-        for type_definition in type_definitions {
-            translate_type_definition(self, module.clone(), &type_definition)?;
+        for type_definition in type_definitions.iter() {
+            module.borrow_mut().type_definitions.push(TranslatedItem {
+                signature: sway::TypeName::Identifier {
+                    name: type_definition.name.name.clone(),
+                    generic_parameters: None,
+                },
+                implementation: None,
+            });
         }
 
-        for enum_definition in enum_definitions {
-            translate_enum_definition(self, module.clone(), &enum_definition)?;
+        for enum_definition in enum_definitions.iter() {
+            module.borrow_mut().enums.push(TranslatedItem {
+                signature: sway::TypeName::Identifier {
+                    name: enum_definition.name.as_ref().unwrap().name.clone(),
+                    generic_parameters: None,
+                },
+                implementation: None,
+            });
         }
 
-        for struct_definition in struct_definitions {
-            translate_struct_definition(self, module.clone(), &struct_definition)?;
+        for struct_definition in struct_definitions.iter() {
+            module.borrow_mut().structs.push(TranslatedItem {
+                signature: sway::TypeName::Identifier {
+                    name: struct_definition.name.as_ref().unwrap().name.clone(),
+                    generic_parameters: None,
+                },
+                implementation: None,
+            })
+        }
+
+        for (i, type_definition) in type_definitions.into_iter().enumerate() {
+            module.borrow_mut().type_definitions[i].implementation = Some(
+                translate_type_definition(self, module.clone(), &type_definition)?,
+            );
+        }
+
+        for (i, enum_definition) in enum_definitions.into_iter().enumerate() {
+            module.borrow_mut().enums[i].implementation = Some(translate_enum_definition(
+                self,
+                module.clone(),
+                &enum_definition,
+            )?);
+        }
+
+        for (i, struct_definition) in struct_definitions.into_iter().enumerate() {
+            module.borrow_mut().structs[i].implementation = Some(translate_struct_definition(
+                self,
+                module.clone(),
+                &struct_definition,
+            )?);
         }
 
         for event_definition in event_definitions {
@@ -900,6 +918,14 @@ impl Project {
         for error_definition in error_definitions {
             translate_error_definition(self, module.clone(), &error_definition)?;
         }
+
+        //
+        // TODO:
+        //
+        // We will need to build a complete list of function signatures defined in the module before we begin
+        // translating. This is because Solidity allows specifying things out of order, so we
+        // can encounter a type name or function that has not been translated yet.
+        //
 
         for function_definition in function_definitions {
             translate_function_definition(self, module.clone(), None, &function_definition)?;
@@ -922,119 +948,5 @@ impl Project {
         source_unit_path: P2,
     ) -> Result<(), Error> {
         todo!()
-    }
-    fn collect_types_fn_signatures(
-        contract_definitions: &Vec<Box<solidity::ContractDefinition>>,
-        variable_definitions: &Vec<solidity::VariableDefinition>,
-    ) -> Result<(), Error> {
-        use solang_parser::pt::{Expression, Identifier};
-
-        let mut types: HashMap<String, HashMap<String, (Option<Identifier>, Option<Expression>)>> =
-            HashMap::new();
-
-        // println!("Contract definitions: {:#?}", contract_definitions);
-
-        for contract_definition in contract_definitions.iter() {
-            let contract_name = contract_definition.name.as_ref().unwrap().name.clone();
-
-            let contract_types = types.entry(contract_name.clone()).or_default();
-
-            for part in contract_definition.parts.iter() {
-                match part {
-                    solidity::ContractPart::StructDefinition(struct_definition) => {
-                        let struct_name = struct_definition.name.as_ref().unwrap().name.clone();
-                        for field in struct_definition.fields.iter() {
-                            let field_name = field.name.clone();
-                            let field_type = field.ty.clone();
-                            contract_types
-                                .insert(struct_name.clone(), (field_name, Some(field_type)));
-                        }
-                    }
-                    solidity::ContractPart::EnumDefinition(enum_definition) => {
-                        let enum_name = enum_definition.name.as_ref().unwrap().name.clone();
-                        for variant in enum_definition.values.iter() {
-                            contract_types.insert(enum_name.clone(), (variant.clone(), None));
-                        }
-                    }
-                    solidity::ContractPart::ErrorDefinition(error_definition) => {
-                        let error_name = error_definition.name.as_ref().unwrap().name.clone();
-                        for field in error_definition.fields.iter() {
-                            let field_name = field.name.clone();
-                            let field_type = field.ty.clone();
-
-                            contract_types
-                                .insert(error_name.clone(), (field_name, Some(field_type)));
-                        }
-                    }
-                    solidity::ContractPart::FunctionDefinition(function_definition) => {
-                        let function_name = function_definition.name.as_ref().unwrap().name.clone();
-                        // Inside your function definition match arm:
-                        let entry = contract_types
-                            .entry(function_name.clone())
-                            .or_insert_with(|| (None, None));
-
-                        for (_, parameter) in function_definition.params.iter() {
-                            let parameter = parameter.as_ref().unwrap();
-                            let param_name = parameter.name.clone();
-                            let param_type = parameter.ty.clone();
-
-                            *entry = (param_name, Some(param_type));
-                        }
-
-                        if let Some(body) = &function_definition.body {
-                            let solidity::Statement::Block { statements, .. } = body else {
-                                continue;
-                            };
-
-                            for statement in statements {
-                                let solidity::Statement::VariableDefinition(_, declaration, _) =
-                                    statement
-                                else {
-                                    continue;
-                                };
-
-                                let variable_name = declaration.name.as_ref().unwrap().name.clone();
-                                let variable_type = declaration.ty.clone();
-                                let entry = contract_types
-                                    .entry(variable_name.clone())
-                                    .or_insert_with(|| (None, None));
-                                *entry = (declaration.name.clone(), Some(variable_type));
-                            }
-                        }
-                    }
-
-                    solidity::ContractPart::VariableDefinition(variable_definition) => {
-                        println!("variable definition : {:#?}", variable_definition);
-                        let variable_name = variable_definition.name.as_ref().unwrap().name.clone();
-                        let variable_type = variable_definition.ty.clone();
-                        let entry = contract_types
-                            .entry(variable_name.clone())
-                            .or_insert_with(|| (None, None));
-                        *entry = (variable_definition.name.clone(), Some(variable_type));
-                    }
-
-                    _ => {}
-                }
-            }
-        }
-
-        for variable_definition in variable_definitions.iter() {
-            let variable_name = variable_definition.name.as_ref().unwrap().name.clone();
-            let variable_type = variable_definition.ty.clone();
-
-            // Insert the variable definition into the types map
-            for contract_types in types.values_mut() {
-                let entry = contract_types
-                    .entry(variable_name.clone())
-                    .or_insert_with(|| (None, None));
-                *entry = (
-                    variable_definition.name.clone(),
-                    Some(variable_type.clone()),
-                );
-            }
-        }
-        println!("Collected types and function signatures: {:#?}", types);
-
-        Ok(())
     }
 }
