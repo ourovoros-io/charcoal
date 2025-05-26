@@ -140,7 +140,14 @@ pub fn translate_variable_access_expression(
                     {
                         Some((line, col)) => format!(
                             "{}:{}:{}: ",
-                            project.root_folder.clone().unwrap().join(module.borrow().path.clone()).with_extension("sol").to_string_lossy(),
+                            project
+                                .options
+                                .root_folder
+                                .clone()
+                                .unwrap()
+                                .join(module.borrow().path.clone())
+                                .with_extension("sol")
+                                .to_string_lossy(),
                             line,
                             col
                         ),

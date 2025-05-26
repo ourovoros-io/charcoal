@@ -9,7 +9,7 @@ pub fn translate_import_directives(
     translated_module: Rc<RefCell<TranslatedModule>>,
     import_directives: &[solidity::Import],
 ) -> Result<(), Error> {
-    let source_unit_directory = project.root_folder.as_ref().unwrap().join(
+    let source_unit_directory = project.options.root_folder.as_ref().unwrap().join(
         translated_module
             .borrow()
             .path
@@ -29,6 +29,7 @@ pub fn translate_import_directives(
                         .to_string()
                         .trim_start_matches(
                             &project
+                                .options
                                 .root_folder
                                 .as_ref()
                                 .unwrap()

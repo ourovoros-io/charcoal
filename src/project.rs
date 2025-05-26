@@ -1,4 +1,4 @@
-use crate::{cli::Args, error::Error, translate::*, wrapped_err};
+use crate::{cli::Args, error::Error, sway, translate::*, wrapped_err};
 use convert_case::{Case, Casing};
 use solang_parser::pt as solidity;
 use std::{
@@ -35,8 +35,7 @@ impl Framework {
 
 #[derive(Default)]
 pub struct Project {
-    pub root_folder: Option<PathBuf>,
-    pub output_directory: Option<PathBuf>,
+    pub options: Args,
     pub framework: Framework,
     pub queue: Vec<PathBuf>,
     pub line_ranges: HashMap<PathBuf, Vec<(usize, usize)>>,
@@ -56,14 +55,17 @@ impl Project {
                     let framework = Self::detect_project_type(&root_path)?;
                     (framework, Some(root_path))
                 } else {
-                    (Framework::Unknown, None)
+                    (Framework::Unknown, Some(options.target.clone()))
                 }
             }
         };
 
         let mut result = Self {
-            root_folder,
-            output_directory: options.output_directory.clone(),
+            options: Args {
+                target: options.target.clone(),
+                root_folder,
+                output_directory: options.output_directory.clone(),
+            },
             framework,
             ..Default::default()
         };
@@ -130,7 +132,7 @@ impl Project {
         source_unit_directory: &Path,
         filename: &str,
     ) -> Result<PathBuf, Error> {
-        let Some(project_root_folder) = self.root_folder.as_ref() else {
+        let Some(project_root_folder) = self.options.root_folder.as_ref() else {
             // If we cant find a project root folder we return the filename as is
             return Ok(PathBuf::from(filename));
         };
@@ -380,8 +382,10 @@ impl Project {
     }
 
     fn create_usage_queue(&mut self) -> Result<Vec<PathBuf>, Error> {
-        let paths =
-            Self::collect_source_unit_paths(self.root_folder.as_ref().unwrap(), &self.framework)?;
+        let paths = Self::collect_source_unit_paths(
+            self.options.root_folder.as_ref().unwrap(),
+            &self.framework,
+        )?;
 
         // Build a mapping of file paths to import paths, and file paths to the number of times that that file is imported from another file
         let mut import_paths = HashMap::new();
@@ -596,6 +600,7 @@ impl Project {
         loc: &solidity::Loc,
     ) -> Option<(usize, usize)> {
         let path = self
+            .options
             .root_folder
             .clone()
             .unwrap()
@@ -743,7 +748,7 @@ impl Project {
             self.translate_file(&source_unit_path)?;
         }
 
-        match self.output_directory.clone() {
+        match self.options.output_directory.clone() {
             Some(output_directory) => {
                 todo!("{:#?}", output_directory);
                 // self.generate_forc_project(output_directory, source_unit_path)?;
@@ -840,6 +845,7 @@ impl Project {
             &PathBuf::from(
                 source_unit_path.to_string_lossy().trim_start_matches(
                     &self
+                        .options
                         .root_folder
                         .as_ref()
                         .unwrap()
@@ -849,6 +855,8 @@ impl Project {
             )
             .with_extension(""),
         );
+
+        Self::collect_types_fn_signatures(&contract_definitions, &variable_definitions)?;
 
         //
         // TODO:
@@ -914,5 +922,119 @@ impl Project {
         source_unit_path: P2,
     ) -> Result<(), Error> {
         todo!()
+    }
+    fn collect_types_fn_signatures(
+        contract_definitions: &Vec<Box<solidity::ContractDefinition>>,
+        variable_definitions: &Vec<solidity::VariableDefinition>,
+    ) -> Result<(), Error> {
+        use solang_parser::pt::{Expression, Identifier};
+
+        let mut types: HashMap<String, HashMap<String, (Option<Identifier>, Option<Expression>)>> =
+            HashMap::new();
+
+        // println!("Contract definitions: {:#?}", contract_definitions);
+
+        for contract_definition in contract_definitions.iter() {
+            let contract_name = contract_definition.name.as_ref().unwrap().name.clone();
+
+            let contract_types = types.entry(contract_name.clone()).or_default();
+
+            for part in contract_definition.parts.iter() {
+                match part {
+                    solidity::ContractPart::StructDefinition(struct_definition) => {
+                        let struct_name = struct_definition.name.as_ref().unwrap().name.clone();
+                        for field in struct_definition.fields.iter() {
+                            let field_name = field.name.clone();
+                            let field_type = field.ty.clone();
+                            contract_types
+                                .insert(struct_name.clone(), (field_name, Some(field_type)));
+                        }
+                    }
+                    solidity::ContractPart::EnumDefinition(enum_definition) => {
+                        let enum_name = enum_definition.name.as_ref().unwrap().name.clone();
+                        for variant in enum_definition.values.iter() {
+                            contract_types.insert(enum_name.clone(), (variant.clone(), None));
+                        }
+                    }
+                    solidity::ContractPart::ErrorDefinition(error_definition) => {
+                        let error_name = error_definition.name.as_ref().unwrap().name.clone();
+                        for field in error_definition.fields.iter() {
+                            let field_name = field.name.clone();
+                            let field_type = field.ty.clone();
+
+                            contract_types
+                                .insert(error_name.clone(), (field_name, Some(field_type)));
+                        }
+                    }
+                    solidity::ContractPart::FunctionDefinition(function_definition) => {
+                        let function_name = function_definition.name.as_ref().unwrap().name.clone();
+                        // Inside your function definition match arm:
+                        let entry = contract_types
+                            .entry(function_name.clone())
+                            .or_insert_with(|| (None, None));
+
+                        for (_, parameter) in function_definition.params.iter() {
+                            let parameter = parameter.as_ref().unwrap();
+                            let param_name = parameter.name.clone();
+                            let param_type = parameter.ty.clone();
+
+                            *entry = (param_name, Some(param_type));
+                        }
+
+                        if let Some(body) = &function_definition.body {
+                            let solidity::Statement::Block { statements, .. } = body else {
+                                continue;
+                            };
+
+                            for statement in statements {
+                                let solidity::Statement::VariableDefinition(_, declaration, _) =
+                                    statement
+                                else {
+                                    continue;
+                                };
+
+                                let variable_name = declaration.name.as_ref().unwrap().name.clone();
+                                let variable_type = declaration.ty.clone();
+                                let entry = contract_types
+                                    .entry(variable_name.clone())
+                                    .or_insert_with(|| (None, None));
+                                *entry = (declaration.name.clone(), Some(variable_type));
+                            }
+                        }
+                    }
+
+                    solidity::ContractPart::VariableDefinition(variable_definition) => {
+                        println!("variable definition : {:#?}", variable_definition);
+                        let variable_name = variable_definition.name.as_ref().unwrap().name.clone();
+                        let variable_type = variable_definition.ty.clone();
+                        let entry = contract_types
+                            .entry(variable_name.clone())
+                            .or_insert_with(|| (None, None));
+                        *entry = (variable_definition.name.clone(), Some(variable_type));
+                    }
+
+                    _ => {}
+                }
+            }
+        }
+
+        for variable_definition in variable_definitions.iter() {
+            let variable_name = variable_definition.name.as_ref().unwrap().name.clone();
+            let variable_type = variable_definition.ty.clone();
+
+            // Insert the variable definition into the types map
+            for contract_types in types.values_mut() {
+                let entry = contract_types
+                    .entry(variable_name.clone())
+                    .or_insert_with(|| (None, None));
+                *entry = (
+                    variable_definition.name.clone(),
+                    Some(variable_type.clone()),
+                );
+            }
+        }
+        println!("Collected types and function signatures: {:#?}", types);
+
+        Ok(())
     }
 }

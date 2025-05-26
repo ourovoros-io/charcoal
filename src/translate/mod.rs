@@ -977,7 +977,7 @@ impl TranslatedModule {
                     generic_parameters: None,
                 });
             }
-            
+
             "AssetId::default" => {
                 return Ok(sway::TypeName::Identifier {
                     name: "AssetId".into(),
@@ -1637,9 +1637,9 @@ impl TranslatedModule {
 
             if let Some(return_type) = return_type.as_ref() {
                 return Ok(return_type.as_ref().clone());
-            } else {
-                return Ok(sway::TypeName::Tuple { type_names: vec![] });
             }
+
+            return Ok(sway::TypeName::Tuple { type_names: vec![] });
         }
 
         // Attempt to find a function pointer variable in scope
@@ -2779,9 +2779,9 @@ pub fn coerce_expression(
                         Some(expression.clone()),
                         &[("read", Some((None, vec![])))],
                     ));
-                } else {
-                    return None;
                 }
+
+                return None;
             }
 
             if let (Some(lhs_generic_parameters), Some(rhs_generic_parameters)) = (

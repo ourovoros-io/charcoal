@@ -4,7 +4,7 @@ use std::path::PathBuf;
 #[macro_export]
 macro_rules! wrapped_err {
     ($e: expr) => {
-        $e.map_err(|e| crate::error::Error::Wrapped(Box::new(e)))
+        $e.map_err(|e| $crate::error::Error::Wrapped(Box::new(e)))
     };
 }
 
