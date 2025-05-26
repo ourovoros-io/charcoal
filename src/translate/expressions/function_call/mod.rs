@@ -230,7 +230,7 @@ pub fn translate_function_call_expression(
                             let sway::TypeName::Identifier {
                                 name: type_name,
                                 generic_parameters: None,
-                            } = &t.name
+                            } = &t.implementation.as_ref().unwrap().name
                             else {
                                 return false;
                             };
@@ -355,32 +355,46 @@ pub fn translate_function_call_expression(
                                     if storage_key_type.is_storage_vec() {
                                         match member.name.as_str() {
                                             "push" => {
-                                                return Ok(sway::Expression::create_function_calls(
-                                                    None,
-                                                    &[
-                                                        (
-                                                            format!("storage::{namespace_name}")
+                                                return Ok(
+                                                    sway::Expression::create_function_calls(
+                                                        None,
+                                                        &[
+                                                            (
+                                                                format!(
+                                                                    "storage::{namespace_name}"
+                                                                )
                                                                 .as_str(),
-                                                            None,
-                                                        ),
-                                                        (variable.borrow().new_name.as_str(), None),
-                                                        ("push", Some((None, parameters))),
-                                                    ],
-                                                ));
+                                                                None,
+                                                            ),
+                                                            (
+                                                                variable.borrow().new_name.as_str(),
+                                                                None,
+                                                            ),
+                                                            ("push", Some((None, parameters))),
+                                                        ],
+                                                    ),
+                                                );
                                             }
                                             "pop" => {
-                                                return Ok(sway::Expression::create_function_calls(
-                                                    None,
-                                                    &[
-                                                        (
-                                                            format!("storage::{namespace_name}")
+                                                return Ok(
+                                                    sway::Expression::create_function_calls(
+                                                        None,
+                                                        &[
+                                                            (
+                                                                format!(
+                                                                    "storage::{namespace_name}"
+                                                                )
                                                                 .as_str(),
-                                                            None,
-                                                        ),
-                                                        (variable.borrow().new_name.as_str(), None),
-                                                        ("pop", Some((None, parameters))),
-                                                    ],
-                                                ));
+                                                                None,
+                                                            ),
+                                                            (
+                                                                variable.borrow().new_name.as_str(),
+                                                                None,
+                                                            ),
+                                                            ("pop", Some((None, parameters))),
+                                                        ],
+                                                    ),
+                                                );
                                             }
                                             _ => {}
                                         }
@@ -713,7 +727,9 @@ pub fn translate_function_call_expression(
 
                                 todo!(
                                     "{}translate {name} member function call: {}.{member}({}) - {container:#?}",
-                                    match project.loc_to_line_and_column(module.clone(), &function.loc()) {
+                                    match project
+                                        .loc_to_line_and_column(module.clone(), &function.loc())
+                                    {
                                         Some((line, col)) => format!(
                                             "{}:{}:{}: ",
                                             module.borrow().path.to_string_lossy(),
@@ -805,8 +821,7 @@ pub fn translate_function_call_expression(
                                         line,
                                         col
                                     ),
-                                    None =>
-                                        format!("{}: ", module.borrow().path.to_string_lossy()),
+                                    None => format!("{}: ", module.borrow().path.to_string_lossy()),
                                 },
                                 expression,
                                 sway::TabbedDisplayer(&container),
@@ -884,8 +899,7 @@ pub fn translate_function_call_expression(
                                         line,
                                         col
                                     ),
-                                    None =>
-                                        format!("{}: ", module.borrow().path.to_string_lossy()),
+                                    None => format!("{}: ", module.borrow().path.to_string_lossy()),
                                 },
                                 parameter_types
                                     .iter()

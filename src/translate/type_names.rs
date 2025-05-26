@@ -365,7 +365,7 @@ pub fn translate_type_name(
 
         solidity::Expression::Variable(solidity::Identifier { name, .. }) => {
             // Check if type is a type definition
-            if module.borrow().type_definitions.iter().any(|t| matches!(&t.name, sway::TypeName::Identifier { name: type_name, generic_parameters: None } if type_name == name)) {
+            if module.borrow().type_definitions.iter().any(|t| matches!(&t.implementation.as_ref().unwrap().name, sway::TypeName::Identifier { name: type_name, generic_parameters: None } if type_name == name)) {
                 return sway::TypeName::Identifier {
                     name: name.clone(),
                     generic_parameters: None,
@@ -377,7 +377,7 @@ pub fn translate_type_name(
                 .borrow()
                 .structs
                 .iter()
-                .any(|n| n.borrow().name == *name)
+                .any(|n| n.implementation.as_ref().unwrap().borrow().name == *name)
             {
                 return sway::TypeName::Identifier {
                     name: name.clone(),
@@ -386,18 +386,15 @@ pub fn translate_type_name(
             }
 
             // Check if type is an enum
-            if module
-                .borrow()
-                .enums
-                .iter()
-                .any(|t| match &t.type_definition.name {
+            if module.borrow().enums.iter().any(|t| {
+                match &t.implementation.as_ref().unwrap().type_definition.name {
                     sway::TypeName::Identifier {
                         name: type_name,
                         generic_parameters: None,
                     } => type_name == name,
                     _ => false,
-                })
-            {
+                }
+            }) {
                 return sway::TypeName::Identifier {
                     name: name.clone(),
                     generic_parameters: None,
@@ -497,30 +494,45 @@ pub fn translate_type_name(
                             let sway::TypeName::Identifier {
                                 name,
                                 generic_parameters: None,
-                            } = &e.type_definition.name
+                            } = &e.implementation.as_ref().unwrap().type_definition.name
                             else {
                                 panic!(
                                     "Expected Identifier type name, found {:#?}",
-                                    e.type_definition.name
+                                    e.implementation.as_ref().unwrap().type_definition.name
                                 );
                             };
 
                             *name == member.name
                         })
                     {
-                        translated_enum = Some(external_enum.clone());
-                        result = Some(external_enum.type_definition.name.clone());
+                        translated_enum =
+                            Some(external_enum.implementation.as_ref().unwrap().clone());
+                        result = Some(
+                            external_enum
+                                .implementation
+                                .as_ref()
+                                .unwrap()
+                                .type_definition
+                                .name
+                                .clone(),
+                        );
                     }
                     // Check to see if member is a struct
-                    else if let Some(external_struct) = external_definition
-                        .borrow()
-                        .structs
-                        .iter()
-                        .find(|s| s.borrow().name == member.name)
+                    else if let Some(external_struct) =
+                        external_definition.borrow().structs.iter().find(|s| {
+                            s.implementation.as_ref().unwrap().borrow().name == member.name
+                        })
                     {
-                        translated_struct = Some(external_struct.clone());
+                        translated_struct =
+                            Some(external_struct.implementation.as_ref().unwrap().clone());
                         result = Some(sway::TypeName::Identifier {
-                            name: external_struct.borrow().name.clone(),
+                            name: external_struct
+                                .implementation
+                                .as_ref()
+                                .unwrap()
+                                .borrow()
+                                .name
+                                .clone(),
                             generic_parameters: None,
                         });
                     }
@@ -529,7 +541,7 @@ pub fn translate_type_name(
                         .borrow()
                         .type_definitions
                         .iter()
-                        .find(|t| match &t.name {
+                        .find(|t| match &t.implementation.as_ref().unwrap().name {
                             sway::TypeName::Identifier {
                                 name,
                                 generic_parameters: None,
@@ -537,8 +549,9 @@ pub fn translate_type_name(
                             _ => false,
                         })
                     {
-                        translated_type = Some(external_type.clone());
-                        result = Some(external_type.name.clone());
+                        translated_type =
+                            Some(external_type.implementation.as_ref().unwrap().clone());
+                        result = Some(external_type.implementation.as_ref().unwrap().name.clone());
                     }
                 };
 

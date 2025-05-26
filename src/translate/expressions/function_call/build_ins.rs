@@ -140,33 +140,63 @@ pub fn translate_builtin_function_call(
                 panic!("Invalid ecrecover call: {expression:#?}");
             }
 
-            module.borrow_mut().ensure_use_declared("std::crypto::secp256k1::Secp256k1");
-            module.borrow_mut().ensure_use_declared("std::crypto::message::Message");
-            
-            Ok(sway::Expression::create_function_calls(None, &[
-                ("Identity::Address", Some((None, vec![
-                    sway::Expression::create_function_calls(None, &[
-                        ("Address::from", Some((None, vec![
-                            sway::Expression::create_function_calls(None, &[
-                                ("Secp256k1::from", Some((None, vec![
-                                    sway::Expression::Tuple(vec![
-                                        parameters[2].clone(),
-                                        parameters[3].clone(),
-                                    ]),
-                                ]))),
-                                ("address", Some((None, vec![
-                                    sway::Expression::create_function_calls(None, &[
-                                        ("Message::from", Some((None, vec![
-                                            parameters[0].clone(),
-                                        ]))),
-                                    ]),
-                                ]))),
-                                ("unwrap", Some((None, vec![]))),
-                            ]),
-                        ])))
-                    ]),
-                ]))),
-            ]))
+            module
+                .borrow_mut()
+                .ensure_use_declared("std::crypto::secp256k1::Secp256k1");
+            module
+                .borrow_mut()
+                .ensure_use_declared("std::crypto::message::Message");
+
+            Ok(sway::Expression::create_function_calls(
+                None,
+                &[(
+                    "Identity::Address",
+                    Some((
+                        None,
+                        vec![sway::Expression::create_function_calls(
+                            None,
+                            &[(
+                                "Address::from",
+                                Some((
+                                    None,
+                                    vec![sway::Expression::create_function_calls(
+                                        None,
+                                        &[
+                                            (
+                                                "Secp256k1::from",
+                                                Some((
+                                                    None,
+                                                    vec![sway::Expression::Tuple(vec![
+                                                        parameters[2].clone(),
+                                                        parameters[3].clone(),
+                                                    ])],
+                                                )),
+                                            ),
+                                            (
+                                                "address",
+                                                Some((
+                                                    None,
+                                                    vec![sway::Expression::create_function_calls(
+                                                        None,
+                                                        &[(
+                                                            "Message::from",
+                                                            Some((
+                                                                None,
+                                                                vec![parameters[0].clone()],
+                                                            )),
+                                                        )],
+                                                    )],
+                                                )),
+                                            ),
+                                            ("unwrap", Some((None, vec![]))),
+                                        ],
+                                    )],
+                                )),
+                            )],
+                        )],
+                    )),
+                )],
+            ))
         }
 
         "selfdestruct" => {
@@ -206,18 +236,21 @@ pub fn translate_builtin_function_call(
             if parameters.len() != 2 {
                 panic!("Invalid require call: {expression:#?}");
             }
-            
-            let parameter_type = module.borrow_mut().get_expression_type(scope, &parameters[0])?;
-            
+
+            let parameter_type = module
+                .borrow_mut()
+                .get_expression_type(scope, &parameters[0])?;
+
             parameters[0] = coerce_expression(
                 &parameters[0],
                 &parameter_type,
-                &sway::TypeName::Identifier { 
+                &sway::TypeName::Identifier {
                     name: "bool".into(),
-                    generic_parameters: None 
-                }
-            ).unwrap();
-            
+                    generic_parameters: None,
+                },
+            )
+            .unwrap();
+
             Ok(sway::Expression::create_function_calls(
                 None,
                 &[("require", Some((None, parameters)))],
@@ -287,7 +320,7 @@ pub fn translate_builtin_function_call(
                 project,
                 module.clone(),
                 scope,
-                module.borrow().structs.clone().as_slice(),
+                module.borrow().structs.as_slice(),
                 old_name,
                 named_arguments,
                 parameters.clone(),

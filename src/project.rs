@@ -1,4 +1,4 @@
-use crate::{cli::Args, error::Error, translate::*, wrapped_err};
+use crate::{cli::Args, error::Error, sway, translate::*, wrapped_err};
 use convert_case::{Case, Casing};
 use solang_parser::pt as solidity;
 use std::{
@@ -35,8 +35,7 @@ impl Framework {
 
 #[derive(Default)]
 pub struct Project {
-    pub root_folder: Option<PathBuf>,
-    pub output_directory: Option<PathBuf>,
+    pub options: Args,
     pub framework: Framework,
     pub queue: Vec<PathBuf>,
     pub line_ranges: HashMap<PathBuf, Vec<(usize, usize)>>,
@@ -56,14 +55,17 @@ impl Project {
                     let framework = Self::detect_project_type(&root_path)?;
                     (framework, Some(root_path))
                 } else {
-                    (Framework::Unknown, None)
+                    (Framework::Unknown, Some(options.target.clone()))
                 }
             }
         };
 
         let mut result = Self {
-            root_folder,
-            output_directory: options.output_directory.clone(),
+            options: Args {
+                target: options.target.clone(),
+                root_folder,
+                output_directory: options.output_directory.clone(),
+            },
             framework,
             ..Default::default()
         };
@@ -130,7 +132,7 @@ impl Project {
         source_unit_directory: &Path,
         filename: &str,
     ) -> Result<PathBuf, Error> {
-        let Some(project_root_folder) = self.root_folder.as_ref() else {
+        let Some(project_root_folder) = self.options.root_folder.as_ref() else {
             // If we cant find a project root folder we return the filename as is
             return Ok(PathBuf::from(filename));
         };
@@ -380,8 +382,10 @@ impl Project {
     }
 
     fn create_usage_queue(&mut self) -> Result<Vec<PathBuf>, Error> {
-        let paths =
-            Self::collect_source_unit_paths(self.root_folder.as_ref().unwrap(), &self.framework)?;
+        let paths = Self::collect_source_unit_paths(
+            self.options.root_folder.as_ref().unwrap(),
+            &self.framework,
+        )?;
 
         // Build a mapping of file paths to import paths, and file paths to the number of times that that file is imported from another file
         let mut import_paths = HashMap::new();
@@ -596,6 +600,7 @@ impl Project {
         loc: &solidity::Loc,
     ) -> Option<(usize, usize)> {
         let path = self
+            .options
             .root_folder
             .clone()
             .unwrap()
@@ -743,7 +748,7 @@ impl Project {
             self.translate_file(&source_unit_path)?;
         }
 
-        match self.output_directory.clone() {
+        match self.options.output_directory.clone() {
             Some(output_directory) => {
                 todo!("{:#?}", output_directory);
                 // self.generate_forc_project(output_directory, source_unit_path)?;
@@ -840,6 +845,7 @@ impl Project {
             &PathBuf::from(
                 source_unit_path.to_string_lossy().trim_start_matches(
                     &self
+                        .options
                         .root_folder
                         .as_ref()
                         .unwrap()
@@ -850,39 +856,59 @@ impl Project {
             .with_extension(""),
         );
 
-        //
-        // TODO:
-        //
-        // We will need to build a complete list of types defined in the module, followed by
-        // a complete list of all function signatures defined in the module before we begin
-        // translating. This is because Solidity allows specifying things out of order, so we
-        // can encounter a type name or function that has not been translated yet.
-        //
-        // I think we should refactor the corresponding `TranslatedX` structs to have some kind
-        // of implementation status, like so:
-        //
-        // pub struct TranslatedTypeDefinition {
-        //     /// The signature of the type definition. This is populated before translation
-        //     pub signature: sway::TypeName,
-        //
-        //     /// The translation of the type definition. This is `None` initially and gets set to `Some(_)` after translation.
-        //     pub translation: Option<sway::TypeDefinition>,
-        // }
-        //
-
         // Translate each item
         translate_import_directives(self, module.clone(), &import_directives)?;
 
-        for type_definition in type_definitions {
-            translate_type_definition(self, module.clone(), &type_definition)?;
+        for type_definition in type_definitions.iter() {
+            module.borrow_mut().type_definitions.push(TranslatedItem {
+                signature: sway::TypeName::Identifier {
+                    name: type_definition.name.name.clone(),
+                    generic_parameters: None,
+                },
+                implementation: None,
+            });
         }
 
-        for enum_definition in enum_definitions {
-            translate_enum_definition(self, module.clone(), &enum_definition)?;
+        for enum_definition in enum_definitions.iter() {
+            module.borrow_mut().enums.push(TranslatedItem {
+                signature: sway::TypeName::Identifier {
+                    name: enum_definition.name.as_ref().unwrap().name.clone(),
+                    generic_parameters: None,
+                },
+                implementation: None,
+            });
         }
 
-        for struct_definition in struct_definitions {
-            translate_struct_definition(self, module.clone(), &struct_definition)?;
+        for struct_definition in struct_definitions.iter() {
+            module.borrow_mut().structs.push(TranslatedItem {
+                signature: sway::TypeName::Identifier {
+                    name: struct_definition.name.as_ref().unwrap().name.clone(),
+                    generic_parameters: None,
+                },
+                implementation: None,
+            })
+        }
+
+        for (i, type_definition) in type_definitions.into_iter().enumerate() {
+            module.borrow_mut().type_definitions[i].implementation = Some(
+                translate_type_definition(self, module.clone(), &type_definition)?,
+            );
+        }
+
+        for (i, enum_definition) in enum_definitions.into_iter().enumerate() {
+            module.borrow_mut().enums[i].implementation = Some(translate_enum_definition(
+                self,
+                module.clone(),
+                &enum_definition,
+            )?);
+        }
+
+        for (i, struct_definition) in struct_definitions.into_iter().enumerate() {
+            module.borrow_mut().structs[i].implementation = Some(translate_struct_definition(
+                self,
+                module.clone(),
+                &struct_definition,
+            )?);
         }
 
         for event_definition in event_definitions {
@@ -893,8 +919,24 @@ impl Project {
             translate_error_definition(self, module.clone(), &error_definition)?;
         }
 
-        for function_definition in function_definitions {
-            translate_function_definition(self, module.clone(), None, &function_definition)?;
+        for function_definition in function_definitions.iter() {
+            let signature =
+                translate_function_declaration(self, module.clone(), function_definition)?
+                    .type_name;
+
+            module.borrow_mut().functions.push(TranslatedItem {
+                signature,
+                implementation: None,
+            });
+        }
+
+        for (i, function_definition) in function_definitions.into_iter().enumerate() {
+            module.borrow_mut().functions[i].implementation = Some(translate_function_definition(
+                self,
+                module.clone(),
+                None,
+                &function_definition,
+            )?);
         }
 
         for variable_definition in variable_definitions {

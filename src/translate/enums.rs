@@ -9,7 +9,7 @@ pub fn translate_enum_definition(
     _project: &mut Project,
     module: Rc<RefCell<TranslatedModule>>,
     enum_definition: &solidity::EnumDefinition,
-) -> Result<(), Error> {
+) -> Result<TranslatedEnum, Error> {
     // Create the enum's type definition
     let type_definition = sway::TypeDefinition {
         is_public: false,
@@ -49,13 +49,10 @@ pub fn translate_enum_definition(
             }));
     }
 
-    // Add the translated enum to the translated definition
-    module.borrow_mut().enums.push(TranslatedEnum {
+    Ok(TranslatedEnum {
         type_definition,
         variants_impl,
-    });
-
-    Ok(())
+    })
 }
 
 #[inline]
@@ -91,7 +88,6 @@ pub fn translate_event_definition(
             //         generic_parameters,
             //     }
             // }
-
             type_name => type_name,
         }
     } else {
@@ -118,7 +114,6 @@ pub fn translate_event_definition(
                         //         generic_parameters,
                         //     }
                         // }
-
                         type_name => type_name,
                     }
                 })

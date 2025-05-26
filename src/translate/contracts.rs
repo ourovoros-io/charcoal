@@ -45,9 +45,7 @@ pub fn translate_using_directive(
             else {
                 panic!(
                     "Failed to find translated library: \"{library_name}\"; from {}",
-                    match project
-                        .loc_to_line_and_column(module.clone(), &using_directive.loc)
-                    {
+                    match project.loc_to_line_and_column(module.clone(), &using_directive.loc) {
                         Some((line, col)) => format!(
                             "{}:{}:{}: ",
                             module.borrow().path.to_string_lossy(),
@@ -71,6 +69,9 @@ pub fn translate_using_directive(
                 if translated_using_directive.for_type.is_some()
                     && translated_using_directive.for_type
                         != function
+                            .implementation
+                            .as_ref()
+                            .unwrap()
                             .parameters
                             .entries
                             .first()
@@ -82,7 +83,7 @@ pub fn translate_using_directive(
                 // Add the function to the translated using directive so we know where it came from
                 translated_using_directive
                     .functions
-                    .push(function.name.clone());
+                    .push(function.implementation.as_ref().unwrap().name.clone());
             }
 
             // Add the using directive to the current definition
@@ -117,28 +118,88 @@ pub fn translate_contract_definition(
         translate_using_directive(project, module.clone(), using_directive)?;
     }
 
-    // Translate contract type definitions
+    // Collect the signatures of the contract type definitions
+    let mut type_definitions = vec![];
+
     for part in contract_definition.parts.iter() {
         let solidity::ContractPart::TypeDefinition(type_definition) = part else {
             continue;
         };
-        translate_type_definition(project, module.clone(), type_definition)?;
+
+        module.borrow_mut().type_definitions.push(TranslatedItem {
+            signature: sway::TypeName::Identifier {
+                name: type_definition.name.name.clone(),
+                generic_parameters: None,
+            },
+            implementation: None,
+        });
+
+        type_definitions.push(type_definition.clone());
     }
 
-    // Translate contract enum definitions
+    // Collect the signatures of the contract enum definitions
+    let mut enum_definitions = vec![];
+
     for part in contract_definition.parts.iter() {
         let solidity::ContractPart::EnumDefinition(enum_definition) = part else {
             continue;
         };
-        translate_enum_definition(project, module.clone(), enum_definition)?;
+
+        module.borrow_mut().enums.push(TranslatedItem {
+            signature: sway::TypeName::Identifier {
+                name: enum_definition.name.as_ref().unwrap().name.clone(),
+                generic_parameters: None,
+            },
+            implementation: None,
+        });
+
+        enum_definitions.push(enum_definition.clone());
     }
 
-    // Translate contract struct definitions
+    // Collect the signatures of the contract struct definitions
+    let mut struct_definitions = vec![];
+
     for part in contract_definition.parts.iter() {
         let solidity::ContractPart::StructDefinition(struct_definition) = part else {
             continue;
         };
-        translate_struct_definition(project, module.clone(), struct_definition)?;
+
+        module.borrow_mut().structs.push(TranslatedItem {
+            signature: sway::TypeName::Identifier {
+                name: struct_definition.name.as_ref().unwrap().name.clone(),
+                generic_parameters: None,
+            },
+            implementation: None,
+        });
+
+        struct_definitions.push(struct_definition.clone());
+    }
+
+    // Translate contract type definitions
+    for (i, type_definition) in type_definitions.into_iter().enumerate() {
+        module.borrow_mut().type_definitions[i].implementation = Some(translate_type_definition(
+            project,
+            module.clone(),
+            type_definition.as_ref(),
+        )?);
+    }
+
+    // Translate contract enum definitions
+    for (i, enum_definition) in enum_definitions.into_iter().enumerate() {
+        module.borrow_mut().enums[i].implementation = Some(translate_enum_definition(
+            project,
+            module.clone(),
+            enum_definition.as_ref(),
+        )?);
+    }
+
+    // Translate contract struct definitions
+    for (i, struct_definition) in struct_definitions.into_iter().enumerate() {
+        module.borrow_mut().structs[i].implementation = Some(translate_struct_definition(
+            project,
+            module.clone(),
+            struct_definition.as_ref(),
+        )?);
     }
 
     // Translate contract event definitions
@@ -206,7 +267,8 @@ pub fn translate_contract_definition(
         translate_modifier_definition(project, module.clone(), function_definition)?;
     }
 
-    // Translate each function
+    let mut function_definitions = vec![];
+
     for part in contract_definition.parts.iter() {
         let solidity::ContractPart::FunctionDefinition(function_definition) = part else {
             continue;
@@ -218,12 +280,25 @@ pub fn translate_contract_definition(
             continue;
         }
 
-        translate_function_definition(
+        let signature =
+            translate_function_declaration(project, module.clone(), function_definition)?.type_name;
+
+        module.borrow_mut().functions.push(TranslatedItem {
+            signature,
+            implementation: None,
+        });
+
+        function_definitions.push(function_definition.clone());
+    }
+
+    // Translate each function
+    for (i, function_definition) in function_definitions.into_iter().enumerate() {
+        module.borrow_mut().functions[i].implementation = Some(translate_function_definition(
             project,
             module.clone(),
             contract_definition.name.as_ref().map(|n| n.name.clone()),
-            function_definition,
-        )?;
+            &function_definition,
+        )?);
     }
 
     // // Propagate deferred initializations into the constructor

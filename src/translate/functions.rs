@@ -278,8 +278,14 @@ pub fn translate_modifier_definition(
     let scope = Rc::new(RefCell::new(TranslationScope::default()));
 
     for (_, p) in function_definition.params.iter() {
-        let old_name = p.as_ref().unwrap().name.as_ref().map(|p| p.name.clone()).unwrap_or_else(String::new);
-        
+        let old_name = p
+            .as_ref()
+            .unwrap()
+            .name
+            .as_ref()
+            .map(|p| p.name.clone())
+            .unwrap_or_else(String::new);
+
         let new_name = if old_name.is_empty() {
             println!("WARNING: found unnamed parameter");
             // TODO: we should generate a unique parameter name
@@ -479,54 +485,82 @@ pub fn translate_modifier_definition(
         (Some(pre_body), Some(post_body)) => {
             let modifier_pre_function_name = format!("{}_pre", modifier.new_name);
 
-            module.borrow_mut().functions.push(sway::Function {
-                attributes: create_attributes(has_pre_storage_read, has_pre_storage_write),
-                is_public: false,
-                old_name: String::new(), // TODO
-                name: modifier_pre_function_name.clone(),
-                generic_parameters: None,
-                parameters: modifier.parameters.clone(),
-                return_type: None,
-                body: Some(pre_body.clone()),
+            module.borrow_mut().functions.push(TranslatedItem {
+                signature: sway::TypeName::Function {
+                    generic_parameters: None,
+                    parameters: modifier.parameters.clone(),
+                    return_type: None,
+                },
+                implementation: Some(sway::Function {
+                    attributes: create_attributes(has_pre_storage_read, has_pre_storage_write),
+                    is_public: false,
+                    old_name: String::new(), // TODO
+                    name: modifier_pre_function_name.clone(),
+                    generic_parameters: None,
+                    parameters: modifier.parameters.clone(),
+                    return_type: None,
+                    body: Some(pre_body.clone()),
+                }),
             });
 
             let modifier_post_function_name = format!("{}_post", modifier.new_name);
 
-            module.borrow_mut().functions.push(sway::Function {
-                attributes: create_attributes(has_post_storage_read, has_post_storage_write),
-                is_public: false,
-                old_name: String::new(), // TODO
-                name: modifier_post_function_name.clone(),
-                generic_parameters: None,
-                parameters: modifier.parameters.clone(),
-                return_type: None,
-                body: Some(post_body.clone()),
+            module.borrow_mut().functions.push(TranslatedItem {
+                signature: sway::TypeName::Function {
+                    generic_parameters: None,
+                    parameters: modifier.parameters.clone(),
+                    return_type: None,
+                },
+                implementation: Some(sway::Function {
+                    attributes: create_attributes(has_post_storage_read, has_post_storage_write),
+                    is_public: false,
+                    old_name: String::new(), // TODO
+                    name: modifier_post_function_name.clone(),
+                    generic_parameters: None,
+                    parameters: modifier.parameters.clone(),
+                    return_type: None,
+                    body: Some(post_body.clone()),
+                }),
             });
         }
 
         (Some(pre_body), None) => {
-            module.borrow_mut().functions.push(sway::Function {
-                attributes: create_attributes(has_pre_storage_read, has_pre_storage_write),
-                is_public: false,
-                old_name: modifier.old_name.clone(),
-                name: modifier.new_name.clone(),
-                generic_parameters: None,
-                parameters: modifier.parameters.clone(),
-                return_type: None,
-                body: Some(pre_body.clone()),
+            module.borrow_mut().functions.push(TranslatedItem {
+                signature: sway::TypeName::Function {
+                    generic_parameters: None,
+                    parameters: modifier.parameters.clone(),
+                    return_type: None,
+                },
+                implementation: Some(sway::Function {
+                    attributes: create_attributes(has_pre_storage_read, has_pre_storage_write),
+                    is_public: false,
+                    old_name: modifier.old_name.clone(),
+                    name: modifier.new_name.clone(),
+                    generic_parameters: None,
+                    parameters: modifier.parameters.clone(),
+                    return_type: None,
+                    body: Some(pre_body.clone()),
+                }),
             });
         }
 
         (None, Some(post_body)) => {
-            module.borrow_mut().functions.push(sway::Function {
-                attributes: create_attributes(has_post_storage_read, has_post_storage_write),
-                is_public: false,
-                old_name: modifier.old_name.clone(),
-                name: modifier.new_name.clone(),
-                generic_parameters: None,
-                parameters: modifier.parameters.clone(),
-                return_type: None,
-                body: Some(post_body.clone()),
+            module.borrow_mut().functions.push(TranslatedItem {
+                signature: sway::TypeName::Function {
+                    generic_parameters: None,
+                    parameters: modifier.parameters.clone(),
+                    return_type: None,
+                },
+                implementation: Some(sway::Function {
+                    attributes: create_attributes(has_post_storage_read, has_post_storage_write),
+                    is_public: false,
+                    old_name: modifier.old_name.clone(),
+                    name: modifier.new_name.clone(),
+                    generic_parameters: None,
+                    parameters: modifier.parameters.clone(),
+                    return_type: None,
+                    body: Some(post_body.clone()),
+                }),
             });
         }
 
@@ -562,7 +596,7 @@ pub fn translate_function_definition(
     module: Rc<RefCell<TranslatedModule>>,
     definition_name: Option<String>,
     function_definition: &solidity::FunctionDefinition,
-) -> Result<(), Error> {
+) -> Result<sway::Function, Error> {
     // Collect information about the function from its type
     let is_constructor = matches!(function_definition.ty, solidity::FunctionTy::Constructor);
     let is_fallback = matches!(function_definition.ty, solidity::FunctionTy::Fallback);
@@ -820,7 +854,7 @@ pub fn translate_function_definition(
     // Convert the statements in the function's body (if any)
     let Some(solidity::Statement::Block { statements, .. }) = function_definition.body.as_ref()
     else {
-        return Ok(());
+        return Ok(sway_function);
     };
 
     // Create the scope for the body of the toplevel function
@@ -1191,7 +1225,6 @@ pub fn translate_function_definition(
             .map(|a| a.attributes.remove(index))
             .unwrap();
     }
-    module.borrow_mut().functions.push(toplevel_function);
 
     if is_public && !is_fallback {
         let mut statements = vec![];
@@ -1293,5 +1326,5 @@ pub fn translate_function_definition(
         }
     }
 
-    Ok(())
+    Ok(toplevel_function)
 }
