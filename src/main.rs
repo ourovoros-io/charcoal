@@ -13,6 +13,7 @@ pub mod translate;
 fn main() {
     if let Err(e) = translate_project() {
         eprintln!("{e}");
+        std::process::exit(1);
     }
 }
 
