@@ -17,10 +17,12 @@ pub fn translate_state_variable(
             )
         )
     });
+
     let is_constant = variable_definition
         .attrs
         .iter()
         .any(|x| matches!(x, solidity::VariableAttribute::Constant(_)));
+
     let is_immutable = variable_definition
         .attrs
         .iter()
@@ -40,6 +42,7 @@ pub fn translate_state_variable(
 
     // Translate the variable's naming convention
     let old_name = variable_definition.name.as_ref().unwrap().name.clone();
+
     let new_name = if is_constant || is_immutable {
         translate_naming_convention(old_name.as_str(), Case::Constant)
     } else {
@@ -47,7 +50,7 @@ pub fn translate_state_variable(
     };
 
     // Translate the variable's type name
-    let variable_type_name = translate_type_name(
+    let mut variable_type_name = translate_type_name(
         project,
         module.clone(),
         &variable_definition.ty,
@@ -56,6 +59,8 @@ pub fn translate_state_variable(
     );
 
     // Check if the variable's type is an ABI
+    let mut abi_type_name = None;
+
     if let sway::TypeName::Identifier {
         name,
         generic_parameters: None,
@@ -66,25 +71,37 @@ pub fn translate_state_variable(
         // Check if type is a contract that hasn't been defined yet
         //
 
-        // if project.find_definition_with_abi(name.as_str()).is_none()
-        //     && module.contract_names.iter().any(|n| n == name)
-        // {
+        // if !project.translated_modules.iter().any(|module| {
+        //     module
+        //         .borrow()
+        //         .contracts
+        //         .iter()
+        //         .any(|contract| contract.name == *name)
+        // }) {
         //     project.translate(Some(name), &module.path).unwrap();
         // }
 
-        // if let Some(external_definition) = project.find_definition_with_abi(name.as_str()) {
-        //     for entry in external_definition.uses.iter() {
-        //         if !module.uses.contains(entry) {
-        //             module.uses.push(entry.clone());
-        //         }
-        //     }
-        //     abi_type_name = Some(variable_type_name.clone());
+        if let Some(external_definition) = project.translated_modules.iter().find(|module| {
+            module.borrow().contracts.iter().any(|contract| contract.name == *name)
+        }) {
+            // TODO:
+            // for entry in external_definition.uses.iter() {
+            //     if !module.uses.contains(entry) {
+            //         module.uses.push(entry.clone());
+            //     }
+            // }
 
-        //     variable_type_name = sway::TypeName::Identifier {
-        //         name: "Identity".into(),
-        //         generic_parameters: None,
-        //     };
-        // }
+            //
+            // TODO: keep track of this
+            //
+            
+            abi_type_name = Some(variable_type_name.clone());
+
+            variable_type_name = sway::TypeName::Identifier {
+                name: "Identity".into(),
+                generic_parameters: None,
+            };
+        }
     }
 
     // Translate the variable's initial value

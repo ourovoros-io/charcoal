@@ -205,6 +205,7 @@ pub fn translate_function_call_expression(
                             .collect::<Result<Vec<_>, _>>()?;
 
                         // TODO: check full inheritance hierarchy
+
                         // Check for explicit super function calls
                         // if module.borrow().inherits.iter().any(|i| i == name) {
                         //     if let Some(inherited_definition) =
@@ -318,31 +319,55 @@ pub fn translate_function_call_expression(
                             let abi_type_name = variable.borrow().abi_type_name.clone();
 
                             if let Some(abi_type_name) = abi_type_name.as_ref() {
-                                // TODO
+                                let abi_type_name_string = abi_type_name.to_string();
 
-                                // let found_abi = if let Some(external_definition) = project.find_definition_with_abi(&abi_type_name.to_string()) {
-                                //     external_definition.find_abi(|a| a.name == abi_type_name.to_string()).cloned()
-                                // } else {
-                                //     module.borrow().find_abi(|a| a.name == abi_type_name.to_string()).cloned()
-                                // };
+                                let found_abi = if let Some(external_definition) =
+                                    project.translated_modules.iter().find(|module| {
+                                        module
+                                            .borrow()
+                                            .contracts
+                                            .iter()
+                                            .any(|contract| contract.name == abi_type_name_string)
+                                    }) {
+                                    external_definition
+                                        .borrow()
+                                        .contracts
+                                        .iter()
+                                        .find(|contract| contract.name == abi_type_name_string)
+                                        .cloned()
+                                        .map(|contract| contract.abi)
+                                } else {
+                                    module
+                                        .borrow()
+                                        .contracts
+                                        .iter()
+                                        .find(|contract| contract.name == abi_type_name_string)
+                                        .cloned()
+                                        .map(|contract| contract.abi)
+                                };
 
-                                // if let Some(abi) = found_abi {
-                                //     let container = translate_expression(project, module.clone(), scope, container)?;
+                                if let Some(abi) = found_abi {
+                                    let container = translate_expression(
+                                        project,
+                                        module.clone(),
+                                        scope,
+                                        container,
+                                    )?;
 
-                                //     if let Some(result) = resolve_abi_function_call(
-                                //         project,
-                                //         module.clone(),
-                                //         scope,
-                                //         &abi,
-                                //         &container,
-                                //         member.name.as_str(),
-                                //         named_arguments,
-                                //         parameters.clone(),
-                                //         parameter_types.clone(),
-                                //     )? {
-                                //         return Ok(result);
-                                //     }
-                                // }
+                                    if let Some(result) = resolve_abi_function_call(
+                                        project,
+                                        module.clone(),
+                                        scope,
+                                        &abi,
+                                        &container,
+                                        member.name.as_str(),
+                                        named_arguments,
+                                        parameters.clone(),
+                                        parameter_types.clone(),
+                                    )? {
+                                        return Ok(result);
+                                    }
+                                }
                             }
 
                             // Check if variable is a storage vector
@@ -713,14 +738,8 @@ pub fn translate_function_call_expression(
                                         Ok(None)
                                     };
 
-                                if let Some(abi) = module.borrow().abi.as_ref() {
-                                    if let Some(result) = check_abi(abi)? {
-                                        return Ok(result);
-                                    }
-                                }
-
-                                for abi in module.borrow().abis.clone() {
-                                    if let Some(result) = check_abi(&abi)? {
+                                for contract in module.borrow().contracts.clone() {
+                                    if let Some(result) = check_abi(&contract.abi)? {
                                         return Ok(result);
                                     }
                                 }

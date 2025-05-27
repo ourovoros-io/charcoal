@@ -80,29 +80,18 @@ pub struct TranslatedModifier {
 pub struct TranslationScope {
     pub parent: Option<Rc<RefCell<TranslationScope>>>,
     pub variables: Vec<Rc<RefCell<TranslatedVariable>>>,
-    pub functions: Vec<Rc<RefCell<TranslatedFunction>>>,
 }
 
 impl TranslationScope {
-    pub fn dump(&self, variables: bool, functions: bool) {
+    pub fn dump(&self) {
         if let Some(parent) = self.parent.as_ref() {
-            parent.borrow().dump(variables, functions);
+            parent.borrow().dump();
         }
 
-        if variables {
-            println!("variables:");
+        println!("variables:");
 
-            for v in self.variables.iter() {
-                println!("{v:#?}");
-            }
-        }
-
-        if functions {
-            println!("functions:");
-
-            for f in self.functions.iter() {
-                println!("{f:#?}");
-            }
+        for v in self.variables.iter() {
+            println!("{v:#?}");
         }
     }
 
@@ -180,37 +169,52 @@ impl TranslationScope {
 
         None
     }
-
-    /// Atempts to find a translated function using a custom function
-    pub fn find_function<F: Copy + FnMut(&&Rc<RefCell<TranslatedFunction>>) -> bool>(
-        &self,
-        f: F,
-    ) -> Option<Rc<RefCell<TranslatedFunction>>> {
-        if let Some(function) = self.functions.iter().find(f) {
-            return Some(function.clone());
-        }
-
-        if let Some(parent) = self.parent.as_ref() {
-            if let Some(function) = parent.borrow().find_function(f) {
-                return Some(function);
-            }
-        }
-
-        None
-    }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct TranslatedItem<T> {
     pub signature: sway::TypeName,
     pub implementation: Option<T>,
+}
+
+#[derive(Clone, Debug)]
+pub struct TranslatedContract {
+    pub name: String,
+    pub kind: solidity::ContractTy,
+    pub abi: sway::Abi,
+    pub abi_impl: sway::Impl,
+}
+
+impl TranslatedContract {
+    pub fn new(name: &str, kind: solidity::ContractTy, inherits: &[sway::TypeName]) -> Self {
+        Self {
+            name: name.to_string(),
+            kind,
+            abi: sway::Abi {
+                name: name.to_string(),
+                inherits: inherits.to_vec(),
+                functions: vec![],
+            },
+            abi_impl: sway::Impl {
+                generic_parameters: None,
+                type_name: sway::TypeName::Identifier {
+                    name: name.to_string(),
+                    generic_parameters: None,
+                },
+                for_type_name: Some(sway::TypeName::Identifier {
+                    name: "Contract".to_string(),
+                    generic_parameters: None,
+                }),
+                items: vec![],
+            },
+        }
+    }
 }
 
 #[derive(Default, Debug)]
 pub struct TranslatedModule {
     pub name: String,
     pub path: PathBuf,
-    pub kind: Option<solidity::ContractTy>,
     pub submodules: Vec<Rc<RefCell<TranslatedModule>>>,
     pub dependencies: Vec<String>,
     pub uses: Vec<sway::Use>,
@@ -221,12 +225,11 @@ pub struct TranslatedModule {
     pub events_enums: Vec<(Rc<RefCell<sway::Enum>>, Rc<RefCell<sway::Impl>>)>,
     pub errors_enums: Vec<(Rc<RefCell<sway::Enum>>, Rc<RefCell<sway::Impl>>)>,
     pub constants: Vec<sway::Constant>,
-    pub abis: Vec<sway::Abi>,
-    pub abi: Option<sway::Abi>,
     pub configurable: Option<sway::Configurable>,
     pub storage: Option<sway::Storage>,
     pub modifiers: Vec<TranslatedModifier>,
     pub functions: Vec<TranslatedItem<sway::Function>>,
+    pub contracts: Vec<TranslatedContract>,
     pub impls: Vec<sway::Impl>,
 
     pub function_name_counts: HashMap<String, usize>,
@@ -606,11 +609,18 @@ impl TranslatedModule {
             return variable.type_name.clone();
         }
 
-        if let Some(function) = scope
-            .borrow()
-            .find_function(|f| f.borrow().new_name == *name)
+        if let Some(function) = self
+            .functions
+            .iter()
+            .find(|f| f.implementation.as_ref().unwrap().name == *name)
         {
-            return function.borrow().type_name.clone();
+            let function = function.implementation.as_ref().unwrap();
+
+            return sway::TypeName::Function {
+                generic_parameters: function.generic_parameters.clone(),
+                parameters: function.parameters.clone(),
+                return_type: function.return_type.clone().map(Box::new),
+            };
         }
 
         panic!("error: Variable not found in scope: \"{name}\"");
@@ -1559,19 +1569,12 @@ impl TranslatedModule {
         let name = path_expr.to_string();
 
         // Attempt to find a function in scope
-        if let Some(function) = scope.borrow().find_function(|f| {
-            let f = f.borrow();
-
-            let sway::TypeName::Function {
-                parameters: fn_parameters,
-                ..
-            } = &f.type_name
-            else {
-                panic!("Invalid function type name: {:#?}", f.type_name)
-            };
+        if let Some(function) = self.functions.iter().find(|f| {
+            let f = f.implementation.as_ref().unwrap();
+            let fn_parameters = &f.parameters;
 
             // Ensure the function's new name matches the function call we're translating
-            if f.new_name != name {
+            if f.name != name {
                 return false;
             }
 
@@ -1667,14 +1670,10 @@ impl TranslatedModule {
 
             true
         }) {
-            let function = function.borrow();
+            let function = function.implementation.as_ref().unwrap();
 
-            let sway::TypeName::Function { return_type, .. } = &function.type_name else {
-                panic!("Invalid function type name: {:#?}", function.type_name)
-            };
-
-            if let Some(return_type) = return_type.as_ref() {
-                return Ok(return_type.as_ref().clone());
+            if let Some(return_type) = function.return_type.as_ref() {
+                return Ok(return_type.clone());
             }
 
             return Ok(sway::TypeName::Tuple { type_names: vec![] });
@@ -2669,9 +2668,10 @@ impl TranslatedModule {
                 }
 
                 (name, None) => {
-                    for abi in self.abis.iter() {
-                        if abi.name == name {
-                            if let Some(function_definition) = abi
+                    for contract in self.contracts.iter() {
+                        if contract.abi.name == name {
+                            if let Some(function_definition) = contract
+                                .abi
                                 .functions
                                 .iter()
                                 .find(|f| f.name == member_access.member)

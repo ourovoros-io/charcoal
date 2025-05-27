@@ -20,16 +20,17 @@ pub fn translate_return_type_name(
         }
 
         _ => {
-            todo!();
             // Check if the parameter's type is an ABI and make it an Identity
-            // if let sway::TypeName::Identifier { name, generic_parameters: None } = &type_name {
-            //     if project.find_definition_with_abi(name.as_str()).is_some() {
-            //         return sway::TypeName::Identifier {
-            //             name: "Identity".into(),
-            //             generic_parameters: None,
-            //         };
-            //     }
-            // }
+            if let sway::TypeName::Identifier { name, generic_parameters: None } = &type_name {
+                if project.translated_modules.iter().any(|module| {
+                    module.borrow().contracts.iter().any(|contract| contract.name == *name)
+                }) {
+                    return sway::TypeName::Identifier {
+                        name: "Identity".into(),
+                        generic_parameters: None,
+                    };
+                }
+            }
 
             type_name.clone()
         }
@@ -402,17 +403,23 @@ pub fn translate_type_name(
             }
 
             // Check if type is an ABI
-            // if let Some(external_definition) = project.find_definition_with_abi(name.as_str()) {
-            //     // Ensure the ABI is added to the current definition
-            //     if !module.borrow().abis.iter().any(|a| a.name == *name) {
-            //         module.borrow_mut().abis.push(external_definition.abi.as_ref().unwrap().clone());
-            //     }
+            if project.translated_modules.iter().any(|module| {
+                module.borrow().contracts.iter().any(|contract| contract.name == *name)
+            }) {
+                //
+                // TODO: add a use statement for the external definition into the current module
+                //
 
-            //     return sway::TypeName::Identifier {
-            //         name: external_definition.name.clone(),
-            //         generic_parameters: None,
-            //     };
-            // }
+                // // Ensure the ABI is added to the current definition
+                // if !module.borrow().abis.iter().any(|a| a.name == *name) {
+                //     module.borrow_mut().abis.push(external_definition.abi.as_ref().unwrap().clone());
+                // }
+
+                return sway::TypeName::Identifier {
+                    name: name.clone(),
+                    generic_parameters: None,
+                };
+            }
 
             todo!(
                 "{} - translate variable type expression: {} - {type_name:#?}",

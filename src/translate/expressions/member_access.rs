@@ -580,12 +580,13 @@ pub fn translate_member_access_expression(
                         // }
                     }
 
-                    // TODO
-                    // if let Some(external_definition) = project.find_definition_with_abi(name) {
-                    //     if external_definition.toplevel_scope.borrow().find_function(|f| f.borrow().old_name == member1.name).is_some() {
-                    //         return Ok(sway::Expression::create_todo(Some(expression.to_string())));
-                    //     }
-                    // }
+                    if let Some(external_definition) = project.translated_modules.iter().find(|module| {
+                        module.borrow().contracts.iter().any(|contract| contract.name == *name)
+                    }) {
+                        if external_definition.borrow().functions.iter().any(|f| f.implementation.as_ref().unwrap().old_name == member1.name) {
+                            return Ok(sway::Expression::create_todo(Some(expression.to_string())));
+                        }
+                    }
 
                     todo!()
                 }

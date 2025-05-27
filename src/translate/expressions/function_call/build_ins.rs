@@ -329,87 +329,83 @@ pub fn translate_builtin_function_call(
                 return Ok(result);
             }
 
-            // TODO
             // Check to see if the expression is an ABI cast
-            // if parameters.len() == 1 {
-            //     if let Some(external_definition) = project.find_definition_with_abi(old_name) {
-            //         match module
-            //             .get_expression_type(scope, &parameters[0])?
-            //         {
-            //             sway::TypeName::Identifier {
-            //                 name,
-            //                 generic_parameters,
-            //             } => match (name.as_str(), generic_parameters.as_ref()) {
-            //                 ("Identity", None) => {
-            //                     // Ensure the ABI is added to the current definition
-            //                     if !module
-            //                         .abis
-            //                         .iter()
-            //                         .any(|a| a.name == old_name)
-            //                     {
-            //                         module
-            //                             .abis
-            //                             .push(external_definition.abi.as_ref().unwrap().clone());
-            //                     }
+            if parameters.len() == 1 {
+                if let Some(external_definition) =
+                    project.translated_modules.iter().find(|module| {
+                        module
+                            .borrow()
+                            .contracts
+                            .iter()
+                            .any(|contract| contract.name == old_name)
+                    })
+                {
+                    match module.borrow().get_expression_type(scope, &parameters[0])? {
+                        sway::TypeName::Identifier {
+                            name,
+                            generic_parameters,
+                        } => match (name.as_str(), generic_parameters.as_ref()) {
+                            ("Identity", None) => {
+                                //
+                                // TODO: Ensure a use statement for the ABI is added to the current module
+                                //
 
-            //                     // abi(T, x.as_contract_id().unwrap().into())
-            //                     return Ok(sway::Expression::create_function_calls(
-            //                         None,
-            //                         &[(
-            //                             "abi",
-            //                             Some((
-            //                                 None,
-            //                                 vec![
-            //                                     sway::Expression::create_identifier(old_name.into()),
-            //                                     sway::Expression::create_function_calls(
-            //                                         Some(parameters[0].clone()),
-            //                                         &[
-            //                                             ("as_contract_id", Some((None, vec![]))),
-            //                                             ("unwrap", Some((None, vec![]))),
-            //                                             ("into", Some((None, vec![]))),
-            //                                         ],
-            //                                     ),
-            //                                 ],
-            //                             )),
-            //                         )],
-            //                     ));
-            //                 }
+                                // abi(T, x.as_contract_id().unwrap().into())
+                                return Ok(sway::Expression::create_function_calls(
+                                    None,
+                                    &[(
+                                        "abi",
+                                        Some((
+                                            None,
+                                            vec![
+                                                sway::Expression::create_identifier(
+                                                    old_name.into(),
+                                                ),
+                                                sway::Expression::create_function_calls(
+                                                    Some(parameters[0].clone()),
+                                                    &[
+                                                        ("as_contract_id", Some((None, vec![]))),
+                                                        ("unwrap", Some((None, vec![]))),
+                                                        ("into", Some((None, vec![]))),
+                                                    ],
+                                                ),
+                                            ],
+                                        )),
+                                    )],
+                                ));
+                            }
 
-            //                 ("u256" | "b256", None) => {
-            //                     // Thing(x) => abi(Thing, Identity::from(ContractId::from(x)))
+                            ("u256" | "b256", None) => {
+                                // Thing(x) => abi(Thing, Identity::from(ContractId::from(x)))
 
-            //                     // Ensure the ABI is added to the current definition
-            //                     if !module
-            //                         .abis
-            //                         .iter()
-            //                         .any(|a| a.name == old_name)
-            //                     {
-            //                         module
-            //                             .abis
-            //                             .push(external_definition.abi.as_ref().unwrap().clone());
-            //                     }
+                                // Ensure the ABI is added to the current definition
+                                if !module.abis.iter().any(|a| a.name == old_name) {
+                                    module
+                                        .abis
+                                        .push(external_definition.abi.as_ref().unwrap().clone());
+                                }
 
-            //                     // abi(T, Identity::from(ContractId::from(x)))
-            //                     return Ok(sway::Expression::create_function_calls(None, &[
-            //                         ("abi", Some((None, vec![
-            //                             sway::Expression::create_identifier(old_name.into()),
-            //                             sway::Expression::create_function_calls(None, &[
-            //                                 ("Identity::from", Some((None, vec![
-            //                                     // ContractId::from(x)
-            //                                     sway::Expression::create_function_calls(None, &[("ContractId::from", Some((None, vec![parameters[0].clone()])))]),
-            //                                 ]))),
-            //                             ]),
-            //                         ]))),
-            //                     ]));
-            //                 }
+                                // abi(T, Identity::from(ContractId::from(x)))
+                                return Ok(sway::Expression::create_function_calls(None, &[
+                                    ("abi", Some((None, vec![
+                                        sway::Expression::create_identifier(old_name.into()),
+                                        sway::Expression::create_function_calls(None, &[
+                                            ("Identity::from", Some((None, vec![
+                                                // ContractId::from(x)
+                                                sway::Expression::create_function_calls(None, &[("ContractId::from", Some((None, vec![parameters[0].clone()])))]),
+                                            ]))),
+                                        ]),
+                                    ]))),
+                                ]));
+                            }
 
-            //                 _ => {}
-            //             },
+                            _ => {}
+                        },
 
-            //             _ => {}
-            //         }
-            //     }
-            // }
+                        _ => {}
+                    }
+                }
+            }
 
             // Try to resolve the function call
             if let Some(result) = resolve_function_call(

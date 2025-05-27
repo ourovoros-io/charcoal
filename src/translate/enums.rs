@@ -71,23 +71,29 @@ pub fn translate_event_definition(
             false,
             false,
         ) {
-            // sway::TypeName::Identifier {
-            //     name,
-            //     generic_parameters,
-            // } => {
-            //     todo!();
-            //     // if project.find_definition_with_abi(name.as_str()).is_some() {
-            //     //     sway::TypeName::Identifier {
-            //     //         name: "Identity".into(),
-            //     //         generic_parameters: None,
-            //     //     }
-            //     // }
+            sway::TypeName::Identifier {
+                name,
+                generic_parameters,
+            } => {
+                if project.translated_modules.iter().any(|module| {
+                    module
+                        .borrow()
+                        .contracts
+                        .iter()
+                        .any(|contract| contract.name == *name)
+                }) {
+                    sway::TypeName::Identifier {
+                        name: "Identity".into(),
+                        generic_parameters: None,
+                    }
+                } else {
+                    sway::TypeName::Identifier {
+                        name,
+                        generic_parameters,
+                    }
+                }
+            }
 
-            //     sway::TypeName::Identifier {
-            //         name,
-            //         generic_parameters,
-            //     }
-            // }
             type_name => type_name,
         }
     } else {
@@ -95,28 +101,30 @@ pub fn translate_event_definition(
             type_names: event_definition
                 .fields
                 .iter()
-                .map(|f| {
-                    match translate_type_name(project, module.clone(), &f.ty, false, false) {
-                        // sway::TypeName::Identifier {
-                        //     name,
-                        //     generic_parameters,
-                        // } => {
-                        //     todo!();
-                        //     // if project.find_definition_with_abi(name.as_str()).is_some() {
-                        //     //     sway::TypeName::Identifier {
-                        //     //         name: "Identity".into(),
-                        //     //         generic_parameters: None,
-                        //     //     }
-                        //     // }
+                .map(
+                    |f| match translate_type_name(project, module.clone(), &f.ty, false, false) {
+                        sway::TypeName::Identifier {
+                            name,
+                            generic_parameters,
+                        } => {
+                            if project.translated_modules.iter().any(|module| {
+                                module.borrow().contracts.iter().any(|contract| contract.name == *name)
+                            }) {
+                                sway::TypeName::Identifier {
+                                    name: "Identity".into(),
+                                    generic_parameters: None,
+                                }
+                            } else {
+                                sway::TypeName::Identifier {
+                                    name,
+                                    generic_parameters,
+                                }
+                            }
+                        }
 
-                        //     sway::TypeName::Identifier {
-                        //         name,
-                        //         generic_parameters,
-                        //     }
-                        // }
                         type_name => type_name,
-                    }
-                })
+                    },
+                )
                 .collect(),
         }
     };

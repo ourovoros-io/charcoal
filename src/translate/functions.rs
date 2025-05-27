@@ -62,9 +62,9 @@ pub fn translate_function_declaration(
     module: Rc<RefCell<TranslatedModule>>,
     function_definition: &solidity::FunctionDefinition,
 ) -> Result<TranslatedFunction, Error> {
-    let module_name = module.borrow().get_module_name();
+    // let module_name = module.borrow().get_module_name();
 
-    let (old_name, mut new_name) = match &function_definition.ty {
+    let (old_name, new_name) = match &function_definition.ty {
         solidity::FunctionTy::Function | solidity::FunctionTy::Modifier => {
             let old_name = function_definition.name.as_ref().unwrap().name.clone();
             let new_name = translate_function_name(project, module.clone(), function_definition);
@@ -72,12 +72,6 @@ pub fn translate_function_declaration(
         }
         _ => (String::new(), function_definition.ty.to_string()),
     };
-
-    if let Some(solidity::ContractTy::Abstract(_) | solidity::ContractTy::Library(_)) =
-        &module.borrow().kind
-    {
-        new_name = format!("{}_{}", module_name, new_name);
-    }
 
     // Create a scope for modifier invocation translations
     let scope = Rc::new(RefCell::new(TranslationScope::default()));
@@ -133,21 +127,24 @@ pub fn translate_function_declaration(
             .unwrap_or_else(|| Ok(vec![]))?;
 
         // Check to see if base is a constructor call
-        // if project
-        //     .find_definition_with_abi(old_name.as_str())
-        //     .is_some()
-        // {
-        //     let prefix = translate_naming_convention(old_name.as_str(), Case::Snake);
-        //     let name = format!("{prefix}_constructor");
+        if project.translated_modules.iter().any(|module| {
+            module
+                .borrow()
+                .contracts
+                .iter()
+                .any(|contract| contract.name == old_name)
+        }) {
+            let prefix = translate_naming_convention(old_name.as_str(), Case::Snake);
+            let name = format!("{prefix}_constructor");
 
-        //     constructor_calls.push(sway::FunctionCall {
-        //         function: sway::Expression::create_identifier(name),
-        //         generic_parameters: None,
-        //         parameters,
-        //     });
+            constructor_calls.push(sway::FunctionCall {
+                function: sway::Expression::create_identifier(name),
+                generic_parameters: None,
+                parameters,
+            });
 
-        //     continue;
-        // }
+            continue;
+        }
 
         // Add the base to the modifiers list
         modifiers.push(sway::FunctionCall {
@@ -167,7 +164,9 @@ pub fn translate_function_declaration(
             .name
             .as_ref()
             .map_or("_".into(), |n| n.name.clone());
+
         let new_name = translate_naming_convention(old_name.as_str(), Case::Snake);
+
         let mut type_name = translate_type_name(
             project,
             module.clone(),
@@ -176,19 +175,25 @@ pub fn translate_function_declaration(
             true,
         );
 
-        // // Check if the parameter's type is an ABI
-        // if let sway::TypeName::Identifier {
-        //     name,
-        //     generic_parameters: None,
-        // } = &type_name
-        // {
-        //     if project.find_definition_with_abi(name.as_str()).is_some() {
-        //         type_name = sway::TypeName::Identifier {
-        //             name: "Identity".into(),
-        //             generic_parameters: None,
-        //         };
-        //     }
-        // }
+        // Check if the parameter's type is an ABI
+        if let sway::TypeName::Identifier {
+            name,
+            generic_parameters: None,
+        } = &type_name
+        {
+            if project.translated_modules.iter().any(|module| {
+                module
+                    .borrow()
+                    .contracts
+                    .iter()
+                    .any(|contract| contract.name == *name)
+            }) {
+                type_name = sway::TypeName::Identifier {
+                    name: "Identity".into(),
+                    generic_parameters: None,
+                };
+            }
+        }
 
         parameters.entries.push(sway::Parameter {
             is_ref: false,
@@ -659,7 +664,7 @@ pub fn translate_function_definition(
         translate_function_name(project, module.clone(), function_definition)
     };
 
-    let (old_name, mut new_name) = if matches!(
+    let (old_name, new_name) = if matches!(
         function_definition.ty,
         solidity::FunctionTy::Function | solidity::FunctionTy::Modifier
     ) {
@@ -668,16 +673,6 @@ pub fn translate_function_definition(
     } else {
         (String::new(), new_name_2.clone())
     };
-
-    if let Some(solidity::ContractTy::Abstract(_) | solidity::ContractTy::Library(_)) =
-        &module.borrow().kind
-    {
-        new_name = format!(
-            "{}_{}",
-            translate_naming_convention(&module.borrow().name, Case::Snake),
-            new_name
-        );
-    }
 
     // println!(
     //     "Translating {}.{} {}",
@@ -701,7 +696,9 @@ pub fn translate_function_definition(
             .as_ref()
             .map(|n| n.name.clone())
             .unwrap_or(parameter_names.next().unwrap().to_string());
+
         let new_name = translate_naming_convention(old_name.as_str(), Case::Snake);
+
         let mut type_name = translate_type_name(
             project,
             module.clone(),
@@ -710,19 +707,25 @@ pub fn translate_function_definition(
             true,
         );
 
-        // // Check if the parameter's type is an ABI and make it an Identity
-        // if let sway::TypeName::Identifier {
-        //     name,
-        //     generic_parameters: None,
-        // } = &type_name
-        // {
-        //     if project.find_definition_with_abi(name.as_str()).is_some() {
-        //         type_name = sway::TypeName::Identifier {
-        //             name: "Identity".into(),
-        //             generic_parameters: None,
-        //         };
-        //     }
-        // }
+        // Check if the parameter's type is an ABI and make it an Identity
+        if let sway::TypeName::Identifier {
+            name,
+            generic_parameters: None,
+        } = &type_name
+        {
+            if project.translated_modules.iter().any(|module| {
+                module
+                    .borrow()
+                    .contracts
+                    .iter()
+                    .any(|contract| contract.name == *name)
+            }) {
+                type_name = sway::TypeName::Identifier {
+                    name: "Identity".into(),
+                    generic_parameters: None,
+                };
+            }
+        }
 
         parameters.entries.push(sway::Parameter {
             is_ref: false,
@@ -816,8 +819,9 @@ pub fn translate_function_definition(
 
         if !is_fallback {
             let mut module = module.borrow_mut();
-            let abi = module
-                .abis
+
+            let contract = module
+                .contracts
                 .iter_mut()
                 .find(|a| a.name == *definition_name)
                 .unwrap();
@@ -833,11 +837,11 @@ pub fn translate_function_definition(
             }
 
             // Only add the function to the abi if it doesn't already exist
-            if !abi.functions.contains(&abi_function) && !is_override {
+            if !contract.abi.functions.contains(&abi_function) && !is_override {
                 if is_constructor {
-                    abi.functions.insert(0, abi_function.clone());
+                    contract.abi.functions.insert(0, abi_function.clone());
                 } else {
-                    abi.functions.push(abi_function.clone());
+                    contract.abi.functions.push(abi_function.clone());
                 }
             }
         }
@@ -880,26 +884,34 @@ pub fn translate_function_definition(
         );
         let mut abi_type_name = None;
 
-        // // Check if the parameter's type is an ABI
-        // if let sway::TypeName::Identifier {
-        //     name,
-        //     generic_parameters: None,
-        // } = &type_name
-        // {
-        //     if let Some(external_definition) = project.find_definition_with_abi(name.as_str()) {
-        //         for entry in external_definition.uses.iter() {
-        //             if !module.uses.contains(entry) {
-        //                 module.uses.push(entry.clone());
-        //             }
-        //         }
-        //         abi_type_name = Some(type_name.clone());
+        // Check if the parameter's type is an ABI
+        if let sway::TypeName::Identifier {
+            name,
+            generic_parameters: None,
+        } = &type_name
+        {
+            if let Some(external_definition) = project.translated_modules.iter().find(|module| {
+                module
+                    .borrow()
+                    .contracts
+                    .iter()
+                    .any(|contract| contract.name == *name)
+            }) {
+                // TODO:
+                // for entry in external_definition.uses.iter() {
+                //     if !module.uses.contains(entry) {
+                //         module.uses.push(entry.clone());
+                //     }
+                // }
 
-        //         type_name = sway::TypeName::Identifier {
-        //             name: "Identity".into(),
-        //             generic_parameters: None,
-        //         };
-        //     }
-        // }
+                abi_type_name = Some(type_name.clone());
+
+                type_name = sway::TypeName::Identifier {
+                    name: "Identity".into(),
+                    generic_parameters: None,
+                };
+            }
+        }
 
         let translated_variable = TranslatedVariable {
             old_name,
@@ -923,29 +935,39 @@ pub fn translate_function_definition(
         let Some(return_parameter) = return_parameter else {
             continue;
         };
+
         let Some(old_name) = return_parameter.name.as_ref().map(|n| n.name.clone()) else {
             continue;
         };
+
         let new_name = translate_naming_convention(old_name.as_str(), Case::Snake);
+
         let mut type_name =
             translate_type_name(project, module.clone(), &return_parameter.ty, false, true);
+
         let mut abi_type_name = None;
 
-        // // Check if the parameter's type is an ABI
-        // if let sway::TypeName::Identifier {
-        //     name,
-        //     generic_parameters: None,
-        // } = &type_name
-        // {
-        //     if project.find_definition_with_abi(name.as_str()).is_some() {
-        //         abi_type_name = Some(type_name.clone());
+        // Check if the parameter's type is an ABI
+        if let sway::TypeName::Identifier {
+            name,
+            generic_parameters: None,
+        } = &type_name
+        {
+            if project.translated_modules.iter().any(|module| {
+                module
+                    .borrow()
+                    .contracts
+                    .iter()
+                    .any(|contract| contract.name == *name)
+            }) {
+                abi_type_name = Some(type_name.clone());
 
-        //         type_name = sway::TypeName::Identifier {
-        //             name: "Identity".into(),
-        //             generic_parameters: None,
-        //         };
-        //     }
-        // }
+                type_name = sway::TypeName::Identifier {
+                    name: "Identity".into(),
+                    generic_parameters: None,
+                };
+            }
+        }
 
         let translated_variable = TranslatedVariable {
             old_name,

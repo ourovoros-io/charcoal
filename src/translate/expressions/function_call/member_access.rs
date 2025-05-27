@@ -111,43 +111,41 @@ pub fn translate_member_access_function_call(
                                         }
                                     }
 
-                                    // TODO
                                     // Check to see if the type is located in an external ABI
-                                    // if let Some(external_definition) = project.find_definition_with_abi(name.as_str()) {
-                                    //     let external_abi = external_definition.abi.as_ref().unwrap();
+                                    if let Some(external_definition) = project.translated_modules.iter().find(|module| {
+                                        module.borrow().contracts.iter().any(|contract| contract.name == name)
+                                    }) {
+                                        if external_definition.borrow().functions.iter().any(|f| f.implementation.as_ref().unwrap().name == external_function_new_name) {
+                                            //
+                                            // TODO: Ensure a use statement for the ABI is added to the current module
+                                            //
 
-                                    //     if external_abi.functions.iter().any(|f| f.name == external_function_new_name) {
-                                    //         // Ensure the ABI is added to the current definition
-                                    //         if !module.abis.iter().any(|a| a.name == external_abi.name) {
-                                    //             module.abis.push(external_abi.clone());
-                                    //         }
+                                            let mut fields = vec![];
 
-                                    //         let mut fields = vec![];
+                                            if let Some(coins) = coins {
+                                                fields.push(sway::ConstructorField {
+                                                    name: "coins".into(),
+                                                    value: coins,
+                                                });
+                                            }
 
-                                    //         if let Some(coins) = coins {
-                                    //             fields.push(sway::ConstructorField {
-                                    //                 name: "coins".into(),
-                                    //                 value: coins,
-                                    //             });
-                                    //         }
+                                            if let Some(gas) = gas {
+                                                fields.push(sway::ConstructorField {
+                                                    name: "gas".into(),
+                                                    value: gas,
+                                                });
+                                            }
 
-                                    //         if let Some(gas) = gas {
-                                    //             fields.push(sway::ConstructorField {
-                                    //                 name: "gas".into(),
-                                    //                 value: gas,
-                                    //             });
-                                    //         }
-
-                                    //         return Ok(sway::Expression::from(sway::FunctionCallBlock {
-                                    //             function: sway::Expression::create_member_access(container, &[external_function_new_name.as_str()]),
-                                    //             generic_parameters: None,
-                                    //             fields,
-                                    //             parameters: arguments.iter()
-                                    //                 .map(|a| translate_expression(project, module.clone(), scope, a))
-                                    //                 .collect::<Result<Vec<_>, _>>()?,
-                                    //         }));
-                                    //     }
-                                    // }
+                                            return Ok(sway::Expression::from(sway::FunctionCallBlock {
+                                                function: sway::Expression::create_member_access(container, &[external_function_new_name.as_str()]),
+                                                generic_parameters: None,
+                                                fields,
+                                                parameters: arguments.iter()
+                                                    .map(|a| translate_expression(project, module.clone(), scope, a))
+                                                    .collect::<Result<Vec<_>, _>>()?,
+                                            }));
+                                        }
+                                    }
 
                                     todo!("translate Identity member function call block `{member}` : {} - {container:#?}", sway::TabbedDisplayer(&container))
                                 }
@@ -300,64 +298,58 @@ pub fn translate_function_call_block_member_access(
                         }
                     }
 
-                    // TODO
                     // Check to see if the type is located in an external ABI
-                    // if let Some(external_definition) = project.find_definition_with_abi(name.as_str()) {
-                    //     let external_abi = external_definition.abi.as_ref().unwrap();
+                    if let Some(external_definition) = project.translated_modules.iter().find(|module| {
+                        module.borrow().contracts.iter().any(|contract| contract.name == name)
+                    }) {
+                        if external_definition.borrow()
+                            .functions
+                            .iter()
+                            .any(|f| f.implementation.as_ref().unwrap().name == external_function_new_name)
+                        {
+                            //
+                            // TODO: Ensure a use statement for the ABI is added to the current module
+                            //
+                            
+                            let mut fields = vec![];
 
-                    //     if external_abi
-                    //         .functions
-                    //         .iter()
-                    //         .any(|f| f.name == external_function_new_name)
-                    //     {
-                    //         // Ensure the ABI is added to the current definition
-                    //         if !module
-                    //             .abis
-                    //             .iter()
-                    //             .any(|a| a.name == external_abi.name)
-                    //         {
-                    //             module.abis.push(external_abi.clone());
-                    //         }
+                            if let Some(coins) = coins {
+                                fields.push(sway::ConstructorField {
+                                    name: "coins".into(),
+                                    value: coins,
+                                });
+                            }
 
-                    //         let mut fields = vec![];
+                            if let Some(gas) = gas {
+                                fields.push(sway::ConstructorField {
+                                    name: "gas".into(),
+                                    value: gas,
+                                });
+                            }
 
-                    //         if let Some(coins) = coins {
-                    //             fields.push(sway::ConstructorField {
-                    //                 name: "coins".into(),
-                    //                 value: coins,
-                    //             });
-                    //         }
-
-                    //         if let Some(gas) = gas {
-                    //             fields.push(sway::ConstructorField {
-                    //                 name: "gas".into(),
-                    //                 value: gas,
-                    //             });
-                    //         }
-
-                    //         return Ok(sway::Expression::from(
-                    //             sway::FunctionCallBlock {
-                    //                 function: sway::Expression::create_member_access(
-                    //                     container,
-                    //                     &[external_function_new_name.as_str()],
-                    //                 ),
-                    //                 generic_parameters: None,
-                    //                 fields,
-                    //                 parameters: arguments
-                    //                     .iter()
-                    //                     .map(|a| {
-                    //                         translate_expression(
-                    //                             project,
-                    //                             module.clone(),
-                    //                             scope,
-                    //                             a,
-                    //                         )
-                    //                     })
-                    //                     .collect::<Result<Vec<_>, _>>()?,
-                    //             },
-                    //         ));
-                    //     }
-                    // }
+                            return Ok(sway::Expression::from(
+                                sway::FunctionCallBlock {
+                                    function: sway::Expression::create_member_access(
+                                        container,
+                                        &[external_function_new_name.as_str()],
+                                    ),
+                                    generic_parameters: None,
+                                    fields,
+                                    parameters: arguments
+                                        .iter()
+                                        .map(|a| {
+                                            translate_expression(
+                                                project,
+                                                module.clone(),
+                                                scope,
+                                                a,
+                                            )
+                                        })
+                                        .collect::<Result<Vec<_>, _>>()?,
+                                },
+                            ));
+                        }
+                    }
 
                     todo!("translate Identity member function call block `{member}{}`: {} - {container:#?}", block.to_string(), sway::TabbedDisplayer(&container))
                 }
@@ -533,45 +525,42 @@ pub fn translate_identity_member_access_function_call(
         }
     }
 
-    // TODO
     // Check to see if the type is located in an external ABI
-    // if let Some(external_definition) = project.find_definition_with_abi(name.as_str()) {
-    //     let external_abi = external_definition.abi.as_ref().unwrap();
+    if let Some(external_definition) = project.translated_modules.iter().find(|module| {
+        module.borrow().contracts.iter().any(|contract| contract.name == name)
+    }) {
+        // Check lower case names for regular functions
+        if external_definition.borrow().functions.iter().any(|f| f.implementation.as_ref().unwrap().name == new_name_lower) {
+            //
+            // TODO: Ensure a use statement for the ABI is added to the current module
+            //
 
-    //     // Check lower case names for regular functions
-    //     if external_abi.functions.iter().any(|f| f.name == new_name_lower) {
-    //         // Ensure the ABI is added to the current definition
-    //         if !module.abis.iter().any(|a| a.name == external_abi.name) {
-    //             module.abis.push(external_abi.clone());
-    //         }
+            return Ok(sway::Expression::create_function_calls(Some(container.clone()), &[
+                (new_name_lower.as_str(), Some((
+                    None,
+                    arguments.iter()
+                        .map(|a| translate_expression(project, module.clone(), scope, a))
+                        .collect::<Result<Vec<_>, _>>()?,
+                ))),
+            ]));
+        }
 
-    //         return Ok(sway::Expression::create_function_calls(Some(container.clone()), &[
-    //             (new_name_lower.as_str(), Some((
-    //                 None,
-    //                 arguments.iter()
-    //                     .map(|a| translate_expression(project, module.clone(), scope, a))
-    //                     .collect::<Result<Vec<_>, _>>()?,
-    //             ))),
-    //         ]));
-    //     }
+        // Check upper case names for constant getter functions
+        if external_definition.borrow().functions.iter().any(|f| f.implementation.as_ref().unwrap().name == new_name_upper) {
+            //
+            // TODO: Ensure a use statement for the ABI is added to the current module
+            //
 
-    //     // Check upper case names for constant getter functions
-    //     if external_abi.functions.iter().any(|f| f.name == new_name_upper) {
-    //         // Ensure the ABI is added to the current definition
-    //         if !module.abis.iter().any(|a| a.name == external_abi.name) {
-    //             module.abis.push(external_abi.clone());
-    //         }
-
-    //         return Ok(sway::Expression::create_function_calls(Some(container.clone()), &[
-    //             (new_name_upper.as_str(), Some((
-    //                 None,
-    //                 arguments.iter()
-    //                     .map(|a| translate_expression(project, module.clone(), scope, a))
-    //                     .collect::<Result<Vec<_>, _>>()?,
-    //             ))),
-    //         ]));
-    //     }
-    // }
+            return Ok(sway::Expression::create_function_calls(Some(container.clone()), &[
+                (new_name_upper.as_str(), Some((
+                    None,
+                    arguments.iter()
+                        .map(|a| translate_expression(project, module.clone(), scope, a))
+                        .collect::<Result<Vec<_>, _>>()?,
+                ))),
+            ]));
+        }
+    }
 
     todo!(
         "{}translate Identity member function call `{member}`: {} - {container:#?}",

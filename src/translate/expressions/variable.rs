@@ -122,13 +122,17 @@ pub fn translate_variable_access_expression(
                         sway::Expression::create_identifier(variable_name)
                     },
                 ));
-            } else if let Some(function) = scope
+            } else if let Some(function) = module
                 .borrow()
-                .find_function(|f| f.borrow().old_name == *name)
+                .functions
+                .iter()
+                .find(|f| f.implementation.as_ref().unwrap().old_name == *name)
             {
                 return Ok((
                     None,
-                    sway::Expression::create_identifier(function.borrow().new_name.clone()),
+                    sway::Expression::create_identifier(
+                        function.implementation.as_ref().unwrap().name.clone(),
+                    ),
                 ));
             }
 
@@ -349,29 +353,20 @@ pub fn translate_variable_access_expression(
             if let solidity::Expression::Variable(solidity::Identifier { name, .. }) =
                 container.as_ref()
             {
-                for external_definition in project.translated_modules.iter() {
-                    if !matches!(
-                        external_definition.borrow().kind,
-                        Some(solidity::ContractTy::Library(_))
-                    ) {
-                        continue;
+                for external_module in project.translated_modules.iter() {
+                    for external_definition in external_module.borrow().contracts.iter() {
+                        if !matches!(external_definition.kind, solidity::ContractTy::Library(_)) {
+                            continue;
+                        }
+
+                        if external_definition.name != *name {
+                            continue;
+                        }
+
+                        let new_name = translate_naming_convention(&member.name, Case::Snake);
+
+                        return Ok((None, sway::Expression::create_identifier(new_name)));
                     }
-
-                    if external_definition.borrow().name != *name {
-                        continue;
-                    }
-
-                    let member_name = translate_naming_convention(&member.name, Case::Snake);
-                    let new_name = format!(
-                        "{}_{}",
-                        translate_naming_convention(
-                            &external_definition.borrow().name,
-                            Case::Snake
-                        ),
-                        member_name
-                    );
-
-                    return Ok((None, sway::Expression::create_identifier(new_name)));
                 }
             }
 

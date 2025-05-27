@@ -1190,7 +1190,7 @@ impl Display for EnumVariant {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Abi {
     pub name: String,
-    pub inherits: Vec<String>,
+    pub inherits: Vec<TypeName>,
     pub functions: Vec<Function>,
 }
 
@@ -1199,7 +1199,7 @@ impl TabbedDisplay for Abi {
         write!(f, "abi {}", self.name)?;
 
         if !self.inherits.is_empty() {
-            write!(f, ": {}", self.inherits.join(" + "))?;
+            write!(f, ": {}", self.inherits.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(" + "))?;
         }
 
         writeln!(f, " {{")?;

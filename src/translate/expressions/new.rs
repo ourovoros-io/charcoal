@@ -70,36 +70,37 @@ pub fn translate_new_expression(
 
     match expr.as_ref() {
         solidity::Expression::Variable(solidity::Identifier {name, ..}) => {
-            // TODO
-            // if project.find_definition_with_abi(name).is_some() {
-            //     // new Contract(...) => /*unsupported: new Contract(...); using:*/ abi(Contract, Identity::ContractId(ContractId::from(ZERO_B256)))
+            if project.translated_modules.iter().any(|module| {
+                module.borrow().contracts.iter().any(|contract| contract.name == *name)
+            }) {
+                // new Contract(...) => /*unsupported: new Contract(...); using:*/ abi(Contract, Identity::ContractId(ContractId::from(ZERO_B256)))
 
-            //     return Ok(sway::Expression::Commented(
-            //         format!("unsupported: new {expression}; using:"),
-            //         Box::new(sway::Expression::from(sway::FunctionCall {
-            //             function: sway::Expression::create_identifier("abi".into()),
-            //             generic_parameters: None,
-            //             parameters: vec![
-            //                 sway::Expression::create_identifier(name.clone()),
-            //                 sway::Expression::from(sway::FunctionCall {
-            //                     function: sway::Expression::create_identifier("Identity::ContractId".into()),
-            //                     generic_parameters: None,
-            //                     parameters: vec![
-            //                         sway::Expression::from(sway::FunctionCall {
-            //                             function: sway::Expression::create_identifier("ContractId::from".into()),
-            //                             generic_parameters: None,
-            //                             parameters: vec![
-            //                                 sway::Expression::create_function_calls(None, &[
-            //                                     ("b256::zero", Some((None, vec![])))
-            //                                 ]),
-            //                             ],
-            //                         }),
-            //                     ],
-            //                 }),
-            //             ],
-            //         }))
-            //     ));
-            // }
+                return Ok(sway::Expression::Commented(
+                    format!("unsupported: new {expression}; using:"),
+                    Box::new(sway::Expression::from(sway::FunctionCall {
+                        function: sway::Expression::create_identifier("abi".into()),
+                        generic_parameters: None,
+                        parameters: vec![
+                            sway::Expression::create_identifier(name.clone()),
+                            sway::Expression::from(sway::FunctionCall {
+                                function: sway::Expression::create_identifier("Identity::ContractId".into()),
+                                generic_parameters: None,
+                                parameters: vec![
+                                    sway::Expression::from(sway::FunctionCall {
+                                        function: sway::Expression::create_identifier("ContractId::from".into()),
+                                        generic_parameters: None,
+                                        parameters: vec![
+                                            sway::Expression::create_function_calls(None, &[
+                                                ("b256::zero", Some((None, vec![])))
+                                            ]),
+                                        ],
+                                    }),
+                                ],
+                            }),
+                        ],
+                    }))
+                ));
+            }
         }
 
         solidity::Expression::Type(_, type_name) => match &type_name {

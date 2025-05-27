@@ -24,21 +24,23 @@ pub fn translate_variable_definition_statement(
     );
     let mut abi_type_name = None;
 
-    // // Check if the parameter's type is an ABI
-    // if let sway::TypeName::Identifier {
-    //     name,
-    //     generic_parameters: None,
-    // } = &type_name
-    // {
-    //     if project.find_definition_with_abi(name.as_str()).is_some() {
-    //         abi_type_name = Some(type_name.clone());
+    // Check if the parameter's type is an ABI
+    if let sway::TypeName::Identifier {
+        name,
+        generic_parameters: None,
+    } = &type_name
+    {
+        if project.translated_modules.iter().any(|module| {
+            module.borrow().contracts.iter().any(|contract| contract.name == *name)
+        }) {
+            abi_type_name = Some(type_name.clone());
 
-    //         type_name = sway::TypeName::Identifier {
-    //             name: "Identity".into(),
-    //             generic_parameters: None,
-    //         };
-    //     }
-    // }
+            type_name = sway::TypeName::Identifier {
+                name: "Identity".into(),
+                generic_parameters: None,
+            };
+        }
+    }
 
     let mut value = None;
 
