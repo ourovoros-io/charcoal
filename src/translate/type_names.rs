@@ -21,9 +21,17 @@ pub fn translate_return_type_name(
 
         _ => {
             // Check if the parameter's type is an ABI and make it an Identity
-            if let sway::TypeName::Identifier { name, generic_parameters: None } = &type_name {
+            if let sway::TypeName::Identifier {
+                name,
+                generic_parameters: None,
+            } = &type_name
+            {
                 if project.translated_modules.iter().any(|module| {
-                    module.borrow().contracts.iter().any(|contract| contract.name == *name)
+                    module
+                        .borrow()
+                        .contracts
+                        .iter()
+                        .any(|contract| contract.name == *name)
                 }) {
                     return sway::TypeName::Identifier {
                         name: "Identity".into(),
@@ -308,6 +316,8 @@ pub fn translate_type_name(
             solidity::Type::Function {
                 params, returns, ..
             } => sway::TypeName::Function {
+                old_name: String::new(),
+                new_name: String::new(),
                 generic_parameters: None,
                 parameters: sway::ParameterList {
                     entries: params
@@ -404,7 +414,11 @@ pub fn translate_type_name(
 
             // Check if type is an ABI
             if project.translated_modules.iter().any(|module| {
-                module.borrow().contracts.iter().any(|contract| contract.name == *name)
+                module
+                    .borrow()
+                    .contracts
+                    .iter()
+                    .any(|contract| contract.name == *name)
             }) {
                 //
                 // TODO: add a use statement for the external definition into the current module

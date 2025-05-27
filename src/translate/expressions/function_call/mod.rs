@@ -370,63 +370,6 @@ pub fn translate_function_call_expression(
                                 }
                             }
 
-                            // Check if variable is a storage vector
-                            if let Some(namespace_name) =
-                                variable.borrow().storage_namespace.as_ref()
-                            {
-                                if let Some(storage_key_type) =
-                                    variable.borrow().type_name.storage_key_type()
-                                {
-                                    if storage_key_type.is_storage_vec() {
-                                        match member.name.as_str() {
-                                            "push" => {
-                                                return Ok(
-                                                    sway::Expression::create_function_calls(
-                                                        None,
-                                                        &[
-                                                            (
-                                                                format!(
-                                                                    "storage::{namespace_name}"
-                                                                )
-                                                                .as_str(),
-                                                                None,
-                                                            ),
-                                                            (
-                                                                variable.borrow().new_name.as_str(),
-                                                                None,
-                                                            ),
-                                                            ("push", Some((None, parameters))),
-                                                        ],
-                                                    ),
-                                                );
-                                            }
-                                            "pop" => {
-                                                return Ok(
-                                                    sway::Expression::create_function_calls(
-                                                        None,
-                                                        &[
-                                                            (
-                                                                format!(
-                                                                    "storage::{namespace_name}"
-                                                                )
-                                                                .as_str(),
-                                                                None,
-                                                            ),
-                                                            (
-                                                                variable.borrow().new_name.as_str(),
-                                                                None,
-                                                            ),
-                                                            ("pop", Some((None, parameters))),
-                                                        ],
-                                                    ),
-                                                );
-                                            }
-                                            _ => {}
-                                        }
-                                    }
-                                }
-                            }
-
                             let container =
                                 translate_expression(project, module.clone(), scope, container)?;
 

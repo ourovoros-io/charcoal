@@ -45,27 +45,10 @@ pub struct Project {
 
 impl Project {
     pub fn new(options: &Args) -> Result<Self, Error> {
-        let (framework, root_folder) = match options.root_folder.as_ref() {
-            Some(root_folder) => {
-                let framework = Self::detect_project_type(&root_folder)?;
-                (framework, Some(root_folder.clone()))
-            }
-            None => {
-                if let Some(root_path) = Self::find_project_root_folder(options.target.as_path()) {
-                    let framework = Self::detect_project_type(&root_path)?;
-                    (framework, Some(root_path))
-                } else {
-                    (Framework::Unknown, Some(options.target.clone()))
-                }
-            }
-        };
+        let framework = Self::detect_project_type(&options.input)?;
 
         let mut result = Self {
-            options: Args {
-                target: options.target.clone(),
-                root_folder,
-                output_directory: options.output_directory.clone(),
-            },
+            options: options.clone(),
             framework,
             ..Default::default()
         };
@@ -132,17 +115,12 @@ impl Project {
         source_unit_directory: &Path,
         filename: &str,
     ) -> Result<PathBuf, Error> {
-        let Some(project_root_folder) = self.options.root_folder.as_ref() else {
-            // If we cant find a project root folder we return the filename as is
-            return Ok(PathBuf::from(filename));
-        };
-
         match &self.framework {
             // Remappings in foundry and brownie are handled using the same pattern
             Framework::Foundry { remappings } | Framework::Brownie { remappings } => {
                 for (k, v) in remappings {
                     if filename.starts_with(k) {
-                        let project_full_path = project_root_folder.join(v);
+                        let project_full_path = self.options.input.join(v);
                         return Ok(PathBuf::from(
                             filename.replace(k, project_full_path.to_string_lossy().as_ref()),
                         ));
@@ -157,9 +135,9 @@ impl Project {
                 if filename.starts_with('.') {
                     Ok(source_unit_directory.join(filename))
                 } else if filename.starts_with('@') {
-                    Ok(project_root_folder.join("node_modules").join(filename))
+                    Ok(self.options.input.join("node_modules").join(filename))
                 } else {
-                    Ok(project_root_folder.join(filename))
+                    Ok(self.options.input.join(filename))
                 }
             }
 
@@ -183,10 +161,10 @@ impl Project {
                             .iter()
                             .map(|c| c.as_os_str())
                             .collect::<PathBuf>();
-                        Ok(project_root_folder.join("lib").join(component))
+                        Ok(self.options.input.join("lib").join(component))
                     }
 
-                    _ => Ok(project_root_folder.join(filename)),
+                    _ => Ok(self.options.input.join(filename)),
                 }
             }
 
@@ -382,10 +360,7 @@ impl Project {
     }
 
     fn create_usage_queue(&mut self) -> Result<Vec<PathBuf>, Error> {
-        let paths = Self::collect_source_unit_paths(
-            self.options.root_folder.as_ref().unwrap(),
-            &self.framework,
-        )?;
+        let paths = Self::collect_source_unit_paths(&self.options.input, &self.framework)?;
 
         // Build a mapping of file paths to import paths, and file paths to the number of times that that file is imported from another file
         let mut import_paths = HashMap::new();
@@ -522,12 +497,14 @@ impl Project {
         let mut import_path = PathBuf::from(path_string);
 
         if !import_path.to_string_lossy().starts_with('.') {
-            import_path = self.get_project_type_path(source_unit_directory, path_string)?;
+            import_path = self
+                .get_project_type_path(source_unit_directory, path_string)
+                .unwrap();
         } else {
             import_path = source_unit_directory.join(import_path);
         }
 
-        import_path = wrapped_err!(import_path.canonicalize())?;
+        import_path = wrapped_err!(import_path.canonicalize()).unwrap();
 
         if !import_path.exists() {
             return Err(Error::Wrapped(Box::new(std::io::Error::new(
@@ -601,9 +578,8 @@ impl Project {
     ) -> Option<(usize, usize)> {
         let path = self
             .options
-            .root_folder
+            .input
             .clone()
-            .unwrap()
             .join(module.borrow().path.clone())
             .with_extension("sol");
 
@@ -843,15 +819,9 @@ impl Project {
         // Create a new module to store the translated items in
         let module = self.find_or_create_module(
             &PathBuf::from(
-                source_unit_path.to_string_lossy().trim_start_matches(
-                    &self
-                        .options
-                        .root_folder
-                        .as_ref()
-                        .unwrap()
-                        .to_string_lossy()
-                        .to_string(),
-                ),
+                source_unit_path
+                    .to_string_lossy()
+                    .trim_start_matches(&self.options.input.to_string_lossy().to_string()),
             )
             .with_extension(""),
         );
@@ -920,23 +890,21 @@ impl Project {
         }
 
         for function_definition in function_definitions.iter() {
-            let signature =
-                translate_function_declaration(self, module.clone(), function_definition)?
-                    .type_name;
+            let declaration =
+                translate_function_declaration(self, module.clone(), function_definition)?;
 
             module.borrow_mut().functions.push(TranslatedItem {
-                signature,
+                signature: declaration.type_name,
                 implementation: None,
             });
         }
 
         for (i, function_definition) in function_definitions.into_iter().enumerate() {
-            module.borrow_mut().functions[i].implementation = Some(translate_function_definition(
-                self,
-                module.clone(),
-                None,
-                &function_definition,
-            )?);
+            let (function, abi_function, impl_item) =
+                translate_function_definition(self, module.clone(), None, &function_definition)?;
+            assert!(abi_function.is_none());
+            assert!(impl_item.is_none());
+            module.borrow_mut().functions[i].implementation = Some(function);
         }
 
         for variable_definition in variable_definitions {

@@ -37,6 +37,7 @@ pub fn translate_enum_definition(
             .items
             .push(sway::ImplItem::Constant(sway::Constant {
                 is_public: false,
+                old_name: value.as_ref().unwrap().name.clone(),
                 name: translate_naming_convention(
                     value.as_ref().unwrap().name.as_str(),
                     Case::Constant,
@@ -108,7 +109,11 @@ pub fn translate_event_definition(
                             generic_parameters,
                         } => {
                             if project.translated_modules.iter().any(|module| {
-                                module.borrow().contracts.iter().any(|contract| contract.name == *name)
+                                module
+                                    .borrow()
+                                    .contracts
+                                    .iter()
+                                    .any(|contract| contract.name == *name)
                             }) {
                                 sway::TypeName::Identifier {
                                     name: "Identity".into(),

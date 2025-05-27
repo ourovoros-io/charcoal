@@ -72,30 +72,32 @@ pub fn evaluate_expression(
                 .find_variable(|v| v.borrow().new_name == *identifier)
                 .unwrap();
 
-            if variable.borrow().is_constant {
-                if let Some(constant) = module
-                    .borrow()
-                    .constants
-                    .iter()
-                    .find(|c| c.name == variable.borrow().new_name)
-                {
-                    assert!(type_name.is_compatible_with(&constant.type_name));
-                    return constant.value.as_ref().unwrap().clone();
-                }
-            }
+            // TODO
+            // if variable.borrow().is_constant {
+            //     if let Some(constant) = module
+            //         .borrow()
+            //         .constants
+            //         .iter()
+            //         .find(|c| c.name == variable.borrow().new_name)
+            //     {
+            //         assert!(type_name.is_compatible_with(&constant.type_name));
+            //         return constant.value.as_ref().unwrap().clone();
+            //     }
+            // }
 
-            if variable.borrow().is_configurable {
-                if let Some(configurable) = module.borrow().configurable.as_ref() {
-                    if let Some(field) = configurable
-                        .fields
-                        .iter()
-                        .find(|f| f.name == variable.borrow().new_name)
-                    {
-                        assert!(type_name.is_compatible_with(&field.type_name));
-                        return field.value.clone();
-                    }
-                }
-            }
+            // TODO
+            // if variable.borrow().is_configurable {
+            //     if let Some(configurable) = module.borrow().configurable.as_ref() {
+            //         if let Some(field) = configurable
+            //             .fields
+            //             .iter()
+            //             .find(|f| f.name == variable.borrow().new_name)
+            //         {
+            //             assert!(type_name.is_compatible_with(&field.type_name));
+            //             return field.value.clone();
+            //         }
+            //     }
+            // }
 
             todo!("evaluate path expression: {expression:#?} - {variable:#?}")
         }

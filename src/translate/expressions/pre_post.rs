@@ -57,7 +57,8 @@ pub fn translate_pre_operator_expression(
         &solidity::Expression::NumberLiteral(*loc, "1".into(), String::new(), None),
     )?);
 
-    let (variable, expression) = translate_variable_access_expression(project, module.clone(), scope, x)?;
+    let (variable, expression) =
+        translate_variable_access_expression(project, module.clone(), scope, x)?;
 
     let Some(variable) = variable else {
         panic!("Variable not found: {}", sway::TabbedDisplayer(&expression));
@@ -68,14 +69,7 @@ pub fn translate_pre_operator_expression(
 
     Ok(sway::Expression::from(sway::Block {
         statements: vec![assignment],
-        final_expr: Some(if variable.storage_namespace.is_some() {
-            sway::Expression::create_function_calls(
-                Some(expression),
-                &[("read", Some((None, vec![])))],
-            )
-        } else {
-            expression
-        }),
+        final_expr: Some(expression),
     }))
 }
 
@@ -97,7 +91,8 @@ pub fn translate_post_operator_expression(
         &solidity::Expression::NumberLiteral(*loc, "1".into(), String::new(), None),
     )?);
 
-    let (variable, expression) = translate_variable_access_expression(project, module.clone(), scope, x)?;
+    let (variable, expression) =
+        translate_variable_access_expression(project, module.clone(), scope, x)?;
     if variable.is_none() {
         panic!("Variable not found: {}", sway::TabbedDisplayer(&expression));
     }
@@ -107,11 +102,7 @@ pub fn translate_post_operator_expression(
 
     variable.read_count += 1;
 
-    let variable_name = if variable.storage_namespace.is_some() {
-        variable.new_name.clone()
-    } else {
-        format!("_{}", variable.new_name)
-    };
+    let variable_name = format!("_{}", variable.new_name);
 
     Ok(sway::Expression::from(sway::Block {
         statements: vec![
@@ -121,14 +112,7 @@ pub fn translate_post_operator_expression(
                     name: variable_name.clone(),
                 }),
                 type_name: None,
-                value: if variable.storage_namespace.is_some() {
-                    sway::Expression::create_function_calls(
-                        Some(expression),
-                        &[("read", Some((None, vec![])))],
-                    )
-                } else {
-                    expression
-                },
+                value: expression,
             }),
             assignment,
         ],

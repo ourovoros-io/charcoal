@@ -55,33 +55,10 @@ pub fn translate_variable_expression(
     };
 
     if let Some(variable) = variable {
-        let mut variable = variable.borrow_mut();
-
-        variable.read_count += 1;
-
-        if variable.storage_namespace.is_some() {
-            match &variable.type_name {
-                sway::TypeName::Identifier { name, .. } if name == "StorageString" => {
-                    Ok(sway::Expression::create_function_calls(
-                        Some(expression),
-                        &[
-                            ("read_slice", Some((None, vec![]))),
-                            ("unwrap", Some((None, vec![]))),
-                        ],
-                    ))
-                }
-
-                _ => Ok(sway::Expression::create_function_calls(
-                    Some(expression),
-                    &[("read", Some((None, vec![])))],
-                )),
-            }
-        } else {
-            Ok(expression)
-        }
-    } else {
-        Ok(expression)
+        variable.borrow_mut().read_count += 1;
     }
+
+    Ok(expression)
 }
 
 pub fn translate_variable_access_expression(
@@ -103,37 +80,57 @@ pub fn translate_variable_access_expression(
             if let Some(variable) = scope.borrow().get_variable_from_old_name(name) {
                 let variable_name = variable.borrow().new_name.clone();
 
-                let (is_storage, namespace_name) =
-                    match variable.borrow().storage_namespace.as_ref() {
-                        Some(namespace_name) => (true, namespace_name.clone()),
-                        None => (false, String::new()),
-                    };
-
                 return Ok((
                     Some(variable),
-                    if is_storage {
-                        sway::Expression::from(sway::MemberAccess {
-                            expression: sway::Expression::create_identifier(format!(
-                                "storage::{namespace_name}"
-                            )),
-                            member: variable_name,
-                        })
-                    } else {
-                        sway::Expression::create_identifier(variable_name)
-                    },
+                    sway::Expression::create_identifier(variable_name),
                 ));
-            } else if let Some(function) = module
-                .borrow()
-                .functions
-                .iter()
-                .find(|f| f.implementation.as_ref().unwrap().old_name == *name)
-            {
+            } else if let Some(storage) = module.borrow().storage.as_ref() {
+                if let Some(namespace) = storage
+                    .namespaces
+                    .iter()
+                    .find(|n| n.fields.iter().any(|f| f.name == *name))
+                {
+                    return Ok((
+                        None,
+                        sway::Expression::create_function_calls(
+                            None,
+                            &[
+                                (format!("storage::{}", namespace.name).as_str(), None),
+                                (name, None),
+                                ("read", Some((None, vec![]))),
+                            ],
+                        ),
+                    ));
+                }
+            } else if let Some(function) = module.borrow().functions.iter().find(|f| {
+                let sway::TypeName::Function { old_name, .. } = &f.signature else {
+                    unreachable!()
+                };
+                old_name == name
+            }) {
                 return Ok((
                     None,
                     sway::Expression::create_identifier(
                         function.implementation.as_ref().unwrap().name.clone(),
                     ),
                 ));
+            } else if let Some(constant) = module
+                .borrow()
+                .constants
+                .iter()
+                .find(|c| c.old_name == *name)
+            {
+                return Ok((
+                    None,
+                    sway::Expression::create_identifier(constant.name.clone()),
+                ));
+            } else if let Some(configurable) = module.borrow().configurable.as_ref() {
+                if let Some(field) = configurable.fields.iter().find(|f| f.old_name == *name) {
+                    return Ok((
+                        None,
+                        sway::Expression::create_identifier(field.name.clone()),
+                    ));
+                }
             }
 
             return Err(Error::Wrapped(Box::new(std::io::Error::new(
@@ -146,16 +143,17 @@ pub fn translate_variable_access_expression(
                             "{}:{}:{}: ",
                             project
                                 .options
-                                .root_folder
-                                .clone()
-                                .unwrap()
+                                .input
                                 .join(module.borrow().path.clone())
                                 .with_extension("sol")
                                 .to_string_lossy(),
                             line,
                             col
                         ),
-                        None => format!("{}: ", module.borrow().path.to_string_lossy()),
+                        None => format!(
+                            "{}: ",
+                            module.borrow().path.with_extension("sol").to_string_lossy()
+                        ),
                     }
                 ),
             ))));
@@ -182,7 +180,6 @@ pub fn translate_variable_access_expression(
             let type_name = module
                 .borrow_mut()
                 .get_expression_type(scope, &expression)?;
-            let is_storage = variable.borrow().storage_namespace.is_some();
 
             Ok((
                 Some(variable),
@@ -335,16 +332,7 @@ pub fn translate_variable_access_expression(
                         ),
                     },
 
-                    _ => {
-                        if is_storage {
-                            sway::Expression::create_function_calls(
-                                Some(expression),
-                                &[("get", Some((None, vec![index])))],
-                            )
-                        } else {
-                            sway::Expression::from(sway::ArrayAccess { expression, index })
-                        }
-                    }
+                    _ => sway::Expression::from(sway::ArrayAccess { expression, index }),
                 },
             ))
         }
@@ -370,50 +358,16 @@ pub fn translate_variable_access_expression(
                 }
             }
 
-            let mut translated_container =
+            let translated_container =
                 translate_expression(project, module.clone(), scope, container)?;
 
-            let mut container_type_name = module
+            let container_type_name = module
                 .borrow_mut()
                 .get_expression_type(scope, &translated_container)?;
-            let mut container_type_name_string = container_type_name.to_string();
+            let container_type_name_string = container_type_name.to_string();
 
             let (variable, _) =
                 translate_variable_access_expression(project, module.clone(), scope, container)?;
-
-            // HACK: tack `.read()` onto the end if the container is a StorageKey
-            if variable
-                .as_ref()
-                .map(|v| {
-                    v.borrow().type_name.is_storage_key() || v.borrow().storage_namespace.is_some()
-                })
-                .unwrap_or(false)
-            {
-                let storage_key_type = match container_type_name.storage_key_type() {
-                    Some(key_type) => key_type,
-                    None => container_type_name,
-                };
-
-                let mut has_read = false;
-
-                if let sway::Expression::FunctionCall(f) = &translated_container {
-                    if let sway::Expression::MemberAccess(member_access) = &f.function {
-                        if member_access.member == "read" && f.parameters.len() == 0 {
-                            has_read = true;
-                        }
-                    }
-                }
-
-                if !has_read {
-                    translated_container = sway::Expression::create_function_calls(
-                        Some(translated_container),
-                        &[("read", Some((None, vec![])))],
-                    );
-                }
-
-                container_type_name = storage_key_type;
-                container_type_name_string = container_type_name.to_string();
-            }
 
             // Check if container is a struct
             if let Some(struct_definition) = module.borrow().structs.iter().find(|s| {

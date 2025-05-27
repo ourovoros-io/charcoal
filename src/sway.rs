@@ -468,6 +468,8 @@ pub enum TypeName {
         length: usize,
     },
     Function {
+        old_name: String,
+        new_name: String,
         generic_parameters: Option<GenericParameterList>,
         parameters: ParameterList,
         return_type: Option<Box<TypeName>>,
@@ -506,6 +508,7 @@ impl Display for TypeName {
                 generic_parameters,
                 parameters,
                 return_type,
+                ..
             } => {
                 write!(
                     f,
@@ -1001,6 +1004,7 @@ impl Display for TypeDefinition {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Constant {
     pub is_public: bool,
+    pub old_name: String,
     pub name: String,
     pub type_name: TypeName,
     pub value: Option<Expression>,
@@ -1199,7 +1203,15 @@ impl TabbedDisplay for Abi {
         write!(f, "abi {}", self.name)?;
 
         if !self.inherits.is_empty() {
-            write!(f, ": {}", self.inherits.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(" + "))?;
+            write!(
+                f,
+                ": {}",
+                self.inherits
+                    .iter()
+                    .map(|x| x.to_string())
+                    .collect::<Vec<_>>()
+                    .join(" + ")
+            )?;
         }
 
         writeln!(f, " {{")?;
@@ -1384,6 +1396,7 @@ impl TabbedDisplay for Configurable {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ConfigurableField {
+    pub old_name: String,
     pub name: String,
     pub type_name: TypeName,
     pub value: Expression,

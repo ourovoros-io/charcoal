@@ -340,7 +340,10 @@ pub fn translate_builtin_function_call(
                             .any(|contract| contract.name == old_name)
                     })
                 {
-                    match module.borrow().get_expression_type(scope, &parameters[0])? {
+                    match module
+                        .borrow_mut()
+                        .get_expression_type(scope, &parameters[0])?
+                    {
                         sway::TypeName::Identifier {
                             name,
                             generic_parameters,
@@ -378,12 +381,9 @@ pub fn translate_builtin_function_call(
                             ("u256" | "b256", None) => {
                                 // Thing(x) => abi(Thing, Identity::from(ContractId::from(x)))
 
-                                // Ensure the ABI is added to the current definition
-                                if !module.abis.iter().any(|a| a.name == old_name) {
-                                    module
-                                        .abis
-                                        .push(external_definition.abi.as_ref().unwrap().clone());
-                                }
+                                //
+                                // TODO Ensure a use statement for the ABI is added to the current module
+                                //
 
                                 // abi(T, Identity::from(ContractId::from(x)))
                                 return Ok(sway::Expression::create_function_calls(None, &[
@@ -412,7 +412,7 @@ pub fn translate_builtin_function_call(
                 project,
                 module.clone(),
                 scope,
-                scope,
+                module.clone(),
                 old_name,
                 named_arguments,
                 parameters.clone(),

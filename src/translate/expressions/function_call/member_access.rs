@@ -597,12 +597,6 @@ pub fn translate_storage_vec_member_access_function_call(
                 panic!("Variable not found: {}", sway::TabbedDisplayer(&expression));
             }
 
-            let variable = variable.unwrap();
-
-            if !variable.borrow().storage_namespace.is_some() {
-                panic!("StorageVec is not in storage");
-            }
-
             Ok(sway::Expression::create_function_calls(Some(container_access), &[
                 ("push", Some((
                     None,
@@ -627,12 +621,6 @@ pub fn translate_storage_vec_member_access_function_call(
                 panic!("Variable not found: {}", sway::TabbedDisplayer(&expression));
             }
 
-            let variable = variable.unwrap();
-
-            if !variable.borrow().storage_namespace.is_some() {
-                panic!("StorageVec is not in storage");
-            }
-
             Ok(sway::Expression::create_function_calls(Some(container_access), &[("pop", Some((None, vec![])))]))
         }
 
@@ -648,12 +636,6 @@ pub fn translate_storage_vec_member_access_function_call(
 
             if variable.is_none() {
                 panic!("Variable not found: {}", sway::TabbedDisplayer(&expression));
-            }
-
-            let variable = variable.unwrap();
-
-            if !variable.borrow().storage_namespace.is_some() {
-                panic!("StorageVec is not in storage");
             }
 
             Ok(sway::Expression::create_function_calls(Some(container_access), &[
@@ -1155,7 +1137,7 @@ pub fn translate_this_member_access_function_call(
         project,
         module.clone(),
         scope,
-        scope,
+        module.clone(),
         member.name.as_str(),
         named_arguments,
         parameters,

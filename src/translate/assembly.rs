@@ -545,20 +545,9 @@ pub fn translate_yul_variable_expression(
 
     let variable = variable.borrow();
 
-    if let Some(namespace) = variable.storage_namespace.as_ref() {
-        Ok(sway::Expression::create_function_calls(
-            None,
-            &[
-                (format!("storage::{namespace}").as_str(), None),
-                (variable.new_name.as_str(), None),
-                ("read", Some((None, vec![]))),
-            ],
-        ))
-    } else {
-        Ok(sway::Expression::create_identifier(
-            variable.new_name.clone(),
-        ))
-    }
+    Ok(sway::Expression::create_identifier(
+        variable.new_name.clone(),
+    ))
 }
 
 #[inline]

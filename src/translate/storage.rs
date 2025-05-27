@@ -82,7 +82,11 @@ pub fn translate_state_variable(
         // }
 
         if let Some(external_definition) = project.translated_modules.iter().find(|module| {
-            module.borrow().contracts.iter().any(|contract| contract.name == *name)
+            module
+                .borrow()
+                .contracts
+                .iter()
+                .any(|contract| contract.name == *name)
         }) {
             // TODO:
             // for entry in external_definition.uses.iter() {
@@ -94,7 +98,7 @@ pub fn translate_state_variable(
             //
             // TODO: keep track of this
             //
-            
+
             abi_type_name = Some(variable_type_name.clone());
 
             variable_type_name = sway::TypeName::Identifier {
@@ -133,6 +137,7 @@ pub fn translate_state_variable(
 
         module.borrow_mut().constants.push(sway::Constant {
             is_public,
+            old_name,
             name: new_name.clone(),
             type_name: variable_type_name.clone(),
             value: Some(value),
@@ -149,6 +154,7 @@ pub fn translate_state_variable(
             .get_configurable()
             .fields
             .push(sway::ConfigurableField {
+                old_name,
                 name: new_name.clone(),
                 type_name: variable_type_name.clone(),
                 value,

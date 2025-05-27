@@ -427,80 +427,53 @@ pub fn translate_member_access_expression(
                             sway::TypeName::Identifier {
                                 name: type_name,
                                 generic_parameters,
-                            } => {
-                                match (type_name.as_str(), generic_parameters.as_ref()) {
-                                    ("StorageKey", Some(generic_parameters))
-                                        if generic_parameters.entries.len() == 1 =>
-                                    {
-                                        match &generic_parameters.entries[0].type_name {
-                                            sway::TypeName::Identifier {
-                                                name,
-                                                generic_parameters,
-                                            } => match (name.as_str(), generic_parameters.as_ref())
+                            } => match (type_name.as_str(), generic_parameters.as_ref()) {
+                                ("StorageKey", Some(generic_parameters))
+                                    if generic_parameters.entries.len() == 1 =>
+                                {
+                                    match &generic_parameters.entries[0].type_name {
+                                        sway::TypeName::Identifier {
+                                            name,
+                                            generic_parameters,
+                                        } => match (name.as_str(), generic_parameters.as_ref()) {
+                                            ("StorageVec", Some(generic_parameters))
+                                                if generic_parameters.entries.len() == 1 =>
                                             {
-                                                ("StorageVec", Some(generic_parameters))
-                                                    if generic_parameters.entries.len() == 1 =>
-                                                {
-                                                    return Ok(
-                                                        sway::Expression::create_function_calls(
-                                                            Some(
-                                                                if let Some(namespace_name) =
-                                                                    variable
-                                                                        .storage_namespace
-                                                                        .as_ref()
-                                                                {
-                                                                    sway::Expression::from(sway::MemberAccess {
-                                                    expression: sway::Expression::create_identifier(format!("storage::{namespace_name}")),
-                                                    member: variable.new_name.clone(),
-                                                })
-                                                                } else {
-                                                                    sway::Expression::create_identifier(variable.new_name.clone())
-                                                                },
-                                                            ),
-                                                            &[("len", Some((None, vec![])))],
-                                                        ),
-                                                    );
-                                                }
-
-                                                _ => {}
-                                            },
-
-                                            _ => {}
-                                        }
-                                    }
-                                    ("Vec", Some(generic_parameters))
-                                        if generic_parameters.entries.len() == 1 =>
-                                    {
-                                        match member {
-                                            "length" => {
                                                 return Ok(
                                                     sway::Expression::create_function_calls(
-                                                        Some(
-                                                            if let Some(namespace_name) =
-                                                                variable.storage_namespace.as_ref()
-                                                            {
-                                                                sway::Expression::from(sway::MemberAccess {
-                                                expression: sway::Expression::create_identifier(format!("storage::{namespace_name}")),
-                                                member: variable.new_name.clone(),
-                                            })
-                                                            } else {
-                                                                sway::Expression::create_identifier(
-                                                                    variable.new_name.clone(),
-                                                                )
-                                                            },
-                                                        ),
+                                                        Some(sway::Expression::create_identifier(
+                                                            variable.new_name.clone(),
+                                                        )),
                                                         &[("len", Some((None, vec![])))],
                                                     ),
                                                 );
                                             }
 
                                             _ => {}
-                                        }
-                                    }
+                                        },
 
-                                    _ => {}
+                                        _ => {}
+                                    }
                                 }
-                            }
+                                ("Vec", Some(generic_parameters))
+                                    if generic_parameters.entries.len() == 1 =>
+                                {
+                                    match member {
+                                        "length" => {
+                                            return Ok(sway::Expression::create_function_calls(
+                                                Some(sway::Expression::create_identifier(
+                                                    variable.new_name.clone(),
+                                                )),
+                                                &[("len", Some((None, vec![])))],
+                                            ));
+                                        }
+
+                                        _ => {}
+                                    }
+                                }
+
+                                _ => {}
+                            },
 
                             _ => {}
                         }
@@ -580,10 +553,21 @@ pub fn translate_member_access_expression(
                         // }
                     }
 
-                    if let Some(external_definition) = project.translated_modules.iter().find(|module| {
-                        module.borrow().contracts.iter().any(|contract| contract.name == *name)
-                    }) {
-                        if external_definition.borrow().functions.iter().any(|f| f.implementation.as_ref().unwrap().old_name == member1.name) {
+                    if let Some(external_definition) =
+                        project.translated_modules.iter().find(|module| {
+                            module
+                                .borrow()
+                                .contracts
+                                .iter()
+                                .any(|contract| contract.name == *name)
+                        })
+                    {
+                        if external_definition.borrow().functions.iter().any(|f| {
+                            let sway::TypeName::Function { old_name, .. } = &f.signature else {
+                                unreachable!()
+                            };
+                            *old_name == member1.name
+                        }) {
                             return Ok(sway::Expression::create_todo(Some(expression.to_string())));
                         }
                     }

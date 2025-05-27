@@ -291,14 +291,84 @@ pub fn translate_contract_definition(
         function_definitions.push(function_definition.clone());
     }
 
+    let contract_name = contract_definition
+        .name
+        .as_ref()
+        .map(|n| n.name.clone())
+        .unwrap();
+
     // Translate each function
     for (i, function_definition) in function_definitions.into_iter().enumerate() {
-        module.borrow_mut().functions[i].implementation = Some(translate_function_definition(
+        let (function, abi_fn, impl_item) = translate_function_definition(
             project,
             module.clone(),
-            contract_definition.name.as_ref().map(|n| n.name.clone()),
+            Some(contract_name.clone()),
             &function_definition,
-        )?);
+        )?;
+
+        assert_eq!(abi_fn.is_some(), impl_item.is_some());
+
+        if let Some(abi_fn) = abi_fn {
+            let mut module = module.borrow_mut();
+
+            let mut contract = module
+                .contracts
+                .iter_mut()
+                .find(|c| c.name == contract_name);
+
+            if contract.is_none() {
+                module.contracts.push(TranslatedContract::new(
+                    &contract_name,
+                    contract_definition.ty.clone(),
+                    contract_definition
+                        .base
+                        .iter()
+                        .map(|b| sway::TypeName::Identifier {
+                            name: b
+                                .name
+                                .identifiers
+                                .iter()
+                                .map(|i| i.name.clone())
+                                .collect::<Vec<_>>()
+                                .join("."),
+                            generic_parameters: None,
+                        })
+                        .collect::<Vec<_>>()
+                        .as_slice(),
+                ));
+
+                contract = module.contracts.last_mut();
+            }
+
+            let contract = contract.unwrap();
+
+            if !contract.abi.functions.contains(&abi_fn) {
+                contract.abi.functions.push(abi_fn);
+            }
+        }
+
+        if let Some(impl_item) = impl_item {
+            let mut module = module.borrow_mut();
+            let contract = module
+                .contracts
+                .iter_mut()
+                .find(|c| c.name == contract_name);
+
+            if contract.is_none() {
+                panic!(
+                    "Failed to find contract : {contract_name} - current contracts in module : {:#?}",
+                    module.contracts
+                );
+            }
+
+            let contract = contract.unwrap();
+
+            if !contract.abi_impl.items.contains(&impl_item) {
+                contract.abi_impl.items.push(impl_item);
+            }
+        }
+
+        module.borrow_mut().functions[i].implementation = Some(function);
     }
 
     // // Propagate deferred initializations into the constructor

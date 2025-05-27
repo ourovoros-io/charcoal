@@ -9,7 +9,7 @@ pub fn translate_import_directives(
     translated_module: Rc<RefCell<TranslatedModule>>,
     import_directives: &[solidity::Import],
 ) -> Result<(), Error> {
-    let source_unit_directory = project.options.root_folder.as_ref().unwrap().join(
+    let source_unit_directory = project.options.input.join(
         translated_module
             .borrow()
             .path
@@ -21,21 +21,14 @@ pub fn translate_import_directives(
     for import_directive in import_directives.iter() {
         match import_directive {
             solidity::Import::Plain(solidity::ImportPath::Filename(filename), _) => {
-                let import_path =
-                    project.canonicalize_import_path(&source_unit_directory, &filename.string)?;
+                let import_path = project
+                    .canonicalize_import_path(&source_unit_directory, &filename.string)
+                    .unwrap();
                 let import_path = PathBuf::from(
                     import_path
                         .to_string_lossy()
                         .to_string()
-                        .trim_start_matches(
-                            &project
-                                .options
-                                .root_folder
-                                .as_ref()
-                                .unwrap()
-                                .to_string_lossy()
-                                .to_string(),
-                        ),
+                        .trim_start_matches(&project.options.input.to_string_lossy().to_string()),
                 );
 
                 let imported_module = project.find_module(&import_path);
@@ -66,10 +59,11 @@ pub fn translate_import_directives(
                     }
 
                     let import_path = project
-                        .canonicalize_import_path(&source_unit_directory, &filename.string)?;
+                        .canonicalize_import_path(&source_unit_directory, &filename.string)
+                        .unwrap();
 
                     todo!()
-                    // let found = process_import(project, translated_module, Some(&identifier.name), &import_path)?;
+                    // let found = process_import(project, translated_module, Some(&identifier.name), &import_path).unwrap();
 
                     // if !found {
                     //     panic!(

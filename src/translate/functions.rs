@@ -207,7 +207,7 @@ pub fn translate_function_declaration(
 
     // Translate the function
     let translated_function = TranslatedFunction {
-        old_name,
+        old_name: old_name.clone(),
         new_name: new_name.clone(),
         attributes: if is_fallback {
             Some(sway::AttributeList {
@@ -222,6 +222,8 @@ pub fn translate_function_declaration(
         constructor_calls,
         modifiers,
         type_name: sway::TypeName::Function {
+            old_name,
+            new_name,
             generic_parameters: None,
             parameters,
             return_type: if function_definition.returns.is_empty() {
@@ -362,16 +364,6 @@ pub fn translate_modifier_definition(
                             if *has_storage_read && *has_storage_write {
                                 break;
                             }
-
-                            if variable.borrow().storage_namespace.is_some() {
-                                if variable.borrow().read_count != 0 {
-                                    *has_storage_read = true;
-                                }
-
-                                if variable.borrow().mutation_count != 0 {
-                                    *has_storage_write = true;
-                                }
-                            }
                         }
 
                         if *has_storage_read && *has_storage_write {
@@ -437,18 +429,6 @@ pub fn translate_modifier_definition(
         }
     }
 
-    for variable in current_scope.borrow().variables.iter() {
-        if variable.borrow().storage_namespace.is_some() {
-            if variable.borrow().read_count != 0 {
-                *has_storage_read = true;
-            }
-
-            if variable.borrow().mutation_count != 0 {
-                *has_storage_write = true;
-            }
-        }
-    }
-
     if let Some(block) = current_body.as_mut() {
         finalize_block_translation(project, &current_scope, block)?;
     }
@@ -492,6 +472,8 @@ pub fn translate_modifier_definition(
 
             module.borrow_mut().functions.push(TranslatedItem {
                 signature: sway::TypeName::Function {
+                    old_name: String::new(),
+                    new_name: String::new(),
                     generic_parameters: None,
                     parameters: modifier.parameters.clone(),
                     return_type: None,
@@ -512,6 +494,8 @@ pub fn translate_modifier_definition(
 
             module.borrow_mut().functions.push(TranslatedItem {
                 signature: sway::TypeName::Function {
+                    old_name: String::new(),
+                    new_name: String::new(),
                     generic_parameters: None,
                     parameters: modifier.parameters.clone(),
                     return_type: None,
@@ -532,6 +516,8 @@ pub fn translate_modifier_definition(
         (Some(pre_body), None) => {
             module.borrow_mut().functions.push(TranslatedItem {
                 signature: sway::TypeName::Function {
+                    old_name: String::new(),
+                    new_name: String::new(),
                     generic_parameters: None,
                     parameters: modifier.parameters.clone(),
                     return_type: None,
@@ -552,6 +538,8 @@ pub fn translate_modifier_definition(
         (None, Some(post_body)) => {
             module.borrow_mut().functions.push(TranslatedItem {
                 signature: sway::TypeName::Function {
+                    old_name: String::new(),
+                    new_name: String::new(),
                     generic_parameters: None,
                     parameters: modifier.parameters.clone(),
                     return_type: None,
@@ -601,7 +589,14 @@ pub fn translate_function_definition(
     module: Rc<RefCell<TranslatedModule>>,
     definition_name: Option<String>,
     function_definition: &solidity::FunctionDefinition,
-) -> Result<sway::Function, Error> {
+) -> Result<
+    (
+        sway::Function,
+        Option<sway::Function>,
+        Option<sway::ImplItem>,
+    ),
+    Error,
+> {
     // Collect information about the function from its type
     let is_constructor = matches!(function_definition.ty, solidity::FunctionTy::Constructor);
     let is_fallback = matches!(function_definition.ty, solidity::FunctionTy::Fallback);
@@ -676,11 +671,20 @@ pub fn translate_function_definition(
 
     // println!(
     //     "Translating {}.{} {}",
-    //     module.name,
-    //     function_definition.name.as_ref().map(|n| n.name.as_str()).unwrap_or_else(|| new_name_2.as_str()),
-    //     match project.loc_to_line_and_column(&module.path, &function_definition.loc) {
-    //         Some((line, col)) => format!("at {}:{}:{}", module.path.to_string_lossy(), line, col),
-    //         None => format!("in {}...", module.path.to_string_lossy()),
+    //     module.borrow().name,
+    //     function_definition
+    //         .name
+    //         .as_ref()
+    //         .map(|n| n.name.as_str())
+    //         .unwrap_or_else(|| new_name_2.as_str()),
+    //     match project.loc_to_line_and_column(module.clone(), &function_definition.loc) {
+    //         Some((line, col)) => format!(
+    //             "at {}:{}:{}",
+    //             module.borrow().path.to_string_lossy(),
+    //             line,
+    //             col
+    //         ),
+    //         None => format!("in {}...", module.borrow().path.to_string_lossy()),
     //     },
     // );
 
@@ -810,22 +814,15 @@ pub fn translate_function_definition(
         body: None,
     };
 
+    let mut abi_fn = None;
+
     if is_public {
-        let definition_name = definition_name.as_ref().unwrap();
         sway_function.name = new_name_2.clone();
 
         let mut abi_function = sway_function.clone();
         let mut use_string = false;
 
         if !is_fallback {
-            let mut module = module.borrow_mut();
-
-            let contract = module
-                .contracts
-                .iter_mut()
-                .find(|a| a.name == *definition_name)
-                .unwrap();
-
             for p in abi_function.parameters.entries.iter_mut() {
                 if p.type_name == Some(sway::TypeName::StringSlice) {
                     use_string = true;
@@ -836,14 +833,7 @@ pub fn translate_function_definition(
                 }
             }
 
-            // Only add the function to the abi if it doesn't already exist
-            if !contract.abi.functions.contains(&abi_function) && !is_override {
-                if is_constructor {
-                    contract.abi.functions.insert(0, abi_function.clone());
-                } else {
-                    contract.abi.functions.push(abi_function.clone());
-                }
-            }
+            abi_fn = Some(abi_function);
         }
 
         if use_string {
@@ -858,7 +848,7 @@ pub fn translate_function_definition(
     // Convert the statements in the function's body (if any)
     let Some(solidity::Statement::Block { statements, .. }) = function_definition.body.as_ref()
     else {
-        return Ok(sway_function);
+        return Ok((sway_function, None, None));
     };
 
     // Create the scope for the body of the toplevel function
@@ -1145,67 +1135,63 @@ pub fn translate_function_definition(
     }
 
     // Propagate constructor calls into the function's body
-    for constructor_call in module
-        .borrow()
-        .function_constructor_calls
-        .get(&new_name)
-        .unwrap()
-        .iter()
-        .rev()
+    if let Some(function_constructor_calls) =
+        module.borrow().function_constructor_calls.get(&new_name)
     {
-        function_body.statements.insert(
-            0,
-            sway::Statement::from(sway::Expression::from(constructor_call.clone())),
-        );
+        for constructor_call in function_constructor_calls.iter().rev() {
+            function_body.statements.insert(
+                0,
+                sway::Statement::from(sway::Expression::from(constructor_call.clone())),
+            );
+        }
     }
 
     // Propagate modifier pre and post functions into the function's body
     let mut modifier_pre_calls = vec![];
     let mut modifier_post_calls = vec![];
 
-    for modifier_invocation in module
-        .borrow()
-        .function_modifiers
-        .get(&new_name)
-        .unwrap()
-        .iter()
-    {
-        let Some(new_name) = modifier_invocation.function.as_identifier() else {
-            panic!("Malformed modifier invocation: {modifier_invocation:#?}");
-        };
+    if let Some(modifier_invocations) = module.borrow().function_modifiers.get(&new_name) {
+        for modifier_invocation in modifier_invocations.iter() {
+            let Some(new_name) = modifier_invocation.function.as_identifier() else {
+                panic!("Malformed modifier invocation: {modifier_invocation:#?}");
+            };
 
-        let module = module.borrow();
-        let Some(modifier) = module.modifiers.iter().find(|v| v.new_name == *new_name) else {
-            panic!("Failed to find modifier: {new_name}");
-        };
+            let module = module.borrow();
+            let Some(modifier) = module.modifiers.iter().find(|v| v.new_name == *new_name) else {
+                panic!("Failed to find modifier: {new_name}");
+            };
 
-        if modifier.pre_body.is_some() && modifier.post_body.is_some() {
-            modifier_pre_calls.push(sway::FunctionCall {
-                function: sway::Expression::create_identifier(format!("{}_pre", modifier.new_name)),
-                generic_parameters: None,
-                parameters: modifier_invocation.parameters.clone(),
-            });
+            if modifier.pre_body.is_some() && modifier.post_body.is_some() {
+                modifier_pre_calls.push(sway::FunctionCall {
+                    function: sway::Expression::create_identifier(format!(
+                        "{}_pre",
+                        modifier.new_name
+                    )),
+                    generic_parameters: None,
+                    parameters: modifier_invocation.parameters.clone(),
+                });
 
-            modifier_post_calls.push(sway::FunctionCall {
-                function: sway::Expression::create_identifier(format!(
-                    "{}_post",
-                    modifier.new_name
-                )),
-                generic_parameters: None,
-                parameters: modifier_invocation.parameters.clone(),
-            });
-        } else if modifier.pre_body.is_some() {
-            modifier_pre_calls.push(sway::FunctionCall {
-                function: sway::Expression::create_identifier(modifier.new_name.clone()),
-                generic_parameters: None,
-                parameters: modifier_invocation.parameters.clone(),
-            });
-        } else if modifier.post_body.is_some() {
-            modifier_post_calls.push(sway::FunctionCall {
-                function: sway::Expression::create_identifier(modifier.new_name.clone()),
-                generic_parameters: None,
-                parameters: modifier_invocation.parameters.clone(),
-            });
+                modifier_post_calls.push(sway::FunctionCall {
+                    function: sway::Expression::create_identifier(format!(
+                        "{}_post",
+                        modifier.new_name
+                    )),
+                    generic_parameters: None,
+                    parameters: modifier_invocation.parameters.clone(),
+                });
+            } else if modifier.pre_body.is_some() {
+                modifier_pre_calls.push(sway::FunctionCall {
+                    function: sway::Expression::create_identifier(modifier.new_name.clone()),
+                    generic_parameters: None,
+                    parameters: modifier_invocation.parameters.clone(),
+                });
+            } else if modifier.post_body.is_some() {
+                modifier_post_calls.push(sway::FunctionCall {
+                    function: sway::Expression::create_identifier(modifier.new_name.clone()),
+                    generic_parameters: None,
+                    parameters: modifier_invocation.parameters.clone(),
+                });
+            }
         }
     }
 
@@ -1247,6 +1233,8 @@ pub fn translate_function_definition(
             .map(|a| a.attributes.remove(index))
             .unwrap();
     }
+
+    let mut impl_item = None;
 
     if is_public && !is_fallback {
         let mut statements = vec![];
@@ -1297,56 +1285,8 @@ pub fn translate_function_definition(
         sway_function.name = new_name_2;
 
         // Create the function wrapper item for the contract impl block
-        let impl_item = sway::ImplItem::Function(sway_function.clone());
-        if let Some(contract_impl) = module
-            .borrow_mut()
-            .find_contract_impl_mut(&definition_name.as_ref().unwrap())
-        {
-            if let Some(sway::ImplItem::Function(f)) = contract_impl.items.iter_mut().find(|item| {
-                let sway::ImplItem::Function(f) = item else {
-                    return false;
-                };
-                if f.name != sway_function.name {
-                    return false;
-                }
-                if !sway_function
-                    .parameters
-                    .entries
-                    .iter()
-                    .zip(f.parameters.entries.iter())
-                    .all(|(a, b)| a == b)
-                {
-                    return false;
-                }
-                sway_function.return_type == f.return_type
-            }) {
-                f.body = sway_function.body;
-            }
-            // Only add the function wrapper to the contract impl if it doesn't already exist
-            else if !contract_impl.items.contains(&impl_item) {
-                if is_constructor {
-                    contract_impl.items.insert(0, impl_item);
-                } else {
-                    contract_impl.items.push(impl_item);
-                }
-            }
-        } else {
-            // Add the function wrapper to the contract impl
-            if is_constructor {
-                module
-                    .borrow_mut()
-                    .get_contract_impl(definition_name.as_ref().unwrap())
-                    .items
-                    .insert(0, impl_item);
-            } else {
-                module
-                    .borrow_mut()
-                    .get_contract_impl(definition_name.as_ref().unwrap())
-                    .items
-                    .push(impl_item);
-            }
-        }
+        impl_item = Some(sway::ImplItem::Function(sway_function.clone()));
     }
 
-    Ok(toplevel_function)
+    Ok((toplevel_function, abi_fn, impl_item))
 }

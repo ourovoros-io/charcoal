@@ -3,7 +3,7 @@ use convert_case::{Case, Casing};
 use num_bigint::BigUint;
 use num_traits::{One, Zero};
 use solang_parser::pt as solidity;
-use std::{cell::RefCell, collections::HashMap, path::PathBuf, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, f32::consts::E, path::PathBuf, rc::Rc};
 
 mod assembly;
 mod contracts;
@@ -47,9 +47,6 @@ pub struct TranslatedVariable {
     pub new_name: String,
     pub type_name: sway::TypeName,
     pub abi_type_name: Option<sway::TypeName>,
-    pub storage_namespace: Option<String>,
-    pub is_configurable: bool,
-    pub is_constant: bool,
     pub statement_index: Option<usize>,
     pub read_count: usize,
     pub mutation_count: usize,
@@ -374,27 +371,6 @@ impl TranslatedModule {
         })
     }
 
-    /// Gets the translated definition's implementation for `Contract`. If it doesn't exist, it gets created.
-    #[inline]
-    pub fn get_contract_impl(&mut self, definition_name: &str) -> &mut sway::Impl {
-        if self.find_contract_impl(definition_name).is_none() {
-            self.impls.push(sway::Impl {
-                generic_parameters: None,
-                type_name: sway::TypeName::Identifier {
-                    name: definition_name.into(),
-                    generic_parameters: None,
-                },
-                for_type_name: Some(sway::TypeName::Identifier {
-                    name: "Contract".into(),
-                    generic_parameters: None,
-                }),
-                items: vec![],
-            });
-        }
-
-        self.find_contract_impl_mut(definition_name).unwrap()
-    }
-
     #[inline]
     pub fn get_module_name(&self) -> String {
         translate_naming_convention(&self.name, Case::Snake)
@@ -600,27 +576,26 @@ impl TranslatedModule {
         if let Some(variable) = scope.borrow().get_variable_from_new_name(name) {
             let variable = variable.borrow();
 
-            // Variable should not be a storage field
-            assert!(
-                !variable.storage_namespace.is_some(),
-                "error: Variable not found in scope: \"{name}\""
-            );
-
             return variable.type_name.clone();
         }
 
-        if let Some(function) = self
-            .functions
-            .iter()
-            .find(|f| f.implementation.as_ref().unwrap().name == *name)
-        {
-            let function = function.implementation.as_ref().unwrap();
-
-            return sway::TypeName::Function {
-                generic_parameters: function.generic_parameters.clone(),
-                parameters: function.parameters.clone(),
-                return_type: function.return_type.clone().map(Box::new),
+        if let Some(function) = self.functions.iter().find(|f| {
+            let sway::TypeName::Function { new_name, .. } = &f.signature else {
+                unreachable!()
             };
+            new_name == name
+        }) {
+            return function.signature.clone();
+        }
+
+        if let Some(constant) = self.constants.iter().find(|c| c.name == name) {
+            return constant.type_name.clone();
+        }
+
+        if let Some(configurable) = self.configurable.as_ref() {
+            if let Some(field) = configurable.fields.iter().find(|c| c.name == name) {
+                return field.type_name.clone();
+            }
         }
 
         panic!("error: Variable not found in scope: \"{name}\"");
@@ -744,7 +719,9 @@ impl TranslatedModule {
         member_access: &sway::MemberAccess,
         expression: &sway::Expression,
     ) -> Result<sway::TypeName, Error> {
-        if let Some(name) = member_access.expression.as_identifier() {
+        if let sway::Expression::PathExpr(path) = &member_access.expression {
+            let name = path.to_string();
+
             if name.starts_with("storage::") {
                 let parts = name.split("::").collect::<Vec<_>>();
 
@@ -782,6 +759,7 @@ impl TranslatedModule {
                     )
                 };
 
+                println!("1");
                 return Ok(sway::TypeName::Identifier {
                     name: "StorageKey".into(),
                     generic_parameters: Some(sway::GenericParameterList {
@@ -800,6 +778,7 @@ impl TranslatedModule {
         if let Some(bits) = container_type.int_bits() {
             match member_access.member.as_str() {
                 "underlying" => {
+                    println!("2");
                     return Ok(sway::TypeName::Identifier {
                         name: match bits {
                             8 => "u8",
@@ -839,6 +818,7 @@ impl TranslatedModule {
                     .iter()
                     .find(|f| f.name == member_access.member)
                 {
+                    println!("3");
                     return Ok(field.type_name.clone());
                 }
             }
@@ -1747,6 +1727,10 @@ impl TranslatedModule {
         // TODO: check generic parameters!
         //
 
+        println!(
+            "Member access expression : {}",
+            sway::TabbedDisplayer(&member_access.expression)
+        );
         let mut container_type = self.get_expression_type(scope, &member_access.expression)?;
 
         // Check to see if the container's type is a translated enum and switch to its underlying type
@@ -3303,11 +3287,13 @@ pub fn coerce_expression(
                 generic_parameters: _lhs_generic_parameters,
                 parameters: _lhs_parameters_list,
                 return_type: _lhs_return_type,
+                ..
             },
             sway::TypeName::Function {
                 generic_parameters: _rhs_generic_parameters,
                 parameters: _rhs_parameters_list,
                 return_type: _rhs_return_type,
+                ..
             },
         ) => todo!(),
 
