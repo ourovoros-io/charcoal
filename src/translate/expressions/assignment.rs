@@ -76,8 +76,6 @@ pub fn translate_assignment_expression(
         }
     }
 
-    println!("Expression : {}", sway::TabbedDisplayer(&expression));
-
     if let sway::Expression::FunctionCall(f) = &expression {
         if let sway::Expression::MemberAccess(expr) = &f.function {
             if expr.member == "read" && f.parameters.is_empty() {
@@ -89,8 +87,6 @@ pub fn translate_assignment_expression(
     let expr_type_name = module
         .borrow_mut()
         .get_expression_type(scope, &expression)?;
-
-    println!("Expr type name : {expr_type_name}");
 
     if let Some(storage_key_type) = expr_type_name.storage_key_type() {
         let member = match &storage_key_type {
