@@ -4,7 +4,6 @@ use rayon::iter::ParallelIterator;
 
 const LINE_LENGTH: usize = 100;
 
-
 #[test]
 fn test_ds_token() {
     let path = std::path::Path::new("./tests/ds-token");
@@ -89,22 +88,30 @@ fn test_uniswap_v4_periphery() {
 
 fn run_test(path: &std::path::Path, target_repo: Option<&str>) {
     if let Some(target_repo) = target_repo {
-            clone_repo(path, target_repo);
-    } 
-    
-    let package_json_path = std::path::PathBuf::from(format!("{}/package.json", path.to_string_lossy()));
+        clone_repo(path, target_repo);
+    }
+
+    let package_json_path =
+        std::path::PathBuf::from(format!("{}/package.json", path.to_string_lossy()));
     let yarn_paths: Vec<_> = walkdir::WalkDir::new(path)
         .into_iter()
         .filter_map(Result::ok)
         .filter(|e| e.file_type().is_file())
-        .filter(|e| e.path().file_name().map(|f| f == "yarn.lock").unwrap_or(false)).collect();
-    
+        .filter(|e| {
+            e.path()
+                .file_name()
+                .map(|f| f == "yarn.lock")
+                .unwrap_or(false)
+        })
+        .collect();
+
     println!("{}", "-".repeat(LINE_LENGTH).red());
     println!("{}", "[Installing dependencies]".red());
     println!("{}", "-".repeat(LINE_LENGTH).red());
-    
-    let node_modules_folder = std::path::PathBuf::from(format!("{}/node_modules", path.to_string_lossy()));
-    
+
+    let node_modules_folder =
+        std::path::PathBuf::from(format!("{}/node_modules", path.to_string_lossy()));
+
     if node_modules_folder.exists() {
         println!("{}", "-".repeat(LINE_LENGTH).yellow());
         println!("{}", "The dependencies are already installed, skipping the dependencies installation process".yellow());
@@ -129,16 +136,26 @@ fn run_test(path: &std::path::Path, target_repo: Option<&str>) {
 
     let translate_results = translate(path);
 
-    let build_results = build(path.components().last().unwrap().as_os_str().to_str().unwrap());
+    let build_results = build(
+        path.components()
+            .last()
+            .unwrap()
+            .as_os_str()
+            .to_str()
+            .unwrap(),
+    );
     print_results(translate_results, "[Charcoal Analysis Results]");
     print_results(build_results, "[Forc Build Results]");
 }
 
 fn clone_repo(path: &std::path::Path, target_repo: &str) {
     println!("{}", "-".repeat(LINE_LENGTH).cyan());
-    println!("{}", format!("Cloning Repository      -> {}", target_repo).cyan());
+    println!(
+        "{}",
+        format!("Cloning Repository      -> {}", target_repo).cyan()
+    );
     println!("{}", "-".repeat(LINE_LENGTH).cyan());
-    
+
     if !path.exists() {
         let _ = std::process::Command::new("git")
             .args(&[
@@ -187,12 +204,21 @@ fn clone_repo(path: &std::path::Path, target_repo: &str) {
 
 fn translate(path: &std::path::Path) -> (usize, usize, f32) {
     println!("{}", "-".repeat(LINE_LENGTH).cyan());
-    println!("{}", format!("[Running Charcoal On    -> {}]", path.display()).cyan());
+    println!(
+        "{}",
+        format!("[Running Charcoal On    -> {}]", path.display()).cyan()
+    );
     println!("{}", "-".repeat(LINE_LENGTH).cyan());
-    let name = path.components().last().unwrap().as_os_str().to_str().unwrap();
+    let name = path
+        .components()
+        .last()
+        .unwrap()
+        .as_os_str()
+        .to_str()
+        .unwrap();
 
     let output_folder = &format!("./output/{name}");
-    
+
     // Get all the .sol file paths from the repo and store them in a vector but do not include the .t.sol files
     let paths: Vec<String> = walkdir::WalkDir::new(path)
         .into_iter()
@@ -212,18 +238,18 @@ fn translate(path: &std::path::Path) -> (usize, usize, f32) {
     }
 
     // Create a hashmap to store the results of the charcoal analysis
-    let results: std::sync::Mutex<std::collections::HashMap<String, bool>> = std::sync::Mutex::new(std::collections::HashMap::new());
+    let results: std::sync::Mutex<std::collections::HashMap<String, bool>> =
+        std::sync::Mutex::new(std::collections::HashMap::new());
 
     // Run charcoal for each .sol file in the vector in parallel
     paths.par_iter().for_each(|path| {
         println!("{}", format!("Translating : {}", path).cyan());
-        
-        
+
         let output = std::process::Command::new("cargo")
-        .args(&["run", "--", "--target", &path, "-o", output_folder])
-        .output()
-        .expect("Failed to execute command");
-        
+            .args(&["run", "--", "--target", &path, "-o", output_folder])
+            .output()
+            .expect("Failed to execute command");
+
         let mut results = results.lock().unwrap();
         if output.status.success() {
             results.insert(path.clone(), true);
@@ -252,7 +278,7 @@ fn translate(path: &std::path::Path) -> (usize, usize, f32) {
     let total = results.len();
     let passed = results.values().filter(|&&v| v).count();
     let coverage = (passed as f32 / total as f32) * 100.0;
-    
+
     (total, passed, coverage)
 }
 
@@ -264,7 +290,7 @@ fn build(name: &str) -> (usize, usize, f32) {
 
     let out_folder = std::path::Path::new(out_folder);
 
-    // Get all the folders paths in the output folder 
+    // Get all the folders paths in the output folder
     let output_paths: Vec<String> = walkdir::WalkDir::new(out_folder)
         .into_iter()
         .filter_map(Result::ok)
@@ -279,12 +305,13 @@ fn build(name: &str) -> (usize, usize, f32) {
         .collect();
 
     // Create a hashmap to store the results of the charcoal analysis
-    let results: std::sync::Mutex<std::collections::HashMap<String, bool>> = std::sync::Mutex::new(std::collections::HashMap::new());
+    let results: std::sync::Mutex<std::collections::HashMap<String, bool>> =
+        std::sync::Mutex::new(std::collections::HashMap::new());
 
     // Run in every folder in the output folder the command `forc build` in parallel
     output_paths.par_iter().for_each(|output_path| {
         println!("{}", format!("Building    : {}", output_path).cyan());
-        
+
         let output = std::process::Command::new("forc")
             .arg("build")
             .stdout(std::process::Stdio::piped())
@@ -320,7 +347,7 @@ fn build(name: &str) -> (usize, usize, f32) {
     let total = results.len();
     let passed = results.values().filter(|&&v| v).count();
     let coverage = (passed as f32 / total as f32) * 100.0;
-    
+
     (total, passed, coverage)
 }
 
@@ -330,7 +357,10 @@ fn print_results(results: (usize, usize, f32), title: &str) {
     println!("{}", "-".repeat(LINE_LENGTH).magenta());
     println!("{}", format!("[Total      : {}]", results.0).blue());
     println!("{}", format!("[Passed     : {}]", results.1).green());
-    println!("{}", format!("[Failed     : {}]", results.0 - results.1).red());
+    println!(
+        "{}",
+        format!("[Failed     : {}]", results.0 - results.1).red()
+    );
     println!("{}", "-".repeat(LINE_LENGTH).magenta());
     println!("{}", format!("[Coverage   : {:.2}%]", results.2).magenta());
     println!("{}", "-".repeat(LINE_LENGTH).magenta());

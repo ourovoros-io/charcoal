@@ -1361,6 +1361,7 @@ impl TabbedDisplay for StorageNamespace {
 pub struct StorageField {
     pub name: String,
     pub type_name: TypeName,
+    pub abi_type_name: Option<TypeName>,
     pub value: Expression,
 }
 

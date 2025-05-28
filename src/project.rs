@@ -727,7 +727,72 @@ impl Project {
         parent_module
     }
 
+    pub fn find_module_with_contract(
+        &mut self,
+        contract_name: &str,
+    ) -> Option<Rc<RefCell<TranslatedModule>>> {
+        fn check_module(
+            module: Rc<RefCell<TranslatedModule>>,
+            contract_name: &str,
+        ) -> Option<Rc<RefCell<TranslatedModule>>> {
+            if module
+                .borrow()
+                .contract_names
+                .iter()
+                .any(|c| c == contract_name)
+            {
+                return Some(module.clone());
+            }
+
+            for module in module.borrow().submodules.iter() {
+                if let Some(module) = check_module(module.clone(), contract_name) {
+                    return Some(module.clone());
+                }
+            }
+
+            None
+        }
+
+        for module in self.translated_modules.iter() {
+            if let Some(module) = check_module(module.clone(), contract_name) {
+                return Some(module.clone());
+            }
+        }
+
+        None
+    }
     pub fn translate(&mut self) -> Result<(), Error> {
+        let input = &self.options.input.to_string_lossy().to_string();
+        for source_unit_path in self.queue.clone() {
+            // Parse the source unit
+            let source_unit_parts = self
+                .parse_solidity_source_unit(&source_unit_path)?
+                .0
+                .iter()
+                .filter(|s| matches!(s, solidity::SourceUnitPart::ContractDefinition(_)))
+                .cloned()
+                .collect::<Vec<_>>();
+
+            // Create a new module to store the translated items in
+            let module = self.find_or_create_module(
+                &PathBuf::from(source_unit_path.to_string_lossy().trim_start_matches(input))
+                    .with_extension(""),
+            );
+
+            for source_unit_part in source_unit_parts.iter() {
+                match source_unit_part {
+                    solidity::SourceUnitPart::ContractDefinition(definition) => {
+                        module
+                            .borrow_mut()
+                            .contract_names
+                            .push(definition.name.as_ref().unwrap().name.to_string());
+                    }
+
+                    _ => {}
+                }
+            }
+        }
+
         for source_unit_path in self.queue.clone() {
             self.translate_file(&source_unit_path)?;
         }

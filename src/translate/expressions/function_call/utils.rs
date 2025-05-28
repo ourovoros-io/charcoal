@@ -324,13 +324,19 @@ pub fn resolve_function_call(
     let parameters_cell = Rc::new(RefCell::new(parameters));
 
     if let Some(function) = external_module.borrow().functions.iter().find(|function| {
-        let function = function.implementation.as_ref().unwrap();
-        let function_parameters = &function.parameters;
+        let sway::TypeName::Function {
+            old_name,
+            parameters: function_parameters,
+            ..
+        } = &function.signature
+        else {
+            unreachable!()
+        };
 
         let mut parameters = parameters_cell.borrow_mut();
 
         // Ensure the function's old name matches the function call we're translating
-        if function.old_name != function_name {
+        if old_name != function_name {
             return false;
         }
 
@@ -483,14 +489,13 @@ pub fn resolve_function_call(
 
         true
     }) {
-        let function = function.implementation.as_ref().unwrap();
+        let sway::TypeName::Function { new_name, .. } = &function.signature else {
+            unreachable!()
+        };
 
         return Ok(Some(sway::Expression::create_function_calls(
             None,
-            &[(
-                function.name.as_str(),
-                Some((None, parameters_cell.borrow().clone())),
-            )],
+            &[(&new_name, Some((None, parameters_cell.borrow().clone())))],
         )));
     }
 

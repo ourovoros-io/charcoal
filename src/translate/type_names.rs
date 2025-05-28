@@ -413,13 +413,7 @@ pub fn translate_type_name(
             }
 
             // Check if type is an ABI
-            if project.translated_modules.iter().any(|module| {
-                module
-                    .borrow()
-                    .contracts
-                    .iter()
-                    .any(|contract| contract.name == *name)
-            }) {
+            if project.find_module_with_contract(name).is_some() {
                 //
                 // TODO: add a use statement for the external definition into the current module
                 //

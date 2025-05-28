@@ -81,13 +81,7 @@ pub fn translate_state_variable(
         //     project.translate(Some(name), &module.path).unwrap();
         // }
 
-        if let Some(external_definition) = project.translated_modules.iter().find(|module| {
-            module
-                .borrow()
-                .contracts
-                .iter()
-                .any(|contract| contract.name == *name)
-        }) {
+        if let Some(external_definition) = project.find_module_with_contract(name) {
             // TODO:
             // for entry in external_definition.uses.iter() {
             //     if !module.uses.contains(entry) {
@@ -168,6 +162,7 @@ pub fn translate_state_variable(
             .fields
             .push(sway::StorageField {
                 name: new_name.clone(),
+                abi_type_name,
                 type_name: variable_type_name.clone(),
                 value,
             });

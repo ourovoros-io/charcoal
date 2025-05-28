@@ -107,30 +107,8 @@ pub fn translate_emit_statement(
                 _ => todo!(),
             };
 
-            if let Some(events_enum) = {
-                // Thank you borrow checker...
-                let module = module.borrow();
-
-                module
-                    .events_enums
-                    .iter()
-                    .find(|(e, _)| {
-                        e.borrow()
-                            .variants
-                            .iter()
-                            .any(|v| v.name == *event_variant_name)
-                    })
-                    .cloned()
-                    .map(|x| x.0.clone())
-            } {
-                let events_enum = events_enum.borrow();
-
-                let Some(event_variant) = events_enum.variants.iter().find(|v| v.name == *event_variant_name) else {
-                    panic!(
-                        "Failed to find event variant \"{event_variant_name}\" in \"{}\": {:#?}",
-                        module.borrow().name, module.borrow().events_enums,
-                    )
-                };
+            if let Some(event_variant) = resolve_symbol(project, module.clone(), Symbol::Event(event_variant_name.clone())) {
+                let Some((event_enum_name, event_variant)) = event_variant.downcast_ref::<(String, sway::EnumVariant)>() else { panic!("Invalid enum variant") };
 
                 return Ok(sway::Statement::from(sway::Expression::from(
                     sway::FunctionCall {
@@ -139,12 +117,12 @@ pub fn translate_emit_statement(
                         parameters: vec![if arguments.is_empty() {
                             sway::Expression::create_identifier(format!(
                                 "{}::{}",
-                                events_enum.name,
+                                event_enum_name,
                                 event_variant_name,
                             ))
                         } else {
                             sway::Expression::create_function_calls(None, &[
-                                (format!("{}::{}", events_enum.name, event_variant_name).as_str(), Some((None, vec![
+                                (format!("{}::{}", event_enum_name, event_variant_name).as_str(), Some((None, vec![
                                     if arguments.len() == 1 {
                                         let argument = translate_expression(
                                             project,
@@ -188,15 +166,6 @@ pub fn translate_emit_statement(
                     },
                 )));
             }
-
-            //
-            // TODO: Check module's use statements for external events
-            //
-
-            todo!(
-                "Check module's use statements for external event `{event_variant_name}`:\n{}",
-                module.borrow().uses.iter().map(|x| format!("    {x}\n")).collect::<Vec<_>>().join(""),
-            );
 
             panic!(
                 "Failed to find event variant \"{event_variant_name}\" in \"{}\": {:#?}",

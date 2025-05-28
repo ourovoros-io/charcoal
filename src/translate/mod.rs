@@ -1,9 +1,9 @@
-use crate::{error::Error, sway};
+use crate::{error::Error, project::Project, sway};
 use convert_case::{Case, Casing};
 use num_bigint::BigUint;
 use num_traits::{One, Zero};
 use solang_parser::pt as solidity;
-use std::{cell::RefCell, collections::HashMap, f32::consts::E, path::PathBuf, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, path::PathBuf, rc::Rc};
 
 mod assembly;
 mod contracts;
@@ -208,6 +208,16 @@ impl TranslatedContract {
     }
 }
 
+pub enum Symbol {
+    TypeDefinition(String),
+    Event(String),
+    Enum(String),
+    Error(String),
+    Struct(String),
+    Function(String),
+    Abi(String),
+}
+
 #[derive(Default, Debug)]
 pub struct TranslatedModule {
     pub name: String,
@@ -236,6 +246,7 @@ pub struct TranslatedModule {
 
     pub storage_fields_name_counts: HashMap<String, usize>,
     pub storage_fields_names: HashMap<String, String>,
+    pub contract_names: Vec<String>,
 }
 
 impl TranslatedModule {
@@ -1727,10 +1738,6 @@ impl TranslatedModule {
         // TODO: check generic parameters!
         //
 
-        println!(
-            "Member access expression : {}",
-            sway::TabbedDisplayer(&member_access.expression)
-        );
         let mut container_type = self.get_expression_type(scope, &member_access.expression)?;
 
         // Check to see if the container's type is a translated enum and switch to its underlying type
@@ -3396,4 +3403,76 @@ pub fn coerce_expression(
     }
 
     Some(expression)
+}
+
+pub fn resolve_symbol(
+    project: &mut Project,
+    module: Rc<RefCell<TranslatedModule>>,
+    symbol: Symbol,
+) -> Option<Box<dyn std::any::Any>> {
+    match &symbol {
+        Symbol::TypeDefinition(name) => todo!(),
+        Symbol::Event(name) => {
+            if let Some(event_enum) = module
+                .borrow()
+                .events_enums
+                .iter()
+                .find(|e| e.0.borrow().variants.iter().any(|v| v.name == *name))
+            {
+                let variant = event_enum
+                    .0
+                    .borrow()
+                    .variants
+                    .iter()
+                    .find(|v| v.name == *name)
+                    .cloned()
+                    .unwrap();
+
+                return Some(Box::new((event_enum.0.borrow().name.clone(), variant)));
+            }
+        }
+        Symbol::Enum(name) => todo!(),
+        Symbol::Error(name) => todo!(),
+        Symbol::Struct(name) => todo!(),
+        Symbol::Function(name) => todo!(),
+        Symbol::Abi(name) => todo!(),
+    }
+
+    for use_expr in module.borrow().uses.iter() {
+        match &use_expr.tree {
+            sway::UseTree::Path { prefix, suffix } => {
+                if !prefix.is_empty() {
+                    return None;
+                }
+
+                let mut path = PathBuf::new();
+                let mut use_tree = suffix.as_ref().clone();
+
+                loop {
+                    match &use_tree {
+                        sway::UseTree::Path { prefix, suffix } => {
+                            path.push(prefix.clone());
+                            use_tree = suffix.as_ref().clone();
+                        }
+
+                        sway::UseTree::Glob => break,
+
+                        _ => todo!(),
+                    }
+                }
+
+                let Some(imported_module) = project.find_module(&path) else {
+                    return None;
+                };
+
+                return resolve_symbol(project, imported_module.clone(), symbol);
+            }
+            sway::UseTree::Group { imports } => todo!(),
+            sway::UseTree::Name { name } => todo!(),
+            sway::UseTree::Rename { name, alias } => todo!(),
+            sway::UseTree::Glob => todo!(),
+        }
+    }
+
+    None
 }
