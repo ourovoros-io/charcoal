@@ -1,54 +1,94 @@
 use super::TranslatedModule;
-use crate::{error::Error, project::Project};
+use crate::{error::Error, project::Project, sway};
 use solang_parser::{helpers::CodeLocation, pt as solidity};
 use std::{cell::RefCell, path::PathBuf, rc::Rc};
 
 #[inline]
 pub fn translate_import_directives(
     project: &mut Project,
-    translated_module: Rc<RefCell<TranslatedModule>>,
+    module: Rc<RefCell<TranslatedModule>>,
     import_directives: &[solidity::Import],
 ) -> Result<(), Error> {
-    let source_unit_directory = project.options.input.join(
-        translated_module
-            .borrow()
-            .path
-            .parent()
-            .map(PathBuf::from)
-            .unwrap(),
-    );
+    let source_unit_directory = project
+        .options
+        .input
+        .join(module.borrow().path.parent().map(PathBuf::from).unwrap());
 
     for import_directive in import_directives.iter() {
         match import_directive {
             solidity::Import::Plain(solidity::ImportPath::Filename(filename), _) => {
-                let import_path = project
-                    .canonicalize_import_path(&source_unit_directory, &filename.string)
-                    .unwrap();
+                // Canonicalize the import path
                 let import_path = PathBuf::from(
-                    import_path
+                    project
+                        .canonicalize_import_path(&source_unit_directory, &filename.string)?
                         .to_string_lossy()
                         .to_string()
                         .trim_start_matches(&project.options.input.to_string_lossy().to_string()),
                 );
 
+                // Find the module being imported
                 let imported_module = project.find_module(&import_path);
-                if imported_module.is_none() {
+
+                let Some(imported_module) = imported_module else {
                     panic!(
                         "{}ERROR: failed to resolve import directive from `{import_directive}`",
-                        match project.loc_to_line_and_column(
-                            translated_module.clone(),
-                            &import_directive.loc()
-                        ) {
+                        match project
+                            .loc_to_line_and_column(module.clone(), &import_directive.loc())
+                        {
                             Some((line, col)) => format!(
                                 "{}:{}:{}: ",
-                                translated_module.borrow().path.to_string_lossy(),
+                                module.borrow().path.to_string_lossy(),
                                 line,
                                 col
                             ),
-                            None =>
-                                format!("{}: ", translated_module.borrow().path.to_string_lossy()),
+                            None => format!("{}: ", module.borrow().path.to_string_lossy()),
                         }
                     );
+                };
+
+                // Construct the use tree
+                let mut use_tree = sway::UseTree::Glob;
+
+                for component in imported_module.borrow().path.components().rev() {
+                    match component {
+                        std::path::Component::Prefix(_) => continue,
+                        std::path::Component::RootDir => continue,
+                        std::path::Component::CurDir => continue,
+
+                        std::path::Component::ParentDir => {
+                            // Discard the prefix of the use tree
+                            let sway::UseTree::Path { suffix, .. } = use_tree else {
+                                panic!("Malformed import path: {:#?}", import_path)
+                            };
+
+                            use_tree = *suffix;
+                        }
+
+                        std::path::Component::Normal(name) => {
+                            use_tree = sway::UseTree::Path {
+                                prefix: name.to_string_lossy().to_string(),
+                                suffix: Box::new(use_tree),
+                            };
+                        }
+                    }
+                }
+
+                assert!(
+                    use_tree != sway::UseTree::Glob,
+                    "Invalid import path: {import_path:#?}",
+                );
+
+                // Add the use to the module if we haven't already
+                let use_expr = sway::Use {
+                    is_public: false,
+                    tree: sway::UseTree::Path {
+                        prefix: String::new(), // NOTE: intentionally empty to indicate crate root
+                        suffix: Box::new(use_tree),
+                    },
+                };
+
+                if !module.borrow().uses.contains(&use_expr) {
+                    module.borrow_mut().uses.push(use_expr);
                 }
             }
 
@@ -59,11 +99,10 @@ pub fn translate_import_directives(
                     }
 
                     let import_path = project
-                        .canonicalize_import_path(&source_unit_directory, &filename.string)
-                        .unwrap();
+                        .canonicalize_import_path(&source_unit_directory, &filename.string)?;
 
                     todo!()
-                    // let found = process_import(project, translated_module, Some(&identifier.name), &import_path).unwrap();
+                    // let found = process_import(project, translated_module, Some(&identifier.name), &import_path)?;
 
                     // if !found {
                     //     panic!(

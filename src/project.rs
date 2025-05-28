@@ -412,10 +412,18 @@ impl Project {
             }
         }
 
+        let mut paths = import_counts
+            .iter()
+            .filter(|&(_, x)| *x == 0)
+            .map(|(x, _)| x.clone())
+            .collect::<Vec<_>>();
+
+        paths.sort();
+
         let mut queue = vec![];
 
-        for (path, _) in import_counts.iter().filter(|&(_, x)| *x == 0) {
-            queue_imports(self, &import_paths, path, &mut queue);
+        for path in paths {
+            queue_imports(self, &import_paths, &path, &mut queue);
         }
 
         Ok(queue)

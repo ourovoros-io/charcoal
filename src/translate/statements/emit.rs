@@ -107,92 +107,106 @@ pub fn translate_emit_statement(
                 _ => todo!(),
             };
 
-            let Some((events_enum, _)) = module.borrow()
-                .events_enums
-                .iter()
-                .find(|(e, _)| {
-                    e.borrow()
-                        .variants
-                        .iter()
-                        .any(|v| v.name == *event_variant_name)
-                })
-                .cloned()
-            else {
-                panic!(
-                    "Failed to find event variant \"{event_variant_name}\" in \"{}\": {:#?}",
-                    module.borrow().name, project.translated_modules.iter().map(|t| {
-                        t.borrow().events_enums.iter().map(|e| {
-                            format!("{} : {}", e.0.borrow().name,
-                            e.0.borrow().variants.iter().map(|v| v.name.clone()).collect::<Vec<_>>().join(", "))
-                        }).collect::<Vec<_>>().join(";\n")
-                    }).collect::<Vec<_>>().join(""),
-                )
-            };
+            if let Some(events_enum) = {
+                // Thank you borrow checker...
+                let module = module.borrow();
 
-            let events_enum = events_enum.borrow();
+                module
+                    .events_enums
+                    .iter()
+                    .find(|(e, _)| {
+                        e.borrow()
+                            .variants
+                            .iter()
+                            .any(|v| v.name == *event_variant_name)
+                    })
+                    .cloned()
+                    .map(|x| x.0.clone())
+            } {
+                let events_enum = events_enum.borrow();
 
-            let Some(event_variant) = events_enum.variants.iter().find(|v| v.name == *event_variant_name) else {
-                panic!(
-                    "Failed to find event variant \"{event_variant_name}\" in \"{}\": {:#?}",
-                    module.borrow().name, module.borrow().events_enums,
-                )
-            };
+                let Some(event_variant) = events_enum.variants.iter().find(|v| v.name == *event_variant_name) else {
+                    panic!(
+                        "Failed to find event variant \"{event_variant_name}\" in \"{}\": {:#?}",
+                        module.borrow().name, module.borrow().events_enums,
+                    )
+                };
 
-            return Ok(sway::Statement::from(sway::Expression::from(
-                sway::FunctionCall {
-                    function: sway::Expression::create_identifier("log".into()),
-                    generic_parameters: None,
-                    parameters: vec![if arguments.is_empty() {
-                        sway::Expression::create_identifier(format!(
-                            "{}::{}",
-                            events_enum.name,
-                            event_variant_name,
-                        ))
-                    } else {
-                        sway::Expression::create_function_calls(None, &[
-                            (format!("{}::{}", events_enum.name, event_variant_name).as_str(), Some((None, vec![
-                                if arguments.len() == 1 {
-                                    let argument = translate_expression(
-                                        project,
-                                        module.clone(),
-                                        scope,
-                                        &arguments[0],
-                                    )?;
-                                    
-                                    let argument_type = module.borrow_mut().get_expression_type(scope, &argument)?;
-                                    
-                                    coerce_expression(&argument, &argument_type, &event_variant.type_name).unwrap()
-                                } else {
-                                    let mut arguments = arguments
-                                        .iter()
-                                        .map(|p| {
-                                            translate_expression(
-                                                project,
-                                                module.clone(),
-                                                scope,
-                                                p,
-                                            )
-                                        })
-                                        .collect::<Result<Vec<_>, _>>()?;
+                return Ok(sway::Statement::from(sway::Expression::from(
+                    sway::FunctionCall {
+                        function: sway::Expression::create_identifier("log".into()),
+                        generic_parameters: None,
+                        parameters: vec![if arguments.is_empty() {
+                            sway::Expression::create_identifier(format!(
+                                "{}::{}",
+                                events_enum.name,
+                                event_variant_name,
+                            ))
+                        } else {
+                            sway::Expression::create_function_calls(None, &[
+                                (format!("{}::{}", events_enum.name, event_variant_name).as_str(), Some((None, vec![
+                                    if arguments.len() == 1 {
+                                        let argument = translate_expression(
+                                            project,
+                                            module.clone(),
+                                            scope,
+                                            &arguments[0],
+                                        )?;
+                                        
+                                        let argument_type = module.borrow_mut().get_expression_type(scope, &argument)?;
+                                        
+                                        coerce_expression(&argument, &argument_type, &event_variant.type_name).unwrap()
+                                    } else {
+                                        let mut arguments = arguments
+                                            .iter()
+                                            .map(|p| {
+                                                translate_expression(
+                                                    project,
+                                                    module.clone(),
+                                                    scope,
+                                                    p,
+                                                )
+                                            })
+                                            .collect::<Result<Vec<_>, _>>()?;
 
-                                    let mut arguments_types = arguments.iter().map(|a| module.borrow_mut().get_expression_type(scope, a).unwrap()).collect::<Vec<_>>();
+                                        let mut arguments_types = arguments.iter().map(|a| module.borrow_mut().get_expression_type(scope, a).unwrap()).collect::<Vec<_>>();
 
-                                    let sway::TypeName::Tuple { ref type_names } = event_variant.type_name else { panic!("Expected a tuple") };
+                                        let sway::TypeName::Tuple { ref type_names } = event_variant.type_name else { panic!("Expected a tuple") };
 
-                                    let coerced: Vec<sway::Expression> = arguments
-                                        .iter_mut().zip(arguments_types.iter_mut().zip(type_names))
-                                        .map(|(expr, (from_type_name, to_type_name))| {                                        
-                                            coerce_expression(expr, from_type_name, to_type_name).unwrap()
-                                        })
-                                        .collect();
-                                    
-                                    sway::Expression::Tuple(coerced)
-                                },
-                            ]))),
-                        ])
-                    }],
-                },
-            )));
+                                        let coerced: Vec<sway::Expression> = arguments
+                                            .iter_mut().zip(arguments_types.iter_mut().zip(type_names))
+                                            .map(|(expr, (from_type_name, to_type_name))| {                                        
+                                                coerce_expression(expr, from_type_name, to_type_name).unwrap()
+                                            })
+                                            .collect();
+                                        
+                                        sway::Expression::Tuple(coerced)
+                                    },
+                                ]))),
+                            ])
+                        }],
+                    },
+                )));
+            }
+
+            //
+            // TODO: Check module's use statements for external events
+            //
+
+            todo!(
+                "Check module's use statements for external event `{event_variant_name}`:\n{}",
+                module.borrow().uses.iter().map(|x| format!("    {x}\n")).collect::<Vec<_>>().join(""),
+            );
+
+            panic!(
+                "Failed to find event variant \"{event_variant_name}\" in \"{}\": {:#?}",
+                module.borrow().name, project.translated_modules.iter().map(|t| {
+                    t.borrow().events_enums.iter().map(|e| {
+                        format!("{} : {}", e.0.borrow().name,
+                        e.0.borrow().variants.iter().map(|v| v.name.clone()).collect::<Vec<_>>().join(", "))
+                    }).collect::<Vec<_>>().join(";\n")
+                }).collect::<Vec<_>>().join(""),
+            )
         }
 
         _ => panic!(
