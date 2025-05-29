@@ -33,8 +33,13 @@ pub fn translate_assignment_expression(
 
     let rhs_type_name = module.borrow_mut().get_expression_type(scope, &rhs)?;
 
-    let (variable, mut expression) =
-        translate_variable_access_expression(project, module.clone(), scope, lhs)?;
+    let Some(TranslatedVariableAccess {
+        variable,
+        mut expression,
+    }) = translate_variable_access_expression(project, module.clone(), scope, lhs)?
+    else {
+        panic!("Failed to translate variable access expression: {}", lhs)
+    };
 
     if let Some(variable) = variable {
         return create_assignment_expression(

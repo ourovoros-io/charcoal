@@ -30,8 +30,16 @@ pub fn translate_array_subscript_expression(
     // Writes are handled when translating assignment expressions.
     //
 
-    let (variable, expression) =
-        translate_variable_access_expression(project, module.clone(), scope, expression)?;
+    let Some(TranslatedVariableAccess {
+        variable,
+        expression,
+    }) = translate_variable_access_expression(project, module.clone(), scope, expression)?
+    else {
+        panic!(
+            "Failed to translate variable access expression: {}",
+            expression
+        )
+    };
 
     if variable.is_none() {
         return Ok(expression);

@@ -52,9 +52,8 @@ pub fn translate_member_access_function_call(
                         module.clone(),
                         scope,
                         container,
-                    )
-                    .ok()
-                    .map(|(v, _)| v);
+                    )?
+                    .map(|v| v.variable);
 
                     let mut container = translate_expression(
                         project,
@@ -181,9 +180,8 @@ pub fn translate_function_call_block_member_access(
         module.clone(),
         scope,
         container,
-    )
-    .ok()
-    .map(|(v, _)| v);
+    )?
+    .map(|v| v.variable);
 
     let mut container = translate_expression(project, module.clone(), scope, container)?;
     let type_name = module.borrow_mut().get_expression_type(scope, &container)?;
@@ -496,9 +494,9 @@ pub fn translate_identity_member_access_function_call(
     //     }
     // }
 
-    let variable = match translate_variable_access_expression(project, module.clone(), scope, solidity_container) {
-        Ok((variable, _)) => variable,
-        Err(_) => None,
+    let variable = match translate_variable_access_expression(project, module.clone(), scope, solidity_container)? {
+        Some(TranslatedVariableAccess { variable, .. }) => variable,
+        None => None,
     };
 
     // Check if expression is a variable that had an ABI type
@@ -584,9 +582,9 @@ pub fn translate_storage_vec_member_access_function_call(
 ) -> Result<sway::Expression, Error> {
     match member.name.as_str() {
         "push" => {
-            let (variable, container_access) = match translate_variable_access_expression(project, module.clone(), scope, solidity_container) {
-                Ok((variable, expression)) => (Some(variable), Some(expression)),
-                Err(_) => (None, None),
+            let (variable, container_access) = match translate_variable_access_expression(project, module.clone(), scope, solidity_container)? {
+                Some(TranslatedVariableAccess { variable, expression }) => (Some(variable), Some(expression)),
+                None => (None, None),
             };
 
             let (Some(variable), Some(container_access)) = (variable, container_access) else {
@@ -608,9 +606,9 @@ pub fn translate_storage_vec_member_access_function_call(
         }
 
         "pop" => {
-            let (variable, container_access) = match translate_variable_access_expression(project, module.clone(), scope, solidity_container) {
-                Ok((variable, expression)) => (Some(variable), Some(expression)),
-                Err(_) => (None, None),
+            let (variable, container_access) = match translate_variable_access_expression(project, module.clone(), scope, solidity_container)? {
+                Some(TranslatedVariableAccess { variable, expression }) => (Some(variable), Some(expression)),
+                None => (None, None),
             };
 
             let (Some(variable), Some(container_access)) = (variable, container_access) else {
@@ -625,9 +623,9 @@ pub fn translate_storage_vec_member_access_function_call(
         }
 
         "remove" => {
-            let (variable, container_access) = match translate_variable_access_expression(project, module.clone(), scope, solidity_container) {
-                Ok((variable, expression)) => (Some(variable), Some(expression)),
-                Err(_) => (None, None),
+            let (variable, container_access) = match translate_variable_access_expression(project, module.clone(), scope, solidity_container)? {
+                Some(TranslatedVariableAccess { variable, expression }) => (Some(variable), Some(expression)),
+                None => (None, None),
             };
 
             let (Some(variable), Some(container_access)) = (variable, container_access) else {
@@ -663,9 +661,9 @@ pub fn translate_vec_member_access_function_call(
 ) -> Result<sway::Expression, Error> {
     match member.name.as_str() {
         "push" => {
-            let (variable, container_access) = match translate_variable_access_expression(project, module.clone(), scope, solidity_container) {
-                Ok((variable, expression)) => (Some(variable), Some(expression)),
-                Err(_) => (None, None),
+            let (variable, container_access) = match translate_variable_access_expression(project, module.clone(), scope, solidity_container)? {
+                Some(TranslatedVariableAccess { variable, expression }) => (Some(variable), Some(expression)),
+                None => (None, None),
             };
 
             let (Some(_), Some(container_access)) = (variable, container_access) else {
@@ -683,9 +681,9 @@ pub fn translate_vec_member_access_function_call(
         }
 
         "pop" => {
-            let (variable, container_access) = match translate_variable_access_expression(project, module.clone(), scope, solidity_container) {
-                Ok((variable, expression)) => (Some(variable), Some(expression)),
-                Err(_) => (None, None),
+            let (variable, container_access) = match translate_variable_access_expression(project, module.clone(), scope, solidity_container)? {
+                Some(TranslatedVariableAccess { variable, expression }) => (Some(variable), Some(expression)),
+                None => (None, None),
             };
 
             let (Some(_), Some(container_access)) = (variable, container_access) else {
@@ -696,9 +694,9 @@ pub fn translate_vec_member_access_function_call(
         }
 
         "remove" => {
-            let (variable, container_access) = match translate_variable_access_expression(project, module.clone(), scope, solidity_container) {
-                Ok((variable, expression)) => (Some(variable), Some(expression)),
-                Err(_) => (None, None),
+            let (variable, container_access) = match translate_variable_access_expression(project, module.clone(), scope, solidity_container)? {
+                Some(TranslatedVariableAccess { variable, expression }) => (Some(variable), Some(expression)),
+                None => (None, None),
             };
 
             let (Some(_), Some(container_access)) = (variable, container_access) else {

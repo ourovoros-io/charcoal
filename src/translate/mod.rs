@@ -52,6 +52,12 @@ pub struct TranslatedVariable {
     pub mutation_count: usize,
 }
 
+#[derive(Clone, Debug)]
+pub struct TranslatedVariableAccess {
+    pub variable: Option<Rc<RefCell<TranslatedVariable>>>,
+    pub expression: sway::Expression,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct TranslatedFunction {
     pub old_name: String,

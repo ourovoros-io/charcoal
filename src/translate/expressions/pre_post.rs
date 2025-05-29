@@ -57,11 +57,12 @@ pub fn translate_pre_operator_expression(
         &solidity::Expression::NumberLiteral(*loc, "1".into(), String::new(), None),
     )?);
 
-    let (variable, expression) =
-        translate_variable_access_expression(project, module.clone(), scope, x)?;
-
-    let Some(variable) = variable else {
-        panic!("Variable not found: {}", sway::TabbedDisplayer(&expression));
+    let Some(TranslatedVariableAccess {
+        variable: Some(variable),
+        expression,
+    }) = translate_variable_access_expression(project, module.clone(), scope, x)?
+    else {
+        panic!("Variable not found: {}", x);
     };
 
     let mut variable = variable.borrow_mut();
@@ -91,13 +92,14 @@ pub fn translate_post_operator_expression(
         &solidity::Expression::NumberLiteral(*loc, "1".into(), String::new(), None),
     )?);
 
-    let (variable, expression) =
-        translate_variable_access_expression(project, module.clone(), scope, x)?;
-    if variable.is_none() {
-        panic!("Variable not found: {}", sway::TabbedDisplayer(&expression));
-    }
+    let Some(TranslatedVariableAccess {
+        variable: Some(variable),
+        expression,
+    }) = translate_variable_access_expression(project, module.clone(), scope, x)?
+    else {
+        panic!("Variable not found: {}", x);
+    };
 
-    let variable = variable.unwrap();
     let mut variable = variable.borrow_mut();
 
     variable.read_count += 1;
