@@ -76,7 +76,7 @@ pub fn translate_state_variable(
         //         .borrow()
         //         .contracts
         //         .iter()
-        //         .any(|contract| contract.name == *name)
+        //         .any(|contract| contract.signature.to_string() == *name)
         // }) {
         //     project.translate(Some(name), &module.path).unwrap();
         // }

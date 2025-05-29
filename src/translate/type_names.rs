@@ -31,7 +31,7 @@ pub fn translate_return_type_name(
                         .borrow()
                         .contracts
                         .iter()
-                        .any(|contract| contract.name == *name)
+                        .any(|contract| contract.signature.to_string() == *name)
                 }) {
                     return sway::TypeName::Identifier {
                         name: "Identity".into(),

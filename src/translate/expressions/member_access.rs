@@ -559,7 +559,7 @@ pub fn translate_member_access_expression(
                                 .borrow()
                                 .contracts
                                 .iter()
-                                .any(|contract| contract.name == *name)
+                                .any(|contract| contract.signature.to_string() == *name)
                         })
                     {
                         if external_definition.borrow().functions.iter().any(|f| {

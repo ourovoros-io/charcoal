@@ -132,7 +132,7 @@ pub fn translate_function_declaration(
                 .borrow()
                 .contracts
                 .iter()
-                .any(|contract| contract.name == old_name)
+                .any(|contract| contract.signature.to_string() == old_name)
         }) {
             let prefix = translate_naming_convention(old_name.as_str(), Case::Snake);
             let name = format!("{prefix}_constructor");
@@ -186,7 +186,7 @@ pub fn translate_function_declaration(
                     .borrow()
                     .contracts
                     .iter()
-                    .any(|contract| contract.name == *name)
+                    .any(|contract| contract.signature.to_string() == *name)
             }) {
                 type_name = sway::TypeName::Identifier {
                     name: "Identity".into(),
@@ -741,7 +741,7 @@ pub fn translate_function_definition(
                     .borrow()
                     .contracts
                     .iter()
-                    .any(|contract| contract.name == *name)
+                    .any(|contract| contract.signature.to_string() == *name)
             }) {
                 type_name = sway::TypeName::Identifier {
                     name: "Identity".into(),
@@ -904,7 +904,7 @@ pub fn translate_function_definition(
                     .borrow()
                     .contracts
                     .iter()
-                    .any(|contract| contract.name == *name)
+                    .any(|contract| contract.signature.to_string() == *name)
             }) {
                 // TODO:
                 // for entry in external_definition.uses.iter() {
@@ -967,7 +967,7 @@ pub fn translate_function_definition(
                     .borrow()
                     .contracts
                     .iter()
-                    .any(|contract| contract.name == *name)
+                    .any(|contract| contract.signature.to_string() == *name)
             }) {
                 abi_type_name = Some(type_name.clone());
 

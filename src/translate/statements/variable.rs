@@ -31,7 +31,7 @@ pub fn translate_variable_definition_statement(
     } = &type_name
     {
         if project.translated_modules.iter().any(|module| {
-            module.borrow().contracts.iter().any(|contract| contract.name == *name)
+            module.borrow().contracts.iter().any(|contract| contract.signature.to_string() == *name)
         }) {
             abi_type_name = Some(type_name.clone());
 

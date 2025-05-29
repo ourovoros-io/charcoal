@@ -242,7 +242,7 @@ pub struct TranslatedModule {
     pub storage: Option<sway::Storage>,
     pub modifiers: Vec<TranslatedModifier>,
     pub functions: Vec<TranslatedItem<sway::Function>>,
-    pub contracts: Vec<TranslatedContract>,
+    pub contracts: Vec<TranslatedItem<TranslatedContract>>,
     pub impls: Vec<sway::Impl>,
 
     pub function_name_counts: HashMap<String, usize>,
@@ -252,7 +252,6 @@ pub struct TranslatedModule {
 
     pub storage_fields_name_counts: HashMap<String, usize>,
     pub storage_fields_names: HashMap<String, String>,
-    pub contract_names: Vec<String>,
 }
 
 impl TranslatedModule {
@@ -2666,6 +2665,8 @@ impl TranslatedModule {
 
                 (name, None) => {
                     for contract in self.contracts.iter() {
+                        let contract = contract.implementation.as_ref().unwrap();
+                        
                         if contract.abi.name == name {
                             if let Some(function_definition) = contract
                                 .abi

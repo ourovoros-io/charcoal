@@ -3,113 +3,11 @@ use solang_parser::pt as solidity;
 use std::{cell::RefCell, rc::Rc};
 
 #[inline]
-pub fn translate_using_directive(
-    project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
-    using_directive: &solidity::Using,
-) -> Result<(), Error> {
-    let for_type = using_directive
-        .ty
-        .as_ref()
-        .map(|t| translate_type_name(project, module.clone(), t, false, false))
-        .map_or(Ok(None), |t| Ok(Some(t)))?;
-
-    match &using_directive.list {
-        solidity::UsingList::Library(using_library) => {
-            let library_name = using_library
-                .identifiers
-                .iter()
-                .map(|i| i.name.clone())
-                .collect::<Vec<_>>()
-                .join(".");
-
-            if library_name == module.borrow().name {
-                // Add a self-referential using directive to the current definition
-                module
-                    .borrow_mut()
-                    .using_directives
-                    .push(TranslatedUsingDirective {
-                        library_name,
-                        for_type,
-                        functions: vec![],
-                    });
-
-                return Ok(());
-            }
-
-            // Find the translated library definition
-            let Some(library_definition) = project
-                .translated_modules
-                .iter()
-                .find(|d| d.borrow().name == library_name)
-            else {
-                panic!(
-                    "Failed to find translated library: \"{library_name}\"; from {}",
-                    match project.loc_to_line_and_column(module.clone(), &using_directive.loc) {
-                        Some((line, col)) => format!(
-                            "{}:{}:{}: ",
-                            module.borrow().path.to_string_lossy(),
-                            line,
-                            col
-                        ),
-                        None => format!("{}: ", module.borrow().path.to_string_lossy()),
-                    },
-                )
-            };
-
-            let mut translated_using_directive = TranslatedUsingDirective {
-                library_name,
-                for_type,
-                functions: vec![],
-            };
-
-            // Collect all functions that support the `for_type`
-            for function in library_definition.borrow().functions.iter() {
-                // If we're using the library for a specific type, ensure the first function parameter matches that type
-                if translated_using_directive.for_type.is_some()
-                    && translated_using_directive.for_type
-                        != function
-                            .implementation
-                            .as_ref()
-                            .unwrap()
-                            .parameters
-                            .entries
-                            .first()
-                            .and_then(|p| p.type_name.clone())
-                {
-                    continue;
-                }
-
-                // Add the function to the translated using directive so we know where it came from
-                translated_using_directive
-                    .functions
-                    .push(function.implementation.as_ref().unwrap().name.clone());
-            }
-
-            // Add the using directive to the current definition
-            module
-                .borrow_mut()
-                .using_directives
-                .push(translated_using_directive);
-        }
-
-        solidity::UsingList::Functions(_) => todo!(
-            "using directive function list: {}",
-            using_directive.to_string()
-        ),
-
-        solidity::UsingList::Error => panic!("Failed to parse using directive"),
-    }
-
-    Ok(())
-}
-
-#[inline]
 pub fn translate_contract_definition(
     project: &mut Project,
     module: Rc<RefCell<TranslatedModule>>,
     contract_definition: &solidity::ContractDefinition,
-) -> Result<(), Error> {
+) -> Result<TranslatedContract, Error> {
     // Translate contract using directives
     for part in contract_definition.parts.iter() {
         let solidity::ContractPart::Using(using_directive) = part else {
@@ -120,6 +18,7 @@ pub fn translate_contract_definition(
 
     // Collect the signatures of the contract type definitions
     let mut type_definitions = vec![];
+    let type_definitions_index = module.borrow().type_definitions.len();
 
     for part in contract_definition.parts.iter() {
         let solidity::ContractPart::TypeDefinition(type_definition) = part else {
@@ -139,6 +38,7 @@ pub fn translate_contract_definition(
 
     // Collect the signatures of the contract enum definitions
     let mut enum_definitions = vec![];
+    let enums_index = module.borrow().enums.len();
 
     for part in contract_definition.parts.iter() {
         let solidity::ContractPart::EnumDefinition(enum_definition) = part else {
@@ -158,6 +58,7 @@ pub fn translate_contract_definition(
 
     // Collect the signatures of the contract struct definitions
     let mut struct_definitions = vec![];
+    let structs_index = module.borrow().structs.len();
 
     for part in contract_definition.parts.iter() {
         let solidity::ContractPart::StructDefinition(struct_definition) = part else {
@@ -177,7 +78,7 @@ pub fn translate_contract_definition(
 
     // Translate contract type definitions
     for (i, type_definition) in type_definitions.into_iter().enumerate() {
-        module.borrow_mut().type_definitions[i].implementation = Some(translate_type_definition(
+        module.borrow_mut().type_definitions[type_definitions_index + i].implementation = Some(translate_type_definition(
             project,
             module.clone(),
             type_definition.as_ref(),
@@ -186,7 +87,7 @@ pub fn translate_contract_definition(
 
     // Translate contract enum definitions
     for (i, enum_definition) in enum_definitions.into_iter().enumerate() {
-        module.borrow_mut().enums[i].implementation = Some(translate_enum_definition(
+        module.borrow_mut().enums[enums_index + i].implementation = Some(translate_enum_definition(
             project,
             module.clone(),
             enum_definition.as_ref(),
@@ -195,7 +96,7 @@ pub fn translate_contract_definition(
 
     // Translate contract struct definitions
     for (i, struct_definition) in struct_definitions.into_iter().enumerate() {
-        module.borrow_mut().structs[i].implementation = Some(translate_struct_definition(
+        module.borrow_mut().structs[structs_index + i].implementation = Some(translate_struct_definition(
             project,
             module.clone(),
             struct_definition.as_ref(),
@@ -297,6 +198,26 @@ pub fn translate_contract_definition(
         .map(|n| n.name.clone())
         .unwrap();
 
+    let mut contract = TranslatedContract::new(
+        &contract_name,
+        contract_definition.ty.clone(),
+        contract_definition
+            .base
+            .iter()
+            .map(|b| sway::TypeName::Identifier {
+                name: b
+                    .name
+                    .identifiers
+                    .iter()
+                    .map(|i| i.name.clone())
+                    .collect::<Vec<_>>()
+                    .join("."),
+                generic_parameters: None,
+            })
+            .collect::<Vec<_>>()
+            .as_slice(),
+    );
+
     // Translate each function
     for (i, function_definition) in function_definitions.into_iter().enumerate() {
         let (function, abi_fn, impl_item) = translate_function_definition(
@@ -309,60 +230,12 @@ pub fn translate_contract_definition(
         assert_eq!(abi_fn.is_some(), impl_item.is_some());
 
         if let Some(abi_fn) = abi_fn {
-            let mut module = module.borrow_mut();
-
-            let mut contract = module
-                .contracts
-                .iter_mut()
-                .find(|c| c.name == contract_name);
-
-            if contract.is_none() {
-                module.contracts.push(TranslatedContract::new(
-                    &contract_name,
-                    contract_definition.ty.clone(),
-                    contract_definition
-                        .base
-                        .iter()
-                        .map(|b| sway::TypeName::Identifier {
-                            name: b
-                                .name
-                                .identifiers
-                                .iter()
-                                .map(|i| i.name.clone())
-                                .collect::<Vec<_>>()
-                                .join("."),
-                            generic_parameters: None,
-                        })
-                        .collect::<Vec<_>>()
-                        .as_slice(),
-                ));
-
-                contract = module.contracts.last_mut();
-            }
-
-            let contract = contract.unwrap();
-
             if !contract.abi.functions.contains(&abi_fn) {
                 contract.abi.functions.push(abi_fn);
             }
         }
 
         if let Some(impl_item) = impl_item {
-            let mut module = module.borrow_mut();
-            let contract = module
-                .contracts
-                .iter_mut()
-                .find(|c| c.name == contract_name);
-
-            if contract.is_none() {
-                panic!(
-                    "Failed to find contract : {contract_name} - current contracts in module : {:#?}",
-                    module.contracts
-                );
-            }
-
-            let contract = contract.unwrap();
-
             if !contract.abi_impl.items.contains(&impl_item) {
                 contract.abi_impl.items.push(impl_item);
             }
@@ -371,6 +244,7 @@ pub fn translate_contract_definition(
         module.borrow_mut().functions[i].implementation = Some(function);
     }
 
+    // TODO:
     // // Propagate deferred initializations into the constructor
     // if !module.borrow().deferred_initializations.is_empty() {
     //     let mut assignment_statements = vec![];
@@ -583,6 +457,108 @@ pub fn translate_contract_definition(
     //             .insert(statement_index, statement);
     //     }
     // }
+
+    Ok(contract)
+}
+
+#[inline]
+pub fn translate_using_directive(
+    project: &mut Project,
+    module: Rc<RefCell<TranslatedModule>>,
+    using_directive: &solidity::Using,
+) -> Result<(), Error> {
+    let for_type = using_directive
+        .ty
+        .as_ref()
+        .map(|t| translate_type_name(project, module.clone(), t, false, false))
+        .map_or(Ok(None), |t| Ok(Some(t)))?;
+
+    match &using_directive.list {
+        solidity::UsingList::Library(using_library) => {
+            let library_name = using_library
+                .identifiers
+                .iter()
+                .map(|i| i.name.clone())
+                .collect::<Vec<_>>()
+                .join(".");
+
+            if library_name == module.borrow().name {
+                // Add a self-referential using directive to the current definition
+                module
+                    .borrow_mut()
+                    .using_directives
+                    .push(TranslatedUsingDirective {
+                        library_name,
+                        for_type,
+                        functions: vec![],
+                    });
+
+                return Ok(());
+            }
+
+            // Find the translated library definition
+            let Some(library_definition) = project
+                .translated_modules
+                .iter()
+                .find(|d| d.borrow().name == library_name)
+            else {
+                panic!(
+                    "Failed to find translated library: \"{library_name}\"; from {}",
+                    match project.loc_to_line_and_column(module.clone(), &using_directive.loc) {
+                        Some((line, col)) => format!(
+                            "{}:{}:{}: ",
+                            module.borrow().path.to_string_lossy(),
+                            line,
+                            col
+                        ),
+                        None => format!("{}: ", module.borrow().path.to_string_lossy()),
+                    },
+                )
+            };
+
+            let mut translated_using_directive = TranslatedUsingDirective {
+                library_name,
+                for_type,
+                functions: vec![],
+            };
+
+            // Collect all functions that support the `for_type`
+            for function in library_definition.borrow().functions.iter() {
+                // If we're using the library for a specific type, ensure the first function parameter matches that type
+                if translated_using_directive.for_type.is_some()
+                    && translated_using_directive.for_type
+                        != function
+                            .implementation
+                            .as_ref()
+                            .unwrap()
+                            .parameters
+                            .entries
+                            .first()
+                            .and_then(|p| p.type_name.clone())
+                {
+                    continue;
+                }
+
+                // Add the function to the translated using directive so we know where it came from
+                translated_using_directive
+                    .functions
+                    .push(function.implementation.as_ref().unwrap().name.clone());
+            }
+
+            // Add the using directive to the current definition
+            module
+                .borrow_mut()
+                .using_directives
+                .push(translated_using_directive);
+        }
+
+        solidity::UsingList::Functions(_) => todo!(
+            "using directive function list: {}",
+            using_directive.to_string()
+        ),
+
+        solidity::UsingList::Error => panic!("Failed to parse using directive"),
+    }
 
     Ok(())
 }

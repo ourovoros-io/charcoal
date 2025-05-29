@@ -328,6 +328,8 @@ pub fn translate_variable_access_expression(
             {
                 for external_module in project.translated_modules.iter() {
                     for external_definition in external_module.borrow().contracts.iter() {
+                        let external_definition = external_definition.implementation.as_ref().unwrap();
+
                         if !matches!(external_definition.kind, solidity::ContractTy::Library(_)) {
                             continue;
                         }

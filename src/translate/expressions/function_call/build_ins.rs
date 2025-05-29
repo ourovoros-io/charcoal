@@ -337,7 +337,7 @@ pub fn translate_builtin_function_call(
                             .borrow()
                             .contracts
                             .iter()
-                            .any(|contract| contract.name == old_name)
+                            .any(|contract| contract.signature.to_string() == old_name)
                     })
                 {
                     match module

@@ -112,7 +112,7 @@ pub fn translate_member_access_function_call(
 
                                     // Check to see if the type is located in an external ABI
                                     if let Some(external_definition) = project.translated_modules.iter().find(|module| {
-                                        module.borrow().contracts.iter().any(|contract| contract.name == name)
+                                        module.borrow().contracts.iter().any(|contract| contract.signature.to_string() == name)
                                     }) {
                                         if external_definition.borrow().functions.iter().any(|f| f.implementation.as_ref().unwrap().name == external_function_new_name) {
                                             //
@@ -298,7 +298,7 @@ pub fn translate_function_call_block_member_access(
 
                     // Check to see if the type is located in an external ABI
                     if let Some(external_definition) = project.translated_modules.iter().find(|module| {
-                        module.borrow().contracts.iter().any(|contract| contract.name == name)
+                        module.borrow().contracts.iter().any(|contract| contract.signature.to_string() == name)
                     }) {
                         if external_definition.borrow()
                             .functions
@@ -525,7 +525,7 @@ pub fn translate_identity_member_access_function_call(
 
     // Check to see if the type is located in an external ABI
     if let Some(external_definition) = project.translated_modules.iter().find(|module| {
-        module.borrow().contracts.iter().any(|contract| contract.name == name)
+        module.borrow().contracts.iter().any(|contract| contract.signature.to_string() == name)
     }) {
         // Check lower case names for regular functions
         if external_definition.borrow().functions.iter().any(|f| f.implementation.as_ref().unwrap().name == new_name_lower) {

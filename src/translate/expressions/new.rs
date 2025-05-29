@@ -71,7 +71,7 @@ pub fn translate_new_expression(
     match expr.as_ref() {
         solidity::Expression::Variable(solidity::Identifier {name, ..}) => {
             if project.translated_modules.iter().any(|module| {
-                module.borrow().contracts.iter().any(|contract| contract.name == *name)
+                module.borrow().contracts.iter().any(|contract| contract.signature.to_string() == *name)
             }) {
                 // new Contract(...) => /*unsupported: new Contract(...); using:*/ abi(Contract, Identity::ContractId(ContractId::from(ZERO_B256)))
 

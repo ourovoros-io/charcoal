@@ -327,23 +327,23 @@ pub fn translate_function_call_expression(
                                             .borrow()
                                             .contracts
                                             .iter()
-                                            .any(|contract| contract.name == abi_type_name_string)
+                                            .any(|contract| contract.signature.to_string() == abi_type_name_string)
                                     }) {
                                     external_definition
                                         .borrow()
                                         .contracts
                                         .iter()
-                                        .find(|contract| contract.name == abi_type_name_string)
+                                        .find(|contract| contract.signature.to_string() == abi_type_name_string)
                                         .cloned()
-                                        .map(|contract| contract.abi)
+                                        .map(|contract| contract.implementation.unwrap().abi)
                                 } else {
                                     module
                                         .borrow()
                                         .contracts
                                         .iter()
-                                        .find(|contract| contract.name == abi_type_name_string)
+                                        .find(|contract| contract.signature.to_string() == abi_type_name_string)
                                         .cloned()
-                                        .map(|contract| contract.abi)
+                                        .map(|contract| contract.implementation.unwrap().abi)
                                 };
 
                                 if let Some(abi) = found_abi {
@@ -682,7 +682,7 @@ pub fn translate_function_call_expression(
                                     };
 
                                 for contract in module.borrow().contracts.clone() {
-                                    if let Some(result) = check_abi(&contract.abi)? {
+                                    if let Some(result) = check_abi(&contract.implementation.as_ref().unwrap().abi)? {
                                         return Ok(result);
                                     }
                                 }

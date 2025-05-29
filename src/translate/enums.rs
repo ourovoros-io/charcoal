@@ -81,7 +81,7 @@ pub fn translate_event_definition(
                         .borrow()
                         .contracts
                         .iter()
-                        .any(|contract| contract.name == *name)
+                        .any(|contract| contract.signature.to_string() == *name)
                 }) {
                     sway::TypeName::Identifier {
                         name: "Identity".into(),
@@ -113,7 +113,7 @@ pub fn translate_event_definition(
                                     .borrow()
                                     .contracts
                                     .iter()
-                                    .any(|contract| contract.name == *name)
+                                    .any(|contract| contract.signature.to_string() == *name)
                             }) {
                                 sway::TypeName::Identifier {
                                     name: "Identity".into(),
