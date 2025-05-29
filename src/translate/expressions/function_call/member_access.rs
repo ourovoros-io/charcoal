@@ -114,7 +114,10 @@ pub fn translate_member_access_function_call(
                                     if let Some(external_definition) = project.translated_modules.iter().find(|module| {
                                         module.borrow().contracts.iter().any(|contract| contract.signature.to_string() == name)
                                     }) {
-                                        if external_definition.borrow().functions.iter().any(|f| f.implementation.as_ref().unwrap().name == external_function_new_name) {
+                                        if external_definition.borrow().functions.iter().any(|f| {
+                                            let sway::TypeName::Function { new_name, .. } = &f.signature else { unreachable!() };
+                                            *new_name == external_function_new_name
+                                        }) {
                                             //
                                             // TODO: Ensure a use statement for the ABI is added to the current module
                                             //
@@ -303,7 +306,10 @@ pub fn translate_function_call_block_member_access(
                         if external_definition.borrow()
                             .functions
                             .iter()
-                            .any(|f| f.implementation.as_ref().unwrap().name == external_function_new_name)
+                            .any(|f| {
+                                let sway::TypeName::Function { new_name, .. } = &f.signature else { unreachable!() };
+                                *new_name == external_function_new_name
+                            })
                         {
                             //
                             // TODO: Ensure a use statement for the ABI is added to the current module
@@ -528,7 +534,10 @@ pub fn translate_identity_member_access_function_call(
         module.borrow().contracts.iter().any(|contract| contract.signature.to_string() == name)
     }) {
         // Check lower case names for regular functions
-        if external_definition.borrow().functions.iter().any(|f| f.implementation.as_ref().unwrap().name == new_name_lower) {
+        if external_definition.borrow().functions.iter().any(|f| {
+            let sway::TypeName::Function { new_name, .. } = &f.signature else { unreachable!() };
+            *new_name == new_name_lower
+        }) {
             //
             // TODO: Ensure a use statement for the ABI is added to the current module
             //
@@ -544,7 +553,10 @@ pub fn translate_identity_member_access_function_call(
         }
 
         // Check upper case names for constant getter functions
-        if external_definition.borrow().functions.iter().any(|f| f.implementation.as_ref().unwrap().name == new_name_upper) {
+        if external_definition.borrow().functions.iter().any(|f| {
+            let sway::TypeName::Function { new_name, .. } = &f.signature else { unreachable!() };
+            *new_name == new_name_upper
+        }) {
             //
             // TODO: Ensure a use statement for the ABI is added to the current module
             //
@@ -563,8 +575,8 @@ pub fn translate_identity_member_access_function_call(
     todo!(
         "{}translate Identity member function call `{member}`: {} - {container:#?}",
         match project.loc_to_line_and_column(module.clone(), &function.loc()) {
-            Some((line, col)) => format!("{}:{}:{}: ", module.borrow().path.to_string_lossy(), line, col),
-            None => format!("{}: ", module.borrow().path.to_string_lossy()),
+            Some((line, col)) => format!("{}:{}:{}: ", project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy(), line, col),
+            None => format!("{}: ", project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy()),
         },
         sway::TabbedDisplayer(&container),
     )
@@ -1104,11 +1116,11 @@ pub fn translate_super_member_access_function_call(
         match project.loc_to_line_and_column(module.clone(), &member.loc()) {
             Some((line, col)) => format!(
                 "{}:{}:{}: ",
-                module.borrow().path.to_string_lossy(),
+                project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy(),
                 line,
                 col
             ),
-            None => format!("{}: ", module.borrow().path.to_string_lossy()),
+            None => format!("{}: ", project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy()),
         },
     )
 }

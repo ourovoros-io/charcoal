@@ -37,11 +37,11 @@ pub fn translate_import_directives(
                         {
                             Some((line, col)) => format!(
                                 "{}:{}:{}: ",
-                                module.borrow().path.to_string_lossy(),
+                                project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy(),
                                 line,
                                 col
                             ),
-                            None => format!("{}: ", module.borrow().path.to_string_lossy()),
+                            None => format!("{}: ", project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy()),
                         }
                     );
                 };

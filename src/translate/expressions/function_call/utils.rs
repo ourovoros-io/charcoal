@@ -281,10 +281,16 @@ pub fn resolve_function_call(
         }
 
         if let Some(function) = external_module.borrow().functions.iter().find(|f| {
-            let f = f.implementation.as_ref().unwrap();
-            let f_parameters = &f.parameters;
+            let sway::TypeName::Function {
+                old_name,
+                parameters: f_parameters,
+                ..
+            } = &f.signature
+            else {
+                unreachable!()
+            };
 
-            if f.old_name != function_name {
+            if *old_name != function_name {
                 return false;
             }
 
@@ -297,8 +303,13 @@ pub fn resolve_function_call(
                 .iter()
                 .all(|p| named_parameters.iter().any(|(name, _)| p.name == *name))
         }) {
-            let function = function.implementation.as_ref().unwrap();
-            let function_parameters = &function.parameters;
+            let sway::TypeName::Function {
+                parameters: function_parameters,
+                ..
+            } = &function.signature
+            else {
+                unreachable!()
+            };
 
             parameters.clear();
             parameter_types.clear();

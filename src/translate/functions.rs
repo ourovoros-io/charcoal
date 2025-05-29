@@ -283,11 +283,11 @@ pub fn translate_modifier_definition(
     //     match project.loc_to_line_and_column(module.clone(), &function_definition.loc) {
     //         Some((line, col)) => format!(
     //             "at {}:{}:{}",
-    //             module.borrow().path.to_string_lossy(),
+    //             project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy(),
     //             line,
     //             col
     //         ),
-    //         None => format!("in {}...", module.borrow().path.to_string_lossy()),
+    //         None => format!("in {}...", project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy()),
     //     },
     // );
 
@@ -699,11 +699,11 @@ pub fn translate_function_definition(
     //     match project.loc_to_line_and_column(module.clone(), &function_definition.loc) {
     //         Some((line, col)) => format!(
     //             "at {}:{}:{}",
-    //             module.borrow().path.to_string_lossy(),
+    //             project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy(),
     //             line,
     //             col
     //         ),
-    //         None => format!("in {}...", module.borrow().path.to_string_lossy()),
+    //         None => format!("in {}...", project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy()),
     //     },
     // );
 

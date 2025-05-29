@@ -425,12 +425,25 @@ pub fn translate_builtin_function_call(
                 "{}error: Failed to find function `{old_name}({})` in scope: {function}({})",
                 match project.loc_to_line_and_column(module.clone(), &function.loc()) {
                     Some((line, col)) => format!(
-                        "{}.sol:{}:{}: ",
-                        module.borrow().path.to_string_lossy(),
+                        "{}:{}:{}: ",
+                        project
+                            .options
+                            .input
+                            .join(module.borrow().path.clone())
+                            .with_extension("sol")
+                            .to_string_lossy(),
                         line,
                         col
                     ),
-                    None => format!("{}.sol: ", module.borrow().path.to_string_lossy()),
+                    None => format!(
+                        "{}: ",
+                        project
+                            .options
+                            .input
+                            .join(module.borrow().path.clone())
+                            .with_extension("sol")
+                            .to_string_lossy()
+                    ),
                 },
                 parameter_types
                     .iter()

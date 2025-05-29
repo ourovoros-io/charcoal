@@ -8,190 +8,7 @@ pub fn translate_contract_definition(
     module: Rc<RefCell<TranslatedModule>>,
     contract_definition: &solidity::ContractDefinition,
 ) -> Result<TranslatedContract, Error> {
-    // Translate contract using directives
-    for part in contract_definition.parts.iter() {
-        let solidity::ContractPart::Using(using_directive) = part else {
-            continue;
-        };
-        translate_using_directive(project, module.clone(), using_directive)?;
-    }
-
-    // Collect the signatures of the contract type definitions
-    let mut type_definitions = vec![];
-    let type_definitions_index = module.borrow().type_definitions.len();
-
-    for part in contract_definition.parts.iter() {
-        let solidity::ContractPart::TypeDefinition(type_definition) = part else {
-            continue;
-        };
-
-        module.borrow_mut().type_definitions.push(TranslatedItem {
-            signature: sway::TypeName::Identifier {
-                name: type_definition.name.name.clone(),
-                generic_parameters: None,
-            },
-            implementation: None,
-        });
-
-        type_definitions.push(type_definition.clone());
-    }
-
-    // Collect the signatures of the contract enum definitions
-    let mut enum_definitions = vec![];
-    let enums_index = module.borrow().enums.len();
-
-    for part in contract_definition.parts.iter() {
-        let solidity::ContractPart::EnumDefinition(enum_definition) = part else {
-            continue;
-        };
-
-        module.borrow_mut().enums.push(TranslatedItem {
-            signature: sway::TypeName::Identifier {
-                name: enum_definition.name.as_ref().unwrap().name.clone(),
-                generic_parameters: None,
-            },
-            implementation: None,
-        });
-
-        enum_definitions.push(enum_definition.clone());
-    }
-
-    // Collect the signatures of the contract struct definitions
-    let mut struct_definitions = vec![];
-    let structs_index = module.borrow().structs.len();
-
-    for part in contract_definition.parts.iter() {
-        let solidity::ContractPart::StructDefinition(struct_definition) = part else {
-            continue;
-        };
-
-        module.borrow_mut().structs.push(TranslatedItem {
-            signature: sway::TypeName::Identifier {
-                name: struct_definition.name.as_ref().unwrap().name.clone(),
-                generic_parameters: None,
-            },
-            implementation: None,
-        });
-
-        struct_definitions.push(struct_definition.clone());
-    }
-
-    // Translate contract type definitions
-    for (i, type_definition) in type_definitions.into_iter().enumerate() {
-        module.borrow_mut().type_definitions[type_definitions_index + i].implementation = Some(translate_type_definition(
-            project,
-            module.clone(),
-            type_definition.as_ref(),
-        )?);
-    }
-
-    // Translate contract enum definitions
-    for (i, enum_definition) in enum_definitions.into_iter().enumerate() {
-        module.borrow_mut().enums[enums_index + i].implementation = Some(translate_enum_definition(
-            project,
-            module.clone(),
-            enum_definition.as_ref(),
-        )?);
-    }
-
-    // Translate contract struct definitions
-    for (i, struct_definition) in struct_definitions.into_iter().enumerate() {
-        module.borrow_mut().structs[structs_index + i].implementation = Some(translate_struct_definition(
-            project,
-            module.clone(),
-            struct_definition.as_ref(),
-        )?);
-    }
-
-    // Translate contract event definitions
-    for part in contract_definition.parts.iter() {
-        let solidity::ContractPart::EventDefinition(event_definition) = part else {
-            continue;
-        };
-        translate_event_definition(project, module.clone(), event_definition)?;
-    }
-
-    // Translate contract error definitions
-    for part in contract_definition.parts.iter() {
-        let solidity::ContractPart::ErrorDefinition(error_definition) = part else {
-            continue;
-        };
-        translate_error_definition(project, module.clone(), error_definition)?;
-    }
-
-    // Create the abi encoding function for the events enum (if any)
-    let events_enum_name = format!("{}Event", module.borrow().name);
-
-    if let Some((events_enum, abi_encode_impl)) = module
-        .borrow()
-        .events_enums
-        .iter()
-        .find(|(e, _)| e.borrow().name == events_enum_name)
-        .cloned()
-    {
-        generate_enum_abi_encode_function(project, module.clone(), &events_enum, &abi_encode_impl)?;
-    }
-
-    // Create the abi encoding function for the errors enum (if any)
-    let errors_enum_name = format!("{}Error", module.borrow().name);
-
-    if let Some((errors_enum, abi_encode_impl)) = module
-        .borrow()
-        .errors_enums
-        .iter()
-        .find(|(e, _)| e.borrow().name == errors_enum_name)
-        .cloned()
-    {
-        generate_enum_abi_encode_function(project, module.clone(), &errors_enum, &abi_encode_impl)?;
-    }
-
-    // Translate contract state variables
-    for part in contract_definition.parts.iter() {
-        let solidity::ContractPart::VariableDefinition(variable_definition) = part else {
-            continue;
-        };
-        translate_state_variable(project, module.clone(), variable_definition)?;
-    }
-
-    // Translate each modifier
-    for part in contract_definition.parts.iter() {
-        let solidity::ContractPart::FunctionDefinition(function_definition) = part else {
-            continue;
-        };
-
-        let is_modifier = matches!(function_definition.ty, solidity::FunctionTy::Modifier);
-
-        if !is_modifier || function_definition.body.is_none() {
-            continue;
-        }
-
-        translate_modifier_definition(project, module.clone(), function_definition)?;
-    }
-
-    let mut function_definitions = vec![];
-
-    for part in contract_definition.parts.iter() {
-        let solidity::ContractPart::FunctionDefinition(function_definition) = part else {
-            continue;
-        };
-
-        let is_modifier = matches!(function_definition.ty, solidity::FunctionTy::Modifier);
-
-        if is_modifier {
-            continue;
-        }
-
-        let signature =
-            translate_function_declaration(project, module.clone(), function_definition)?.type_name;
-
-        module.borrow_mut().functions.push(TranslatedItem {
-            signature,
-            implementation: None,
-        });
-
-        function_definitions.push(function_definition.clone());
-    }
-
+    // Create a new contract
     let contract_name = contract_definition
         .name
         .as_ref()
@@ -218,6 +35,190 @@ pub fn translate_contract_definition(
             .as_slice(),
     );
 
+    // Collect each contract part into separate collections
+    let mut using_directives = vec![];
+    let mut type_definitions = vec![];
+    let mut enum_definitions = vec![];
+    let mut struct_definitions = vec![];
+    let mut event_definitions = vec![];
+    let mut error_definitions = vec![];
+    let mut function_definitions = vec![];
+    let mut variable_definitions = vec![];
+
+    for part in contract_definition.parts.iter() {
+        match part {
+            solidity::ContractPart::StructDefinition(struct_definition) => {
+                struct_definitions.push(struct_definition.clone())
+            }
+
+            solidity::ContractPart::EventDefinition(event_definition) => {
+                event_definitions.push(event_definition.clone())
+            }
+
+            solidity::ContractPart::EnumDefinition(enum_definition) => {
+                enum_definitions.push(enum_definition.clone())
+            }
+
+            solidity::ContractPart::ErrorDefinition(error_definition) => {
+                error_definitions.push(error_definition.clone())
+            }
+
+            solidity::ContractPart::VariableDefinition(variable_definition) => {
+                variable_definitions.push(variable_definition.clone())
+            }
+
+            solidity::ContractPart::FunctionDefinition(function_definition) => {
+                function_definitions.push(function_definition.clone())
+            }
+
+            solidity::ContractPart::TypeDefinition(type_definition) => {
+                type_definitions.push(type_definition.clone())
+            }
+
+            solidity::ContractPart::Annotation(_annotation) => {}
+
+            solidity::ContractPart::Using(using_directive) => {
+                using_directives.push(using_directive.clone())
+            }
+
+            solidity::ContractPart::StraySemicolon(_loc) => {}
+        }
+    }
+
+    // Translate contract using directives
+    for using_directive in using_directives {
+        translate_using_directive(project, module.clone(), &using_directive)?;
+    }
+
+    // Collect the signatures of the contract type definitions
+    let type_definitions_index = module.borrow().type_definitions.len();
+
+    for type_definition in type_definitions.iter() {
+        module.borrow_mut().type_definitions.push(TranslatedItem {
+            signature: sway::TypeName::Identifier {
+                name: type_definition.name.name.clone(),
+                generic_parameters: None,
+            },
+            implementation: None,
+        });
+    }
+
+    // Collect the signatures of the contract enum definitions
+    let enums_index = module.borrow().enums.len();
+
+    for enum_definition in enum_definitions.iter() {
+        module.borrow_mut().enums.push(TranslatedItem {
+            signature: sway::TypeName::Identifier {
+                name: enum_definition.name.as_ref().unwrap().name.clone(),
+                generic_parameters: None,
+            },
+            implementation: None,
+        });
+    }
+
+    // Collect the signatures of the contract struct definitions
+    let structs_index = module.borrow().structs.len();
+
+    for struct_definition in struct_definitions.iter() {
+        module.borrow_mut().structs.push(TranslatedItem {
+            signature: sway::TypeName::Identifier {
+                name: struct_definition.name.as_ref().unwrap().name.clone(),
+                generic_parameters: None,
+            },
+            implementation: None,
+        });
+    }
+
+    // Translate contract type definitions
+    for (i, type_definition) in type_definitions.into_iter().enumerate() {
+        module.borrow_mut().type_definitions[type_definitions_index + i].implementation = Some(
+            translate_type_definition(project, module.clone(), type_definition.as_ref())?,
+        );
+    }
+
+    // Translate contract enum definitions
+    for (i, enum_definition) in enum_definitions.into_iter().enumerate() {
+        module.borrow_mut().enums[enums_index + i].implementation = Some(
+            translate_enum_definition(project, module.clone(), enum_definition.as_ref())?,
+        );
+    }
+
+    // Translate contract struct definitions
+    for (i, struct_definition) in struct_definitions.into_iter().enumerate() {
+        module.borrow_mut().structs[structs_index + i].implementation = Some(
+            translate_struct_definition(project, module.clone(), struct_definition.as_ref())?,
+        );
+    }
+
+    // Translate contract event definitions
+    for event_definition in event_definitions {
+        translate_event_definition(project, module.clone(), &event_definition)?;
+    }
+
+    // Create the abi encoding function for the events enum (if any)
+    let events_enum_name = format!("{}Event", module.borrow().name);
+
+    if let Some((events_enum, abi_encode_impl)) = module
+        .borrow()
+        .events_enums
+        .iter()
+        .find(|(e, _)| e.borrow().name == events_enum_name)
+        .cloned()
+    {
+        generate_enum_abi_encode_function(project, module.clone(), &events_enum, &abi_encode_impl)?;
+    }
+
+    // Translate contract error definitions
+    for error_definition in error_definitions {
+        translate_error_definition(project, module.clone(), &error_definition)?;
+    }
+
+    // Create the abi encoding function for the errors enum (if any)
+    let errors_enum_name = format!("{}Error", module.borrow().name);
+
+    if let Some((errors_enum, abi_encode_impl)) = module
+        .borrow()
+        .errors_enums
+        .iter()
+        .find(|(e, _)| e.borrow().name == errors_enum_name)
+        .cloned()
+    {
+        generate_enum_abi_encode_function(project, module.clone(), &errors_enum, &abi_encode_impl)?;
+    }
+
+    // Translate contract state variables
+    for variable_definition in variable_definitions {
+        translate_state_variable(project, module.clone(), &variable_definition)?;
+    }
+
+    // Collect the signatures of the contract functions
+    let functions_index = module.borrow().functions.len();
+
+    for function_definition in function_definitions.iter() {
+        let is_modifier = matches!(function_definition.ty, solidity::FunctionTy::Modifier);
+        if is_modifier {
+            continue;
+        }
+
+        let signature =
+            translate_function_declaration(project, module.clone(), function_definition)?.type_name;
+
+        module.borrow_mut().functions.push(TranslatedItem {
+            signature,
+            implementation: None,
+        });
+    }
+
+    // Translate each modifier
+    for function_definition in function_definitions.iter() {
+        let is_modifier = matches!(function_definition.ty, solidity::FunctionTy::Modifier);
+        if !is_modifier || function_definition.body.is_none() {
+            continue;
+        }
+
+        translate_modifier_definition(project, module.clone(), function_definition)?;
+    }
+
     // Translate each function
     for (i, function_definition) in function_definitions.into_iter().enumerate() {
         let (function, abi_fn, impl_item) = translate_function_definition(
@@ -241,7 +242,7 @@ pub fn translate_contract_definition(
             }
         }
 
-        module.borrow_mut().functions[i].implementation = Some(function);
+        module.borrow_mut().functions[functions_index + i].implementation = Some(function);
     }
 
     // TODO:
@@ -507,11 +508,24 @@ pub fn translate_using_directive(
                     match project.loc_to_line_and_column(module.clone(), &using_directive.loc) {
                         Some((line, col)) => format!(
                             "{}:{}:{}: ",
-                            module.borrow().path.to_string_lossy(),
+                            project
+                                .options
+                                .input
+                                .join(module.borrow().path.clone())
+                                .with_extension("sol")
+                                .to_string_lossy(),
                             line,
                             col
                         ),
-                        None => format!("{}: ", module.borrow().path.to_string_lossy()),
+                        None => format!(
+                            "{}: ",
+                            project
+                                .options
+                                .input
+                                .join(module.borrow().path.clone())
+                                .with_extension("sol")
+                                .to_string_lossy()
+                        ),
                     },
                 )
             };
@@ -542,7 +556,10 @@ pub fn translate_using_directive(
                 // Add the function to the translated using directive so we know where it came from
                 translated_using_directive
                     .functions
-                    .push(function.implementation.as_ref().unwrap().name.clone());
+                    .push({
+                        let sway::TypeName::Function { new_name, .. } = &function.signature else { unreachable!() };
+                        new_name.clone()
+                    });
             }
 
             // Add the using directive to the current definition

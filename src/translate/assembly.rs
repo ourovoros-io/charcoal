@@ -162,11 +162,11 @@ pub fn translate_yul_assign_statement(
                 match project.loc_to_line_and_column(module.clone(), &identifiers[i].loc()) {
                     Some((line, col)) => format!(
                         "{}:{}:{}: ",
-                        module.borrow().path.to_string_lossy(),
+                        project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy(),
                         line,
                         col
                     ),
-                    None => format!("{}: ", module.borrow().path.to_string_lossy()),
+                    None => format!("{}: ", project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy()),
                 }
             );
         };
@@ -534,11 +534,11 @@ pub fn translate_yul_variable_expression(
             match project.loc_to_line_and_column(module.clone(), &expression.loc()) {
                 Some((line, col)) => format!(
                     "{}:{}:{}: ",
-                    module.borrow().path.to_string_lossy(),
+                    project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy(),
                     line,
                     col
                 ),
-                None => format!("{}: ", module.borrow().path.to_string_lossy()),
+                None => format!("{}: ", project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy()),
             }
         );
     };

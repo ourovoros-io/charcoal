@@ -775,7 +775,6 @@ impl TranslatedModule {
                     )
                 };
 
-                println!("1");
                 return Ok(sway::TypeName::Identifier {
                     name: "StorageKey".into(),
                     generic_parameters: Some(sway::GenericParameterList {
@@ -1566,11 +1565,10 @@ impl TranslatedModule {
 
         // Attempt to find a function in scope
         if let Some(function) = self.functions.iter().find(|f| {
-            let f = f.implementation.as_ref().unwrap();
-            let fn_parameters = &f.parameters;
+            let sway::TypeName::Function { new_name: fn_name, parameters: fn_parameters, .. } = &f.signature else { unreachable!() };
 
             // Ensure the function's new name matches the function call we're translating
-            if f.name != name {
+            if *fn_name != name {
                 return false;
             }
 
@@ -1666,10 +1664,10 @@ impl TranslatedModule {
 
             true
         }) {
-            let function = function.implementation.as_ref().unwrap();
+            let sway::TypeName::Function { return_type, .. } = &function.signature else { unreachable!() };
 
-            if let Some(return_type) = function.return_type.as_ref() {
-                return Ok(return_type.clone());
+            if let Some(return_type) = return_type.as_ref() {
+                return Ok(return_type.as_ref().clone());
             }
 
             return Ok(sway::TypeName::Tuple { type_names: vec![] });
@@ -2747,6 +2745,8 @@ pub fn coerce_expression(
     from_type_name: &sway::TypeName,
     to_type_name: &sway::TypeName,
 ) -> Option<sway::Expression> {
+    // println!("Coercing from `{from_type_name}` to `{to_type_name}`: {}", sway::TabbedDisplayer(expression));
+
     if from_type_name.is_compatible_with(to_type_name) {
         return Some(expression.clone());
     }

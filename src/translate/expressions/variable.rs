@@ -46,11 +46,11 @@ pub fn translate_variable_expression(
             match project.loc_to_line_and_column(module.clone(), &expression.loc()) {
                 Some((line, col)) => format!(
                     "{}:{}:{}: ",
-                    module.borrow().path.to_string_lossy(),
+                    project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy(),
                     line,
                     col
                 ),
-                None => format!("{}: ", module.borrow().path.to_string_lossy()),
+                None => format!("{}: ", project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy()),
             },
             sway::TabbedDisplayer(&expression),
         );
@@ -72,8 +72,8 @@ pub fn translate_variable_access_expression(
     // println!(
     //     "{}Translating variable access expression: {solidity_expression}",
     //     match project.loc_to_line_and_column(module.clone(), &solidity_expression.loc()) {
-    //         Some((line, col)) => format!("{}:{}:{}: ", module.borrow().path.to_string_lossy(), line, col),
-    //         None => format!("{}: ", module.borrow().path.to_string_lossy()),
+    //         Some((line, col)) => format!("{}:{}:{}: ", project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy() line, col),
+    //         None => format!("{}: ", project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy()),
     //     }
     // );
 
@@ -112,9 +112,10 @@ pub fn translate_variable_access_expression(
             }) {
                 return Ok(Some(TranslatedVariableAccess {
                     variable: None,
-                    expression: sway::Expression::create_identifier(
-                        function.implementation.as_ref().unwrap().name.clone(),
-                    ),
+                    expression: sway::Expression::create_identifier({
+                        let sway::TypeName::Function { new_name, .. } = &function.signature else { unreachable!() };
+                        new_name.clone()
+                    }),
                 }));
             } else if let Some(constant) = module
                 .borrow()
@@ -247,7 +248,7 @@ pub fn translate_variable_access_expression(
                                         ) {
                                             Some((line, col)) => format!(
                                                 "{}:{}:{}: ",
-                                                module.borrow().path.to_string_lossy(),
+                                                project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy(),
                                                 line,
                                                 col
                                             ),
@@ -268,12 +269,12 @@ pub fn translate_variable_access_expression(
                                     ) {
                                         Some((line, col)) => format!(
                                             "{}:{}:{}: ",
-                                            module.borrow().path.to_string_lossy(),
+                                            project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy(),
                                             line,
                                             col
                                         ),
                                         None =>
-                                            format!("{}: ", module.borrow().path.to_string_lossy()),
+                                            format!("{}: ", project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy()),
                                     },
                                     sway::TabbedDisplayer(&expression),
                                 ),
@@ -307,11 +308,11 @@ pub fn translate_variable_access_expression(
                             {
                                 Some((line, col)) => format!(
                                     "{}:{}:{}: ",
-                                    module.borrow().path.to_string_lossy(),
+                                    project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy(),
                                     line,
                                     col
                                 ),
-                                None => format!("{}: ", module.borrow().path.to_string_lossy()),
+                                None => format!("{}: ", project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy()),
                             },
                             sway::TabbedDisplayer(&expression),
                         ),
@@ -392,11 +393,11 @@ pub fn translate_variable_access_expression(
                 match project.loc_to_line_and_column(module.clone(), &solidity_expression.loc()) {
                     Some((line, col)) => format!(
                         "{}:{}:{}: ",
-                        module.borrow().path.to_string_lossy(),
+                        project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy(),
                         line,
                         col
                     ),
-                    None => format!("{}: ", module.borrow().path.to_string_lossy()),
+                    None => format!("{}: ", project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy()),
                 },
             )
         }

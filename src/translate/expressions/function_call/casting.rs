@@ -194,11 +194,11 @@ pub fn translate_address_type_cast_function_call(
                             {
                                 Some((line, col)) => format!(
                                     "{}:{}:{}: ",
-                                    module.borrow().path.to_string_lossy(),
+                                    project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy(),
                                     line,
                                     col
                                 ),
-                                None => format!("{}: ", module.borrow().path.to_string_lossy()),
+                                None => format!("{}: ", project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy()),
                             },
                         ),
                     },
@@ -209,11 +209,11 @@ pub fn translate_address_type_cast_function_call(
                         {
                             Some((line, col)) => format!(
                                 "{}:{}:{}: ",
-                                module.borrow().path.to_string_lossy(),
+                                project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy(),
                                 line,
                                 col
                             ),
-                            None => format!("{}: ", module.borrow().path.to_string_lossy()),
+                            None => format!("{}: ", project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy()),
                         },
                     ),
                 },
@@ -223,11 +223,11 @@ pub fn translate_address_type_cast_function_call(
                     match project.loc_to_line_and_column(module.clone(), &argument.loc()) {
                         Some((line, col)) => format!(
                             "{}:{}:{}: ",
-                            module.borrow().path.to_string_lossy(),
+                            project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy(),
                             line,
                             col
                         ),
-                        None => format!("{}: ", module.borrow().path.to_string_lossy()),
+                        None => format!("{}: ", project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy()),
                     },
                 ),
             }
@@ -708,11 +708,11 @@ pub fn translate_uint_types_cast_function_call(
                 match project.loc_to_line_and_column(module.clone(), &argument.loc()) {
                     Some((line, col)) => format!(
                         "{}:{}:{}: ",
-                        module.borrow().path.to_string_lossy(),
+                        project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy(),
                         line,
                         col
                     ),
-                    None => format!("{}: ", module.borrow().path.to_string_lossy()),
+                    None => format!("{}: ", project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy()),
                 },
             ),
         },
@@ -1055,11 +1055,11 @@ pub fn translate_bytes_type_cast_function_call(
                 match project.loc_to_line_and_column(module.clone(), &function.loc()) {
                     Some((line, col)) => format!(
                         "{}:{}:{}: ",
-                        module.borrow().path.to_string_lossy(),
+                        project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy(),
                         line,
                         col
                     ),
-                    None => format!("{}: ", module.borrow().path.to_string_lossy()),
+                    None => format!("{}: ", project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy()),
                 },
             ),
         },
