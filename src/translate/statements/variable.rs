@@ -30,9 +30,7 @@ pub fn translate_variable_definition_statement(
         generic_parameters: None,
     } = &type_name
     {
-        if project.translated_modules.iter().any(|module| {
-            module.borrow().contracts.iter().any(|contract| contract.signature.to_string() == *name)
-        }) {
+        if project.find_module_with_contract(&name).is_some() {
             abi_type_name = Some(type_name.clone());
 
             type_name = sway::TypeName::Identifier {

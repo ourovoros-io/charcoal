@@ -111,9 +111,7 @@ pub fn translate_member_access_function_call(
                                     }
 
                                     // Check to see if the type is located in an external ABI
-                                    if let Some(external_definition) = project.translated_modules.iter().find(|module| {
-                                        module.borrow().contracts.iter().any(|contract| contract.signature.to_string() == name)
-                                    }) {
+                                    if let Some(external_definition) = project.find_module_with_contract(&name) {
                                         if external_definition.borrow().functions.iter().any(|f| {
                                             let sway::TypeName::Function { new_name, .. } = &f.signature else { unreachable!() };
                                             *new_name == external_function_new_name
@@ -300,9 +298,7 @@ pub fn translate_function_call_block_member_access(
                     }
 
                     // Check to see if the type is located in an external ABI
-                    if let Some(external_definition) = project.translated_modules.iter().find(|module| {
-                        module.borrow().contracts.iter().any(|contract| contract.signature.to_string() == name)
-                    }) {
+                    if let Some(external_definition) = project.find_module_with_contract(&name) {
                         if external_definition.borrow()
                             .functions
                             .iter()
@@ -459,9 +455,11 @@ pub fn translate_identity_member_access_function_call(
     // TODO
     // Check using directives for Identity-specific function
     // for using_directive in module.using_directives.iter() {
-    //     let Some(external_definition) = project.translated_modules.iter().find(|d| {
-    //         d.name == using_directive.library_name && matches!(d.kind.as_ref().unwrap(), solidity::ContractTy::Library(_))
-    //     }).cloned() else { continue };
+    //     let Some(external_definition) =
+    //         project.find_module_with_contract(&using_directive.library_name).cloned()
+    //     else {
+    //         continue;
+    //     };
 
     //     if let Some(for_type_name) = &using_directive.for_type {
     //         if !type_name.is_identity() && for_type_name != type_name {
@@ -530,9 +528,7 @@ pub fn translate_identity_member_access_function_call(
     }
 
     // Check to see if the type is located in an external ABI
-    if let Some(external_definition) = project.translated_modules.iter().find(|module| {
-        module.borrow().contracts.iter().any(|contract| contract.signature.to_string() == name)
-    }) {
+    if let Some(external_definition) = project.find_module_with_contract(&name) {
         // Check lower case names for regular functions
         if external_definition.borrow().functions.iter().any(|f| {
             let sway::TypeName::Function { new_name, .. } = &f.signature else { unreachable!() };

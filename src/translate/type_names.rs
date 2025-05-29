@@ -26,13 +26,7 @@ pub fn translate_return_type_name(
                 generic_parameters: None,
             } = &type_name
             {
-                if project.translated_modules.iter().any(|module| {
-                    module
-                        .borrow()
-                        .contracts
-                        .iter()
-                        .any(|contract| contract.signature.to_string() == *name)
-                }) {
+                if project.find_module_with_contract(&name).is_some() {
                     return sway::TypeName::Identifier {
                         name: "Identity".into(),
                         generic_parameters: None,

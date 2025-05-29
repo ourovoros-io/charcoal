@@ -66,32 +66,13 @@ pub fn translate_state_variable(
         generic_parameters: None,
     } = &variable_type_name
     {
-        //
-        // TODO:
-        // Check if type is a contract that hasn't been defined yet
-        //
-
-        // if !project.translated_modules.iter().any(|module| {
-        //     module
-        //         .borrow()
-        //         .contracts
-        //         .iter()
-        //         .any(|contract| contract.signature.to_string() == *name)
-        // }) {
-        //     project.translate(Some(name), &module.path).unwrap();
-        // }
-
-        if let Some(external_definition) = project.find_module_with_contract(name) {
+        if project.find_module_with_contract(name.as_str()).is_some() {
             // TODO:
             // for entry in external_definition.uses.iter() {
             //     if !module.uses.contains(entry) {
             //         module.uses.push(entry.clone());
             //     }
             // }
-
-            //
-            // TODO: keep track of this
-            //
 
             abi_type_name = Some(variable_type_name.clone());
 

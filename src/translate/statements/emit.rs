@@ -168,13 +168,8 @@ pub fn translate_emit_statement(
             }
 
             panic!(
-                "Failed to find event variant \"{event_variant_name}\" in \"{}\": {:#?}",
-                module.borrow().name, project.translated_modules.iter().map(|t| {
-                    t.borrow().events_enums.iter().map(|e| {
-                        format!("{} : {}", e.0.borrow().name,
-                        e.0.borrow().variants.iter().map(|v| v.name.clone()).collect::<Vec<_>>().join(", "))
-                    }).collect::<Vec<_>>().join(";\n")
-                }).collect::<Vec<_>>().join(""),
+                "Failed to find event variant \"{event_variant_name}\" in \"{}\"",
+                module.borrow().name,
             )
         }
 

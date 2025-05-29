@@ -327,7 +327,7 @@ pub fn translate_variable_access_expression(
             if let solidity::Expression::Variable(solidity::Identifier { name, .. }) =
                 container.as_ref()
             {
-                for external_module in project.translated_modules.iter() {
+                fn check_module(name: &str, external_module: &Rc<RefCell<TranslatedModule>>) -> bool {
                     for external_definition in external_module.borrow().contracts.iter() {
                         let external_definition = external_definition.implementation.as_ref().unwrap();
 
@@ -335,10 +335,24 @@ pub fn translate_variable_access_expression(
                             continue;
                         }
 
-                        if external_definition.name != *name {
+                        if external_definition.name != name {
                             continue;
                         }
 
+                        return true;
+                    }
+
+                    for submodule in external_module.borrow().submodules.iter() {
+                        if check_module(name, submodule) {
+                            return true;
+                        }
+                    }
+
+                    false
+                }
+
+                for external_module in project.translated_modules.iter() {
+                    if check_module(name, &external_module) {
                         let new_name = translate_naming_convention(&member.name, Case::Snake);
 
                         return Ok(Some(TranslatedVariableAccess {

@@ -127,13 +127,7 @@ pub fn translate_function_declaration(
             .unwrap_or_else(|| Ok(vec![]))?;
 
         // Check to see if base is a constructor call
-        if project.translated_modules.iter().any(|module| {
-            module
-                .borrow()
-                .contracts
-                .iter()
-                .any(|contract| contract.signature.to_string() == old_name)
-        }) {
+        if project.find_module_with_contract(old_name.as_str()).is_some() {
             let prefix = translate_naming_convention(old_name.as_str(), Case::Snake);
             let name = format!("{prefix}_constructor");
 
@@ -181,13 +175,7 @@ pub fn translate_function_declaration(
             generic_parameters: None,
         } = &type_name
         {
-            if project.translated_modules.iter().any(|module| {
-                module
-                    .borrow()
-                    .contracts
-                    .iter()
-                    .any(|contract| contract.signature.to_string() == *name)
-            }) {
+            if project.find_module_with_contract(&name).is_some() {
                 type_name = sway::TypeName::Identifier {
                     name: "Identity".into(),
                     generic_parameters: None,
@@ -736,13 +724,7 @@ pub fn translate_function_definition(
             generic_parameters: None,
         } = &type_name
         {
-            if project.translated_modules.iter().any(|module| {
-                module
-                    .borrow()
-                    .contracts
-                    .iter()
-                    .any(|contract| contract.signature.to_string() == *name)
-            }) {
+            if project.find_module_with_contract(&name).is_some() {
                 type_name = sway::TypeName::Identifier {
                     name: "Identity".into(),
                     generic_parameters: None,
@@ -899,13 +881,7 @@ pub fn translate_function_definition(
             generic_parameters: None,
         } = &type_name
         {
-            if let Some(external_definition) = project.translated_modules.iter().find(|module| {
-                module
-                    .borrow()
-                    .contracts
-                    .iter()
-                    .any(|contract| contract.signature.to_string() == *name)
-            }) {
+            if let Some(_external_definition) = project.find_module_with_contract(&name) {
                 // TODO:
                 // for entry in external_definition.uses.iter() {
                 //     if !module.uses.contains(entry) {
@@ -962,13 +938,7 @@ pub fn translate_function_definition(
             generic_parameters: None,
         } = &type_name
         {
-            if project.translated_modules.iter().any(|module| {
-                module
-                    .borrow()
-                    .contracts
-                    .iter()
-                    .any(|contract| contract.signature.to_string() == *name)
-            }) {
+            if project.find_module_with_contract(&name).is_some() {
                 abi_type_name = Some(type_name.clone());
 
                 type_name = sway::TypeName::Identifier {

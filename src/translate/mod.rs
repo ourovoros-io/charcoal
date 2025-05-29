@@ -793,7 +793,6 @@ impl TranslatedModule {
         if let Some(bits) = container_type.int_bits() {
             match member_access.member.as_str() {
                 "underlying" => {
-                    println!("2");
                     return Ok(sway::TypeName::Identifier {
                         name: match bits {
                             8 => "u8",
@@ -833,7 +832,6 @@ impl TranslatedModule {
                     .iter()
                     .find(|f| f.name == member_access.member)
                 {
-                    println!("3");
                     return Ok(field.type_name.clone());
                 }
             }

@@ -553,15 +553,7 @@ pub fn translate_member_access_expression(
                         // }
                     }
 
-                    if let Some(external_definition) =
-                        project.translated_modules.iter().find(|module| {
-                            module
-                                .borrow()
-                                .contracts
-                                .iter()
-                                .any(|contract| contract.signature.to_string() == *name)
-                        })
-                    {
+                    if let Some(external_definition) = project.find_module_with_contract(&name) {
                         if external_definition.borrow().functions.iter().any(|f| {
                             let sway::TypeName::Function { old_name, .. } = &f.signature else {
                                 unreachable!()
@@ -761,11 +753,24 @@ pub fn translate_member_access_expression(
         match project.loc_to_line_and_column(module.clone(), &expression.loc()) {
             Some((line, col)) => format!(
                 "{}:{}:{}: ",
-                project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy(),
+                project
+                    .options
+                    .input
+                    .join(module.borrow().path.clone())
+                    .with_extension("sol")
+                    .to_string_lossy(),
                 line,
                 col
             ),
-            None => format!("{}: ", project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy()),
+            None => format!(
+                "{}: ",
+                project
+                    .options
+                    .input
+                    .join(module.borrow().path.clone())
+                    .with_extension("sol")
+                    .to_string_lossy()
+            ),
         },
     )
 }

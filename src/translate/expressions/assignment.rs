@@ -225,13 +225,12 @@ pub fn create_assignment_expression(
                 true
             }) {
                 let struct_definition = struct_definition.implementation.as_ref().unwrap().borrow();
+                
                 let field = struct_definition
                     .fields
                     .iter()
                     .find(|f| f.name == member_access.member)
                     .unwrap();
-
-                let expression = member_access.expression.clone();
 
                 // Non-storage struct field assignment
                 //   blah.field = value;

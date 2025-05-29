@@ -242,44 +242,38 @@ pub fn translate_function_call_expression(
                             }
                         }
 
-                        // TODO
                         // Check if function is contained in an external definition
-                        // if let Some(external_definition) = project
-                        //     .translated_modules
-                        //     .iter()
-                        //     .find(|x| x.name == name)
-                        //     .cloned()
-                        // {
-                        //     // Check to see if the expression is a by-value struct constructor
-                        //     if let Some(result) = resolve_struct_constructor(
-                        //         project,
-                        //         module.clone(),
-                        //         scope,
-                        //         external_definition.structs.clone().as_slice(),
-                        //         member.name.as_str(),
-                        //         named_arguments,
-                        //         parameters.clone(),
-                        //         parameter_types.clone(),
-                        //     )? {
-                        //         return Ok(result);
-                        //     }
+                        if let Some(external_definition) = project.find_module_with_contract(&name) {
+                            // Check to see if the expression is a by-value struct constructor
+                            if let Some(result) = resolve_struct_constructor(
+                                project,
+                                module.clone(),
+                                scope,
+                                external_definition.borrow().structs.clone().as_slice(),
+                                member.name.as_str(),
+                                named_arguments,
+                                parameters.clone(),
+                                parameter_types.clone(),
+                            )? {
+                                return Ok(result);
+                            }
 
-                        //     // Try to resolve the function call
-                        //     if let Some(result) = resolve_function_call(
-                        //         project,
-                        //         module.clone(),
-                        //         scope,
-                        //         &external_definition.toplevel_scope,
-                        //         member.name.as_str(),
-                        //         named_arguments,
-                        //         parameters.clone(),
-                        //         parameter_types.clone(),
-                        //     )? {
-                        //         return Ok(result);
-                        //     }
-                        // }
+                            // Try to resolve the function call
+                            if let Some(result) = resolve_function_call(
+                                project,
+                                module.clone(),
+                                scope,
+                                external_definition.clone(),
+                                member.name.as_str(),
+                                named_arguments,
+                                parameters.clone(),
+                                parameter_types.clone(),
+                            )? {
+                                return Ok(result);
+                            }
+                        }
 
-                        // TODO
+                        // TODO: is this still necessary?
                         // Check if function is contained in the current contract (self-referential: This.func())
                         // if name == module.borrow().name {
                         //     // Check to see if the expression is a by-value struct constructor
@@ -301,7 +295,7 @@ pub fn translate_function_call_expression(
                         //         project,
                         //         module.clone(),
                         //         scope,
-                        //         &module.borrow().toplevel_scope.clone(),
+                        //         module.clone(),
                         //         member.name.as_str(),
                         //         named_arguments,
                         //         parameters.clone(),
@@ -314,6 +308,7 @@ pub fn translate_function_call_expression(
                         let variable = scope
                             .borrow()
                             .find_variable(|v| v.borrow().old_name == name);
+
                         if let Some(variable) = variable {
                             // Check if variable is an abi type
                             let abi_type_name = variable.borrow().abi_type_name.clone();
@@ -322,18 +317,15 @@ pub fn translate_function_call_expression(
                                 let abi_type_name_string = abi_type_name.to_string();
 
                                 let found_abi = if let Some(external_definition) =
-                                    project.translated_modules.iter().find(|module| {
-                                        module
-                                            .borrow()
-                                            .contracts
-                                            .iter()
-                                            .any(|contract| contract.signature.to_string() == abi_type_name_string)
-                                    }) {
+                                    project.find_module_with_contract(&abi_type_name_string)
+                                {
                                     external_definition
                                         .borrow()
                                         .contracts
                                         .iter()
-                                        .find(|contract| contract.signature.to_string() == abi_type_name_string)
+                                        .find(|contract| {
+                                            contract.signature.to_string() == abi_type_name_string
+                                        })
                                         .cloned()
                                         .map(|contract| contract.implementation.unwrap().abi)
                                 } else {
@@ -341,7 +333,9 @@ pub fn translate_function_call_expression(
                                         .borrow()
                                         .contracts
                                         .iter()
-                                        .find(|contract| contract.signature.to_string() == abi_type_name_string)
+                                        .find(|contract| {
+                                            contract.signature.to_string() == abi_type_name_string
+                                        })
                                         .cloned()
                                         .map(|contract| contract.implementation.unwrap().abi)
                                 };
@@ -549,10 +543,7 @@ pub fn translate_function_call_expression(
                                     // let external_scope = if matches!(module.borrow().kind, Some(solidity::ContractTy::Library(_))) && using_directive.library_name == module.borrow().name {
                                     //     module.borrow().toplevel_scope.clone()
                                     // } else {
-                                    //     match project.translated_modules.iter()
-                                    //     .find(|d| {
-                                    //         d.name == using_directive.library_name && matches!(d.kind.as_ref().unwrap(), solidity::ContractTy::Library(_))
-                                    //     })
+                                    //     match project.find_module_with_contract(&using_directive.library_name)
                                     //     .map(|d| d.toplevel_scope.clone()) {
                                     //         Some(s) => s,
                                     //         None => continue,
@@ -682,7 +673,9 @@ pub fn translate_function_call_expression(
                                     };
 
                                 for contract in module.borrow().contracts.clone() {
-                                    if let Some(result) = check_abi(&contract.implementation.as_ref().unwrap().abi)? {
+                                    if let Some(result) =
+                                        check_abi(&contract.implementation.as_ref().unwrap().abi)?
+                                    {
                                         return Ok(result);
                                     }
                                 }
@@ -694,12 +687,24 @@ pub fn translate_function_call_expression(
                                     {
                                         Some((line, col)) => format!(
                                             "{}:{}:{}: ",
-                                            project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy(),
+                                            project
+                                                .options
+                                                .input
+                                                .join(module.borrow().path.clone())
+                                                .with_extension("sol")
+                                                .to_string_lossy(),
                                             line,
                                             col
                                         ),
-                                        None =>
-                                            format!("{}: ", project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy()),
+                                        None => format!(
+                                            "{}: ",
+                                            project
+                                                .options
+                                                .input
+                                                .join(module.borrow().path.clone())
+                                                .with_extension("sol")
+                                                .to_string_lossy()
+                                        ),
                                     },
                                     sway::TabbedDisplayer(&container),
                                     parameter_types
@@ -746,10 +751,7 @@ pub fn translate_function_call_expression(
                                 // let external_scope = if matches!(module.borrow().kind, Some(solidity::ContractTy::Library(_))) && using_directive.library_name == module.borrow().name {
                                 //     module.borrow().toplevel_scope.clone()
                                 // } else {
-                                //     match project.translated_modules.iter()
-                                //     .find(|d| {
-                                //         d.name == using_directive.library_name && matches!(d.kind.as_ref().unwrap(), solidity::ContractTy::Library(_))
-                                //     })
+                                //     match project.find_module_with_contract(&using_directive.library_name)
                                 //     .map(|d| d.toplevel_scope.clone()) {
                                 //         Some(s) => s,
                                 //         None => continue,
@@ -779,11 +781,24 @@ pub fn translate_function_call_expression(
                                 {
                                     Some((line, col)) => format!(
                                         "{}:{}:{}: ",
-                                        project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy(),
+                                        project
+                                            .options
+                                            .input
+                                            .join(module.borrow().path.clone())
+                                            .with_extension("sol")
+                                            .to_string_lossy(),
                                         line,
                                         col
                                     ),
-                                    None => format!("{}: ", project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy()),
+                                    None => format!(
+                                        "{}: ",
+                                        project
+                                            .options
+                                            .input
+                                            .join(module.borrow().path.clone())
+                                            .with_extension("sol")
+                                            .to_string_lossy()
+                                    ),
                                 },
                                 expression,
                                 sway::TabbedDisplayer(&container),
@@ -827,10 +842,7 @@ pub fn translate_function_call_expression(
 
                                 // TODO
                                 // Look up the definition of the using directive
-                                // let Some(external_scope) = project.translated_modules.iter()
-                                //     .find(|d| {
-                                //         d.name == using_directive.library_name && matches!(d.kind.as_ref().unwrap(), solidity::ContractTy::Library(_))
-                                //     })
+                                // let Some(external_scope) = project.find_module_with_contract(&using_directive.library_name)
                                 //     .map(|d| d.toplevel_scope.clone())
                                 // else { continue };
 
@@ -857,11 +869,24 @@ pub fn translate_function_call_expression(
                                 {
                                     Some((line, col)) => format!(
                                         "{}:{}:{}: ",
-                                        project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy(),
+                                        project
+                                            .options
+                                            .input
+                                            .join(module.borrow().path.clone())
+                                            .with_extension("sol")
+                                            .to_string_lossy(),
                                         line,
                                         col
                                     ),
-                                    None => format!("{}: ", project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy()),
+                                    None => format!(
+                                        "{}: ",
+                                        project
+                                            .options
+                                            .input
+                                            .join(module.borrow().path.clone())
+                                            .with_extension("sol")
+                                            .to_string_lossy()
+                                    ),
                                 },
                                 parameter_types
                                     .iter()
@@ -938,11 +963,24 @@ pub fn translate_function_call_block_expression(
         match project.loc_to_line_and_column(module.clone(), &function.loc()) {
             Some((line, col)) => format!(
                 "{}:{}:{}: ",
-                project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy(),
+                project
+                    .options
+                    .input
+                    .join(module.borrow().path.clone())
+                    .with_extension("sol")
+                    .to_string_lossy(),
                 line,
                 col
             ),
-            None => format!("{}: ", project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy()),
+            None => format!(
+                "{}: ",
+                project
+                    .options
+                    .input
+                    .join(module.borrow().path.clone())
+                    .with_extension("sol")
+                    .to_string_lossy()
+            ),
         },
     )
 }

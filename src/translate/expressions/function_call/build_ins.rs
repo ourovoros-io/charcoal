@@ -331,15 +331,7 @@ pub fn translate_builtin_function_call(
 
             // Check to see if the expression is an ABI cast
             if parameters.len() == 1 {
-                if let Some(external_definition) =
-                    project.translated_modules.iter().find(|module| {
-                        module
-                            .borrow()
-                            .contracts
-                            .iter()
-                            .any(|contract| contract.signature.to_string() == old_name)
-                    })
-                {
+                if let Some(_external_definition) = project.find_module_with_contract(old_name) {
                     match module
                         .borrow_mut()
                         .get_expression_type(scope, &parameters[0])?
