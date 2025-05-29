@@ -142,6 +142,7 @@ pub fn translate_state_variable(
             .get_storage_namespace()
             .fields
             .push(sway::StorageField {
+                old_name: old_name.clone(),
                 name: new_name.clone(),
                 abi_type_name,
                 type_name: variable_type_name.clone(),

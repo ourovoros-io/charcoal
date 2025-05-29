@@ -8,6 +8,8 @@ pub fn translate_contract_definition(
     module: Rc<RefCell<TranslatedModule>>,
     contract_definition: &solidity::ContractDefinition,
 ) -> Result<TranslatedContract, Error> {
+    // println!("Translating contract `{}`", contract_definition.name.as_ref().map(|x| x.name.as_str()).unwrap());
+
     // Create a new contract
     let contract_name = contract_definition
         .name
@@ -221,18 +223,23 @@ pub fn translate_contract_definition(
 
     // Translate each function
     for (i, function_definition) in function_definitions.into_iter().enumerate() {
-        let (function, abi_fn, impl_item) = translate_function_definition(
-            project,
-            module.clone(),
-            Some(contract_name.clone()),
-            &function_definition,
-        )?;
+        let is_modifier = matches!(function_definition.ty, solidity::FunctionTy::Modifier);
+        if is_modifier {
+            continue;
+        }
+
+        let (function, mut abi_fn, impl_item) =
+            translate_function_definition(project, module.clone(), &function_definition)?;
 
         assert_eq!(abi_fn.is_some(), impl_item.is_some());
 
-        if let Some(abi_fn) = abi_fn {
-            if !contract.abi.functions.contains(&abi_fn) {
-                contract.abi.functions.push(abi_fn);
+        if abi_fn.is_none() && function.body.is_none() {
+            abi_fn = Some(function.clone());
+        }
+
+        if let Some(function) = abi_fn.take() {
+            if !contract.abi.functions.contains(&function) {
+                contract.abi.functions.push(function);
             }
         }
 
@@ -240,6 +247,10 @@ pub fn translate_contract_definition(
             if !contract.abi_impl.items.contains(&impl_item) {
                 contract.abi_impl.items.push(impl_item);
             }
+        }
+
+        if abi_fn.is_none() {
+            continue;
         }
 
         module.borrow_mut().functions[functions_index + i].implementation = Some(function);
@@ -554,12 +565,12 @@ pub fn translate_using_directive(
                 }
 
                 // Add the function to the translated using directive so we know where it came from
-                translated_using_directive
-                    .functions
-                    .push({
-                        let sway::TypeName::Function { new_name, .. } = &function.signature else { unreachable!() };
-                        new_name.clone()
-                    });
+                translated_using_directive.functions.push({
+                    let sway::TypeName::Function { new_name, .. } = &function.signature else {
+                        unreachable!()
+                    };
+                    new_name.clone()
+                });
             }
 
             // Add the using directive to the current definition

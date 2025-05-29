@@ -983,7 +983,7 @@ impl Project {
             }
 
             let (function, abi_function, impl_item) =
-                translate_function_definition(self, module.clone(), None, &function_definition)?;
+                translate_function_definition(self, module.clone(), &function_definition)?;
 
             assert!(abi_function.is_none());
             assert!(impl_item.is_none());

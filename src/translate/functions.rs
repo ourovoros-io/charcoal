@@ -127,7 +127,10 @@ pub fn translate_function_declaration(
             .unwrap_or_else(|| Ok(vec![]))?;
 
         // Check to see if base is a constructor call
-        if project.find_module_with_contract(old_name.as_str()).is_some() {
+        if project
+            .find_module_with_contract(old_name.as_str())
+            .is_some()
+        {
             let prefix = translate_naming_convention(old_name.as_str(), Case::Snake);
             let name = format!("{prefix}_constructor");
 
@@ -261,7 +264,7 @@ pub fn translate_modifier_definition(
     let new_name = translate_naming_convention(old_name.as_str(), Case::Snake);
 
     // println!(
-    //     "Translating {}.{} {}",
+    //     "Translating modifier {}.{} {}",
     //     module.borrow().name,
     //     function_definition
     //         .name
@@ -271,11 +274,24 @@ pub fn translate_modifier_definition(
     //     match project.loc_to_line_and_column(module.clone(), &function_definition.loc) {
     //         Some((line, col)) => format!(
     //             "at {}:{}:{}",
-    //             project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy(),
+    //             project
+    //                 .options
+    //                 .input
+    //                 .join(module.borrow().path.clone())
+    //                 .with_extension("sol")
+    //                 .to_string_lossy(),
     //             line,
     //             col
     //         ),
-    //         None => format!("in {}...", project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy()),
+    //         None => format!(
+    //             "in {}...",
+    //             project
+    //                 .options
+    //                 .input
+    //                 .join(module.borrow().path.clone())
+    //                 .with_extension("sol")
+    //                 .to_string_lossy()
+    //         ),
     //     },
     // );
 
@@ -594,7 +610,6 @@ pub fn translate_modifier_definition(
 pub fn translate_function_definition(
     project: &mut Project,
     module: Rc<RefCell<TranslatedModule>>,
-    definition_name: Option<String>,
     function_definition: &solidity::FunctionDefinition,
 ) -> Result<
     (
@@ -604,6 +619,8 @@ pub fn translate_function_definition(
     ),
     Error,
 > {
+    assert!(!matches!(function_definition.ty, solidity::FunctionTy::Modifier));
+
     // Collect information about the function from its type
     let is_constructor = matches!(function_definition.ty, solidity::FunctionTy::Constructor);
     let is_fallback = matches!(function_definition.ty, solidity::FunctionTy::Fallback);
@@ -642,10 +659,12 @@ pub fn translate_function_definition(
             solidity::FunctionAttribute::Mutability(solidity::Mutability::Payable(_))
         )
     });
+
     let _is_virtual = function_definition
         .attributes
         .iter()
         .any(|x| matches!(x, solidity::FunctionAttribute::Virtual(_)));
+
     let is_override = function_definition
         .attributes
         .iter()
@@ -677,7 +696,7 @@ pub fn translate_function_definition(
     };
 
     // println!(
-    //     "Translating {}.{} {}",
+    //     "Translating function {}.{} {}",
     //     module.borrow().name,
     //     function_definition
     //         .name
@@ -983,6 +1002,7 @@ pub fn translate_function_definition(
             .get_storage_namespace()
             .fields
             .push(sway::StorageField {
+                old_name: String::new(),
                 name: constructor_called_variable_name.clone(),
                 type_name: sway::TypeName::Identifier {
                     name: "bool".into(),

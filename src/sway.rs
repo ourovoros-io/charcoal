@@ -1359,6 +1359,7 @@ impl TabbedDisplay for StorageNamespace {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct StorageField {
+    pub old_name: String,
     pub name: String,
     pub type_name: TypeName,
     pub abi_type_name: Option<TypeName>,
