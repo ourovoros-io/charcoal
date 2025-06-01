@@ -181,6 +181,15 @@ pub struct TranslatedItem<T> {
 }
 
 #[derive(Clone, Debug)]
+pub struct DeferredInitialization {
+    pub name: String,
+    pub is_storage: bool,
+    pub is_constant: bool,
+    pub is_configurable: bool,
+    pub value: sway::Expression,
+}
+
+#[derive(Clone, Debug)]
 pub struct TranslatedContract {
     pub name: String,
     pub kind: solidity::ContractTy,
@@ -230,6 +239,7 @@ pub struct TranslatedModule {
     pub path: PathBuf,
     pub submodules: Vec<Rc<RefCell<TranslatedModule>>>,
     pub dependencies: Vec<String>,
+
     pub uses: Vec<sway::Use>,
     pub using_directives: Vec<TranslatedUsingDirective>,
     pub type_definitions: Vec<TranslatedItem<sway::TypeDefinition>>,

@@ -189,8 +189,13 @@ pub fn translate_contract_definition(
     }
 
     // Translate contract state variables
+    let mut deferred_initializations = vec![];
+    let mut mapping_names = vec![];
+
     for variable_definition in variable_definitions {
-        translate_state_variable(project, module.clone(), &variable_definition)?;
+        let (d, m) = translate_state_variable(project, module.clone(), &variable_definition)?;
+        deferred_initializations.extend(d);
+        mapping_names.extend(m);
     }
 
     // Collect the signatures of the contract functions
@@ -256,219 +261,229 @@ pub fn translate_contract_definition(
         module.borrow_mut().functions[functions_index + i].implementation = Some(function);
     }
 
-    // TODO:
-    // // Propagate deferred initializations into the constructor
-    // if !module.borrow().deferred_initializations.is_empty() {
-    //     let mut assignment_statements = vec![];
-    //     let deferred_initializations = module.deferred_initializations.clone();
+    // Propagate deferred initializations into the constructor
+    if !deferred_initializations.is_empty() {
+        let mut assignment_statements = vec![];
+        let namespace_name = module.borrow().get_storage_namespace_name();
 
-    //     let namespace_name = module.get_storage_namespace_name();
+        // Create assignment statements for all of the deferred initializations
+        for deferred_initialization in deferred_initializations.iter().rev() {
+            let lhs = sway::Expression::create_member_access(
+                sway::Expression::create_identifier(format!("storage::{namespace_name}")),
+                &[deferred_initialization.name.as_str()],
+            );
 
-    //     // Create assignment statements for all of the deferred initializations
-    //     for deferred_initialization in deferred_initializations.iter().rev() {
-    //         let lhs = sway::Expression::create_member_access(
-    //             sway::Expression::create_identifier(format!("storage::{namespace_name}")),
-    //             &[deferred_initialization.name.as_str()],
-    //         );
+            let value_type_name = module
+                .borrow_mut()
+                .get_expression_type(&Default::default(), &deferred_initialization.value)?;
 
-    //         let value_type_name = module.get_expression_type(
-    //             &module.toplevel_scope.clone(),
-    //             &deferred_initialization.value,
-    //         )?;
-    //         let variable = module
-    //             .toplevel_scope
-    //             .borrow()
-    //             .get_variable_from_new_name(&deferred_initialization.name)
-    //             .unwrap();
+            match &deferred_initialization.value {
+                sway::Expression::Array(sway::Array { elements }) => {
+                    for element in elements {
+                        assignment_statements.push(sway::Statement::from(
+                            sway::Expression::create_function_calls(
+                                None,
+                                &[
+                                    (format!("storage::{namespace_name}").as_str(), None),
+                                    (deferred_initialization.name.as_str(), None),
+                                    ("push", Some((None, vec![element.clone()]))),
+                                ],
+                            ),
+                        ));
+                    }
+                }
 
-    //         match &deferred_initialization.value {
-    //             sway::Expression::Array(sway::Array { elements }) => {
-    //                 for element in elements {
-    //                     assignment_statements.push(sway::Statement::from(
-    //                         sway::Expression::create_function_calls(
-    //                             None,
-    //                             &[
-    //                                 (format!("storage::{namespace_name}").as_str(), None),
-    //                                 (deferred_initialization.name.as_str(), None),
-    //                                 ("push", Some((None, vec![element.clone()]))),
-    //                             ],
-    //                         ),
-    //                     ));
-    //                 }
-    //             }
+                _ => {
+                    let type_name = {
+                        let mut module = module.borrow_mut();
+                        let storage = module.get_storage_namespace();
+                        let storage_field = storage
+                            .fields
+                            .iter()
+                            .find(|x| x.name == deferred_initialization.name)
+                            .unwrap();
+                        storage_field.type_name.clone()
+                    };
 
-    //             _ => {
-    //                 let scope = module.toplevel_scope.clone();
+                    assignment_statements.push(sway::Statement::from(
+                        create_assignment_expression(
+                            project,
+                            module.clone(),
+                            &Default::default(),
+                            "=",
+                            &lhs,
+                            &Rc::new(RefCell::new(TranslatedVariable {
+                                type_name: sway::TypeName::Identifier {
+                                    name: "StorageKey".into(),
+                                    generic_parameters: Some(sway::GenericParameterList {
+                                        entries: vec![sway::GenericParameter {
+                                            type_name,
+                                            implements: None,
+                                        }],
+                                    }),
+                                },
+                                ..Default::default()
+                            })),
+                            &deferred_initialization.value,
+                            &value_type_name,
+                        )?,
+                    ));
+                }
+            }
+        }
 
-    //                 assignment_statements.push(sway::Statement::from(
-    //                     create_assignment_expression(
-    //                         project,
-    //                         module.clone(),
-    //                         &scope,
-    //                         "=",
-    //                         &lhs,
-    //                         &variable,
-    //                         &deferred_initialization.value,
-    //                         &value_type_name,
-    //                     )?,
-    //                 ));
-    //             }
-    //         }
-    //     }
+        // Create the constructor if it doesn't exist
+        if !module.borrow().functions.iter().any(|f| {
+            let sway::TypeName::Function { new_name, .. } = &f.signature else {
+                unreachable!()
+            };
+            new_name == "constructor"
+        }) {
+            let mut function = sway::Function {
+                attributes: None,
+                is_public: false,
+                old_name: String::new(),
+                name: "constructor".into(),
+                generic_parameters: None,
+                parameters: sway::ParameterList::default(),
+                return_type: None,
+                body: None,
+            };
 
-    //     let mut constructor_function = module
-    //         .functions
-    //         .iter_mut()
-    //         .find(|f| f.name == "constructor");
+            contract.abi.functions.insert(0, function.clone());
 
-    //     // Create the constructor if it doesn't exist
-    //     if constructor_function.is_none() {
-    //         let mut function = sway::Function {
-    //             attributes: None,
-    //             is_public: false,
-    //             old_name: String::new(),
-    //             name: "constructor".into(),
-    //             generic_parameters: None,
-    //             parameters: sway::ParameterList::default(),
-    //             return_type: None,
-    //             body: None,
-    //         };
+            function.body = Some(sway::Block::default());
+            let function_body = function.body.as_mut().unwrap();
 
-    //         module.get_abi().functions.insert(0, function.clone());
+            let prefix = translate_naming_convention(contract.name.as_str(), Case::Snake);
+            let constructor_called_variable_name = translate_storage_name(
+                project,
+                module.clone(),
+                format!("{prefix}_constructor_called").as_str(),
+            );
 
-    //         function.body = Some(sway::Block::default());
-    //         let function_body = function.body.as_mut().unwrap();
+            // Add the `constructor_called` field to the storage block
+            module
+                .borrow_mut()
+                .get_storage_namespace()
+                .fields
+                .push(sway::StorageField {
+                    old_name: String::new(),
+                    name: constructor_called_variable_name.clone(),
+                    type_name: sway::TypeName::Identifier {
+                        name: "bool".into(),
+                        generic_parameters: None,
+                    },
+                    abi_type_name: None,
+                    value: sway::Expression::from(sway::Literal::Bool(false)),
+                });
 
-    //         let prefix = translate_naming_convention(module.name.as_str(), Case::Snake);
-    //         let constructor_called_variable_name = translate_storage_name(
-    //             project,
-    //             module.clone(),
-    //             format!("{prefix}_constructor_called").as_str(),
-    //         );
+            // Add the `constructor_called` requirement to the beginning of the function
+            // require(!storage.initialized.read(), "The Contract constructor has already been called");
+            function_body.statements.insert(
+                0,
+                sway::Statement::from(sway::Expression::create_function_calls(
+                    None,
+                    &[(
+                        "require",
+                        Some((
+                            None,
+                            vec![
+                                sway::Expression::from(sway::UnaryExpression {
+                                    operator: "!".into(),
+                                    expression: sway::Expression::create_function_calls(
+                                        None,
+                                        &[
+                                            (format!("storage::{namespace_name}").as_str(), None),
+                                            (constructor_called_variable_name.as_str(), None),
+                                            ("read", Some((None, vec![]))),
+                                        ],
+                                    ),
+                                }),
+                                sway::Expression::from(sway::Literal::String(format!(
+                                    "The {} constructor has already been called",
+                                    contract.name
+                                ))),
+                            ],
+                        )),
+                    )],
+                )),
+            );
 
-    //         // Add the `constructor_called` field to the storage block
-    //         module
-    //             .get_storage_namespace()
-    //             .fields
-    //             .push(sway::StorageField {
-    //                 name: constructor_called_variable_name.clone(),
-    //                 type_name: sway::TypeName::Identifier {
-    //                     name: "bool".into(),
-    //                     generic_parameters: None,
-    //                 },
-    //                 value: sway::Expression::from(sway::Literal::Bool(false)),
-    //             });
+            // Set the `constructor_called` storage field to `true` at the end of the function
+            // storage.initialized.write(true);
+            function_body.statements.push(sway::Statement::from(
+                sway::Expression::create_function_calls(
+                    None,
+                    &[
+                        (format!("storage::{namespace_name}").as_str(), None),
+                        (constructor_called_variable_name.as_str(), None),
+                        (
+                            "write",
+                            Some((
+                                None,
+                                vec![sway::Expression::from(sway::Literal::Bool(true))],
+                            )),
+                        ),
+                    ],
+                ),
+            ));
 
-    //         // Add the `constructor_called` requirement to the beginning of the function
-    //         // require(!storage.initialized.read(), "The Contract constructor has already been called");
-    //         function_body.statements.insert(
-    //             0,
-    //             sway::Statement::from(sway::Expression::create_function_calls(
-    //                 None,
-    //                 &[(
-    //                     "require",
-    //                     Some((
-    //                         None,
-    //                         vec![
-    //                             sway::Expression::from(sway::UnaryExpression {
-    //                                 operator: "!".into(),
-    //                                 expression: sway::Expression::create_function_calls(
-    //                                     None,
-    //                                     &[
-    //                                         (format!("storage::{namespace_name}").as_str(), None),
-    //                                         (constructor_called_variable_name.as_str(), None),
-    //                                         ("read", Some((None, vec![]))),
-    //                                     ],
-    //                                 ),
-    //                             }),
-    //                             sway::Expression::from(sway::Literal::String(format!(
-    //                                 "The {} constructor has already been called",
-    //                                 module.name
-    //                             ))),
-    //                         ],
-    //                     )),
-    //                 )],
-    //             )),
-    //         );
+            contract
+                .abi_impl
+                .items
+                .insert(0, sway::ImplItem::Function(function));
+        }
 
-    //         // Set the `constructor_called` storage field to `true` at the end of the function
-    //         // storage.initialized.write(true);
-    //         function_body.statements.push(sway::Statement::from(
-    //             sway::Expression::create_function_calls(
-    //                 None,
-    //                 &[
-    //                     (format!("storage::{namespace_name}").as_str(), None),
-    //                     (constructor_called_variable_name.as_str(), None),
-    //                     (
-    //                         "write",
-    //                         Some((
-    //                             None,
-    //                             vec![sway::Expression::from(sway::Literal::Bool(true))],
-    //                         )),
-    //                     ),
-    //                 ],
-    //             ),
-    //         ));
+        let mut module = module.borrow_mut();
+        let constructor_function = module
+            .functions
+            .iter_mut()
+            .find(|f| {
+                let sway::TypeName::Function { new_name, .. } = &f.signature else {
+                    unreachable!()
+                };
+                new_name == "constructor"
+            })
+            .map(|x| x.implementation.as_mut())
+            .flatten()
+            .unwrap();
 
-    //         module
-    //             .get_contract_impl()
-    //             .items
-    //             .insert(0, sway::ImplItem::Function(function));
-    //         constructor_function = module
-    //             .get_contract_impl()
-    //             .items
-    //             .iter_mut()
-    //             .find(|i| {
-    //                 let sway::ImplItem::Function(f) = i else {
-    //                     return false;
-    //                 };
-    //                 f.name == "constructor"
-    //             })
-    //             .map(|i| {
-    //                 let sway::ImplItem::Function(f) = i else {
-    //                     unreachable!()
-    //                 };
-    //                 f
-    //             });
-    //     }
+        if constructor_function.body.is_none() {
+            constructor_function.body = Some(sway::Block::default());
+        }
 
-    //     let constructor_function = constructor_function.unwrap();
+        let constructor_body = constructor_function.body.as_mut().unwrap();
 
-    //     if constructor_function.body.is_none() {
-    //         constructor_function.body = Some(sway::Block::default());
-    //     }
+        let mut statement_index = 0;
 
-    //     let constructor_body = constructor_function.body.as_mut().unwrap();
+        // Skip past the initial constructor requirements
+        for (i, statement) in constructor_body.statements.iter().enumerate() {
+            let sway::Statement::Expression(sway::Expression::FunctionCall(function_call)) =
+                statement
+            else {
+                statement_index = i;
+                break;
+            };
 
-    //     let mut statement_index = 0;
+            let Some(function_name) = function_call.function.as_identifier() else {
+                statement_index = i;
+                break;
+            };
 
-    //     // Skip past the initial constructor requirements
-    //     for (i, statement) in constructor_body.statements.iter().enumerate() {
-    //         let sway::Statement::Expression(sway::Expression::FunctionCall(function_call)) =
-    //             statement
-    //         else {
-    //             statement_index = i;
-    //             break;
-    //         };
+            if function_name != "require" {
+                statement_index = i;
+                break;
+            }
+        }
 
-    //         let Some(function_name) = function_call.function.as_identifier() else {
-    //             statement_index = i;
-    //             break;
-    //         };
-
-    //         if function_name != "require" {
-    //             statement_index = i;
-    //             break;
-    //         }
-    //     }
-
-    //     // Add the deferred initializations to the constructor body
-    //     for statement in assignment_statements.into_iter().rev() {
-    //         constructor_body
-    //             .statements
-    //             .insert(statement_index, statement);
-    //     }
-    // }
+        // Add the deferred initializations to the constructor body
+        for statement in assignment_statements.into_iter().rev() {
+            constructor_body
+                .statements
+                .insert(statement_index, statement);
+        }
+    }
 
     Ok(contract)
 }
