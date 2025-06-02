@@ -52,7 +52,7 @@ pub fn resolve_abi_function_call(
                     .unwrap();
 
                 let parameter = translate_expression(project, module.clone(), scope.clone(), &arg.expr)?;
-                let parameter_type = module.borrow_mut().get_expression_type(scope.clone(), &parameter)?;
+                let parameter_type = module.borrow_mut().get_expression_type(project, scope.clone(), &parameter)?;
 
                 parameters.push(parameter);
                 parameter_types.push(parameter_type);
@@ -324,7 +324,7 @@ pub fn resolve_function_call(
                     .unwrap();
 
                 let parameter = translate_expression(project, module.clone(), scope.clone(), &arg.expr)?;
-                let parameter_type = module.borrow_mut().get_expression_type(scope.clone(), &parameter)?;
+                let parameter_type = module.borrow_mut().get_expression_type(project, scope.clone(), &parameter)?;
 
                 parameters.push(parameter);
                 parameter_types.push(parameter_type);
@@ -574,7 +574,7 @@ pub fn resolve_struct_constructor(
                     let parameter =
                         translate_expression(project, module.clone(), scope.clone(), &arg.expr)?;
                     let parameter_type =
-                        module.borrow_mut().get_expression_type(scope.clone(), &parameter)?;
+                        module.borrow_mut().get_expression_type(project, scope.clone(), &parameter)?;
 
                     parameters.push(parameter);
                     parameter_types.push(parameter_type);

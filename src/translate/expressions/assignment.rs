@@ -38,7 +38,7 @@ pub fn translate_assignment_expression(
 
     let rhs_type_name = module
         .borrow_mut()
-        .get_expression_type(scope.clone(), &rhs)?;
+        .get_expression_type(project, scope.clone(), &rhs)?;
 
     let Some(TranslatedVariableAccess {
         variable,
@@ -57,9 +57,10 @@ pub fn translate_assignment_expression(
         }
     }
 
-    let expr_type_name = module
-        .borrow_mut()
-        .get_expression_type(scope.clone(), &expression)?;
+    let expr_type_name =
+        module
+            .borrow_mut()
+            .get_expression_type(project, scope.clone(), &expression)?;
 
     // HACK: struct field lookup
     if let sway::Expression::MemberAccess(member_access) = &expression {
@@ -76,7 +77,7 @@ pub fn translate_assignment_expression(
         if !is_storage_keyword {
             if let sway::TypeName::Identifier { name, .. } = module
                 .borrow_mut()
-                .get_expression_type(scope.clone(), &member_access.expression)?
+                .get_expression_type(project, scope.clone(), &member_access.expression)?
             {
                 if let Some(struct_definition) = module
                     .borrow()
@@ -113,8 +114,11 @@ pub fn translate_assignment_expression(
 
                 ("StorageMap", Some(_)) => {
                     if let sway::Expression::FunctionCall(function_call) = &expression {
-                        if let sway::Expression::MemberAccess(member_access) = &function_call.function {
-                            if member_access.member == "get" && function_call.parameters.len() == 1 {
+                        if let sway::Expression::MemberAccess(member_access) =
+                            &function_call.function
+                        {
+                            if member_access.member == "get" && function_call.parameters.len() == 1
+                            {
                                 return Ok(sway::Expression::from(sway::FunctionCall {
                                     function: sway::Expression::from(sway::MemberAccess {
                                         expression: member_access.expression.clone(),
@@ -191,7 +195,7 @@ pub fn translate_assignment_expression(
 
 #[inline]
 pub fn create_assignment_expression(
-    _project: &mut Project,
+    project: &mut Project,
     module: Rc<RefCell<TranslatedModule>>,
     scope: Rc<RefCell<TranslationScope>>,
     operator: &str,
@@ -211,19 +215,22 @@ pub fn create_assignment_expression(
         Some(variable) => variable.borrow().type_name.clone(),
         None => module
             .borrow_mut()
-            .get_expression_type(scope.clone(), expression)?,
+            .get_expression_type(project, scope.clone(), expression)?,
     };
 
-    let expr_type_name = module
-        .borrow_mut()
-        .get_expression_type(scope.clone(), expression)?;
+    let expr_type_name =
+        module
+            .borrow_mut()
+            .get_expression_type(project, scope.clone(), expression)?;
 
     // Check for assignments to fields of struct variables defined in scope
     if !type_name.is_compatible_with(&expr_type_name) {
         if let sway::Expression::MemberAccess(member_access) = expression {
-            let type_name = module
-                .borrow_mut()
-                .get_expression_type(scope.clone(), &member_access.expression)?;
+            let type_name = module.borrow_mut().get_expression_type(
+                project,
+                scope.clone(),
+                &member_access.expression,
+            )?;
 
             if let Some(struct_definition) = module.borrow().structs.iter().find(|s| {
                 let s = s.implementation.as_ref().unwrap().borrow();
@@ -285,12 +292,46 @@ pub fn create_assignment_expression(
     } = &type_name
     {
         match (name.as_str(), generic_parameters.as_ref()) {
+            ("StorageKey", Some(generic_parameters)) if generic_parameters.entries.len() == 1 => {
+                match &generic_parameters.entries[0].type_name {
+                    sway::TypeName::Identifier {
+                        name,
+                        generic_parameters,
+                    } => match (name.as_str(), generic_parameters.as_ref()) {
+                        ("StorageString", None) => {
+                            return Ok(sway::Expression::create_function_calls(
+                                Some(expression.clone()),
+                                &[(
+                                    "write_slice",
+                                    Some((
+                                        None,
+                                        vec![match operator {
+                                            "=" => rhs.clone(),
+
+                                            _ => {
+                                                todo!()
+                                            }
+                                        }],
+                                    )),
+                                )],
+                            ));
+                        }
+
+                        _ => {}
+                    },
+
+                    _ => {}
+                }
+            }
+
             ("Vec", Some(generic_parameters)) if generic_parameters.entries.len() == 1 => {
                 match &expression {
                     sway::Expression::ArrayAccess(array_access) => {
-                        let index_type = module
-                            .borrow_mut()
-                            .get_expression_type(scope.clone(), &array_access.index)?;
+                        let index_type = module.borrow_mut().get_expression_type(
+                            project,
+                            scope.clone(),
+                            &array_access.index,
+                        )?;
                         let u64_type = sway::TypeName::Identifier {
                             name: "u64".into(),
                             generic_parameters: None,
@@ -298,9 +339,10 @@ pub fn create_assignment_expression(
                         let index =
                             coerce_expression(&array_access.index, &index_type, &u64_type).unwrap();
 
-                        let rhs_type = module
-                            .borrow_mut()
-                            .get_expression_type(scope.clone(), rhs)?;
+                        let rhs_type =
+                            module
+                                .borrow_mut()
+                                .get_expression_type(project, scope.clone(), rhs)?;
                         let rhs = coerce_expression(
                             rhs,
                             &rhs_type,
@@ -439,6 +481,7 @@ pub fn create_assignment_expression(
                                     "get" if function_call.parameters.len() == 1 => {
                                         let container_type =
                                             module.borrow_mut().get_expression_type(
+                                                project,
                                                 scope.clone(),
                                                 &member_access.expression,
                                             )?;
@@ -463,6 +506,7 @@ pub fn create_assignment_expression(
                                                             let rhs_type = module
                                                                 .borrow_mut()
                                                                 .get_expression_type(
+                                                                    project,
                                                                     scope.clone(),
                                                                     rhs,
                                                                 )?;
@@ -475,13 +519,13 @@ pub fn create_assignment_expression(
                                                             .unwrap();
 
                                                             return Ok(sway::Expression::create_function_calls(
-                                                Some(member_access.expression.clone()), &[
-                                                    ("set", Some((None, vec![
-                                                        function_call.parameters[0].clone(),
-                                                        rhs.clone(),
-                                                    ]))),
-                                                ],
-                                            ));
+                                                                Some(member_access.expression.clone()), &[
+                                                                    ("set", Some((None, vec![
+                                                                        function_call.parameters[0].clone(),
+                                                                        rhs.clone(),
+                                                                    ]))),
+                                                                ],
+                                                            ));
                                                         }
 
                                                         _ => todo!(

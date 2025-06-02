@@ -57,7 +57,7 @@ pub fn translate_delete_expression(
         }
     }
 
-    let value = create_value_expression(module.clone(), scope.clone(), &type_name, None);
+    let value = create_value_expression(project, module.clone(), scope.clone(), &type_name, None);
     
     create_assignment_expression(
         project,

@@ -92,7 +92,7 @@ pub fn translate_address_type_cast_function_call(
 
         value => {
             let value = translate_expression(project, module.clone(), scope.clone(), value)?;
-            let value_type_name = module.borrow_mut().get_expression_type(scope.clone(), &value)?;
+            let value_type_name = module.borrow_mut().get_expression_type(project, scope.clone(), &value)?;
 
             match &value_type_name {
                 // No reason to cast if it's already an Identity
@@ -266,7 +266,7 @@ pub fn translate_int_types_cast_function_call(
     let value_expression = translate_expression(project, module.clone(), scope.clone(), argument)?;
     let value_type_name = module
         .borrow_mut()
-        .get_expression_type(scope.clone(), &value_expression)?;
+        .get_expression_type(project, scope.clone(), &value_expression)?;
     let value_type_name = module.borrow().get_underlying_type(&value_type_name);
 
     let create_int_try_from_unwrap_expression = |from_bits: usize,
@@ -397,7 +397,7 @@ pub fn translate_uint_types_cast_function_call(
     let value_expression = translate_expression(project, module.clone(), scope.clone(), argument)?;
     let value_type_name = module
         .borrow_mut()
-        .get_expression_type(scope.clone(), &value_expression)?;
+        .get_expression_type(project, scope.clone(), &value_expression)?;
     let value_type_name = module.borrow().get_underlying_type(&value_type_name);
 
     if value_type_name.is_int() {
@@ -807,7 +807,7 @@ pub fn translate_bytes_type_cast_function_call(
     let value_expression = translate_expression(project, module.clone(), scope.clone(), argument)?;
     let value_type_name = module
         .borrow_mut()
-        .get_expression_type(scope.clone(), &value_expression)?;
+        .get_expression_type(project, scope.clone(), &value_expression)?;
 
     match &value_type_name {
         sway::TypeName::Undefined => panic!("Undefined type name"),
@@ -1101,7 +1101,7 @@ pub fn translate_dynamic_bytes_type_cast_function_call(
     let value_expression = translate_expression(project, module.clone(), scope.clone(), argument)?;
     let value_type_name = module
         .borrow_mut()
-        .get_expression_type(scope.clone(), &value_expression)?;
+        .get_expression_type(project, scope.clone(), &value_expression)?;
 
     match &value_type_name {
         sway::TypeName::Undefined => panic!("Undefined type name"),
@@ -1248,7 +1248,7 @@ pub fn translate_string_type_cast_function_call(
     let value_expression = translate_expression(project, module.clone(), scope.clone(), argument)?;
     let value_type_name = module
         .borrow_mut()
-        .get_expression_type(scope.clone(), &value_expression)?;
+        .get_expression_type(project, scope.clone(), &value_expression)?;
 
     match &value_type_name {
         sway::TypeName::Identifier {

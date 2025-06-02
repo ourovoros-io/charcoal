@@ -619,7 +619,10 @@ pub fn translate_function_definition(
     ),
     Error,
 > {
-    assert!(!matches!(function_definition.ty, solidity::FunctionTy::Modifier));
+    assert!(!matches!(
+        function_definition.ty,
+        solidity::FunctionTy::Modifier
+    ));
 
     // Collect information about the function from its type
     let is_constructor = matches!(function_definition.ty, solidity::FunctionTy::Constructor);
@@ -706,11 +709,24 @@ pub fn translate_function_definition(
     //     match project.loc_to_line_and_column(module.clone(), &function_definition.loc) {
     //         Some((line, col)) => format!(
     //             "at {}:{}:{}",
-    //             project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy(),
+    //             project
+    //                 .options
+    //                 .input
+    //                 .join(module.borrow().path.clone())
+    //                 .with_extension("sol")
+    //                 .to_string_lossy(),
     //             line,
     //             col
     //         ),
-    //         None => format!("in {}...", project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy()),
+    //         None => format!(
+    //             "in {}...",
+    //             project
+    //                 .options
+    //                 .input
+    //                 .join(module.borrow().path.clone())
+    //                 .with_extension("sol")
+    //                 .to_string_lossy()
+    //         ),
     //     },
     // );
 
@@ -983,8 +999,12 @@ pub fn translate_function_definition(
     }
 
     // Translate the body for the toplevel function
-    let mut function_body =
-        translate_block(project, module.clone(), scope.clone(), statements.as_slice())?;
+    let mut function_body = translate_block(
+        project,
+        module.clone(),
+        scope.clone(),
+        statements.as_slice(),
+    )?;
 
     if is_constructor {
         let prefix = translate_naming_convention(module.borrow().name.as_str(), Case::Snake);
@@ -1104,6 +1124,7 @@ pub fn translate_function_definition(
                 }),
                 type_name: Some(return_parameter.type_name.clone()),
                 value: create_value_expression(
+                    project,
                     module.clone(),
                     scope.clone(),
                     &return_parameter.type_name,

@@ -100,7 +100,8 @@ pub fn translate_state_variable(
             // Create deferred initializations for types that can't be initialized with a value
             ("StorageString", None) | ("StorageVec", Some(_)) => {
                 if let Some(x) = variable_definition.initializer.as_ref() {
-                    let value = translate_expression(project, module.clone(), value_scope.clone(), x)?;
+                    let value =
+                        translate_expression(project, module.clone(), value_scope.clone(), x)?;
 
                     deferred_initializations.push(DeferredInitialization {
                         name: new_name.clone(),
@@ -149,6 +150,7 @@ pub fn translate_state_variable(
                     .transpose()?;
 
                 create_value_expression(
+                    project,
                     module.clone(),
                     value_scope.clone(),
                     &variable_type_name,
@@ -279,6 +281,7 @@ pub fn translate_state_variable(
                 }
 
                 create_value_expression(
+                    project,
                     module.clone(),
                     value_scope.clone(),
                     &variable_type_name,
@@ -319,6 +322,7 @@ pub fn translate_state_variable(
             if let Some(x) = variable_definition.initializer.as_ref() {
                 let value = translate_expression(project, module.clone(), value_scope.clone(), x)?;
                 create_value_expression(
+                    project,
                     module.clone(),
                     value_scope.clone(),
                     &variable_type_name,
@@ -326,6 +330,7 @@ pub fn translate_state_variable(
                 )
             } else {
                 create_value_expression(
+                    project,
                     module.clone(),
                     value_scope.clone(),
                     &variable_type_name,
@@ -340,7 +345,13 @@ pub fn translate_state_variable(
         let scope = Rc::new(RefCell::new(TranslationScope::default()));
 
         // Evaluate the value ahead of time in order to generate an appropriate constant value expression
-        let value = evaluate_expression(module.clone(), scope.clone(), &variable_type_name, &value);
+        let value = evaluate_expression(
+            project,
+            module.clone(),
+            scope.clone(),
+            &variable_type_name,
+            &value,
+        );
 
         module.borrow_mut().constants.push(sway::Constant {
             is_public,

@@ -448,6 +448,7 @@ impl TranslatedModule {
     /// Attempts to get the type of the supplied expression.
     pub fn get_expression_type(
         &mut self,
+        project: &mut Project,
         scope: Rc<RefCell<TranslationScope>>,
         expression: &sway::Expression,
     ) -> Result<sway::TypeName, Error> {
@@ -457,34 +458,38 @@ impl TranslatedModule {
                 Ok(self.get_path_expr_type(scope.clone(), path_expr))
             }
             sway::Expression::FunctionCall(_) | sway::Expression::FunctionCallBlock(_) => {
-                self.get_function_call_type(scope.clone(), expression)
+                self.get_function_call_type(project, scope.clone(), expression)
             }
-            sway::Expression::Block(block) => self.get_block_type(scope.clone(), block),
+            sway::Expression::Block(block) => self.get_block_type(project, scope.clone(), block),
             sway::Expression::Return(value) => {
-                self.get_return_type(scope.clone(), value.as_deref())
+                self.get_return_type(project, scope.clone(), value.as_deref())
             }
-            sway::Expression::Array(array) => self.get_array_type(scope.clone(), array),
+            sway::Expression::Array(array) => self.get_array_type(project, scope.clone(), array),
             sway::Expression::ArrayAccess(array_access) => {
-                self.get_array_access_type(scope.clone(), array_access)
+                self.get_array_access_type(project, scope.clone(), array_access)
             }
             sway::Expression::MemberAccess(member_access) => {
-                self.get_member_access_type(scope.clone(), member_access, expression)
+                self.get_member_access_type(project, scope.clone(), member_access, expression)
             }
-            sway::Expression::Tuple(tuple) => self.get_tuple_type(scope.clone(), tuple),
-            sway::Expression::If(if_expr) => self.get_if_type(scope.clone(), if_expr),
-            sway::Expression::Match(match_expr) => self.get_match_type(scope.clone(), match_expr),
+            sway::Expression::Tuple(tuple) => self.get_tuple_type(project, scope.clone(), tuple),
+            sway::Expression::If(if_expr) => self.get_if_type(project, scope.clone(), if_expr),
+            sway::Expression::Match(match_expr) => {
+                self.get_match_type(project, scope.clone(), match_expr)
+            }
             sway::Expression::While(_) => Ok(sway::TypeName::Tuple { type_names: vec![] }),
             sway::Expression::UnaryExpression(unary_expression) => {
-                self.get_unary_expression_type(scope.clone(), unary_expression)
+                self.get_unary_expression_type(project, scope.clone(), unary_expression)
             }
             sway::Expression::BinaryExpression(binary_expression) => {
-                self.get_binary_expression_type(scope.clone(), binary_expression)
+                self.get_binary_expression_type(project, scope.clone(), binary_expression)
             }
             sway::Expression::Constructor(constructor) => Ok(constructor.type_name.clone()),
             sway::Expression::Continue => Ok(sway::TypeName::Tuple { type_names: vec![] }),
             sway::Expression::Break => Ok(sway::TypeName::Tuple { type_names: vec![] }),
             sway::Expression::AsmBlock(asm_block) => self.get_asm_block_type(asm_block),
-            sway::Expression::Commented(_, x) => self.get_expression_type(scope.clone(), x),
+            sway::Expression::Commented(_, x) => {
+                self.get_expression_type(project, scope.clone(), x)
+            }
         }
     }
 
@@ -634,6 +639,7 @@ impl TranslatedModule {
     #[inline(always)]
     fn get_block_type(
         &mut self,
+        project: &mut Project,
         scope: Rc<RefCell<TranslationScope>>,
         block: &sway::Block,
     ) -> Result<sway::TypeName, Error> {
@@ -658,7 +664,7 @@ impl TranslatedModule {
 
             let type_name = match type_name.as_ref() {
                 Some(type_name) => type_name.clone(),
-                None => self.get_expression_type(inner_scope.clone(), value)?,
+                None => self.get_expression_type(project, inner_scope.clone(), value)?,
             };
 
             let add_variable = |id: &sway::LetIdentifier, type_name: &sway::TypeName| {
@@ -688,17 +694,18 @@ impl TranslatedModule {
             }
         }
 
-        self.get_expression_type(inner_scope.clone(), expression)
+        self.get_expression_type(project, inner_scope.clone(), expression)
     }
 
     #[inline(always)]
     fn get_return_type(
         &mut self,
+        project: &mut Project,
         scope: Rc<RefCell<TranslationScope>>,
         value: Option<&sway::Expression>,
     ) -> Result<sway::TypeName, Error> {
         if let Some(value) = value.as_ref() {
-            self.get_expression_type(scope.clone(), value)
+            self.get_expression_type(project, scope.clone(), value)
         } else {
             Ok(sway::TypeName::Tuple { type_names: vec![] })
         }
@@ -707,12 +714,13 @@ impl TranslatedModule {
     #[inline(always)]
     fn get_array_type(
         &mut self,
+        project: &mut Project,
         scope: Rc<RefCell<TranslationScope>>,
         array: &sway::Array,
     ) -> Result<sway::TypeName, Error> {
         Ok(sway::TypeName::Array {
             type_name: Box::new(if let Some(expression) = array.elements.first() {
-                self.get_expression_type(scope.clone(), expression)?
+                self.get_expression_type(project, scope.clone(), expression)?
             } else {
                 sway::TypeName::Tuple { type_names: vec![] }
             }),
@@ -723,11 +731,12 @@ impl TranslatedModule {
     #[inline(always)]
     fn get_array_access_type(
         &mut self,
+        project: &mut Project,
         scope: Rc<RefCell<TranslationScope>>,
         array_access: &sway::ArrayAccess,
     ) -> Result<sway::TypeName, Error> {
         let element_type_name =
-            self.get_expression_type(scope.clone(), &array_access.expression)?;
+            self.get_expression_type(project, scope.clone(), &array_access.expression)?;
 
         let type_name = match &element_type_name {
             sway::TypeName::Identifier {
@@ -749,6 +758,7 @@ impl TranslatedModule {
     #[inline(always)]
     fn get_member_access_type(
         &mut self,
+        project: &mut Project,
         scope: Rc<RefCell<TranslationScope>>,
         member_access: &sway::MemberAccess,
         expression: &sway::Expression,
@@ -805,7 +815,8 @@ impl TranslatedModule {
             }
         }
 
-        let container_type = self.get_expression_type(scope.clone(), &member_access.expression)?;
+        let container_type =
+            self.get_expression_type(project, scope.clone(), &member_access.expression)?;
 
         // Check if field is a signed integer
         if let Some(bits) = container_type.int_bits() {
@@ -861,16 +872,17 @@ impl TranslatedModule {
     #[inline(always)]
     fn get_tuple_type(
         &mut self,
+        project: &mut Project,
         scope: Rc<RefCell<TranslationScope>>,
         tuple: &[sway::Expression],
     ) -> Result<sway::TypeName, Error> {
         if tuple.len() == 1 {
-            self.get_expression_type(scope.clone(), tuple.first().unwrap())
+            self.get_expression_type(project, scope.clone(), tuple.first().unwrap())
         } else {
             Ok(sway::TypeName::Tuple {
                 type_names: tuple
                     .iter()
-                    .map(|x| self.get_expression_type(scope.clone(), x))
+                    .map(|x| self.get_expression_type(project, scope.clone(), x))
                     .collect::<Result<Vec<_>, _>>()?,
             })
         }
@@ -879,11 +891,12 @@ impl TranslatedModule {
     #[inline(always)]
     fn get_if_type(
         &mut self,
+        project: &mut Project,
         scope: Rc<RefCell<TranslationScope>>,
         if_expr: &sway::If,
     ) -> Result<sway::TypeName, Error> {
         if let Some(expression) = if_expr.then_body.final_expr.as_ref() {
-            self.get_expression_type(scope.clone(), expression)
+            self.get_expression_type(project, scope.clone(), expression)
         } else {
             Ok(sway::TypeName::Tuple { type_names: vec![] })
         }
@@ -892,11 +905,12 @@ impl TranslatedModule {
     #[inline(always)]
     fn get_match_type(
         &mut self,
+        project: &mut Project,
         scope: Rc<RefCell<TranslationScope>>,
         match_expr: &sway::Match,
     ) -> Result<sway::TypeName, Error> {
         if let Some(branch) = match_expr.branches.first() {
-            self.get_expression_type(scope.clone(), &branch.value)
+            self.get_expression_type(project, scope.clone(), &branch.value)
         } else {
             Ok(sway::TypeName::Tuple { type_names: vec![] })
         }
@@ -905,15 +919,17 @@ impl TranslatedModule {
     #[inline(always)]
     fn get_unary_expression_type(
         &mut self,
+        project: &mut Project,
         scope: Rc<RefCell<TranslationScope>>,
         unary_expression: &sway::UnaryExpression,
     ) -> Result<sway::TypeName, Error> {
-        self.get_expression_type(scope.clone(), &unary_expression.expression)
+        self.get_expression_type(project, scope.clone(), &unary_expression.expression)
     }
 
     #[inline(always)]
     fn get_binary_expression_type(
         &mut self,
+        project: &mut Project,
         scope: Rc<RefCell<TranslationScope>>,
         binary_expression: &sway::BinaryExpression,
     ) -> Result<sway::TypeName, Error> {
@@ -923,7 +939,7 @@ impl TranslatedModule {
                 generic_parameters: None,
             }),
 
-            _ => self.get_expression_type(scope.clone(), &binary_expression.lhs),
+            _ => self.get_expression_type(project, scope.clone(), &binary_expression.lhs),
         }
     }
 
@@ -941,6 +957,7 @@ impl TranslatedModule {
     #[inline(always)]
     fn get_function_call_type(
         &mut self,
+        project: &mut Project,
         scope: Rc<RefCell<TranslationScope>>,
         expression: &sway::Expression,
     ) -> Result<sway::TypeName, Error> {
@@ -955,15 +972,19 @@ impl TranslatedModule {
         };
 
         match function {
-            sway::Expression::PathExpr(path_expr) => self.get_path_expr_function_call_type(
-                scope.clone(),
-                path_expr,
-                function_generic_parameters,
-                parameters.as_slice(),
-            ),
+            sway::Expression::PathExpr(path_expr) => Ok(self
+                .get_path_expr_function_call_type(
+                    project,
+                    scope.clone(),
+                    path_expr,
+                    function_generic_parameters,
+                    parameters.as_slice(),
+                )?
+                .unwrap()),
 
             sway::Expression::MemberAccess(member_access) => self
                 .get_member_access_function_call_type(
+                    project,
                     scope.clone(),
                     member_access,
                     function_generic_parameters,
@@ -980,28 +1001,24 @@ impl TranslatedModule {
     #[inline(always)]
     fn get_path_expr_function_call_type(
         &mut self,
+        project: &mut Project,
         scope: Rc<RefCell<TranslationScope>>,
         path_expr: &sway::PathExpr,
         generic_parameters: Option<&sway::GenericParameterList>,
         parameters: &[sway::Expression],
-    ) -> Result<sway::TypeName, Error> {
+    ) -> Result<Option<sway::TypeName>, Error> {
         //
         // TODO: check generic parameters!
         //
 
-        match path_expr.to_string().as_str() {
-            "__size_of" => {
-                return Ok(sway::TypeName::Identifier {
-                    name: "u64".into(),
-                    generic_parameters: None,
-                });
-            }
+        let name = path_expr.to_string();
 
+        match name.as_str() {
             "todo!" => {
-                return Ok(sway::TypeName::Identifier {
+                return Ok(Some(sway::TypeName::Identifier {
                     name: "todo!".into(),
                     generic_parameters: None,
-                });
+                }));
             }
 
             "abi" => {
@@ -1018,10 +1035,26 @@ impl TranslatedModule {
                     );
                 };
 
-                return Ok(sway::TypeName::Identifier {
+                return Ok(Some(sway::TypeName::Identifier {
                     name: definition_name.into(),
                     generic_parameters: None,
-                });
+                }));
+            }
+
+            _ => {}
+        }
+
+        let parameter_types = parameters
+            .iter()
+            .map(|p| self.get_expression_type(project, scope.clone(), p))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        match name.as_str() {
+            "__size_of" => {
+                return Ok(Some(sway::TypeName::Identifier {
+                    name: "u64".into(),
+                    generic_parameters: None,
+                }));
             }
 
             "Address::from" => {
@@ -1031,91 +1064,91 @@ impl TranslatedModule {
                     parameters.len()
                 );
 
-                return Ok(sway::TypeName::Identifier {
+                return Ok(Some(sway::TypeName::Identifier {
                     name: "Address".into(),
                     generic_parameters: None,
-                });
+                }));
             }
 
             "AssetId::default" => {
-                return Ok(sway::TypeName::Identifier {
+                return Ok(Some(sway::TypeName::Identifier {
                     name: "AssetId".into(),
                     generic_parameters: None,
-                });
+                }));
             }
 
-            "b256::from" => {
-                return Ok(sway::TypeName::Identifier {
+            "b256::from" | "b256::from_be_bytes" | "b256::from_le_bytes" | "b256::zero" => {
+                return Ok(Some(sway::TypeName::Identifier {
                     name: "b256".into(),
                     generic_parameters: None,
-                });
-            }
-
-            "b256::from_be_bytes" | "b256::from_le_bytes" => {
-                return Ok(sway::TypeName::Identifier {
-                    name: "b256".into(),
-                    generic_parameters: None,
-                });
+                }));
             }
 
             "Bytes::new" | "Bytes::from" | "Bytes::with_capacity" => {
-                return Ok(sway::TypeName::Identifier {
+                return Ok(Some(sway::TypeName::Identifier {
                     name: "Bytes".into(),
                     generic_parameters: None,
-                });
+                }));
+            }
+
+            "ContractId::this" => {
+                return Ok(Some(sway::TypeName::Identifier {
+                    name: "ContractId".into(),
+                    generic_parameters: None,
+                }));
             }
 
             "I8::from" | "I8::from_uint" | "I8::max" | "I8::min" => {
-                return Ok(sway::TypeName::Identifier {
+                return Ok(Some(sway::TypeName::Identifier {
                     name: "I8".into(),
                     generic_parameters: None,
-                });
+                }));
             }
 
             "I16::from" | "I16::from_uint" | "I16::max" | "I16::min" => {
-                return Ok(sway::TypeName::Identifier {
+                return Ok(Some(sway::TypeName::Identifier {
                     name: "I16".into(),
                     generic_parameters: None,
-                });
+                }));
             }
 
             "I32::from" | "I32::from_uint" | "I32::max" | "I32::min" => {
-                return Ok(sway::TypeName::Identifier {
+                return Ok(Some(sway::TypeName::Identifier {
                     name: "I32".into(),
                     generic_parameters: None,
-                });
+                }));
             }
 
             "I64::from" | "I64::from_uint" | "I64::max" | "I64::min" => {
-                return Ok(sway::TypeName::Identifier {
+                return Ok(Some(sway::TypeName::Identifier {
                     name: "I64".into(),
                     generic_parameters: None,
-                });
+                }));
             }
 
             "I128::from" | "I128::from_uint" | "I128::max" | "I128::min" => {
-                return Ok(sway::TypeName::Identifier {
+                return Ok(Some(sway::TypeName::Identifier {
                     name: "I128".into(),
                     generic_parameters: None,
-                });
+                }));
             }
 
             "I256::from" | "I256::from_uint" | "I256::max" | "I256::min" => {
-                return Ok(sway::TypeName::Identifier {
+                return Ok(Some(sway::TypeName::Identifier {
                     name: "I256".into(),
                     generic_parameters: None,
-                });
+                }));
             }
 
             "Identity::Address" | "Identity::ContractId" | "Identity::from" => {
-                return Ok(sway::TypeName::Identifier {
+                return Ok(Some(sway::TypeName::Identifier {
                     name: "Identity".into(),
                     generic_parameters: None,
-                });
+                }));
             }
 
             "msg_sender" => {
-                return Ok(sway::TypeName::Identifier {
+                return Ok(Some(sway::TypeName::Identifier {
                     name: "Option".into(),
                     generic_parameters: Some(sway::GenericParameterList {
                         entries: vec![sway::GenericParameter {
@@ -1126,74 +1159,74 @@ impl TranslatedModule {
                             implements: None,
                         }],
                     }),
-                });
+                }));
             }
 
             "raw_slice::from_parts" => {
-                return Ok(sway::TypeName::Identifier {
+                return Ok(Some(sway::TypeName::Identifier {
                     name: "raw_slice".into(),
                     generic_parameters: None,
-                });
+                }));
             }
 
             "std::alloc::alloc" => {
-                return Ok(sway::TypeName::Identifier {
+                return Ok(Some(sway::TypeName::Identifier {
                     name: "raw_ptr".into(),
                     generic_parameters: None,
-                });
+                }));
             }
 
             "std::block::height" => {
-                return Ok(sway::TypeName::Identifier {
+                return Ok(Some(sway::TypeName::Identifier {
                     name: "u32".into(),
                     generic_parameters: None,
-                });
+                }));
             }
 
             "std::block::timestamp" => {
-                return Ok(sway::TypeName::Identifier {
+                return Ok(Some(sway::TypeName::Identifier {
                     name: "u64".into(),
                     generic_parameters: None,
-                });
+                }));
             }
 
             "std::context::balance_of" => {
-                return Ok(sway::TypeName::Identifier {
+                return Ok(Some(sway::TypeName::Identifier {
                     name: "u64".into(),
                     generic_parameters: None,
-                });
+                }));
             }
 
             "std::context::msg_amount" => {
-                return Ok(sway::TypeName::Identifier {
+                return Ok(Some(sway::TypeName::Identifier {
                     name: "u64".into(),
                     generic_parameters: None,
-                });
+                }));
             }
 
             "std::context::this_balance" => {
-                return Ok(sway::TypeName::Identifier {
+                return Ok(Some(sway::TypeName::Identifier {
                     name: "u64".into(),
                     generic_parameters: None,
-                });
+                }));
             }
 
             "std::hash::keccak256" => {
-                return Ok(sway::TypeName::Identifier {
+                return Ok(Some(sway::TypeName::Identifier {
                     name: "b256".into(),
                     generic_parameters: None,
-                });
+                }));
             }
 
             "std::hash::sha256" => {
-                return Ok(sway::TypeName::Identifier {
+                return Ok(Some(sway::TypeName::Identifier {
                     name: "b256".into(),
                     generic_parameters: None,
-                });
+                }));
             }
 
             "std::inputs::input_message_data" => {
-                return Ok(sway::TypeName::Identifier {
+                return Ok(Some(sway::TypeName::Identifier {
                     name: "Option".into(),
                     generic_parameters: Some(sway::GenericParameterList {
                         entries: vec![sway::GenericParameter {
@@ -1204,7 +1237,7 @@ impl TranslatedModule {
                             implements: None,
                         }],
                     }),
-                });
+                }));
             }
 
             "std::registers::balance" => {
@@ -1214,10 +1247,10 @@ impl TranslatedModule {
                     parameters.len()
                 );
 
-                return Ok(sway::TypeName::Identifier {
+                return Ok(Some(sway::TypeName::Identifier {
                     name: "u64".into(),
                     generic_parameters: None,
-                });
+                }));
             }
 
             "std::registers::context_gas" => {
@@ -1227,10 +1260,10 @@ impl TranslatedModule {
                     parameters.len()
                 );
 
-                return Ok(sway::TypeName::Identifier {
+                return Ok(Some(sway::TypeName::Identifier {
                     name: "u64".into(),
                     generic_parameters: None,
-                });
+                }));
             }
 
             "std::registers::error" => {
@@ -1240,10 +1273,10 @@ impl TranslatedModule {
                     parameters.len()
                 );
 
-                return Ok(sway::TypeName::Identifier {
+                return Ok(Some(sway::TypeName::Identifier {
                     name: "u64".into(),
                     generic_parameters: None,
-                });
+                }));
             }
 
             "std::registers::flags" => {
@@ -1253,10 +1286,10 @@ impl TranslatedModule {
                     parameters.len()
                 );
 
-                return Ok(sway::TypeName::Identifier {
+                return Ok(Some(sway::TypeName::Identifier {
                     name: "u64".into(),
                     generic_parameters: None,
-                });
+                }));
             }
 
             "std::registers::frame_ptr" => {
@@ -1266,10 +1299,10 @@ impl TranslatedModule {
                     parameters.len()
                 );
 
-                return Ok(sway::TypeName::Identifier {
+                return Ok(Some(sway::TypeName::Identifier {
                     name: "raw_ptr".into(),
                     generic_parameters: None,
-                });
+                }));
             }
 
             "std::registers::global_gas" => {
@@ -1279,10 +1312,10 @@ impl TranslatedModule {
                     parameters.len()
                 );
 
-                return Ok(sway::TypeName::Identifier {
+                return Ok(Some(sway::TypeName::Identifier {
                     name: "u64".into(),
                     generic_parameters: None,
-                });
+                }));
             }
 
             "std::registers::heap_ptr" => {
@@ -1292,10 +1325,10 @@ impl TranslatedModule {
                     parameters.len()
                 );
 
-                return Ok(sway::TypeName::Identifier {
+                return Ok(Some(sway::TypeName::Identifier {
                     name: "raw_ptr".into(),
                     generic_parameters: None,
-                });
+                }));
             }
 
             "std::registers::instrs_start" => {
@@ -1305,10 +1338,10 @@ impl TranslatedModule {
                     parameters.len()
                 );
 
-                return Ok(sway::TypeName::Identifier {
+                return Ok(Some(sway::TypeName::Identifier {
                     name: "raw_ptr".into(),
                     generic_parameters: None,
-                });
+                }));
             }
 
             "std::registers::overflow" => {
@@ -1318,10 +1351,10 @@ impl TranslatedModule {
                     parameters.len()
                 );
 
-                return Ok(sway::TypeName::Identifier {
+                return Ok(Some(sway::TypeName::Identifier {
                     name: "u64".into(),
                     generic_parameters: None,
-                });
+                }));
             }
 
             "std::registers::program_counter" => {
@@ -1331,10 +1364,10 @@ impl TranslatedModule {
                     parameters.len()
                 );
 
-                return Ok(sway::TypeName::Identifier {
+                return Ok(Some(sway::TypeName::Identifier {
                     name: "raw_ptr".into(),
                     generic_parameters: None,
-                });
+                }));
             }
 
             "std::registers::return_value" => {
@@ -1344,10 +1377,10 @@ impl TranslatedModule {
                     parameters.len()
                 );
 
-                return Ok(sway::TypeName::Identifier {
+                return Ok(Some(sway::TypeName::Identifier {
                     name: "u64".into(),
                     generic_parameters: None,
-                });
+                }));
             }
 
             "std::registers::return_length" => {
@@ -1357,10 +1390,10 @@ impl TranslatedModule {
                     parameters.len()
                 );
 
-                return Ok(sway::TypeName::Identifier {
+                return Ok(Some(sway::TypeName::Identifier {
                     name: "u64".into(),
                     generic_parameters: None,
-                });
+                }));
             }
 
             "std::registers::stack_ptr" => {
@@ -1370,10 +1403,10 @@ impl TranslatedModule {
                     parameters.len()
                 );
 
-                return Ok(sway::TypeName::Identifier {
+                return Ok(Some(sway::TypeName::Identifier {
                     name: "raw_ptr".into(),
                     generic_parameters: None,
-                });
+                }));
             }
 
             "std::registers::stack_start_ptr" => {
@@ -1383,28 +1416,28 @@ impl TranslatedModule {
                     parameters.len()
                 );
 
-                return Ok(sway::TypeName::Identifier {
+                return Ok(Some(sway::TypeName::Identifier {
                     name: "raw_ptr".into(),
                     generic_parameters: None,
-                });
+                }));
             }
 
             "String::from_ascii" => {
-                return Ok(sway::TypeName::Identifier {
+                return Ok(Some(sway::TypeName::Identifier {
                     name: "String".into(),
                     generic_parameters: None,
-                });
+                }));
             }
 
             "u8::from" | "u8::max" | "u8::min" | "u8::from_be_bytes" | "u8::from_le_bytes" => {
-                return Ok(sway::TypeName::Identifier {
+                return Ok(Some(sway::TypeName::Identifier {
                     name: "u8".into(),
                     generic_parameters: None,
-                });
+                }));
             }
 
             "u8::try_from" => {
-                return Ok(sway::TypeName::Identifier {
+                return Ok(Some(sway::TypeName::Identifier {
                     name: "Option".into(),
                     generic_parameters: Some(sway::GenericParameterList {
                         entries: vec![sway::GenericParameter {
@@ -1415,18 +1448,18 @@ impl TranslatedModule {
                             implements: None,
                         }],
                     }),
-                });
+                }));
             }
 
             "u16::from" | "u16::max" | "u16::min" | "u16::from_be_bytes" | "u16::from_le_bytes" => {
-                return Ok(sway::TypeName::Identifier {
+                return Ok(Some(sway::TypeName::Identifier {
                     name: "u16".into(),
                     generic_parameters: None,
-                });
+                }));
             }
 
             "u16::try_from" => {
-                return Ok(sway::TypeName::Identifier {
+                return Ok(Some(sway::TypeName::Identifier {
                     name: "Option".into(),
                     generic_parameters: Some(sway::GenericParameterList {
                         entries: vec![sway::GenericParameter {
@@ -1437,18 +1470,18 @@ impl TranslatedModule {
                             implements: None,
                         }],
                     }),
-                });
+                }));
             }
 
             "u32::from" | "u32::max" | "u32::min" | "u32::from_be_bytes" | "u32::from_le_bytes" => {
-                return Ok(sway::TypeName::Identifier {
+                return Ok(Some(sway::TypeName::Identifier {
                     name: "u32".into(),
                     generic_parameters: None,
-                });
+                }));
             }
 
             "u32::try_from" => {
-                return Ok(sway::TypeName::Identifier {
+                return Ok(Some(sway::TypeName::Identifier {
                     name: "Option".into(),
                     generic_parameters: Some(sway::GenericParameterList {
                         entries: vec![sway::GenericParameter {
@@ -1459,18 +1492,18 @@ impl TranslatedModule {
                             implements: None,
                         }],
                     }),
-                });
+                }));
             }
 
             "u64::from" | "u64::max" | "u64::min" | "u64::from_be_bytes" | "u64::from_le_bytes" => {
-                return Ok(sway::TypeName::Identifier {
+                return Ok(Some(sway::TypeName::Identifier {
                     name: "u64".into(),
                     generic_parameters: None,
-                });
+                }));
             }
 
             "u64::try_from" => {
-                return Ok(sway::TypeName::Identifier {
+                return Ok(Some(sway::TypeName::Identifier {
                     name: "Option".into(),
                     generic_parameters: Some(sway::GenericParameterList {
                         entries: vec![sway::GenericParameter {
@@ -1481,7 +1514,7 @@ impl TranslatedModule {
                             implements: None,
                         }],
                     }),
-                });
+                }));
             }
 
             "u256::from"
@@ -1489,14 +1522,14 @@ impl TranslatedModule {
             | "u256::min"
             | "u256::from_be_bytes"
             | "u256::from_le_bytes" => {
-                return Ok(sway::TypeName::Identifier {
+                return Ok(Some(sway::TypeName::Identifier {
                     name: "u256".into(),
                     generic_parameters: None,
-                });
+                }));
             }
 
             "u256::try_from" => {
-                return Ok(sway::TypeName::Identifier {
+                return Ok(Some(sway::TypeName::Identifier {
                     name: "Option".into(),
                     generic_parameters: Some(sway::GenericParameterList {
                         entries: vec![sway::GenericParameter {
@@ -1507,18 +1540,18 @@ impl TranslatedModule {
                             implements: None,
                         }],
                     }),
-                });
+                }));
             }
 
             "U128::from" | "U128::max" | "U128::min" | "U128::zero" => {
-                return Ok(sway::TypeName::Identifier {
+                return Ok(Some(sway::TypeName::Identifier {
                     name: "U128".into(),
                     generic_parameters: None,
-                });
+                }));
             }
 
             "U128::try_from" => {
-                return Ok(sway::TypeName::Identifier {
+                return Ok(Some(sway::TypeName::Identifier {
                     name: "Option".into(),
                     generic_parameters: Some(sway::GenericParameterList {
                         entries: vec![sway::GenericParameter {
@@ -1529,18 +1562,18 @@ impl TranslatedModule {
                             implements: None,
                         }],
                     }),
-                });
+                }));
             }
 
             "U256::from" | "U256::max" | "U256::min" => {
-                return Ok(sway::TypeName::Identifier {
+                return Ok(Some(sway::TypeName::Identifier {
                     name: "U256".into(),
                     generic_parameters: None,
-                });
+                }));
             }
 
             "U256::try_from" => {
-                return Ok(sway::TypeName::Identifier {
+                return Ok(Some(sway::TypeName::Identifier {
                     name: "Option".into(),
                     generic_parameters: Some(sway::GenericParameterList {
                         entries: vec![sway::GenericParameter {
@@ -1551,11 +1584,11 @@ impl TranslatedModule {
                             implements: None,
                         }],
                     }),
-                });
+                }));
             }
 
             "Vec::with_capacity" => {
-                return Ok(sway::TypeName::Identifier {
+                return Ok(Some(sway::TypeName::Identifier {
                     name: "Vec".into(),
                     generic_parameters: Some(sway::GenericParameterList {
                         entries: vec![sway::GenericParameter {
@@ -1566,98 +1599,85 @@ impl TranslatedModule {
                             implements: None,
                         }],
                     }),
-                });
+                }));
             }
 
             _ => {}
         }
 
-        let parameter_types = parameters
-            .iter()
-            .map(|p| self.get_expression_type(scope.clone(), p))
-            .collect::<Result<Vec<_>, _>>()?;
-
-        let name = path_expr.to_string();
-
-        // Attempt to find a function in scope
-        if let Some(function) = self.functions.iter().find(|f| {
-            let sway::TypeName::Function {
-                new_name: fn_name,
-                parameters: fn_parameters,
-                ..
-            } = &f.signature
-            else {
-                unreachable!()
-            };
-
-            // Ensure the function's new name matches the function call we're translating
-            if *fn_name != name {
-                return false;
-            }
-
-            // Ensure the supplied function call args match the function's parameters
-            if parameters.len() != fn_parameters.entries.len() {
-                return false;
-            }
-
-            for (i, value_type_name) in parameter_types.iter().enumerate() {
-                let Some(parameter_type_name) = fn_parameters.entries[i].type_name.as_ref() else {
-                    continue;
+        fn check_function(
+            module: &mut TranslatedModule,
+            scope: Rc<RefCell<TranslationScope>>,
+            name: &str,
+            generic_parameters: Option<&sway::GenericParameterList>,
+            parameters: &[sway::Expression],
+            parameter_types: &[sway::TypeName],
+        ) -> Result<Option<sway::TypeName>, Error> {
+            // Attempt to find a function in scope
+            if let Some(function) = module.functions.iter().find(|f| {
+                let sway::TypeName::Function {
+                    new_name: fn_name,
+                    parameters: fn_parameters,
+                    ..
+                } = &f.signature
+                else {
+                    unreachable!()
                 };
 
-                // HACK: allow numeric literals for any uint types
-                if value_type_name.is_uint() && parameter_type_name.is_uint() {
-                    match &parameters[i] {
-                        sway::Expression::Literal(
-                            sway::Literal::DecInt(_, None) | sway::Literal::HexInt(_, None),
-                        ) => continue,
+                // Ensure the function's new name matches the function call we're translating
+                if *fn_name != name {
+                    return false;
+                }
 
-                        sway::Expression::Commented(_, expression) => match expression.as_ref() {
+                // Ensure the supplied function call args match the function's parameters
+                if parameters.len() != fn_parameters.entries.len() {
+                    return false;
+                }
+
+                for (i, value_type_name) in parameter_types.iter().enumerate() {
+                    let Some(parameter_type_name) = fn_parameters.entries[i].type_name.as_ref()
+                    else {
+                        continue;
+                    };
+
+                    // HACK: allow numeric literals for any uint types
+                    if value_type_name.is_uint() && parameter_type_name.is_uint() {
+                        match &parameters[i] {
                             sway::Expression::Literal(
                                 sway::Literal::DecInt(_, None) | sway::Literal::HexInt(_, None),
                             ) => continue,
 
-                            _ => {}
-                        },
-
-                        _ => {}
-                    }
-                }
-
-                // HACK: allow array literals of uint types containing only literals if the lengths match
-                if let (
-                    sway::TypeName::Array {
-                        type_name: value_type_name,
-                        length: value_length,
-                    },
-                    sway::TypeName::Array {
-                        type_name: parameter_type_name,
-                        length: parameter_length,
-                    },
-                ) = (value_type_name, parameter_type_name)
-                {
-                    if value_length != parameter_length {
-                        return false;
-                    }
-
-                    if value_type_name.is_uint() && parameter_type_name.is_uint() {
-                        match &parameters[i] {
-                            sway::Expression::Array(array) => {
-                                if array.elements.iter().all(|e| {
-                                    matches!(
-                                        e,
-                                        sway::Expression::Literal(
-                                            sway::Literal::DecInt(_, None)
-                                                | sway::Literal::HexInt(_, None)
-                                        )
-                                    )
-                                }) {
-                                    continue;
-                                }
-                            }
-
                             sway::Expression::Commented(_, expression) => match expression.as_ref()
                             {
+                                sway::Expression::Literal(
+                                    sway::Literal::DecInt(_, None) | sway::Literal::HexInt(_, None),
+                                ) => continue,
+
+                                _ => {}
+                            },
+
+                            _ => {}
+                        }
+                    }
+
+                    // HACK: allow array literals of uint types containing only literals if the lengths match
+                    if let (
+                        sway::TypeName::Array {
+                            type_name: value_type_name,
+                            length: value_length,
+                        },
+                        sway::TypeName::Array {
+                            type_name: parameter_type_name,
+                            length: parameter_length,
+                        },
+                    ) = (value_type_name, parameter_type_name)
+                    {
+                        if value_length != parameter_length {
+                            return false;
+                        }
+
+                        if value_type_name.is_uint() && parameter_type_name.is_uint() {
+                            match &parameters[i] {
                                 sway::Expression::Array(array) => {
                                     if array.elements.iter().all(|e| {
                                         matches!(
@@ -1672,80 +1692,149 @@ impl TranslatedModule {
                                     }
                                 }
 
-                                _ => {}
-                            },
+                                sway::Expression::Commented(_, expression) => {
+                                    match expression.as_ref() {
+                                        sway::Expression::Array(array) => {
+                                            if array.elements.iter().all(|e| {
+                                                matches!(
+                                                    e,
+                                                    sway::Expression::Literal(
+                                                        sway::Literal::DecInt(_, None)
+                                                            | sway::Literal::HexInt(_, None)
+                                                    )
+                                                )
+                                            }) {
+                                                continue;
+                                            }
+                                        }
 
-                            _ => {}
+                                        _ => {}
+                                    }
+                                }
+
+                                _ => {}
+                            }
                         }
+                    }
+
+                    if !value_type_name.is_compatible_with(parameter_type_name) {
+                        return false;
                     }
                 }
 
-                if !value_type_name.is_compatible_with(parameter_type_name) {
-                    return false;
-                }
-            }
-
-            true
-        }) {
-            let sway::TypeName::Function { return_type, .. } = &function.signature else {
-                unreachable!()
-            };
-
-            if let Some(return_type) = return_type.as_ref() {
-                return Ok(return_type.as_ref().clone());
-            }
-
-            return Ok(sway::TypeName::Tuple { type_names: vec![] });
-        }
-
-        // Attempt to find a function pointer variable in scope
-        if let Some(variable) = scope.borrow().find_variable(|v| {
-            let v = v.borrow();
-
-            let sway::TypeName::Function {
-                parameters: fn_parameters,
-                ..
-            } = &v.type_name
-            else {
-                return false;
-            };
-
-            // Ensure the function's new name matches the function call we're translating
-            if v.new_name != *name {
-                return false;
-            }
-
-            // Ensure the supplied function call args match the function's parameters
-            if parameters.len() != fn_parameters.entries.len() {
-                return false;
-            }
-
-            for (i, value_type_name) in parameter_types.iter().enumerate() {
-                let Some(parameter_type_name) = fn_parameters.entries[i].type_name.as_ref() else {
-                    continue;
+                true
+            }) {
+                let sway::TypeName::Function { return_type, .. } = &function.signature else {
+                    unreachable!()
                 };
 
-                if !value_type_name.is_compatible_with(parameter_type_name) {
-                    return false;
+                if let Some(return_type) = return_type.as_ref() {
+                    return Ok(Some(return_type.as_ref().clone()));
                 }
+
+                return Ok(Some(sway::TypeName::Tuple { type_names: vec![] }));
             }
 
-            true
-        }) {
-            let variable = variable.borrow();
-            let sway::TypeName::Function { return_type, .. } = &variable.type_name else {
-                unreachable!()
+            // Attempt to find a function pointer variable in scope
+            if let Some(variable) = scope.borrow().find_variable(|v| {
+                let v = v.borrow();
+
+                let sway::TypeName::Function {
+                    parameters: fn_parameters,
+                    ..
+                } = &v.type_name
+                else {
+                    return false;
+                };
+
+                // Ensure the function's new name matches the function call we're translating
+                if v.new_name != *name {
+                    return false;
+                }
+
+                // Ensure the supplied function call args match the function's parameters
+                if parameters.len() != fn_parameters.entries.len() {
+                    return false;
+                }
+
+                for (i, value_type_name) in parameter_types.iter().enumerate() {
+                    let Some(parameter_type_name) = fn_parameters.entries[i].type_name.as_ref()
+                    else {
+                        continue;
+                    };
+
+                    if !value_type_name.is_compatible_with(parameter_type_name) {
+                        return false;
+                    }
+                }
+
+                true
+            }) {
+                let variable = variable.borrow();
+                let sway::TypeName::Function { return_type, .. } = &variable.type_name else {
+                    unreachable!()
+                };
+
+                if let Some(return_type) = return_type.as_ref() {
+                    return Ok(Some(return_type.as_ref().clone()));
+                } else {
+                    return Ok(Some(sway::TypeName::Tuple { type_names: vec![] }));
+                }
+            }
+            Ok(None)
+        }
+
+        if let Some(type_name) = check_function(
+            self,
+            scope.clone(),
+            &name,
+            generic_parameters,
+            parameters,
+            &parameter_types,
+        )? {
+            return Ok(Some(type_name));
+        }
+
+        for use_item in self.uses.iter() {
+            let sway::UseTree::Path { prefix, suffix } = &use_item.tree else {
+                continue;
             };
 
-            if let Some(return_type) = return_type.as_ref() {
-                return Ok(return_type.as_ref().clone());
-            } else {
-                return Ok(sway::TypeName::Tuple { type_names: vec![] });
+            if !prefix.is_empty() {
+                continue;
+            }
+
+            let mut use_tree = suffix.as_ref().clone();
+
+            let mut module_path = PathBuf::new();
+
+            while let sway::UseTree::Path { prefix, suffix } = &use_tree {
+                module_path.push(prefix);
+
+                if let sway::UseTree::Glob = suffix.as_ref() {
+                    break;
+                }
+
+                use_tree = suffix.as_ref().clone();
+            }
+
+            if let Some(found_module) = project.find_module(&module_path) {
+                if let Some(type_name) = check_function(
+                    &mut found_module.borrow_mut(),
+                    scope.clone(),
+                    &name,
+                    generic_parameters,
+                    parameters,
+                    &parameter_types,
+                )? {
+                    return Ok(Some(type_name));
+                }
             }
         }
 
         panic!(
-            "Failed to find function or variable `{name}({})` in scope",
+            "Failed to find function or variable `{}({})` in scope",
+            path_expr.to_string(),
             parameter_types
                 .iter()
                 .map(|t| t.to_string())
@@ -1757,6 +1846,7 @@ impl TranslatedModule {
     #[inline(always)]
     fn get_member_access_function_call_type(
         &mut self,
+        project: &mut Project,
         scope: Rc<RefCell<TranslationScope>>,
         member_access: &sway::MemberAccess,
         function_generic_parameters: Option<&sway::GenericParameterList>,
@@ -1767,7 +1857,7 @@ impl TranslatedModule {
         //
 
         let mut container_type =
-            self.get_expression_type(scope.clone(), &member_access.expression)?;
+            self.get_expression_type(project, scope.clone(), &member_access.expression)?;
 
         // Check to see if the container's type is a translated enum and switch to its underlying type
         for enum_definition in self.enums.iter() {
@@ -2771,7 +2861,10 @@ pub fn coerce_expression(
     from_type_name: &sway::TypeName,
     to_type_name: &sway::TypeName,
 ) -> Option<sway::Expression> {
-    // println!("Coercing from `{from_type_name}` to `{to_type_name}`: {}", sway::TabbedDisplayer(expression));
+    // println!(
+    //     "Coercing from `{from_type_name}` to `{to_type_name}`: {}",
+    //     sway::TabbedDisplayer(expression)
+    // );
 
     if from_type_name.is_compatible_with(to_type_name) {
         return Some(expression.clone());

@@ -239,7 +239,7 @@ pub fn translate_builtin_function_call(
 
             let parameter_type = module
                 .borrow_mut()
-                .get_expression_type(scope.clone(), &parameters[0])?;
+                .get_expression_type(project, scope.clone(), &parameters[0])?;
 
             parameters[0] = coerce_expression(
                 &parameters[0],
@@ -312,7 +312,7 @@ pub fn translate_builtin_function_call(
         old_name => {
             let parameter_types = parameters
                 .iter()
-                .map(|p| module.borrow_mut().get_expression_type(scope.clone(), p))
+                .map(|p| module.borrow_mut().get_expression_type(project, scope.clone(), p))
                 .collect::<Result<Vec<_>, _>>()?;
 
             // Check to see if the expression is a by-value struct constructor
@@ -334,7 +334,7 @@ pub fn translate_builtin_function_call(
                 if let Some(_external_definition) = project.find_module_with_contract(old_name) {
                     match module
                         .borrow_mut()
-                        .get_expression_type(scope.clone(), &parameters[0])?
+                        .get_expression_type(project, scope.clone(), &parameters[0])?
                     {
                         sway::TypeName::Identifier {
                             name,
@@ -418,6 +418,45 @@ pub fn translate_builtin_function_call(
             // Check all of the module's `use` statements for crate-local imports,
             // find the module being imported, then check if the function lives there.
             //
+            for use_item in module.borrow().uses.iter() {
+                let sway::UseTree::Path { prefix, suffix } = &use_item.tree else {
+                    continue;
+                };
+
+                if !prefix.is_empty() {
+                    continue;
+                }
+
+                let mut use_tree = suffix.as_ref().clone();
+
+                let mut module_path = PathBuf::new();
+
+                while let sway::UseTree::Path { prefix, suffix } = &use_tree {
+                    module_path.push(prefix);
+
+                    if let sway::UseTree::Glob = suffix.as_ref() {
+                        break;
+                    }
+
+                    use_tree = suffix.as_ref().clone();
+                }
+
+                if let Some(found_module) = project.find_module(&module_path) {
+                    // Try to resolve the function call
+                    if let Some(result) = resolve_function_call(
+                        project,
+                        module.clone(),
+                        scope.clone(),
+                        found_module.clone(),
+                        old_name,
+                        named_arguments,
+                        parameters.clone(),
+                        parameter_types.clone(),
+                    )? {
+                        return Ok(result);
+                    }
+                }
+            }
 
             panic!(
                 "{}error: Failed to find function `{old_name}({})` in scope: {function}({})",

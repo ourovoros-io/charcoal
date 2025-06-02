@@ -108,7 +108,7 @@ pub fn translate_revert_statement(
                                 )?;
                                 let parameter_expression_type = module
                                     .borrow_mut()
-                                    .get_expression_type(scope.clone(), &parameter_expression)?;
+                                    .get_expression_type(project, scope.clone(), &parameter_expression)?;
                                 coerce_expression(
                                     &parameter_expression,
                                     &parameter_expression_type,
@@ -134,7 +134,7 @@ pub fn translate_revert_statement(
                                             .unwrap();
                                             let parameter_expression_type = module
                                                 .borrow_mut()
-                                                .get_expression_type(scope.clone(), &parameter_expression)
+                                                .get_expression_type(project, scope.clone(), &parameter_expression)
                                                 .unwrap();
                                             coerce_expression(
                                                 &parameter_expression,

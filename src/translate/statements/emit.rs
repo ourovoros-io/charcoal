@@ -62,7 +62,7 @@ pub fn translate_emit_statement(
                                                                 &arguments[0],
                                                             )?;
                                                             
-                                                            let argument_type = module.borrow_mut().get_expression_type(scope.clone(), &argument)?;
+                                                            let argument_type = module.borrow_mut().get_expression_type(project, scope.clone(), &argument)?;
                                                             
                                                             coerce_expression(&argument, &argument_type, &variant.type_name).unwrap()
                                                         } else {
@@ -78,7 +78,7 @@ pub fn translate_emit_statement(
                                                                 })
                                                                 .collect::<Result<Vec<_>, _>>()?;
 
-                                                            let mut arguments_types = arguments.iter().map(|a| module.borrow_mut().get_expression_type(scope.clone(), a).unwrap()).collect::<Vec<_>>();
+                                                            let mut arguments_types = arguments.iter().map(|a| module.borrow_mut().get_expression_type(project, scope.clone(), a).unwrap()).collect::<Vec<_>>();
 
                                                             let sway::TypeName::Tuple { ref type_names } = variant.type_name else { panic!("Expected a tuple") };
 
@@ -131,7 +131,7 @@ pub fn translate_emit_statement(
                                             &arguments[0],
                                         )?;
                                         
-                                        let argument_type = module.borrow_mut().get_expression_type(scope.clone(), &argument)?;
+                                        let argument_type = module.borrow_mut().get_expression_type(project, scope.clone(), &argument)?;
                                         
                                         coerce_expression(&argument, &argument_type, &event_variant.type_name).unwrap()
                                     } else {
@@ -147,7 +147,7 @@ pub fn translate_emit_statement(
                                             })
                                             .collect::<Result<Vec<_>, _>>()?;
 
-                                        let mut arguments_types = arguments.iter().map(|a| module.borrow_mut().get_expression_type(scope.clone(), a).unwrap()).collect::<Vec<_>>();
+                                        let mut arguments_types = arguments.iter().map(|a| module.borrow_mut().get_expression_type(project, scope.clone(), a).unwrap()).collect::<Vec<_>>();
 
                                         let sway::TypeName::Tuple { ref type_names } = event_variant.type_name else { panic!("Expected a tuple") };
 

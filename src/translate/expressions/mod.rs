@@ -36,6 +36,7 @@ pub use unary::*;
 pub use variable::*;
 
 pub fn evaluate_expression(
+    project: &mut Project,
     module: Rc<RefCell<TranslatedModule>>,
     scope: Rc<RefCell<TranslationScope>>,
     type_name: &sway::TypeName,
@@ -115,6 +116,7 @@ pub fn evaluate_expression(
                                     .iter()
                                     .map(|p| {
                                         evaluate_expression(
+                                            project,
                                             module.clone(),
                                             scope.clone(),
                                             type_name,
@@ -168,6 +170,7 @@ pub fn evaluate_expression(
                         "I8::from_uint" | "I16::from_uint" | "I32::from_uint"
                         | "I64::from_uint" | "I128::from_uint" | "I256::from_uint" => {
                             return evaluate_expression(
+                                project,
                                 module,
                                 scope.clone(),
                                 type_name,
@@ -184,6 +187,7 @@ pub fn evaluate_expression(
                                     .iter()
                                     .map(|p| {
                                         evaluate_expression(
+                                            project,
                                             module.clone(),
                                             scope.clone(),
                                             type_name,
@@ -223,7 +227,11 @@ pub fn evaluate_expression(
                         function_call
                             .parameters
                             .iter()
-                            .map(|p| module.borrow_mut().get_expression_type(scope.clone(), p))
+                            .map(|p| module.borrow_mut().get_expression_type(
+                                project,
+                                scope.clone(),
+                                p
+                            ))
                             .collect::<Result<Vec<_>, _>>()
                             .unwrap()
                             .iter()
@@ -266,6 +274,7 @@ pub fn evaluate_expression(
 
                     "pow" if function_call.parameters.len() == 1 => {
                         let rhs = evaluate_expression(
+                            project,
                             module,
                             scope.clone(),
                             type_name,
@@ -327,12 +336,18 @@ pub fn evaluate_expression(
         | sway::Expression::Continue
         | sway::Expression::Break
         | sway::Expression::AsmBlock(_) => {
-            create_value_expression(module, scope.clone(), type_name, Some(expression))
+            create_value_expression(project, module, scope.clone(), type_name, Some(expression))
         }
 
         sway::Expression::Commented(comment, expression) => sway::Expression::Commented(
             comment.clone(),
-            Box::new(evaluate_expression(module, scope.clone(), type_name, expression)),
+            Box::new(evaluate_expression(
+                project,
+                module,
+                scope.clone(),
+                type_name,
+                expression,
+            )),
         ),
     }
 }
@@ -370,9 +385,12 @@ pub fn translate_expression(
             translate_variable_expression(project, module, scope.clone(), expression)
         }
 
-        solidity::Expression::ArrayLiteral(_, expressions) => {
-            translate_array_literal_expression(project, module, scope.clone(), expressions.as_slice())
-        }
+        solidity::Expression::ArrayLiteral(_, expressions) => translate_array_literal_expression(
+            project,
+            module,
+            scope.clone(),
+            expressions.as_slice(),
+        ),
 
         solidity::Expression::ArraySubscript(_, _, _) => {
             translate_array_subscript_expression(project, module, scope.clone(), expression)
@@ -392,18 +410,35 @@ pub fn translate_expression(
 
         solidity::Expression::MemberAccess(_, container, member) => {
             translate_member_access_expression(
-                project, module, scope.clone(), expression, container, member,
+                project,
+                module,
+                scope.clone(),
+                expression,
+                container,
+                member,
             )
         }
 
         solidity::Expression::FunctionCall(_, function, arguments) => {
             translate_function_call_expression(
-                project, module, scope.clone(), expression, function, None, arguments,
+                project,
+                module,
+                scope.clone(),
+                expression,
+                function,
+                None,
+                arguments,
             )
         }
 
         solidity::Expression::FunctionCallBlock(_, function, block) => {
-            translate_function_call_block_expression(project, module, scope.clone(), function, block)
+            translate_function_call_block_expression(
+                project,
+                module,
+                scope.clone(),
+                function,
+                block,
+            )
         }
 
         solidity::Expression::NamedFunctionCall(_, function, named_arguments) => {
@@ -426,7 +461,9 @@ pub fn translate_expression(
             translate_unary_expression(project, module, scope.clone(), "!", x)
         }
 
-        solidity::Expression::UnaryPlus(_, x) => translate_expression(project, module, scope.clone(), x),
+        solidity::Expression::UnaryPlus(_, x) => {
+            translate_expression(project, module, scope.clone(), x)
+        }
 
         solidity::Expression::Negate(_, x) => {
             translate_unary_expression(project, module, scope.clone(), "-", x)
@@ -510,13 +547,23 @@ pub fn translate_expression(
 
         solidity::Expression::ConditionalOperator(_, condition, then_value, else_value) => {
             translate_conditional_operator_expression(
-                project, module, scope.clone(), condition, then_value, else_value,
+                project,
+                module,
+                scope.clone(),
+                condition,
+                then_value,
+                else_value,
             )
         }
 
-        solidity::Expression::Assign(_, lhs, rhs) => {
-            translate_assignment_expression(project, module, scope.clone(), "=", lhs.as_ref(), rhs.as_ref())
-        }
+        solidity::Expression::Assign(_, lhs, rhs) => translate_assignment_expression(
+            project,
+            module,
+            scope.clone(),
+            "=",
+            lhs.as_ref(),
+            rhs.as_ref(),
+        ),
 
         solidity::Expression::AssignOr(_, lhs, rhs) => translate_assignment_expression(
             project,
@@ -612,7 +659,12 @@ pub fn translate_expression(
         | solidity::Expression::PostIncrement(_, _)
         | solidity::Expression::PreDecrement(_, _)
         | solidity::Expression::PostDecrement(_, _) => {
-            translate_pre_or_post_operator_value_expression(project, module, scope.clone(), expression)
+            translate_pre_or_post_operator_value_expression(
+                project,
+                module,
+                scope.clone(),
+                expression,
+            )
         }
 
         solidity::Expression::New(_, expression) => {
@@ -626,6 +678,7 @@ pub fn translate_expression(
 }
 
 pub fn create_value_expression(
+    project: &mut Project,
     module: Rc<RefCell<TranslatedModule>>,
     scope: Rc<RefCell<TranslationScope>>,
     type_name: &sway::TypeName,
@@ -681,7 +734,7 @@ pub fn create_value_expression(
 
                     let value_type_name = module
                         .borrow_mut()
-                        .get_expression_type(scope.clone(), value)
+                        .get_expression_type(project, scope.clone(), value)
                         .unwrap();
 
                     match value_type_name {
@@ -773,7 +826,7 @@ pub fn create_value_expression(
 
                         let mut value_type_name = module
                             .borrow_mut()
-                            .get_expression_type(scope.clone(), &value)
+                            .get_expression_type(project, scope.clone(), &value)
                             .unwrap();
 
                         if value_type_name.is_uint() {
@@ -814,7 +867,7 @@ pub fn create_value_expression(
                     _ => {
                         let value_type_name = module
                             .borrow_mut()
-                            .get_expression_type(scope.clone(), &value)
+                            .get_expression_type(project, scope.clone(), &value)
                             .unwrap();
 
                         if value_type_name != *type_name {
@@ -868,7 +921,11 @@ pub fn create_value_expression(
                                 "pow" => {
                                     let type_name = module
                                         .borrow_mut()
-                                        .get_expression_type(scope.clone(), &member_access.expression)
+                                        .get_expression_type(
+                                            project,
+                                            scope.clone(),
+                                            &member_access.expression,
+                                        )
                                         .unwrap();
 
                                     if !type_name.is_uint() {
@@ -1020,7 +1077,13 @@ pub fn create_value_expression(
                     type_name == name
                 }) {
                     let underlying_type = module.borrow().get_underlying_type(type_name);
-                    return create_value_expression(module, scope.clone(), &underlying_type, value);
+                    return create_value_expression(
+                        project,
+                        module,
+                        scope.clone(),
+                        &underlying_type,
+                        value,
+                    );
                 }
                 // Check to see if the type is a translated enum
                 else if let Some(translated_enum) = module.borrow().enums.iter().find(|s| {
@@ -1043,6 +1106,7 @@ pub fn create_value_expression(
                     else {
                         let underlying_type = module.borrow().get_underlying_type(type_name);
                         return create_value_expression(
+                            project,
                             module.clone(),
                             scope.clone(),
                             &underlying_type,
@@ -1076,6 +1140,7 @@ pub fn create_value_expression(
                             .map(|f| sway::ConstructorField {
                                 name: f.name.clone(),
                                 value: create_value_expression(
+                                    project,
                                     module.clone(),
                                     scope.clone(),
                                     &f.type_name,
@@ -1094,7 +1159,13 @@ pub fn create_value_expression(
             None => sway::Expression::Array(sway::Array {
                 elements: (0..*length)
                     .map(|_| {
-                        create_value_expression(module.clone(), scope.clone(), type_name, None)
+                        create_value_expression(
+                            project,
+                            module.clone(),
+                            scope.clone(),
+                            type_name,
+                            None,
+                        )
                     })
                     .collect(),
             }),
@@ -1169,7 +1240,13 @@ pub fn create_value_expression(
                 type_names
                     .iter()
                     .map(|type_name| {
-                        create_value_expression(module.clone(), scope.clone(), type_name, None)
+                        create_value_expression(
+                            project,
+                            module.clone(),
+                            scope.clone(),
+                            type_name,
+                            None,
+                        )
                     })
                     .collect(),
             ),

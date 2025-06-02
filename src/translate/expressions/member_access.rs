@@ -419,11 +419,37 @@ pub fn translate_member_access_expression(
                 }
 
                 (name, member) => {
-                    // Check to see if the variable is in scope
-                    if let Some(variable) = scope.borrow().get_variable_from_old_name(name) {
-                        let variable = variable.borrow();
-
-                        match &variable.type_name {
+                    let storage_namespace_name = module.borrow().get_storage_namespace_name();
+                    if let Some((new_name, type_name, storage_namespace)) =
+                        if let Some(variable) = scope.borrow().get_variable_from_old_name(name) {
+                            let variable = variable.borrow();
+                            Some((variable.new_name.clone(), variable.type_name.clone(), None))
+                        } else if let Some(storage) = module
+                            .borrow_mut()
+                            .get_storage_namespace()
+                            .fields
+                            .iter()
+                            .find(|s| s.old_name == name)
+                            .cloned()
+                        {
+                            Some((
+                                storage.name.clone(),
+                                sway::TypeName::Identifier {
+                                    name: "StorageKey".into(),
+                                    generic_parameters: Some(sway::GenericParameterList {
+                                        entries: vec![sway::GenericParameter {
+                                            type_name: storage.type_name.clone(),
+                                            implements: None,
+                                        }],
+                                    }),
+                                },
+                                Some(storage_namespace_name.clone()),
+                            ))
+                        } else {
+                            None
+                        }
+                    {
+                        match &type_name {
                             sway::TypeName::Identifier {
                                 name: type_name,
                                 generic_parameters,
@@ -439,12 +465,38 @@ pub fn translate_member_access_expression(
                                             ("StorageVec", Some(generic_parameters))
                                                 if generic_parameters.entries.len() == 1 =>
                                             {
+                                                let mut components: Vec<(
+                                                    String,
+                                                    Option<(
+                                                        Option<sway::GenericParameterList>,
+                                                        Vec<sway::Expression>,
+                                                    )>,
+                                                )> = vec![
+                                                    (new_name, None),
+                                                    ("len".to_string(), Some((None, vec![]))),
+                                                ];
+
+                                                if let Some(storage_namespace) = storage_namespace {
+                                                    components.insert(
+                                                        0,
+                                                        (
+                                                            format!(
+                                                                "storage::{}",
+                                                                storage_namespace.clone()
+                                                            ),
+                                                            None,
+                                                        ),
+                                                    );
+                                                }
+
                                                 return Ok(
                                                     sway::Expression::create_function_calls(
-                                                        Some(sway::Expression::create_identifier(
-                                                            variable.new_name.clone(),
-                                                        )),
-                                                        &[("len", Some((None, vec![])))],
+                                                        None,
+                                                        components
+                                                            .iter()
+                                                            .map(|s| (s.0.as_str(), s.1.clone()))
+                                                            .collect::<Vec<_>>()
+                                                            .as_slice(),
                                                     ),
                                                 );
                                             }
@@ -455,16 +507,18 @@ pub fn translate_member_access_expression(
                                         _ => {}
                                     }
                                 }
+
                                 ("Vec", Some(generic_parameters))
                                     if generic_parameters.entries.len() == 1 =>
                                 {
                                     match member {
                                         "length" => {
                                             return Ok(sway::Expression::create_function_calls(
-                                                Some(sway::Expression::create_identifier(
-                                                    variable.new_name.clone(),
-                                                )),
-                                                &[("len", Some((None, vec![])))],
+                                                None,
+                                                &[
+                                                    (new_name.as_str(), None),
+                                                    ("len", Some((None, vec![]))),
+                                                ],
                                             ));
                                         }
 
@@ -603,12 +657,18 @@ pub fn translate_member_access_expression(
     }
 
     let container = translate_expression(project, module.clone(), scope.clone(), container)?;
-    let container_type_name = module.borrow_mut().get_expression_type(scope.clone(), &container)?;
+    let container_type_name =
+        module
+            .borrow_mut()
+            .get_expression_type(project, scope.clone(), &container)?;
     let container_type_name_string = container_type_name.to_string();
 
-    let check_container =
+    let mut check_container =
         |container: &sway::Expression| -> Result<Option<sway::Expression>, Error> {
-            let container_type_name = module.borrow_mut().get_expression_type(scope.clone(), container)?;
+            let container_type_name =
+                module
+                    .borrow_mut()
+                    .get_expression_type(project, scope.clone(), container)?;
             let container_type_name_string = container_type_name.to_string();
 
             // Check if container is a struct

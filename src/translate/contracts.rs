@@ -167,7 +167,12 @@ pub fn translate_contract_definition(
         .find(|(e, _)| e.borrow().name == events_enum_name)
         .cloned()
     {
-        generate_enum_abi_encode_function(project, module.clone(), events_enum.clone(), abi_encode_impl.clone())?;
+        generate_enum_abi_encode_function(
+            project,
+            module.clone(),
+            events_enum.clone(),
+            abi_encode_impl.clone(),
+        )?;
     }
 
     // Translate contract error definitions
@@ -185,7 +190,12 @@ pub fn translate_contract_definition(
         .find(|(e, _)| e.borrow().name == errors_enum_name)
         .cloned()
     {
-        generate_enum_abi_encode_function(project, module.clone(), errors_enum.clone(), abi_encode_impl.clone())?;
+        generate_enum_abi_encode_function(
+            project,
+            module.clone(),
+            errors_enum.clone(),
+            abi_encode_impl.clone(),
+        )?;
     }
 
     // Translate contract state variables
@@ -273,9 +283,11 @@ pub fn translate_contract_definition(
                 &[deferred_initialization.name.as_str()],
             );
 
-            let value_type_name = module
-                .borrow_mut()
-                .get_expression_type(Default::default(), &deferred_initialization.value)?;
+            let value_type_name = module.borrow_mut().get_expression_type(
+                project,
+                Default::default(),
+                &deferred_initialization.value,
+            )?;
 
             match &deferred_initialization.value {
                 sway::Expression::Array(sway::Array { elements }) => {
@@ -294,17 +306,6 @@ pub fn translate_contract_definition(
                 }
 
                 _ => {
-                    let type_name = {
-                        let mut module = module.borrow_mut();
-                        let storage = module.get_storage_namespace();
-                        let storage_field = storage
-                            .fields
-                            .iter()
-                            .find(|x| x.name == deferred_initialization.name)
-                            .unwrap();
-                        storage_field.type_name.clone()
-                    };
-
                     assignment_statements.push(sway::Statement::from(
                         create_assignment_expression(
                             project,
@@ -424,17 +425,23 @@ pub fn translate_contract_definition(
                 .insert(0, sway::ImplItem::Function(function));
         }
 
-        let mut module = module.borrow_mut();
-        let constructor_function = module
-            .functions
+        let constructor_function = contract
+            .abi_impl
+            .items
             .iter_mut()
-            .find(|f| {
-                let sway::TypeName::Function { new_name, .. } = &f.signature else {
-                    unreachable!()
+            .find(|i| {
+                let sway::ImplItem::Function(f) = i else {
+                    return false;
                 };
-                new_name == "constructor"
+
+                f.name == "constructor"
             })
-            .map(|x| x.implementation.as_mut())
+            .map(|i| {
+                let sway::ImplItem::Function(f) = i else {
+                    return None;
+                };
+                Some(f)
+            })
             .flatten()
             .unwrap();
 

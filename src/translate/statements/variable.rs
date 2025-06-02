@@ -132,7 +132,7 @@ pub fn translate_variable_definition_statement(
                                                 "push",
                                                 Some((
                                                     None,
-                                                    vec![create_value_expression(
+                                                    vec![create_value_expression(project, 
                                                         module.clone(),
                                                         scope.clone(),
                                                         element_type_name,
@@ -169,14 +169,14 @@ pub fn translate_variable_definition_statement(
     }
 
     let value = if let Some(value) = value {
-        let value_type = module.borrow_mut().get_expression_type(scope.clone(), &value)?;
+        let value_type = module.borrow_mut().get_expression_type(project, scope.clone(), &value)?;
         coerce_expression(&value, &value_type, &type_name).unwrap()
     } else if let Some(x) = initializer.as_ref() {
         let x = translate_pre_or_post_operator_value_expression(project, module.clone(), scope.clone(), x)?;
-        let value_type = module.borrow_mut().get_expression_type(scope.clone(), &x)?;
+        let value_type = module.borrow_mut().get_expression_type(project, scope.clone(), &x)?;
         coerce_expression(&x, &value_type, &type_name).unwrap()
     } else {
-        create_value_expression(module.clone(), scope.clone(), &type_name, None)
+        create_value_expression(project, module.clone(), scope.clone(), &type_name, None)
     };
 
     let statement = sway::Statement::from(sway::Let {

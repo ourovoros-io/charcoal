@@ -103,15 +103,20 @@ pub fn translate_variable_access_expression(
                 if let Some(namespace) = storage
                     .namespaces
                     .iter()
-                    .find(|n| n.fields.iter().any(|f| f.name == *name))
+                    .find(|n| n.fields.iter().any(|f| f.old_name == *name))
                 {
+                    let field = namespace
+                        .fields
+                        .iter()
+                        .find(|f| f.old_name == *name)
+                        .unwrap();
                     return Ok(Some(TranslatedVariableAccess {
                         variable: None,
                         expression: sway::Expression::create_function_calls(
                             None,
                             &[
                                 (format!("storage::{}", namespace.name).as_str(), None),
-                                (name, None),
+                                (field.name.as_str(), None),
                                 ("read", Some((None, vec![]))),
                             ],
                         ),
@@ -175,7 +180,11 @@ pub fn translate_variable_access_expression(
             if let sway::Expression::FunctionCall(function_call) = &expression {
                 if let sway::Expression::MemberAccess(member_access) = &function_call.function {
                     if member_access.member == "read" && function_call.parameters.is_empty() {
-                        let container_type = module.borrow_mut().get_expression_type(scope.clone(), &member_access.expression)?;
+                        let container_type = module.borrow_mut().get_expression_type(
+                            project,
+                            scope.clone(),
+                            &member_access.expression,
+                        )?;
 
                         if container_type.is_storage_key() {
                             expression = member_access.expression.clone();
@@ -184,9 +193,10 @@ pub fn translate_variable_access_expression(
                 }
             }
 
-            let type_name = module
-                .borrow_mut()
-                .get_expression_type(scope.clone(), &expression)?;
+            let type_name =
+                module
+                    .borrow_mut()
+                    .get_expression_type(project, scope.clone(), &expression)?;
 
             Ok(Some(TranslatedVariableAccess {
                 variable,
@@ -243,7 +253,7 @@ pub fn translate_variable_access_expression(
                                     ("StorageVec", Some(_)) => {
                                         let index_type_name = module
                                             .borrow_mut()
-                                            .get_expression_type(scope.clone(), &index)?;
+                                            .get_expression_type(project, scope.clone(), &index)?;
                                         let u64_type = sway::TypeName::Identifier {
                                             name: "u64".to_string(),
                                             generic_parameters: None,
@@ -322,9 +332,11 @@ pub fn translate_variable_access_expression(
                         ("Vec", Some(generic_parameters))
                             if generic_parameters.entries.len() == 1 =>
                         {
-                            let index_type_name = module
-                                .borrow_mut()
-                                .get_expression_type(scope.clone(), &index)?;
+                            let index_type_name = module.borrow_mut().get_expression_type(
+                                project,
+                                scope.clone(),
+                                &index,
+                            )?;
                             let u64_type = sway::TypeName::Identifier {
                                 name: "u64".to_string(),
                                 generic_parameters: None,
@@ -423,9 +435,11 @@ pub fn translate_variable_access_expression(
             let translated_container =
                 translate_expression(project, module.clone(), scope.clone(), container)?;
 
-            let container_type_name = module
-                .borrow_mut()
-                .get_expression_type(scope.clone(), &translated_container)?;
+            let container_type_name = module.borrow_mut().get_expression_type(
+                project,
+                scope.clone(),
+                &translated_container,
+            )?;
             let container_type_name_string = container_type_name.to_string();
 
             let Some(TranslatedVariableAccess { variable, .. }) =

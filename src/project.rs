@@ -974,7 +974,8 @@ impl Project {
         }
 
         for variable_definition in variable_definitions {
-            let (deferred_initializations, mapping_names) = translate_state_variable(self, module.clone(), &variable_definition)?;
+            let (deferred_initializations, mapping_names) =
+                translate_state_variable(self, module.clone(), &variable_definition)?;
             assert!(deferred_initializations.is_empty());
             assert!(mapping_names.is_empty());
         }
