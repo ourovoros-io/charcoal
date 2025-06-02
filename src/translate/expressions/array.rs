@@ -6,13 +6,13 @@ use std::{cell::RefCell, rc::Rc};
 pub fn translate_array_literal_expression(
     project: &mut Project,
     module: Rc<RefCell<TranslatedModule>>,
-    scope: &Rc<RefCell<TranslationScope>>,
+    scope: Rc<RefCell<TranslationScope>>,
     expressions: &[solidity::Expression],
 ) -> Result<sway::Expression, Error> {
     Ok(sway::Expression::Array(sway::Array {
         elements: expressions
             .iter()
-            .map(|x| translate_expression(project, module.clone(), scope, x))
+            .map(|x| translate_expression(project, module.clone(), scope.clone(), x))
             .collect::<Result<Vec<_>, _>>()?,
     }))
 }
@@ -21,7 +21,7 @@ pub fn translate_array_literal_expression(
 pub fn translate_array_subscript_expression(
     project: &mut Project,
     module: Rc<RefCell<TranslatedModule>>,
-    scope: &Rc<RefCell<TranslationScope>>,
+    scope: Rc<RefCell<TranslationScope>>,
     expression: &solidity::Expression,
 ) -> Result<sway::Expression, Error> {
     //
@@ -33,7 +33,7 @@ pub fn translate_array_subscript_expression(
     let Some(TranslatedVariableAccess {
         variable,
         expression,
-    }) = translate_variable_access_expression(project, module.clone(), scope, expression)?
+    }) = translate_variable_access_expression(project, module.clone(), scope.clone(), expression)?
     else {
         panic!(
             "Failed to translate variable access expression: {}",
@@ -41,14 +41,9 @@ pub fn translate_array_subscript_expression(
         )
     };
 
-    if variable.is_none() {
-        return Ok(expression);
+    if let Some(variable) = variable.clone() {
+        variable.borrow_mut().read_count += 1;
     }
-
-    let variable = variable.unwrap();
-    let mut variable = variable.borrow_mut();
-
-    variable.read_count += 1;
 
     Ok(expression)
 }
@@ -57,7 +52,7 @@ pub fn translate_array_subscript_expression(
 pub fn translate_array_slice_expression(
     project: &mut Project,
     module: Rc<RefCell<TranslatedModule>>,
-    scope: &Rc<RefCell<TranslationScope>>,
+    scope: Rc<RefCell<TranslationScope>>,
     expression: &solidity::Expression,
 ) -> Result<sway::Expression, Error> {
     let solidity::Expression::ArraySlice(_, array_expression, from_index, to_index) = expression
@@ -65,10 +60,10 @@ pub fn translate_array_slice_expression(
         panic!("Expected ArraySlice, found {expression:#?}")
     };
 
-    let expression = translate_expression(project, module.clone(), scope, array_expression)?;
+    let expression = translate_expression(project, module.clone(), scope.clone(), array_expression)?;
     let type_name = module
         .borrow_mut()
-        .get_expression_type(scope, &expression)?;
+        .get_expression_type(scope.clone(), &expression)?;
 
     let u64_type = sway::TypeName::Identifier {
         name: "u64".into(),
@@ -77,11 +72,11 @@ pub fn translate_array_slice_expression(
 
     let mut from_index = from_index
         .as_ref()
-        .map(|x| translate_expression(project, module.clone(), scope, x.as_ref()).unwrap());
+        .map(|x| translate_expression(project, module.clone(), scope.clone(), x.as_ref()).unwrap());
 
     let mut from_index_type = from_index
         .as_ref()
-        .map(|x| module.borrow_mut().get_expression_type(scope, x).unwrap());
+        .map(|x| module.borrow_mut().get_expression_type(scope.clone(), x).unwrap());
 
     // Check if from_index needs to be cast to u64
     if let (Some(from_index), Some(from_index_type)) =
@@ -93,11 +88,11 @@ pub fn translate_array_slice_expression(
 
     let mut to_index = to_index
         .as_ref()
-        .map(|x| translate_expression(project, module.clone(), scope, x.as_ref()).unwrap());
+        .map(|x| translate_expression(project, module.clone(), scope.clone(), x.as_ref()).unwrap());
 
     let mut to_index_type = to_index
         .as_ref()
-        .map(|x| module.borrow_mut().get_expression_type(scope, x).unwrap());
+        .map(|x| module.borrow_mut().get_expression_type(scope.clone(), x).unwrap());
 
     // Check if to_index needs to be cast to u64
     if let (Some(to_index), Some(to_index_type)) = (to_index.as_mut(), to_index_type.as_mut()) {

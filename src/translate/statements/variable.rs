@@ -9,7 +9,7 @@ use std::{cell::RefCell, rc::Rc};
 pub fn translate_variable_definition_statement(
     project: &mut Project,
     module: Rc<RefCell<TranslatedModule>>,
-    scope: &Rc<RefCell<TranslationScope>>,
+    scope: Rc<RefCell<TranslationScope>>,
     variable_declaration: &solidity::VariableDeclaration,
     initializer: Option<&solidity::Expression>,
 ) -> Result<sway::Statement, Error> {
@@ -78,7 +78,7 @@ pub fn translate_variable_definition_statement(
                 }
 
                 let element_type_name = &generic_parameters.entries.first().unwrap().type_name;
-                let length = translate_expression(project, module.clone(), scope, &args[0])?;
+                let length = translate_expression(project, module.clone(), scope.clone(), &args[0])?;
 
                 value = Some(sway::Expression::from(sway::Block {
                     statements: vec![
@@ -169,11 +169,11 @@ pub fn translate_variable_definition_statement(
     }
 
     let value = if let Some(value) = value {
-        let value_type = module.borrow_mut().get_expression_type(scope, &value)?;
+        let value_type = module.borrow_mut().get_expression_type(scope.clone(), &value)?;
         coerce_expression(&value, &value_type, &type_name).unwrap()
     } else if let Some(x) = initializer.as_ref() {
-        let x = translate_pre_or_post_operator_value_expression(project, module.clone(), scope, x)?;
-        let value_type = module.borrow_mut().get_expression_type(scope, &x)?;
+        let x = translate_pre_or_post_operator_value_expression(project, module.clone(), scope.clone(), x)?;
+        let value_type = module.borrow_mut().get_expression_type(scope.clone(), &x)?;
         coerce_expression(&x, &value_type, &type_name).unwrap()
     } else {
         create_value_expression(module.clone(), scope.clone(), &type_name, None)

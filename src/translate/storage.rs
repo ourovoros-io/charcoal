@@ -100,7 +100,7 @@ pub fn translate_state_variable(
             // Create deferred initializations for types that can't be initialized with a value
             ("StorageString", None) | ("StorageVec", Some(_)) => {
                 if let Some(x) = variable_definition.initializer.as_ref() {
-                    let value = translate_expression(project, module.clone(), &value_scope, x)?;
+                    let value = translate_expression(project, module.clone(), value_scope.clone(), x)?;
 
                     deferred_initializations.push(DeferredInitialization {
                         name: new_name.clone(),
@@ -127,7 +127,7 @@ pub fn translate_state_variable(
                     .as_ref()
                     .map(|x| {
                         let mut value =
-                            translate_expression(project, module.clone(), &value_scope, x);
+                            translate_expression(project, module.clone(), value_scope.clone(), x);
 
                         if let Ok(sway::Expression::Commented(comment, expression)) = &value {
                             if let sway::Expression::FunctionCall(function_call) =
@@ -160,7 +160,7 @@ pub fn translate_state_variable(
                 let initializer = variable_definition
                     .initializer
                     .as_ref()
-                    .map(|x| translate_expression(project, module.clone(), &value_scope, x))
+                    .map(|x| translate_expression(project, module.clone(), value_scope.clone(), x))
                     .transpose()?;
 
                 // HACK: Add to mapping names for toplevel structs in storage that contain storage mappings
@@ -291,7 +291,7 @@ pub fn translate_state_variable(
             let initializer = translate_expression(
                 project,
                 module.clone(),
-                &value_scope,
+                value_scope.clone(),
                 variable_definition.initializer.as_ref().unwrap(),
             )?;
 
@@ -317,7 +317,7 @@ pub fn translate_state_variable(
 
         _ => {
             if let Some(x) = variable_definition.initializer.as_ref() {
-                let value = translate_expression(project, module.clone(), &value_scope, x)?;
+                let value = translate_expression(project, module.clone(), value_scope.clone(), x)?;
                 create_value_expression(
                     module.clone(),
                     value_scope.clone(),
@@ -340,7 +340,7 @@ pub fn translate_state_variable(
         let scope = Rc::new(RefCell::new(TranslationScope::default()));
 
         // Evaluate the value ahead of time in order to generate an appropriate constant value expression
-        let value = evaluate_expression(module.clone(), scope, &variable_type_name, &value);
+        let value = evaluate_expression(module.clone(), scope.clone(), &variable_type_name, &value);
 
         module.borrow_mut().constants.push(sway::Constant {
             is_public,

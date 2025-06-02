@@ -7,7 +7,7 @@ use std::{cell::RefCell, rc::Rc};
 pub fn translate_address_call_expression(
     _project: &mut Project,
     module: Rc<RefCell<TranslatedModule>>,
-    scope: &Rc<RefCell<TranslationScope>>,
+    scope: Rc<RefCell<TranslationScope>>,
     payload: &sway::Expression,
     coins: Option<sway::Expression>,
     asset_id: Option<sway::Expression>,
@@ -39,7 +39,7 @@ pub fn translate_address_call_expression(
     let return_length_name = scope.borrow_mut().generate_unique_variable_name("return_length");
     let result_ptr_name = scope.borrow_mut().generate_unique_variable_name("result_ptr");
 
-    let payload_type = module.borrow_mut().get_expression_type(scope, payload)?;
+    let payload_type = module.borrow_mut().get_expression_type(scope.clone(), payload)?;
 
     Ok(sway::Expression::from(sway::Block {
         statements: vec![

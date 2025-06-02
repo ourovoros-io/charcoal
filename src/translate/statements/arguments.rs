@@ -6,7 +6,7 @@ use std::{cell::RefCell, rc::Rc};
 pub fn translate_args_statement(
     _project: &mut Project,
     _module: Rc<RefCell<TranslatedModule>>,
-    _scope: &Rc<RefCell<TranslationScope>>,
+    _scope: Rc<RefCell<TranslationScope>>,
     _named_arguments: &[solidity::NamedArgument],
 ) -> Result<sway::Statement, Error> {
     todo!("translate args statement")

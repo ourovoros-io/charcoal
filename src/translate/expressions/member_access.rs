@@ -9,7 +9,7 @@ use std::{cell::RefCell, rc::Rc};
 pub fn translate_member_access_expression(
     project: &mut Project,
     module: Rc<RefCell<TranslatedModule>>,
-    scope: &Rc<RefCell<TranslationScope>>,
+    scope: Rc<RefCell<TranslationScope>>,
     expression: &solidity::Expression,
     container: &solidity::Expression,
     member: &solidity::Identifier,
@@ -602,13 +602,13 @@ pub fn translate_member_access_expression(
         _ => {}
     }
 
-    let container = translate_expression(project, module.clone(), scope, container)?;
-    let container_type_name = module.borrow_mut().get_expression_type(scope, &container)?;
+    let container = translate_expression(project, module.clone(), scope.clone(), container)?;
+    let container_type_name = module.borrow_mut().get_expression_type(scope.clone(), &container)?;
     let container_type_name_string = container_type_name.to_string();
 
     let check_container =
         |container: &sway::Expression| -> Result<Option<sway::Expression>, Error> {
-            let container_type_name = module.borrow_mut().get_expression_type(scope, container)?;
+            let container_type_name = module.borrow_mut().get_expression_type(scope.clone(), container)?;
             let container_type_name_string = container_type_name.to_string();
 
             // Check if container is a struct

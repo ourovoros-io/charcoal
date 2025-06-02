@@ -6,21 +6,21 @@ use std::{cell::RefCell, rc::Rc};
 pub fn translate_pre_or_post_operator_value_expression(
     project: &mut Project,
     module: Rc<RefCell<TranslatedModule>>,
-    scope: &Rc<RefCell<TranslationScope>>,
+    scope: Rc<RefCell<TranslationScope>>,
     expression: &solidity::Expression,
 ) -> Result<sway::Expression, Error> {
     match expression {
         solidity::Expression::PreIncrement(loc, x) => {
-            translate_pre_operator_expression(project, module.clone(), scope, loc, x, "+=")
+            translate_pre_operator_expression(project, module.clone(), scope.clone(), loc, x, "+=")
         }
         solidity::Expression::PreDecrement(loc, x) => {
-            translate_pre_operator_expression(project, module.clone(), scope, loc, x, "-=")
+            translate_pre_operator_expression(project, module.clone(), scope.clone(), loc, x, "-=")
         }
         solidity::Expression::PostIncrement(loc, x) => {
-            translate_post_operator_expression(project, module.clone(), scope, loc, x, "+=")
+            translate_post_operator_expression(project, module.clone(), scope.clone(), loc, x, "+=")
         }
         solidity::Expression::PostDecrement(loc, x) => {
-            translate_post_operator_expression(project, module.clone(), scope, loc, x, "-=")
+            translate_post_operator_expression(project, module.clone(), scope.clone(), loc, x, "-=")
         }
 
         _ => {
@@ -32,7 +32,7 @@ pub fn translate_pre_or_post_operator_value_expression(
             //     },
             // );
 
-            let result = translate_expression(project, module.clone(), scope, expression)?;
+            let result = translate_expression(project, module.clone(), scope.clone(), expression)?;
             // println!("Translated pre- or post-operator value expression: {}", sway::TabbedDisplayer(&result));
             Ok(result)
         }
@@ -43,7 +43,7 @@ pub fn translate_pre_or_post_operator_value_expression(
 pub fn translate_pre_operator_expression(
     project: &mut Project,
     module: Rc<RefCell<TranslatedModule>>,
-    scope: &Rc<RefCell<TranslationScope>>,
+    scope: Rc<RefCell<TranslationScope>>,
     loc: &solidity::Loc,
     x: &solidity::Expression,
     operator: &str,
@@ -51,7 +51,7 @@ pub fn translate_pre_operator_expression(
     let assignment = sway::Statement::from(translate_assignment_expression(
         project,
         module.clone(),
-        scope,
+        scope.clone(),
         operator,
         x,
         &solidity::Expression::NumberLiteral(*loc, "1".into(), String::new(), None),
@@ -60,7 +60,7 @@ pub fn translate_pre_operator_expression(
     let Some(TranslatedVariableAccess {
         variable: Some(variable),
         expression,
-    }) = translate_variable_access_expression(project, module.clone(), scope, x)?
+    }) = translate_variable_access_expression(project, module.clone(), scope.clone(), x)?
     else {
         panic!("Variable not found: {}", x);
     };
@@ -78,7 +78,7 @@ pub fn translate_pre_operator_expression(
 pub fn translate_post_operator_expression(
     project: &mut Project,
     module: Rc<RefCell<TranslatedModule>>,
-    scope: &Rc<RefCell<TranslationScope>>,
+    scope: Rc<RefCell<TranslationScope>>,
     loc: &solidity::Loc,
     x: &solidity::Expression,
     operator: &str,
@@ -86,7 +86,7 @@ pub fn translate_post_operator_expression(
     let assignment = sway::Statement::from(translate_assignment_expression(
         project,
         module.clone(),
-        scope,
+        scope.clone(),
         operator,
         x,
         &solidity::Expression::NumberLiteral(*loc, "1".into(), String::new(), None),
@@ -95,7 +95,7 @@ pub fn translate_post_operator_expression(
     let Some(TranslatedVariableAccess {
         variable: Some(variable),
         expression,
-    }) = translate_variable_access_expression(project, module.clone(), scope, x)?
+    }) = translate_variable_access_expression(project, module.clone(), scope.clone(), x)?
     else {
         panic!("Variable not found: {}", x);
     };

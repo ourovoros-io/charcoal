@@ -13,7 +13,7 @@ pub use self::{build_ins::*, casting::*, member_access::*, utils::*};
 pub fn translate_function_call_expression(
     project: &mut Project,
     module: Rc<RefCell<TranslatedModule>>,
-    scope: &Rc<RefCell<TranslationScope>>,
+    scope: Rc<RefCell<TranslationScope>>,
     expression: &solidity::Expression,
     function: &solidity::Expression,
     named_arguments: Option<&[solidity::NamedArgument]>,
@@ -44,7 +44,7 @@ pub fn translate_function_call_expression(
                 solidity::Type::Address => translate_address_type_cast_function_call(
                     project,
                     module.clone(),
-                    scope,
+                    scope.clone(),
                     expression,
                     &arguments[0],
                 ),
@@ -52,7 +52,7 @@ pub fn translate_function_call_expression(
                 solidity::Type::Payable => translate_payable_type_cast_function_call(
                     project,
                     module.clone(),
-                    scope,
+                    scope.clone(),
                     expression,
                     arguments,
                 ),
@@ -60,7 +60,7 @@ pub fn translate_function_call_expression(
                 solidity::Type::Int(bits) => translate_int_types_cast_function_call(
                     project,
                     module.clone(),
-                    scope,
+                    scope.clone(),
                     expression,
                     &arguments[0],
                     *bits as usize,
@@ -69,7 +69,7 @@ pub fn translate_function_call_expression(
                 solidity::Type::Uint(bits) => translate_uint_types_cast_function_call(
                     project,
                     module.clone(),
-                    scope,
+                    scope.clone(),
                     expression,
                     &arguments[0],
                     *bits as usize,
@@ -78,7 +78,7 @@ pub fn translate_function_call_expression(
                 solidity::Type::Bytes(byte_count) => translate_bytes_type_cast_function_call(
                     project,
                     module.clone(),
-                    scope,
+                    scope.clone(),
                     &arguments[0],
                     *byte_count as usize,
                     function,
@@ -87,14 +87,14 @@ pub fn translate_function_call_expression(
                 solidity::Type::DynamicBytes => translate_dynamic_bytes_type_cast_function_call(
                     project,
                     module.clone(),
-                    scope,
+                    scope.clone(),
                     &arguments[0],
                 ),
 
                 solidity::Type::String => translate_string_type_cast_function_call(
                     project,
                     module.clone(),
-                    scope,
+                    scope.clone(),
                     expression,
                     &arguments[0],
                 ),
@@ -112,13 +112,13 @@ pub fn translate_function_call_expression(
 
             let parameters = arguments
                 .iter()
-                .map(|a| translate_expression(project, module.clone(), scope, a))
+                .map(|a| translate_expression(project, module.clone(), scope.clone(), a))
                 .collect::<Result<Vec<_>, _>>()?;
 
             translate_builtin_function_call(
                 project,
                 module.clone(),
-                scope,
+                scope.clone(),
                 function,
                 named_arguments,
                 name,
@@ -169,7 +169,7 @@ pub fn translate_function_call_expression(
                     "abi" => translate_abi_member_access_function_call(
                         project,
                         module.clone(),
-                        scope,
+                        scope.clone(),
                         arguments,
                         expression,
                         &member.name,
@@ -178,7 +178,7 @@ pub fn translate_function_call_expression(
                     "super" => translate_super_member_access_function_call(
                         project,
                         module.clone(),
-                        scope,
+                        scope.clone(),
                         arguments,
                         named_arguments,
                         member,
@@ -187,7 +187,7 @@ pub fn translate_function_call_expression(
                     "this" => translate_this_member_access_function_call(
                         project,
                         module.clone(),
-                        scope,
+                        scope.clone(),
                         arguments,
                         named_arguments,
                         member,
@@ -196,12 +196,12 @@ pub fn translate_function_call_expression(
                     name => {
                         let parameters = arguments
                             .iter()
-                            .map(|a| translate_expression(project, module.clone(), scope, a))
+                            .map(|a| translate_expression(project, module.clone(), scope.clone(), a))
                             .collect::<Result<Vec<_>, _>>()?;
 
                         let parameter_types = parameters
                             .iter()
-                            .map(|p| module.borrow_mut().get_expression_type(scope, p))
+                            .map(|p| module.borrow_mut().get_expression_type(scope.clone(), p))
                             .collect::<Result<Vec<_>, _>>()?;
 
                         // TODO: check full inheritance hierarchy
@@ -214,7 +214,7 @@ pub fn translate_function_call_expression(
                         //         if let Some(result) = resolve_function_call(
                         //             project,
                         //             module.clone(),
-                        //             scope,
+                        //             scope.clone(),
                         //             &inherited_definition.toplevel_scope,
                         //             member.name.as_str(),
                         //             named_arguments,
@@ -249,7 +249,7 @@ pub fn translate_function_call_expression(
                             if let Some(result) = resolve_struct_constructor(
                                 project,
                                 module.clone(),
-                                scope,
+                                scope.clone(),
                                 external_definition.borrow().structs.clone().as_slice(),
                                 member.name.as_str(),
                                 named_arguments,
@@ -263,7 +263,7 @@ pub fn translate_function_call_expression(
                             if let Some(result) = resolve_function_call(
                                 project,
                                 module.clone(),
-                                scope,
+                                scope.clone(),
                                 external_definition.clone(),
                                 member.name.as_str(),
                                 named_arguments,
@@ -281,7 +281,7 @@ pub fn translate_function_call_expression(
                         //     if let Some(result) = resolve_struct_constructor(
                         //         project,
                         //         module.clone(),
-                        //         scope,
+                        //         scope.clone(),
                         //         module.borrow().structs.clone().as_slice(),
                         //         member.name.as_str(),
                         //         named_arguments,
@@ -295,7 +295,7 @@ pub fn translate_function_call_expression(
                         //     if let Some(result) = resolve_function_call(
                         //         project,
                         //         module.clone(),
-                        //         scope,
+                        //         scope.clone(),
                         //         module.clone(),
                         //         member.name.as_str(),
                         //         named_arguments,
@@ -309,10 +309,10 @@ pub fn translate_function_call_expression(
                         let solidity_container = container;
 
                         let container =
-                            translate_expression(project, module.clone(), scope, container)?;
+                            translate_expression(project, module.clone(), scope.clone(), container)?;
 
                         let type_name =
-                            module.borrow_mut().get_expression_type(scope, &container)?;
+                            module.borrow_mut().get_expression_type(scope.clone(), &container)?;
 
                         let mut abi_type_name = None;
 
@@ -388,7 +388,7 @@ pub fn translate_function_call_expression(
                                 if let Some(result) = resolve_abi_function_call(
                                     project,
                                     module.clone(),
-                                    scope,
+                                    scope.clone(),
                                     &abi,
                                     &container,
                                     member.name.as_str(),
@@ -408,13 +408,13 @@ pub fn translate_function_call_expression(
                                     let payload = translate_expression(
                                         project,
                                         module.clone(),
-                                        scope,
+                                        scope.clone(),
                                         &arguments[0],
                                     )?;
                                     return translate_address_call_expression(
                                         project,
                                         module.clone(),
-                                        scope,
+                                        scope.clone(),
                                         &payload,
                                         None,
                                         None,
@@ -471,10 +471,10 @@ pub fn translate_function_call_expression(
                     let solidity_container = container;
 
                     let mut container =
-                        translate_expression(project, module.clone(), scope, container)?;
+                        translate_expression(project, module.clone(), scope.clone(), container)?;
 
                     let mut type_name =
-                        module.borrow_mut().get_expression_type(scope, &container)?;
+                        module.borrow_mut().get_expression_type(scope.clone(), &container)?;
 
                     // println!(
                     //     "type of {} is {}",
@@ -501,7 +501,7 @@ pub fn translate_function_call_expression(
                             ("Identity", None) => translate_identity_member_access_function_call(
                                 project,
                                 module.clone(),
-                                scope,
+                                scope.clone(),
                                 expression,
                                 arguments,
                                 container,
@@ -516,7 +516,7 @@ pub fn translate_function_call_expression(
                                 translate_storage_vec_member_access_function_call(
                                     project,
                                     module.clone(),
-                                    scope,
+                                    scope.clone(),
                                     expression,
                                     arguments,
                                     member,
@@ -528,7 +528,7 @@ pub fn translate_function_call_expression(
                             ("Vec", Some(_)) => translate_vec_member_access_function_call(
                                 project,
                                 module.clone(),
-                                scope,
+                                scope.clone(),
                                 arguments,
                                 member,
                                 solidity_container,
@@ -539,13 +539,13 @@ pub fn translate_function_call_expression(
                                 let mut parameters = arguments
                                     .iter()
                                     .map(|a| {
-                                        translate_expression(project, module.clone(), scope, a)
+                                        translate_expression(project, module.clone(), scope.clone(), a)
                                     })
                                     .collect::<Result<Vec<_>, _>>()?;
 
                                 let parameter_types = parameters
                                     .iter()
-                                    .map(|p| module.borrow_mut().get_expression_type(scope, p))
+                                    .map(|p| module.borrow_mut().get_expression_type(scope.clone(), p))
                                     .collect::<Result<Vec<_>, _>>()
                                     .unwrap();
 
@@ -557,7 +557,7 @@ pub fn translate_function_call_expression(
                                     0,
                                     module
                                         .borrow_mut()
-                                        .get_expression_type(scope, &container)
+                                        .get_expression_type(scope.clone(), &container)
                                         .unwrap(),
                                 );
 
@@ -586,7 +586,7 @@ pub fn translate_function_call_expression(
                                     // if let Some(result) = resolve_function_call(
                                     //     project,
                                     //     module.clone(),
-                                    //     scope,
+                                    //     scope.clone(),
                                     //     &external_scope,
                                     //     member.name.as_str(),
                                     //     named_arguments,
@@ -751,12 +751,12 @@ pub fn translate_function_call_expression(
                         sway::TypeName::Array { .. } => {
                             let mut parameters = arguments
                                 .iter()
-                                .map(|a| translate_expression(project, module.clone(), scope, a))
+                                .map(|a| translate_expression(project, module.clone(), scope.clone(), a))
                                 .collect::<Result<Vec<_>, _>>()?;
 
                             let mut parameter_types = parameters
                                 .iter()
-                                .map(|p| module.borrow_mut().get_expression_type(scope, p))
+                                .map(|p| module.borrow_mut().get_expression_type(scope.clone(), p))
                                 .collect::<Result<Vec<_>, _>>()
                                 .unwrap();
 
@@ -765,7 +765,7 @@ pub fn translate_function_call_expression(
                                 0,
                                 module
                                     .borrow_mut()
-                                    .get_expression_type(scope, &container)
+                                    .get_expression_type(scope.clone(), &container)
                                     .unwrap(),
                             );
 
@@ -795,7 +795,7 @@ pub fn translate_function_call_expression(
                                 // if let Some(result) = resolve_function_call(
                                 //     project,
                                 //     module.clone(),
-                                //     scope,
+                                //     scope.clone(),
                                 //     &external_scope,
                                 //     member.name.as_str(),
                                 //     named_arguments,
@@ -845,12 +845,12 @@ pub fn translate_function_call_expression(
                         sway::TypeName::StringSlice => {
                             let mut parameters = arguments
                                 .iter()
-                                .map(|a| translate_expression(project, module.clone(), scope, a))
+                                .map(|a| translate_expression(project, module.clone(), scope.clone(), a))
                                 .collect::<Result<Vec<_>, _>>()?;
 
                             let mut parameter_types = parameters
                                 .iter()
-                                .map(|p| module.borrow_mut().get_expression_type(scope, p))
+                                .map(|p| module.borrow_mut().get_expression_type(scope.clone(), p))
                                 .collect::<Result<Vec<_>, _>>()
                                 .unwrap();
 
@@ -859,7 +859,7 @@ pub fn translate_function_call_expression(
                                 0,
                                 module
                                     .borrow_mut()
-                                    .get_expression_type(scope, &container)
+                                    .get_expression_type(scope.clone(), &container)
                                     .unwrap(),
                             );
 
@@ -883,7 +883,7 @@ pub fn translate_function_call_expression(
                                 // if let Some(result) = resolve_function_call(
                                 //     project,
                                 //     module.clone(),
-                                //     scope,
+                                //     scope.clone(),
                                 //     &external_scope,
                                 //     member.name.as_str(),
                                 //     named_arguments,
@@ -948,7 +948,7 @@ pub fn translate_function_call_expression(
             translate_member_access_function_call(
                 project,
                 module.clone(),
-                scope,
+                scope.clone(),
                 function,
                 args,
                 expression,
@@ -962,7 +962,7 @@ pub fn translate_function_call_expression(
                 translate_function_call_block_member_access(
                     project,
                     module.clone(),
-                    scope,
+                    scope.clone(),
                     expression,
                     arguments,
                     container,
@@ -982,12 +982,12 @@ pub fn translate_function_call_expression(
 pub fn translate_function_call_block_expression(
     project: &mut Project,
     module: Rc<RefCell<TranslatedModule>>,
-    scope: &Rc<RefCell<TranslationScope>>,
+    scope: Rc<RefCell<TranslationScope>>,
     function: &solidity::Expression,
     block: &solidity::Statement,
 ) -> Result<sway::Expression, Error> {
     if block.is_empty() {
-        return translate_expression(project, module.clone(), scope, function);
+        return translate_expression(project, module.clone(), scope.clone(), function);
     }
 
     panic!(

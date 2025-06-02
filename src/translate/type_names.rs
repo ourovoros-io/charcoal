@@ -455,7 +455,7 @@ pub fn translate_type_name(
                     //     ..Default::default()
                     // }));
 
-                    // match translate_expression(project, module, &scope, length.as_ref()) {
+                    // match translate_expression(project, module, scope.clone(), length.as_ref()) {
                     //     Ok(sway::Expression::Literal(sway::Literal::DecInt(length, _) | sway::Literal::HexInt(length, _))) => length.try_into().unwrap(),
                     //     Ok(_) => panic!("Invalid array length expression: {length:#?}"),
                     //     Err(e) => panic!("Failed to translate array length expression: {e}"),

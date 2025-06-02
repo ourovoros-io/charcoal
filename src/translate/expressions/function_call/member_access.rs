@@ -8,7 +8,7 @@ use std::{cell::RefCell, rc::Rc};
 pub fn translate_member_access_function_call(
     project: &mut Project,
     module: Rc<RefCell<TranslatedModule>>,
-    scope: &Rc<RefCell<TranslationScope>>,
+    scope: Rc<RefCell<TranslationScope>>,
     function: &solidity::Expression,
     args: &[solidity::Expression],
     expression: &solidity::Expression,
@@ -28,7 +28,7 @@ pub fn translate_member_access_function_call(
                     coins = Some(translate_expression(
                         project,
                         module.clone(),
-                        scope,
+                        scope.clone(),
                         &args[0],
                     )?)
                 }
@@ -37,7 +37,7 @@ pub fn translate_member_access_function_call(
                     gas = Some(translate_expression(
                         project,
                         module.clone(),
-                        scope,
+                        scope.clone(),
                         &args[0],
                     )?)
                 }
@@ -50,7 +50,7 @@ pub fn translate_member_access_function_call(
                     let variable = translate_variable_access_expression(
                         project,
                         module.clone(),
-                        scope,
+                        scope.clone(),
                         container,
                     )?
                     .map(|v| v.variable);
@@ -58,11 +58,11 @@ pub fn translate_member_access_function_call(
                     let mut container = translate_expression(
                         project,
                         module.clone(),
-                        scope,
+                        scope.clone(),
                         container,
                     )?;
 
-                    let type_name = module.borrow_mut().get_expression_type(scope, &container)?;
+                    let type_name = module.borrow_mut().get_expression_type(scope.clone(), &container)?;
 
                     match type_name {
                         sway::TypeName::Undefined => panic!("Undefined type name"),
@@ -74,8 +74,8 @@ pub fn translate_member_access_function_call(
                                         panic!("Malformed `address.call` call, expected 1 argument, found {}", arguments.len());
                                     }
 
-                                    let payload = translate_expression(project, module.clone(), scope, &arguments[0])?;
-                                    translate_address_call_expression(project, module.clone(), scope, &payload, coins, None, gas)
+                                    let payload = translate_expression(project, module.clone(), scope.clone(), &arguments[0])?;
+                                    translate_address_call_expression(project, module.clone(), scope.clone(), &payload, coins, None, gas)
                                 }
 
                                 _ => {
@@ -141,7 +141,7 @@ pub fn translate_member_access_function_call(
                                                 generic_parameters: None,
                                                 fields,
                                                 parameters: arguments.iter()
-                                                    .map(|a| translate_expression(project, module.clone(), scope, a))
+                                                    .map(|a| translate_expression(project, module.clone(), scope.clone(), a))
                                                     .collect::<Result<Vec<_>, _>>()?,
                                             }));
                                         }
@@ -169,7 +169,7 @@ pub fn translate_member_access_function_call(
 pub fn translate_function_call_block_member_access(
     project: &mut Project,
     module: Rc<RefCell<TranslatedModule>>,
-    scope: &Rc<RefCell<TranslationScope>>,
+    scope: Rc<RefCell<TranslationScope>>,
     expression: &solidity::Expression,
     arguments: &[solidity::Expression],
     container: &solidity::Expression,
@@ -179,13 +179,13 @@ pub fn translate_function_call_block_member_access(
     let variable = translate_variable_access_expression(
         project,
         module.clone(),
-        scope,
+        scope.clone(),
         container,
     )?
     .map(|v| v.variable);
 
-    let mut container = translate_expression(project, module.clone(), scope, container)?;
-    let type_name = module.borrow_mut().get_expression_type(scope, &container)?;
+    let mut container = translate_expression(project, module.clone(), scope.clone(), container)?;
+    let type_name = module.borrow_mut().get_expression_type(scope.clone(), &container)?;
 
     let solidity::Statement::Args(_, block_args) = block else {
         panic!("Malformed `address.call` call, expected args block, found: {block:#?}");
@@ -200,7 +200,7 @@ pub fn translate_function_call_block_member_access(
                 coins = Some(translate_expression(
                     project,
                     module.clone(),
-                    scope,
+                    scope.clone(),
                     &block_arg.expr,
                 )?)
             }
@@ -209,7 +209,7 @@ pub fn translate_function_call_block_member_access(
                 gas = Some(translate_expression(
                     project,
                     module.clone(),
-                    scope,
+                    scope.clone(),
                     &block_arg.expr,
                 )?)
             }
@@ -231,14 +231,14 @@ pub fn translate_function_call_block_member_access(
                     let payload = translate_expression(
                         project,
                         module.clone(),
-                        scope,
+                        scope.clone(),
                         &arguments[0],
                     )?;
                     
                     translate_address_call_expression(
                         project,
                         module.clone(),
-                        scope,
+                        scope.clone(),
                         &payload,
                         coins,
                         None,
@@ -341,7 +341,7 @@ pub fn translate_function_call_block_member_access(
                                             translate_expression(
                                                 project,
                                                 module.clone(),
-                                                scope,
+                                                scope.clone(),
                                                 a,
                                             )
                                         })
@@ -368,7 +368,7 @@ pub fn translate_function_call_block_member_access(
 pub fn translate_identity_member_access_function_call(
     project: &mut Project,
     module: Rc<RefCell<TranslatedModule>>,
-    scope: &Rc<RefCell<TranslationScope>>,
+    scope: Rc<RefCell<TranslationScope>>,
     expression: &solidity::Expression,
     arguments: &[solidity::Expression],
     mut container: sway::Expression,
@@ -381,8 +381,8 @@ pub fn translate_identity_member_access_function_call(
     match member.name.as_str() {
         // to.transfer(amount) => std::asset::transfer(to, asset_id, amount)
         "transfer" if arguments.len() == 1 => {
-            let argument = translate_expression(project, module.clone(), scope, &arguments[0])?;
-            let argument_type_name = module.borrow_mut().get_expression_type(scope, &argument)?;
+            let argument = translate_expression(project, module.clone(), scope.clone(), &arguments[0])?;
+            let argument_type_name = module.borrow_mut().get_expression_type(scope.clone(), &argument)?;
             
             let container_type = sway::TypeName::Identifier { name: "u64".to_string(), generic_parameters: None };
             
@@ -403,8 +403,8 @@ pub fn translate_identity_member_access_function_call(
         //     true
         // }
         "send" if arguments.len() == 1 => {
-            let argument = translate_expression(project, module.clone(), scope, &arguments[0])?;
-            let argument_type_name = module.borrow_mut().get_expression_type(scope, &argument)?;
+            let argument = translate_expression(project, module.clone(), scope.clone(), &arguments[0])?;
+            let argument_type_name = module.borrow_mut().get_expression_type(scope.clone(), &argument)?;
 
             let u64_type = sway::TypeName::Identifier { name: "u64".to_string(), generic_parameters: None };
             
@@ -425,8 +425,8 @@ pub fn translate_identity_member_access_function_call(
         }
 
         "call" if arguments.len() == 1 => {
-            let payload = translate_expression(project, module.clone(), scope, &arguments[0])?;
-            return translate_address_call_expression(project, module.clone(), scope, &payload, None, None, None);
+            let payload = translate_expression(project, module.clone(), scope.clone(), &arguments[0])?;
+            return translate_address_call_expression(project, module.clone(), scope.clone(), &payload, None, None, None);
         }
 
         "delegatecall" => {
@@ -488,7 +488,7 @@ pub fn translate_identity_member_access_function_call(
 
     //         if parameter_type_name == type_name {
     //             let mut parameters = arguments.iter()
-    //                 .map(|a| translate_expression(project, module.clone(), scope, a))
+    //                 .map(|a| translate_expression(project, module.clone(), scope.clone(), a))
     //                 .collect::<Result<Vec<_>, _>>()?;
 
     //             parameters.insert(0, container.clone());
@@ -498,7 +498,7 @@ pub fn translate_identity_member_access_function_call(
     //     }
     // }
 
-    let variable = match translate_variable_access_expression(project, module.clone(), scope, solidity_container)? {
+    let variable = match translate_variable_access_expression(project, module.clone(), scope.clone(), solidity_container)? {
         Some(TranslatedVariableAccess { variable, .. }) => variable,
         None => None,
     };
@@ -542,7 +542,7 @@ pub fn translate_identity_member_access_function_call(
                 (new_name_lower.as_str(), Some((
                     None,
                     arguments.iter()
-                        .map(|a| translate_expression(project, module.clone(), scope, a))
+                        .map(|a| translate_expression(project, module.clone(), scope.clone(), a))
                         .collect::<Result<Vec<_>, _>>()?,
                 ))),
             ]));
@@ -561,7 +561,7 @@ pub fn translate_identity_member_access_function_call(
                 (new_name_upper.as_str(), Some((
                     None,
                     arguments.iter()
-                        .map(|a| translate_expression(project, module.clone(), scope, a))
+                        .map(|a| translate_expression(project, module.clone(), scope.clone(), a))
                         .collect::<Result<Vec<_>, _>>()?,
                 ))),
             ]));
@@ -581,7 +581,7 @@ pub fn translate_identity_member_access_function_call(
 pub fn translate_storage_vec_member_access_function_call(
     project: &mut Project,
     module: Rc<RefCell<TranslatedModule>>,
-    scope: &Rc<RefCell<TranslationScope>>,
+    scope: Rc<RefCell<TranslationScope>>,
     expression: &solidity::Expression,
     arguments: &[solidity::Expression],
     member: &solidity::Identifier,
@@ -590,7 +590,7 @@ pub fn translate_storage_vec_member_access_function_call(
 ) -> Result<sway::Expression, Error> {
     match member.name.as_str() {
         "push" => {
-            let (variable, container_access) = match translate_variable_access_expression(project, module.clone(), scope, solidity_container)? {
+            let (variable, container_access) = match translate_variable_access_expression(project, module.clone(), scope.clone(), solidity_container)? {
                 Some(TranslatedVariableAccess { variable, expression }) => (Some(variable), Some(expression)),
                 None => (None, None),
             };
@@ -607,14 +607,14 @@ pub fn translate_storage_vec_member_access_function_call(
                 ("push", Some((
                     None,
                     arguments.iter()
-                        .map(|a| translate_expression(project, module.clone(), scope, a))
+                        .map(|a| translate_expression(project, module.clone(), scope.clone(), a))
                         .collect::<Result<Vec<_>, _>>()?,
                 ))),
             ]))
         }
 
         "pop" => {
-            let (variable, container_access) = match translate_variable_access_expression(project, module.clone(), scope, solidity_container)? {
+            let (variable, container_access) = match translate_variable_access_expression(project, module.clone(), scope.clone(), solidity_container)? {
                 Some(TranslatedVariableAccess { variable, expression }) => (Some(variable), Some(expression)),
                 None => (None, None),
             };
@@ -631,7 +631,7 @@ pub fn translate_storage_vec_member_access_function_call(
         }
 
         "remove" => {
-            let (variable, container_access) = match translate_variable_access_expression(project, module.clone(), scope, solidity_container)? {
+            let (variable, container_access) = match translate_variable_access_expression(project, module.clone(), scope.clone(), solidity_container)? {
                 Some(TranslatedVariableAccess { variable, expression }) => (Some(variable), Some(expression)),
                 None => (None, None),
             };
@@ -648,7 +648,7 @@ pub fn translate_storage_vec_member_access_function_call(
                 ("remove", Some((
                     None,
                     arguments.iter()
-                        .map(|a| translate_expression(project, module.clone(), scope, a))
+                        .map(|a| translate_expression(project, module.clone(), scope.clone(), a))
                         .collect::<Result<Vec<_>, _>>()?,
                 ))),
             ]))
@@ -661,7 +661,7 @@ pub fn translate_storage_vec_member_access_function_call(
 pub fn translate_vec_member_access_function_call(
     project: &mut Project,
     module: Rc<RefCell<TranslatedModule>>,
-    scope: &Rc<RefCell<TranslationScope>>,
+    scope: Rc<RefCell<TranslationScope>>,
     arguments: &[solidity::Expression],
     member: &solidity::Identifier,
     solidity_container: &solidity::Expression,
@@ -669,7 +669,7 @@ pub fn translate_vec_member_access_function_call(
 ) -> Result<sway::Expression, Error> {
     match member.name.as_str() {
         "push" => {
-            let (variable, container_access) = match translate_variable_access_expression(project, module.clone(), scope, solidity_container)? {
+            let (variable, container_access) = match translate_variable_access_expression(project, module.clone(), scope.clone(), solidity_container)? {
                 Some(TranslatedVariableAccess { variable, expression }) => (Some(variable), Some(expression)),
                 None => (None, None),
             };
@@ -682,14 +682,14 @@ pub fn translate_vec_member_access_function_call(
                 ("push", Some((
                     None,
                     arguments.iter()
-                        .map(|a| translate_expression(project, module.clone(), scope, a))
+                        .map(|a| translate_expression(project, module.clone(), scope.clone(), a))
                         .collect::<Result<Vec<_>, _>>()?,
                 ))),
             ]))
         }
 
         "pop" => {
-            let (variable, container_access) = match translate_variable_access_expression(project, module.clone(), scope, solidity_container)? {
+            let (variable, container_access) = match translate_variable_access_expression(project, module.clone(), scope.clone(), solidity_container)? {
                 Some(TranslatedVariableAccess { variable, expression }) => (Some(variable), Some(expression)),
                 None => (None, None),
             };
@@ -702,7 +702,7 @@ pub fn translate_vec_member_access_function_call(
         }
 
         "remove" => {
-            let (variable, container_access) = match translate_variable_access_expression(project, module.clone(), scope, solidity_container)? {
+            let (variable, container_access) = match translate_variable_access_expression(project, module.clone(), scope.clone(), solidity_container)? {
                 Some(TranslatedVariableAccess { variable, expression }) => (Some(variable), Some(expression)),
                 None => (None, None),
             };
@@ -715,7 +715,7 @@ pub fn translate_vec_member_access_function_call(
                 ("remove", Some((
                     None,
                     arguments.iter()
-                        .map(|a| translate_expression(project, module.clone(), scope, a))
+                        .map(|a| translate_expression(project, module.clone(), scope.clone(), a))
                         .collect::<Result<Vec<_>, _>>()?,
                 ))),
             ]))
@@ -728,7 +728,7 @@ pub fn translate_vec_member_access_function_call(
 pub fn translate_abi_member_access_function_call(
     project: &mut Project,
     module: Rc<RefCell<TranslatedModule>>,
-    scope: &Rc<RefCell<TranslationScope>>,
+    scope: Rc<RefCell<TranslationScope>>,
     arguments: &[solidity::Expression],
     expression: &solidity::Expression,
     member_name: &str,
@@ -751,7 +751,7 @@ pub fn translate_abi_member_access_function_call(
             }
 
             let encoded_data =
-                translate_expression(project, module.clone(), scope, &arguments[0])?;
+                translate_expression(project, module.clone(), scope.clone(), &arguments[0])?;
 
             let parameter_types = match &arguments[1] {
                 solidity::Expression::List(_, parameter_types) => parameter_types
@@ -934,7 +934,7 @@ pub fn translate_abi_member_access_function_call(
 
             let parameters = arguments
                 .iter()
-                .map(|a| translate_expression(project, module.clone(), scope, a))
+                .map(|a| translate_expression(project, module.clone(), scope.clone(), a))
                 .collect::<Result<Vec<_>, _>>()?;
 
             // Create the abi encoding block
@@ -975,7 +975,7 @@ pub fn translate_abi_member_access_function_call(
                                                     &[(
                                                         "std::codec::encode",
                                                         Some((None, vec![
-                                                            match module.borrow_mut().get_expression_type(scope, &parameter)? {
+                                                            match module.borrow_mut().get_expression_type(scope.clone(), &parameter)? {
                                                                 sway::TypeName::Identifier { name, generic_parameters } => {
                                                                     match (name.as_str(), generic_parameters.as_ref()) {
                                                                         ("Identity", None) => {
@@ -1066,19 +1066,19 @@ pub fn translate_abi_member_access_function_call(
 pub fn translate_super_member_access_function_call(
     project: &mut Project,
     module: Rc<RefCell<TranslatedModule>>,
-    scope: &Rc<RefCell<TranslationScope>>,
+    scope: Rc<RefCell<TranslationScope>>,
     arguments: &[solidity::Expression],
     named_arguments: Option<&[solidity::NamedArgument]>,
     member: &solidity::Identifier,
 ) -> Result<sway::Expression, Error> {
     let parameters = arguments
         .iter()
-        .map(|a| translate_expression(project, module.clone(), scope, a))
+        .map(|a| translate_expression(project, module.clone(), scope.clone(), a))
         .collect::<Result<Vec<_>, _>>()?;
 
     let parameter_types = parameters
         .iter()
-        .map(|p| module.borrow_mut().get_expression_type(scope, p))
+        .map(|p| module.borrow_mut().get_expression_type(scope.clone(), p))
         .collect::<Result<Vec<_>, _>>()?;
 
     // TODO
@@ -1096,7 +1096,7 @@ pub fn translate_super_member_access_function_call(
     //     if let Some(result) = resolve_function_call(
     //         project,
     //         module.clone(),
-    //         scope,
+    //         scope.clone(),
     //         &inherited_definition.toplevel_scope,
     //         member.name.as_str(),
     //         named_arguments,
@@ -1124,25 +1124,25 @@ pub fn translate_super_member_access_function_call(
 pub fn translate_this_member_access_function_call(
     project: &mut Project,
     module: Rc<RefCell<TranslatedModule>>,
-    scope: &Rc<RefCell<TranslationScope>>,
+    scope: Rc<RefCell<TranslationScope>>,
     arguments: &[solidity::Expression],
     named_arguments: Option<&[solidity::NamedArgument]>,
     member: &solidity::Identifier,
 ) -> Result<sway::Expression, Error> {
     let parameters = arguments
         .iter()
-        .map(|a| translate_expression(project, module.clone(), scope, a))
+        .map(|a| translate_expression(project, module.clone(), scope.clone(), a))
         .collect::<Result<Vec<_>, _>>()?;
 
     let parameter_types = parameters
         .iter()
-        .map(|p| module.borrow_mut().get_expression_type(scope, p))
+        .map(|p| module.borrow_mut().get_expression_type(scope.clone(), p))
         .collect::<Result<Vec<_>, _>>()?;
 
     if let Some(result) = resolve_function_call(
         project,
         module.clone(),
-        scope,
+        scope.clone(),
         module.clone(),
         member.name.as_str(),
         named_arguments,

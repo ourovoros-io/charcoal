@@ -7,7 +7,7 @@ use std::{cell::RefCell, rc::Rc};
 pub fn translate_expression_statement(
     project: &mut Project,
     module: Rc<RefCell<TranslatedModule>>,
-    scope: &Rc<RefCell<TranslationScope>>,
+    scope: Rc<RefCell<TranslationScope>>,
     expression: &solidity::Expression,
 ) -> Result<sway::Statement, Error> {
     match expression {
@@ -29,14 +29,14 @@ pub fn translate_expression_statement(
                                         Some(p) => translate_expression(
                                             project,
                                             module.clone(),
-                                            scope,
+                                            scope.clone(),
                                             &p.ty,
                                         ),
                                         None => Ok(sway::Expression::create_identifier("_".into())),
                                     })
                                     .collect::<Result<Vec<_>, _>>()?,
                             ),
-                            rhs: translate_expression(project, module.clone(), scope, rhs)?,
+                            rhs: translate_expression(project, module.clone(), scope.clone(), rhs)?,
                         },
                     )));
                 }
@@ -108,7 +108,7 @@ pub fn translate_expression_statement(
                             .collect(),
                     }),
 
-                    value: translate_expression(project, module.clone(), scope, rhs.as_ref())?,
+                    value: translate_expression(project, module.clone(), scope.clone(), rhs.as_ref())?,
                 }));
             }
         }
@@ -119,7 +119,7 @@ pub fn translate_expression_statement(
             return Ok(sway::Statement::from(translate_assignment_expression(
                 project,
                 module.clone(),
-                scope,
+                scope.clone(),
                 "-=",
                 x,
                 &solidity::Expression::NumberLiteral(*loc, "1".into(), String::new(), None),
@@ -132,7 +132,7 @@ pub fn translate_expression_statement(
             return Ok(sway::Statement::from(translate_assignment_expression(
                 project,
                 module.clone(),
-                scope,
+                scope.clone(),
                 "+=",
                 x,
                 &solidity::Expression::NumberLiteral(*loc, "1".into(), String::new(), None),
@@ -152,7 +152,7 @@ pub fn translate_expression_statement(
     Ok(sway::Statement::from(translate_expression(
         project,
         module.clone(),
-        scope,
+        scope.clone(),
         expression,
     )?))
 }

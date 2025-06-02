@@ -91,10 +91,10 @@ impl TranslationScope {
             parent.borrow().dump();
         }
 
-        println!("variables:");
+        // println!("variables:");
 
         for v in self.variables.iter() {
-            println!("{v:#?}");
+            // println!("{v:#?}");
         }
     }
 
@@ -448,39 +448,43 @@ impl TranslatedModule {
     /// Attempts to get the type of the supplied expression.
     pub fn get_expression_type(
         &mut self,
-        scope: &Rc<RefCell<TranslationScope>>,
+        scope: Rc<RefCell<TranslationScope>>,
         expression: &sway::Expression,
     ) -> Result<sway::TypeName, Error> {
         match expression {
             sway::Expression::Literal(literal) => Ok(self.get_literal_type(literal)),
-            sway::Expression::PathExpr(path_expr) => Ok(self.get_path_expr_type(scope, path_expr)),
-            sway::Expression::FunctionCall(_) | sway::Expression::FunctionCallBlock(_) => {
-                self.get_function_call_type(scope, expression)
+            sway::Expression::PathExpr(path_expr) => {
+                Ok(self.get_path_expr_type(scope.clone(), path_expr))
             }
-            sway::Expression::Block(block) => self.get_block_type(scope, block),
-            sway::Expression::Return(value) => self.get_return_type(scope, value.as_deref()),
-            sway::Expression::Array(array) => self.get_array_type(scope, array),
+            sway::Expression::FunctionCall(_) | sway::Expression::FunctionCallBlock(_) => {
+                self.get_function_call_type(scope.clone(), expression)
+            }
+            sway::Expression::Block(block) => self.get_block_type(scope.clone(), block),
+            sway::Expression::Return(value) => {
+                self.get_return_type(scope.clone(), value.as_deref())
+            }
+            sway::Expression::Array(array) => self.get_array_type(scope.clone(), array),
             sway::Expression::ArrayAccess(array_access) => {
-                self.get_array_access_type(scope, array_access)
+                self.get_array_access_type(scope.clone(), array_access)
             }
             sway::Expression::MemberAccess(member_access) => {
-                self.get_member_access_type(scope, member_access, expression)
+                self.get_member_access_type(scope.clone(), member_access, expression)
             }
-            sway::Expression::Tuple(tuple) => self.get_tuple_type(scope, tuple),
-            sway::Expression::If(if_expr) => self.get_if_type(scope, if_expr),
-            sway::Expression::Match(match_expr) => self.get_match_type(scope, match_expr),
+            sway::Expression::Tuple(tuple) => self.get_tuple_type(scope.clone(), tuple),
+            sway::Expression::If(if_expr) => self.get_if_type(scope.clone(), if_expr),
+            sway::Expression::Match(match_expr) => self.get_match_type(scope.clone(), match_expr),
             sway::Expression::While(_) => Ok(sway::TypeName::Tuple { type_names: vec![] }),
             sway::Expression::UnaryExpression(unary_expression) => {
-                self.get_unary_expression_type(scope, unary_expression)
+                self.get_unary_expression_type(scope.clone(), unary_expression)
             }
             sway::Expression::BinaryExpression(binary_expression) => {
-                self.get_binary_expression_type(scope, binary_expression)
+                self.get_binary_expression_type(scope.clone(), binary_expression)
             }
             sway::Expression::Constructor(constructor) => Ok(constructor.type_name.clone()),
             sway::Expression::Continue => Ok(sway::TypeName::Tuple { type_names: vec![] }),
             sway::Expression::Break => Ok(sway::TypeName::Tuple { type_names: vec![] }),
             sway::Expression::AsmBlock(asm_block) => self.get_asm_block_type(asm_block),
-            sway::Expression::Commented(_, x) => self.get_expression_type(scope, x),
+            sway::Expression::Commented(_, x) => self.get_expression_type(scope.clone(), x),
         }
     }
 
@@ -547,7 +551,7 @@ impl TranslatedModule {
     #[inline(always)]
     fn get_path_expr_type(
         &mut self,
-        scope: &Rc<RefCell<TranslationScope>>,
+        scope: Rc<RefCell<TranslationScope>>,
         path_expr: &sway::PathExpr,
     ) -> sway::TypeName {
         let Some(name) = path_expr.as_identifier() else {
@@ -630,7 +634,7 @@ impl TranslatedModule {
     #[inline(always)]
     fn get_block_type(
         &mut self,
-        scope: &Rc<RefCell<TranslationScope>>,
+        scope: Rc<RefCell<TranslationScope>>,
         block: &sway::Block,
     ) -> Result<sway::TypeName, Error> {
         let Some(expression) = block.final_expr.as_ref() else {
@@ -654,7 +658,7 @@ impl TranslatedModule {
 
             let type_name = match type_name.as_ref() {
                 Some(type_name) => type_name.clone(),
-                None => self.get_expression_type(&inner_scope, value)?,
+                None => self.get_expression_type(inner_scope.clone(), value)?,
             };
 
             let add_variable = |id: &sway::LetIdentifier, type_name: &sway::TypeName| {
@@ -684,17 +688,17 @@ impl TranslatedModule {
             }
         }
 
-        self.get_expression_type(&inner_scope, expression)
+        self.get_expression_type(inner_scope.clone(), expression)
     }
 
     #[inline(always)]
     fn get_return_type(
         &mut self,
-        scope: &Rc<RefCell<TranslationScope>>,
+        scope: Rc<RefCell<TranslationScope>>,
         value: Option<&sway::Expression>,
     ) -> Result<sway::TypeName, Error> {
         if let Some(value) = value.as_ref() {
-            self.get_expression_type(scope, value)
+            self.get_expression_type(scope.clone(), value)
         } else {
             Ok(sway::TypeName::Tuple { type_names: vec![] })
         }
@@ -703,12 +707,12 @@ impl TranslatedModule {
     #[inline(always)]
     fn get_array_type(
         &mut self,
-        scope: &Rc<RefCell<TranslationScope>>,
+        scope: Rc<RefCell<TranslationScope>>,
         array: &sway::Array,
     ) -> Result<sway::TypeName, Error> {
         Ok(sway::TypeName::Array {
             type_name: Box::new(if let Some(expression) = array.elements.first() {
-                self.get_expression_type(scope, expression)?
+                self.get_expression_type(scope.clone(), expression)?
             } else {
                 sway::TypeName::Tuple { type_names: vec![] }
             }),
@@ -719,10 +723,11 @@ impl TranslatedModule {
     #[inline(always)]
     fn get_array_access_type(
         &mut self,
-        scope: &Rc<RefCell<TranslationScope>>,
+        scope: Rc<RefCell<TranslationScope>>,
         array_access: &sway::ArrayAccess,
     ) -> Result<sway::TypeName, Error> {
-        let element_type_name = self.get_expression_type(scope, &array_access.expression)?;
+        let element_type_name =
+            self.get_expression_type(scope.clone(), &array_access.expression)?;
 
         let type_name = match &element_type_name {
             sway::TypeName::Identifier {
@@ -732,7 +737,10 @@ impl TranslatedModule {
 
             sway::TypeName::Array { type_name, .. } => type_name.as_ref(),
 
-            _ => todo!("array access for type {element_type_name}"),
+            _ => todo!(
+                "array access for type {element_type_name}: {}",
+                sway::TabbedDisplayer(array_access)
+            ),
         };
 
         Ok(type_name.clone())
@@ -741,7 +749,7 @@ impl TranslatedModule {
     #[inline(always)]
     fn get_member_access_type(
         &mut self,
-        scope: &Rc<RefCell<TranslationScope>>,
+        scope: Rc<RefCell<TranslationScope>>,
         member_access: &sway::MemberAccess,
         expression: &sway::Expression,
     ) -> Result<sway::TypeName, Error> {
@@ -797,7 +805,7 @@ impl TranslatedModule {
             }
         }
 
-        let container_type = self.get_expression_type(scope, &member_access.expression)?;
+        let container_type = self.get_expression_type(scope.clone(), &member_access.expression)?;
 
         // Check if field is a signed integer
         if let Some(bits) = container_type.int_bits() {
@@ -853,16 +861,16 @@ impl TranslatedModule {
     #[inline(always)]
     fn get_tuple_type(
         &mut self,
-        scope: &Rc<RefCell<TranslationScope>>,
+        scope: Rc<RefCell<TranslationScope>>,
         tuple: &[sway::Expression],
     ) -> Result<sway::TypeName, Error> {
         if tuple.len() == 1 {
-            self.get_expression_type(scope, tuple.first().unwrap())
+            self.get_expression_type(scope.clone(), tuple.first().unwrap())
         } else {
             Ok(sway::TypeName::Tuple {
                 type_names: tuple
                     .iter()
-                    .map(|x| self.get_expression_type(scope, x))
+                    .map(|x| self.get_expression_type(scope.clone(), x))
                     .collect::<Result<Vec<_>, _>>()?,
             })
         }
@@ -871,11 +879,11 @@ impl TranslatedModule {
     #[inline(always)]
     fn get_if_type(
         &mut self,
-        scope: &Rc<RefCell<TranslationScope>>,
+        scope: Rc<RefCell<TranslationScope>>,
         if_expr: &sway::If,
     ) -> Result<sway::TypeName, Error> {
         if let Some(expression) = if_expr.then_body.final_expr.as_ref() {
-            self.get_expression_type(scope, expression)
+            self.get_expression_type(scope.clone(), expression)
         } else {
             Ok(sway::TypeName::Tuple { type_names: vec![] })
         }
@@ -884,11 +892,11 @@ impl TranslatedModule {
     #[inline(always)]
     fn get_match_type(
         &mut self,
-        scope: &Rc<RefCell<TranslationScope>>,
+        scope: Rc<RefCell<TranslationScope>>,
         match_expr: &sway::Match,
     ) -> Result<sway::TypeName, Error> {
         if let Some(branch) = match_expr.branches.first() {
-            self.get_expression_type(scope, &branch.value)
+            self.get_expression_type(scope.clone(), &branch.value)
         } else {
             Ok(sway::TypeName::Tuple { type_names: vec![] })
         }
@@ -897,16 +905,16 @@ impl TranslatedModule {
     #[inline(always)]
     fn get_unary_expression_type(
         &mut self,
-        scope: &Rc<RefCell<TranslationScope>>,
+        scope: Rc<RefCell<TranslationScope>>,
         unary_expression: &sway::UnaryExpression,
     ) -> Result<sway::TypeName, Error> {
-        self.get_expression_type(scope, &unary_expression.expression)
+        self.get_expression_type(scope.clone(), &unary_expression.expression)
     }
 
     #[inline(always)]
     fn get_binary_expression_type(
         &mut self,
-        scope: &Rc<RefCell<TranslationScope>>,
+        scope: Rc<RefCell<TranslationScope>>,
         binary_expression: &sway::BinaryExpression,
     ) -> Result<sway::TypeName, Error> {
         match binary_expression.operator.as_str() {
@@ -915,7 +923,7 @@ impl TranslatedModule {
                 generic_parameters: None,
             }),
 
-            _ => self.get_expression_type(scope, &binary_expression.lhs),
+            _ => self.get_expression_type(scope.clone(), &binary_expression.lhs),
         }
     }
 
@@ -933,7 +941,7 @@ impl TranslatedModule {
     #[inline(always)]
     fn get_function_call_type(
         &mut self,
-        scope: &Rc<RefCell<TranslationScope>>,
+        scope: Rc<RefCell<TranslationScope>>,
         expression: &sway::Expression,
     ) -> Result<sway::TypeName, Error> {
         let (function, function_generic_parameters, parameters) = match expression {
@@ -948,7 +956,7 @@ impl TranslatedModule {
 
         match function {
             sway::Expression::PathExpr(path_expr) => self.get_path_expr_function_call_type(
-                scope,
+                scope.clone(),
                 path_expr,
                 function_generic_parameters,
                 parameters.as_slice(),
@@ -956,7 +964,7 @@ impl TranslatedModule {
 
             sway::Expression::MemberAccess(member_access) => self
                 .get_member_access_function_call_type(
-                    scope,
+                    scope.clone(),
                     member_access,
                     function_generic_parameters,
                     parameters.as_slice(),
@@ -972,7 +980,7 @@ impl TranslatedModule {
     #[inline(always)]
     fn get_path_expr_function_call_type(
         &mut self,
-        scope: &Rc<RefCell<TranslationScope>>,
+        scope: Rc<RefCell<TranslationScope>>,
         path_expr: &sway::PathExpr,
         generic_parameters: Option<&sway::GenericParameterList>,
         parameters: &[sway::Expression],
@@ -1566,14 +1574,21 @@ impl TranslatedModule {
 
         let parameter_types = parameters
             .iter()
-            .map(|p| self.get_expression_type(scope, p))
+            .map(|p| self.get_expression_type(scope.clone(), p))
             .collect::<Result<Vec<_>, _>>()?;
 
         let name = path_expr.to_string();
 
         // Attempt to find a function in scope
         if let Some(function) = self.functions.iter().find(|f| {
-            let sway::TypeName::Function { new_name: fn_name, parameters: fn_parameters, .. } = &f.signature else { unreachable!() };
+            let sway::TypeName::Function {
+                new_name: fn_name,
+                parameters: fn_parameters,
+                ..
+            } = &f.signature
+            else {
+                unreachable!()
+            };
 
             // Ensure the function's new name matches the function call we're translating
             if *fn_name != name {
@@ -1672,7 +1687,9 @@ impl TranslatedModule {
 
             true
         }) {
-            let sway::TypeName::Function { return_type, .. } = &function.signature else { unreachable!() };
+            let sway::TypeName::Function { return_type, .. } = &function.signature else {
+                unreachable!()
+            };
 
             if let Some(return_type) = return_type.as_ref() {
                 return Ok(return_type.as_ref().clone());
@@ -1740,7 +1757,7 @@ impl TranslatedModule {
     #[inline(always)]
     fn get_member_access_function_call_type(
         &mut self,
-        scope: &Rc<RefCell<TranslationScope>>,
+        scope: Rc<RefCell<TranslationScope>>,
         member_access: &sway::MemberAccess,
         function_generic_parameters: Option<&sway::GenericParameterList>,
         parameters: &[sway::Expression],
@@ -1749,7 +1766,8 @@ impl TranslatedModule {
         // TODO: check generic parameters!
         //
 
-        let mut container_type = self.get_expression_type(scope, &member_access.expression)?;
+        let mut container_type =
+            self.get_expression_type(scope.clone(), &member_access.expression)?;
 
         // Check to see if the container's type is a translated enum and switch to its underlying type
         for enum_definition in self.enums.iter() {
@@ -2672,7 +2690,7 @@ impl TranslatedModule {
                 (name, None) => {
                     for contract in self.contracts.iter() {
                         let contract = contract.implementation.as_ref().unwrap();
-                        
+
                         if contract.abi.name == name {
                             if let Some(function_definition) = contract
                                 .abi

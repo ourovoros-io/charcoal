@@ -6,7 +6,7 @@ use std::{cell::RefCell, rc::Rc};
 pub fn translate_list_expression(
     project: &mut Project,
     module: Rc<RefCell<TranslatedModule>>,
-    scope: &Rc<RefCell<TranslationScope>>,
+    scope: Rc<RefCell<TranslationScope>>,
     parameters: &[(solidity::Loc, Option<solidity::Parameter>)],
 ) -> Result<sway::Expression, Error> {
     //
@@ -22,7 +22,7 @@ pub fn translate_list_expression(
     // Create a tuple expression
     Ok(sway::Expression::Tuple(
         parameters.iter()
-            .map(|(_, p)| translate_expression(project, module.clone(), scope, &p.as_ref().unwrap().ty))
+            .map(|(_, p)| translate_expression(project, module.clone(), scope.clone(), &p.as_ref().unwrap().ty))
             .collect::<Result<Vec<_>, _>>()?
     ))
 }

@@ -6,7 +6,7 @@ use std::{cell::RefCell, rc::Rc};
 pub fn translate_return_statement(
     project: &mut Project,
     module: Rc<RefCell<TranslatedModule>>,
-    scope: &Rc<RefCell<TranslationScope>>,
+    scope: Rc<RefCell<TranslationScope>>,
     expression: &Option<solidity::Expression>,
 ) -> Result<sway::Statement, Error> {
     let Some(expression) = expression else {
@@ -26,10 +26,10 @@ pub fn translate_return_statement(
     //     )
     // };
 
-    let mut expression = translate_expression(project, module.clone(), scope, expression)?;
+    let mut expression = translate_expression(project, module.clone(), scope.clone(), expression)?;
     let mut expression_type = module
         .borrow_mut()
-        .get_expression_type(scope, &expression)?;
+        .get_expression_type(scope.clone(), &expression)?;
 
     // HACK: remove `.read()` is underlying expression type is StorageVec or StorageMap
     if let sway::Expression::FunctionCall(f) = &expression {

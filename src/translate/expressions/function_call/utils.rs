@@ -9,7 +9,7 @@ use std::{cell::RefCell, rc::Rc};
 pub fn resolve_abi_function_call(
     project: &mut Project,
     module: Rc<RefCell<TranslatedModule>>,
-    scope: &Rc<RefCell<TranslationScope>>,
+    scope: Rc<RefCell<TranslationScope>>,
     abi: &sway::Abi,
     container: &sway::Expression,
     function_name: &str,
@@ -25,7 +25,7 @@ pub fn resolve_abi_function_call(
         for arg in named_arguments {
             named_parameters.push((
                 translate_naming_convention(&arg.name.name, Case::Snake),
-                translate_expression(project, module.clone(), scope, &arg.expr)?,
+                translate_expression(project, module.clone(), scope.clone(), &arg.expr)?,
             ));
         }
 
@@ -51,8 +51,8 @@ pub fn resolve_abi_function_call(
                     })
                     .unwrap();
 
-                let parameter = translate_expression(project, module.clone(), scope, &arg.expr)?;
-                let parameter_type = module.borrow_mut().get_expression_type(scope, &parameter)?;
+                let parameter = translate_expression(project, module.clone(), scope.clone(), &arg.expr)?;
+                let parameter_type = module.borrow_mut().get_expression_type(scope.clone(), &parameter)?;
 
                 parameters.push(parameter);
                 parameter_types.push(parameter_type);
@@ -263,7 +263,7 @@ pub fn resolve_abi_function_call(
 pub fn resolve_function_call(
     project: &mut Project,
     module: Rc<RefCell<TranslatedModule>>,
-    scope: &Rc<RefCell<TranslationScope>>,
+    scope: Rc<RefCell<TranslationScope>>,
     external_module: Rc<RefCell<TranslatedModule>>,
     function_name: &str,
     named_arguments: Option<&[solidity::NamedArgument]>,
@@ -276,7 +276,7 @@ pub fn resolve_function_call(
         for arg in named_arguments {
             named_parameters.push((
                 translate_naming_convention(&arg.name.name, Case::Snake),
-                translate_expression(project, module.clone(), scope, &arg.expr)?,
+                translate_expression(project, module.clone(), scope.clone(), &arg.expr)?,
             ));
         }
 
@@ -323,8 +323,8 @@ pub fn resolve_function_call(
                     })
                     .unwrap();
 
-                let parameter = translate_expression(project, module.clone(), scope, &arg.expr)?;
-                let parameter_type = module.borrow_mut().get_expression_type(scope, &parameter)?;
+                let parameter = translate_expression(project, module.clone(), scope.clone(), &arg.expr)?;
+                let parameter_type = module.borrow_mut().get_expression_type(scope.clone(), &parameter)?;
 
                 parameters.push(parameter);
                 parameter_types.push(parameter_type);
@@ -517,7 +517,7 @@ pub fn resolve_function_call(
 pub fn resolve_struct_constructor(
     project: &mut Project,
     module: Rc<RefCell<TranslatedModule>>,
-    scope: &Rc<RefCell<TranslationScope>>,
+    scope: Rc<RefCell<TranslationScope>>,
     structs: &[TranslatedItem<Rc<RefCell<sway::Struct>>>],
     struct_name: &str,
     named_arguments: Option<&[solidity::NamedArgument]>,
@@ -572,9 +572,9 @@ pub fn resolve_struct_constructor(
                         .unwrap();
 
                     let parameter =
-                        translate_expression(project, module.clone(), scope, &arg.expr)?;
+                        translate_expression(project, module.clone(), scope.clone(), &arg.expr)?;
                     let parameter_type =
-                        module.borrow_mut().get_expression_type(scope, &parameter)?;
+                        module.borrow_mut().get_expression_type(scope.clone(), &parameter)?;
 
                     parameters.push(parameter);
                     parameter_types.push(parameter_type);

@@ -167,7 +167,7 @@ pub fn translate_contract_definition(
         .find(|(e, _)| e.borrow().name == events_enum_name)
         .cloned()
     {
-        generate_enum_abi_encode_function(project, module.clone(), &events_enum, &abi_encode_impl)?;
+        generate_enum_abi_encode_function(project, module.clone(), events_enum.clone(), abi_encode_impl.clone())?;
     }
 
     // Translate contract error definitions
@@ -185,7 +185,7 @@ pub fn translate_contract_definition(
         .find(|(e, _)| e.borrow().name == errors_enum_name)
         .cloned()
     {
-        generate_enum_abi_encode_function(project, module.clone(), &errors_enum, &abi_encode_impl)?;
+        generate_enum_abi_encode_function(project, module.clone(), errors_enum.clone(), abi_encode_impl.clone())?;
     }
 
     // Translate contract state variables
@@ -275,7 +275,7 @@ pub fn translate_contract_definition(
 
             let value_type_name = module
                 .borrow_mut()
-                .get_expression_type(&Default::default(), &deferred_initialization.value)?;
+                .get_expression_type(Default::default(), &deferred_initialization.value)?;
 
             match &deferred_initialization.value {
                 sway::Expression::Array(sway::Array { elements }) => {
@@ -309,21 +309,10 @@ pub fn translate_contract_definition(
                         create_assignment_expression(
                             project,
                             module.clone(),
-                            &Default::default(),
+                            Default::default(),
                             "=",
                             &lhs,
-                            &Rc::new(RefCell::new(TranslatedVariable {
-                                type_name: sway::TypeName::Identifier {
-                                    name: "StorageKey".into(),
-                                    generic_parameters: Some(sway::GenericParameterList {
-                                        entries: vec![sway::GenericParameter {
-                                            type_name,
-                                            implements: None,
-                                        }],
-                                    }),
-                                },
-                                ..Default::default()
-                            })),
+                            None,
                             &deferred_initialization.value,
                             &value_type_name,
                         )?,

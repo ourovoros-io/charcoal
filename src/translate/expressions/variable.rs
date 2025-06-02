@@ -7,7 +7,7 @@ use std::{cell::RefCell, rc::Rc};
 pub fn translate_variable_expression(
     project: &mut Project,
     module: Rc<RefCell<TranslatedModule>>,
-    scope: &Rc<RefCell<TranslationScope>>,
+    scope: Rc<RefCell<TranslationScope>>,
     expression: &solidity::Expression,
 ) -> Result<sway::Expression, Error> {
     //
@@ -39,18 +39,31 @@ pub fn translate_variable_expression(
     let Some(TranslatedVariableAccess {
         variable,
         expression,
-    }) = translate_variable_access_expression(project, module.clone(), scope, expression)?
+    }) = translate_variable_access_expression(project, module.clone(), scope.clone(), expression)?
     else {
         panic!(
             "{}ERROR: Variable not found in scope: \"{}\"",
             match project.loc_to_line_and_column(module.clone(), &expression.loc()) {
                 Some((line, col)) => format!(
                     "{}:{}:{}: ",
-                    project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy(),
+                    project
+                        .options
+                        .input
+                        .join(module.borrow().path.clone())
+                        .with_extension("sol")
+                        .to_string_lossy(),
                     line,
                     col
                 ),
-                None => format!("{}: ", project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy()),
+                None => format!(
+                    "{}: ",
+                    project
+                        .options
+                        .input
+                        .join(module.borrow().path.clone())
+                        .with_extension("sol")
+                        .to_string_lossy()
+                ),
             },
             sway::TabbedDisplayer(&expression),
         );
@@ -66,7 +79,7 @@ pub fn translate_variable_expression(
 pub fn translate_variable_access_expression(
     project: &mut Project,
     module: Rc<RefCell<TranslatedModule>>,
-    scope: &Rc<RefCell<TranslationScope>>,
+    scope: Rc<RefCell<TranslationScope>>,
     solidity_expression: &solidity::Expression,
 ) -> Result<Option<TranslatedVariableAccess>, Error> {
     // println!(
@@ -113,7 +126,9 @@ pub fn translate_variable_access_expression(
                 return Ok(Some(TranslatedVariableAccess {
                     variable: None,
                     expression: sway::Expression::create_identifier({
-                        let sway::TypeName::Function { new_name, .. } = &function.signature else { unreachable!() };
+                        let sway::TypeName::Function { new_name, .. } = &function.signature else {
+                            unreachable!()
+                        };
                         new_name.clone()
                     }),
                 }));
@@ -140,35 +155,41 @@ pub fn translate_variable_access_expression(
         }
 
         solidity::Expression::ArraySubscript(_, array_expression, Some(index)) => {
-            let mut index = translate_expression(project, module.clone(), scope, index.as_ref())?;
+            let mut index =
+                translate_expression(project, module.clone(), scope.clone(), index.as_ref())?;
 
             let Some(TranslatedVariableAccess {
                 variable,
-                expression,
+                mut expression,
             }) = translate_variable_access_expression(
                 project,
                 module.clone(),
-                scope,
+                scope.clone(),
                 array_expression,
             )?
             else {
                 return Ok(None);
             };
 
-            if variable.is_none() {
-                return Ok(Some(TranslatedVariableAccess {
-                    variable: None,
-                    expression: sway::Expression::from(sway::ArrayAccess { expression, index }),
-                }));
+            // HACK: remove `.read()` if present
+            if let sway::Expression::FunctionCall(function_call) = &expression {
+                if let sway::Expression::MemberAccess(member_access) = &function_call.function {
+                    if member_access.member == "read" && function_call.parameters.is_empty() {
+                        let container_type = module.borrow_mut().get_expression_type(scope.clone(), &member_access.expression)?;
+
+                        if container_type.is_storage_key() {
+                            expression = member_access.expression.clone();
+                        }
+                    }
+                }
             }
 
-            let variable = variable.unwrap();
             let type_name = module
                 .borrow_mut()
-                .get_expression_type(scope, &expression)?;
+                .get_expression_type(scope.clone(), &expression)?;
 
             Ok(Some(TranslatedVariableAccess {
-                variable: Some(variable),
+                variable,
                 expression: match type_name {
                     sway::TypeName::Identifier {
                         name,
@@ -222,7 +243,7 @@ pub fn translate_variable_access_expression(
                                     ("StorageVec", Some(_)) => {
                                         let index_type_name = module
                                             .borrow_mut()
-                                            .get_expression_type(scope, &index)?;
+                                            .get_expression_type(scope.clone(), &index)?;
                                         let u64_type = sway::TypeName::Identifier {
                                             name: "u64".to_string(),
                                             generic_parameters: None,
@@ -248,7 +269,12 @@ pub fn translate_variable_access_expression(
                                         ) {
                                             Some((line, col)) => format!(
                                                 "{}:{}:{}: ",
-                                                project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy(),
+                                                project
+                                                    .options
+                                                    .input
+                                                    .join(module.borrow().path.clone())
+                                                    .with_extension("sol")
+                                                    .to_string_lossy(),
                                                 line,
                                                 col
                                             ),
@@ -269,12 +295,24 @@ pub fn translate_variable_access_expression(
                                     ) {
                                         Some((line, col)) => format!(
                                             "{}:{}:{}: ",
-                                            project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy(),
+                                            project
+                                                .options
+                                                .input
+                                                .join(module.borrow().path.clone())
+                                                .with_extension("sol")
+                                                .to_string_lossy(),
                                             line,
                                             col
                                         ),
-                                        None =>
-                                            format!("{}: ", project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy()),
+                                        None => format!(
+                                            "{}: ",
+                                            project
+                                                .options
+                                                .input
+                                                .join(module.borrow().path.clone())
+                                                .with_extension("sol")
+                                                .to_string_lossy()
+                                        ),
                                     },
                                     sway::TabbedDisplayer(&expression),
                                 ),
@@ -284,8 +322,9 @@ pub fn translate_variable_access_expression(
                         ("Vec", Some(generic_parameters))
                             if generic_parameters.entries.len() == 1 =>
                         {
-                            let index_type_name =
-                                module.borrow_mut().get_expression_type(scope, &index)?;
+                            let index_type_name = module
+                                .borrow_mut()
+                                .get_expression_type(scope.clone(), &index)?;
                             let u64_type = sway::TypeName::Identifier {
                                 name: "u64".to_string(),
                                 generic_parameters: None,
@@ -308,11 +347,25 @@ pub fn translate_variable_access_expression(
                             {
                                 Some((line, col)) => format!(
                                     "{}:{}:{}: ",
-                                    project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy(),
+                                    project
+                                        .options
+                                        .input
+                                        .join(module.borrow().path.clone())
+                                        .with_extension("sol")
+                                        .to_string_lossy(),
                                     line,
                                     col
                                 ),
-                                None => format!("{}: ", project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy()),
+
+                                None => format!(
+                                    "{}: ",
+                                    project
+                                        .options
+                                        .input
+                                        .join(module.borrow().path.clone())
+                                        .with_extension("sol")
+                                        .to_string_lossy()
+                                ),
                             },
                             sway::TabbedDisplayer(&expression),
                         ),
@@ -327,9 +380,13 @@ pub fn translate_variable_access_expression(
             if let solidity::Expression::Variable(solidity::Identifier { name, .. }) =
                 container.as_ref()
             {
-                fn check_module(name: &str, external_module: &Rc<RefCell<TranslatedModule>>) -> bool {
+                fn check_module(
+                    name: &str,
+                    external_module: Rc<RefCell<TranslatedModule>>,
+                ) -> bool {
                     for external_definition in external_module.borrow().contracts.iter() {
-                        let external_definition = external_definition.implementation.as_ref().unwrap();
+                        let external_definition =
+                            external_definition.implementation.as_ref().unwrap();
 
                         if !matches!(external_definition.kind, solidity::ContractTy::Library(_)) {
                             continue;
@@ -343,7 +400,7 @@ pub fn translate_variable_access_expression(
                     }
 
                     for submodule in external_module.borrow().submodules.iter() {
-                        if check_module(name, submodule) {
+                        if check_module(name, submodule.clone()) {
                             return true;
                         }
                     }
@@ -352,7 +409,7 @@ pub fn translate_variable_access_expression(
                 }
 
                 for external_module in project.translated_modules.iter() {
-                    if check_module(name, &external_module) {
+                    if check_module(name, external_module.clone()) {
                         let new_name = translate_naming_convention(&member.name, Case::Snake);
 
                         return Ok(Some(TranslatedVariableAccess {
@@ -364,15 +421,20 @@ pub fn translate_variable_access_expression(
             }
 
             let translated_container =
-                translate_expression(project, module.clone(), scope, container)?;
+                translate_expression(project, module.clone(), scope.clone(), container)?;
 
             let container_type_name = module
                 .borrow_mut()
-                .get_expression_type(scope, &translated_container)?;
+                .get_expression_type(scope.clone(), &translated_container)?;
             let container_type_name_string = container_type_name.to_string();
 
             let Some(TranslatedVariableAccess { variable, .. }) =
-                translate_variable_access_expression(project, module.clone(), scope, container)?
+                translate_variable_access_expression(
+                    project,
+                    module.clone(),
+                    scope.clone(),
+                    container,
+                )?
             else {
                 return Ok(None);
             };
@@ -407,11 +469,24 @@ pub fn translate_variable_access_expression(
                 match project.loc_to_line_and_column(module.clone(), &solidity_expression.loc()) {
                     Some((line, col)) => format!(
                         "{}:{}:{}: ",
-                        project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy(),
+                        project
+                            .options
+                            .input
+                            .join(module.borrow().path.clone())
+                            .with_extension("sol")
+                            .to_string_lossy(),
                         line,
                         col
                     ),
-                    None => format!("{}: ", project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy()),
+                    None => format!(
+                        "{}: ",
+                        project
+                            .options
+                            .input
+                            .join(module.borrow().path.clone())
+                            .with_extension("sol")
+                            .to_string_lossy()
+                    ),
                 },
             )
         }
@@ -419,10 +494,15 @@ pub fn translate_variable_access_expression(
         solidity::Expression::FunctionCall(_, function, arguments) => {
             let arguments = arguments
                 .iter()
-                .map(|a| translate_expression(project, module.clone(), scope, a))
+                .map(|a| translate_expression(project, module.clone(), scope.clone(), a))
                 .collect::<Result<Vec<_>, _>>()?;
 
-            match translate_variable_access_expression(project, module.clone(), scope, function)? {
+            match translate_variable_access_expression(
+                project,
+                module.clone(),
+                scope.clone(),
+                function,
+            )? {
                 Some(TranslatedVariableAccess {
                     variable,
                     expression,
@@ -440,7 +520,7 @@ pub fn translate_variable_access_expression(
                     expression: translate_expression(
                         project,
                         module.clone(),
-                        scope,
+                        scope.clone(),
                         solidity_expression,
                     )?,
                 })),

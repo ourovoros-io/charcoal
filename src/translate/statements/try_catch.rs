@@ -7,7 +7,7 @@ use std::{cell::RefCell, rc::Rc};
 pub fn translate_try_catch_statement(
     project: &mut Project,
     module: Rc<RefCell<TranslatedModule>>,
-    scope: &Rc<RefCell<TranslationScope>>,
+    scope: Rc<RefCell<TranslationScope>>,
     expr: &solidity::Expression,
     params_and_body: &Option<(
         Vec<(solidity::Loc, Option<solidity::Parameter>)>,
@@ -51,7 +51,7 @@ pub fn translate_try_catch_statement(
                         )
                     },
                     type_name: None,
-                    value: translate_expression(project, module.clone(), scope, expr)?,
+                    value: translate_expression(project, module.clone(), scope.clone(), expr)?,
                 };
                 let store_let_identifier =
                     |id: &sway::LetIdentifier, type_name: &sway::TypeName| {
@@ -98,7 +98,7 @@ pub fn translate_try_catch_statement(
                 statements.push(sway::Statement::from(let_statement));
             }
 
-            match translate_statement(project, module, scope, body)? {
+            match translate_statement(project, module, scope.clone(), body)? {
                 sway::Statement::Expression(sway::Expression::Block(block)) => {
                     if block.statements.len() == 1 {
                         statements.extend(block.statements.clone());
@@ -112,7 +112,7 @@ pub fn translate_try_catch_statement(
             };
         }
         None => statements.push(sway::Statement::from(translate_expression(
-            project, module, scope, expr,
+            project, module, scope.clone(), expr,
         )?)),
     }
 

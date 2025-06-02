@@ -6,7 +6,7 @@ use std::{cell::RefCell, rc::Rc};
 pub fn translate_for_statement(
     project: &mut Project,
     module: Rc<RefCell<TranslatedModule>>,
-    scope: &Rc<RefCell<TranslationScope>>,
+    scope: Rc<RefCell<TranslationScope>>,
     initialization: &Option<Box<solidity::Statement>>,
     condition: &Option<Box<solidity::Expression>>,
     update: &Option<Box<solidity::Expression>>,
@@ -33,7 +33,7 @@ pub fn translate_for_statement(
     if let Some(initialization) = initialization.as_ref() {
         let statement_index = statements.len();
         let mut statement =
-            translate_statement(project, module.clone(), &scope, initialization.as_ref())?;
+            translate_statement(project, module.clone(), scope.clone(), initialization.as_ref())?;
 
         // Store the statement index of variable declaration statements in their scope entries
         if let sway::Statement::Let(sway::Let { pattern, .. }) = &mut statement {
@@ -58,7 +58,7 @@ pub fn translate_for_statement(
 
     // Translate the condition of the for loop ahead of time (if any)
     let condition = if let Some(condition) = condition.as_ref() {
-        translate_expression(project, module.clone(), &scope, condition.as_ref())?
+        translate_expression(project, module.clone(), scope.clone(), condition.as_ref())?
     } else {
         sway::Expression::from(sway::Literal::Bool(true))
     };
@@ -66,7 +66,7 @@ pub fn translate_for_statement(
     // Translate the body of the for loop ahead of time (if any)
     let mut body = match body.as_ref() {
         None => sway::Block::default(),
-        Some(body) => match translate_statement(project, module.clone(), &scope, body.as_ref())? {
+        Some(body) => match translate_statement(project, module.clone(), scope.clone(), body.as_ref())? {
             sway::Statement::Expression(sway::Expression::Block(block)) => *block,
             statement => sway::Block {
                 statements: vec![statement],
@@ -84,7 +84,7 @@ pub fn translate_for_statement(
                 | solidity::Expression::PostDecrement(loc, x) => translate_assignment_expression(
                     project,
                     module.clone(),
-                    &scope,
+                    scope.clone(),
                     "-=",
                     x,
                     &solidity::Expression::NumberLiteral(*loc, "1".into(), String::new(), None),
@@ -95,13 +95,13 @@ pub fn translate_for_statement(
                 | solidity::Expression::PostIncrement(loc, x) => translate_assignment_expression(
                     project,
                     module.clone(),
-                    &scope,
+                    scope.clone(),
                     "+=",
                     x,
                     &solidity::Expression::NumberLiteral(*loc, "1".into(), String::new(), None),
                 )?,
 
-                _ => translate_expression(project, module.clone(), &scope, update.as_ref())?,
+                _ => translate_expression(project, module.clone(), scope.clone(), update.as_ref())?,
             }));
     }
 
@@ -124,7 +124,7 @@ pub fn translate_for_statement(
     };
 
     // Finalize the for loop logic block
-    finalize_block_translation(project, &scope, &mut block)?;
+    finalize_block_translation(project, scope.clone(), &mut block)?;
 
     Ok(sway::Statement::from(sway::Expression::from(block)))
 }

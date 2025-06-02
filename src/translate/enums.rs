@@ -242,8 +242,8 @@ pub fn translate_error_definition(
 pub fn generate_enum_abi_encode_function(
     _project: &mut Project,
     module: Rc<RefCell<TranslatedModule>>,
-    sway_enum: &Rc<RefCell<sway::Enum>>,
-    abi_encode_impl: &Rc<RefCell<sway::Impl>>,
+    sway_enum: Rc<RefCell<sway::Enum>>,
+    abi_encode_impl: Rc<RefCell<sway::Impl>>,
 ) -> Result<(), Error> {
     let mut match_expr = sway::Match {
         expression: sway::Expression::create_identifier("self".into()),

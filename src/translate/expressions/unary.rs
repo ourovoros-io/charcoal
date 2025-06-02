@@ -6,7 +6,7 @@ use std::{cell::RefCell, rc::Rc};
 pub fn translate_binary_expression(
     project: &mut Project,
     module: Rc<RefCell<TranslatedModule>>,
-    scope: &Rc<RefCell<TranslationScope>>,
+    scope: Rc<RefCell<TranslationScope>>,
     operator: &str,
     lhs: &solidity::Expression,
     rhs: &solidity::Expression,
@@ -15,8 +15,8 @@ pub fn translate_binary_expression(
     if let solidity::Expression::MemberAccess(_, x, member2) = lhs {
         if let solidity::Expression::MemberAccess(_, x, member1) = x.as_ref() {
             if member1.name == "code" && member2.name == "length" {
-                let expression = translate_expression(project, module.clone(), scope, x)?;
-                let type_name = module.borrow_mut().get_expression_type(scope, &expression)?;
+                let expression = translate_expression(project, module.clone(), scope.clone(), x)?;
+                let type_name = module.borrow_mut().get_expression_type(scope.clone(), &expression)?;
 
                 if let sway::TypeName::Identifier { name, generic_parameters: None } = type_name {
                     if name == "Identity" {
@@ -36,24 +36,24 @@ pub fn translate_binary_expression(
         }
     }
 
-    let mut lhs = translate_expression(project, module.clone(), scope, lhs)?;
-    let mut lhs_type = module.borrow_mut().get_expression_type(scope, &lhs)?;
+    let mut lhs = translate_expression(project, module.clone(), scope.clone(), lhs)?;
+    let mut lhs_type = module.borrow_mut().get_expression_type(scope.clone(), &lhs)?;
 
-    let mut rhs = translate_expression(project, module.clone(), scope, rhs)?;
-    let mut rhs_type = module.borrow_mut().get_expression_type(scope, &rhs)?;
+    let mut rhs = translate_expression(project, module.clone(), scope.clone(), rhs)?;
+    let mut rhs_type = module.borrow_mut().get_expression_type(scope.clone(), &rhs)?;
     
-    if let Some(value_type) = lhs_type.storage_key_type() {
-        lhs_type = value_type;
+    if lhs_type.is_storage_key() {
         lhs = sway::Expression::create_function_calls(Some(lhs), &[
             ("read", Some((None, vec![])))
         ]);
+        lhs_type = module.borrow_mut().get_expression_type(scope.clone(), &lhs)?;
     }
 
-    if let Some(value_type) = rhs_type.storage_key_type() {
-        rhs_type = value_type;
+    if rhs_type.is_storage_key() {
         rhs = sway::Expression::create_function_calls(Some(rhs), &[
             ("read", Some((None, vec![])))
         ]);
+        rhs_type = module.borrow_mut().get_expression_type(scope.clone(), &rhs)?;
     }
 
     // HACK: de-cast identity abi cast comparisons
@@ -82,7 +82,7 @@ pub fn translate_binary_expression(
                                 }
                             }
                         }
-                        *rhs_type = module.borrow_mut().get_expression_type(scope, rhs).unwrap();
+                        *rhs_type = module.borrow_mut().get_expression_type(scope.clone(), rhs).unwrap();
                         return true;
                     }
                 }
@@ -101,22 +101,22 @@ pub fn translate_binary_expression(
         operator: operator.into(),
         lhs,
         rhs,
-    }))   
+    }))
 }
 
 #[inline]
 pub fn translate_unary_expression(
     project: &mut Project,
     module: Rc<RefCell<TranslatedModule>>,
-    scope: &Rc<RefCell<TranslationScope>>,
+    scope: Rc<RefCell<TranslationScope>>,
     operator: &str,
     expression: &solidity::Expression,
 ) -> Result<sway::Expression, Error> {
-    let expression = translate_expression(project, module.clone(), scope, expression)?;
+    let expression = translate_expression(project, module.clone(), scope.clone(), expression)?;
 
     // NOTE: Sway does not have a negate operator, so we need to make sure to use the correct translation
     if operator == "-" {
-        let type_name = module.borrow_mut().get_expression_type(scope, &expression)?;
+        let type_name = module.borrow_mut().get_expression_type(scope.clone(), &expression)?;
 
         match &type_name {
             sway::TypeName::Identifier { name, generic_parameters } => match (name.as_str(), generic_parameters.as_ref()) {
@@ -167,7 +167,7 @@ pub fn translate_unary_expression(
 pub fn translate_power_expression(
     project: &mut Project,
     module: Rc<RefCell<TranslatedModule>>,
-    scope: &Rc<RefCell<TranslationScope>>,
+    scope: Rc<RefCell<TranslationScope>>,
     lhs: &solidity::Expression,
     rhs: &solidity::Expression,
 ) -> Result<sway::Expression, Error> {
@@ -176,8 +176,8 @@ pub fn translate_power_expression(
     // Ensure std::math::Power is imported for the pow function
     module.borrow_mut().ensure_use_declared("std::math::Power");
 
-    let lhs = translate_expression(project, module.clone(), scope, lhs)?;
-    let rhs = translate_expression(project, module.clone(), scope, rhs)?;
+    let lhs = translate_expression(project, module.clone(), scope.clone(), lhs)?;
+    let rhs = translate_expression(project, module.clone(), scope.clone(), rhs)?;
 
     Ok(sway::Expression::create_function_calls(Some(lhs), &[("pow", Some((None, vec![rhs])))]))
 }

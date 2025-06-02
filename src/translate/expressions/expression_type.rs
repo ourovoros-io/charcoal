@@ -6,7 +6,7 @@ use std::{cell::RefCell, rc::Rc};
 pub fn translate_type_expression(
     _project: &mut Project,
     _module: Rc<RefCell<TranslatedModule>>,
-    _scope: &Rc<RefCell<TranslationScope>>,
+    _scope: Rc<RefCell<TranslationScope>>,
     expression: &solidity::Expression,
 ) -> Result<sway::Expression, Error> {
     //

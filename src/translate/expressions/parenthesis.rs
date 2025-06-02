@@ -6,10 +6,10 @@ use std::{cell::RefCell, rc::Rc};
 pub fn translate_parenthesis_expression(
     project: &mut Project,
     module: Rc<RefCell<TranslatedModule>>,
-    scope: &Rc<RefCell<TranslationScope>>,
+    scope: Rc<RefCell<TranslationScope>>,
     expression: &solidity::Expression,
 ) -> Result<sway::Expression, Error> {
-    let sway_expr = translate_expression(project, module.clone(), scope, expression)?;
+    let sway_expr = translate_expression(project, module.clone(), scope.clone(), expression)?;
     
     match &expression {
         solidity::Expression::Assign(_, lhs, _) => {
@@ -23,7 +23,7 @@ pub fn translate_parenthesis_expression(
             //    z
             // }
             //
-            let sway_lhs = translate_expression(project, module.clone(), scope, lhs)?;
+            let sway_lhs = translate_expression(project, module.clone(), scope.clone(), lhs)?;
             
             Ok(sway::Expression::from(sway::Block {
                 statements: vec![

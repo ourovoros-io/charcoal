@@ -31,36 +31,36 @@ pub use r#while::*;
 pub fn translate_statement(
     project: &mut Project,
     module: Rc<RefCell<TranslatedModule>>,
-    scope: &Rc<RefCell<TranslationScope>>,
+    scope: Rc<RefCell<TranslationScope>>,
     statement: &solidity::Statement,
 ) -> Result<sway::Statement, Error> {
     match statement {
         solidity::Statement::Block { statements, .. } => {
-            translate_block_statement(project, module, scope, statements)
+            translate_block_statement(project, module, scope.clone(), statements)
         }
         solidity::Statement::Assembly {
             dialect,
             flags,
             block,
             ..
-        } => translate_assembly_statement(project, module, scope, dialect, flags, block),
+        } => translate_assembly_statement(project, module, scope.clone(), dialect, flags, block),
         solidity::Statement::Args(_, named_arguments) => {
-            translate_args_statement(project, module, scope, named_arguments)
+            translate_args_statement(project, module, scope.clone(), named_arguments)
         }
         solidity::Statement::If(_, condition, then_body, else_if) => {
-            translate_if_statement(project, module, scope, condition, then_body, else_if)
+            translate_if_statement(project, module, scope.clone(), condition, then_body, else_if)
         }
         solidity::Statement::While(_, condition, body) => {
-            translate_while_statement(project, module, scope, condition, body)
+            translate_while_statement(project, module, scope.clone(), condition, body)
         }
         solidity::Statement::Expression(_, expression) => {
-            translate_expression_statement(project, module, scope, expression)
+            translate_expression_statement(project, module, scope.clone(), expression)
         }
         solidity::Statement::VariableDefinition(_, variable_declaration, initializer) => {
             translate_variable_definition_statement(
                 project,
                 module,
-                scope,
+                scope.clone(),
                 variable_declaration,
                 initializer.as_ref(),
             )
@@ -69,7 +69,7 @@ pub fn translate_statement(
             translate_for_statement(
                 project,
                 module,
-                scope,
+                scope.clone(),
                 initialization,
                 condition,
                 update,
@@ -77,27 +77,27 @@ pub fn translate_statement(
             )
         }
         solidity::Statement::DoWhile(_, body, condition) => {
-            translate_do_while_statement(project, module, scope, body, condition)
+            translate_do_while_statement(project, module, scope.clone(), body, condition)
         }
         solidity::Statement::Continue(_) => Ok(sway::Statement::from(sway::Expression::Continue)),
         solidity::Statement::Break(_) => Ok(sway::Statement::from(sway::Expression::Break)),
         solidity::Statement::Return(_, expression) => {
-            translate_return_statement(project, module, scope, expression)
+            translate_return_statement(project, module, scope.clone(), expression)
         }
         solidity::Statement::Revert(_, error_type, parameters) => {
-            translate_revert_statement(project, module, scope, error_type, parameters)
+            translate_revert_statement(project, module, scope.clone(), error_type, parameters)
         }
         solidity::Statement::RevertNamedArgs(_, path, named_args) => {
-            translate_revert_named_arguments(project, module, scope, path, named_args)
+            translate_revert_named_arguments(project, module, scope.clone(), path, named_args)
         }
         solidity::Statement::Emit(_, expression) => {
-            translate_emit_statement(project, module, scope, expression)
+            translate_emit_statement(project, module, scope.clone(), expression)
         }
         solidity::Statement::Try(_, expr, params_and_body, catch_clauses) => {
             translate_try_catch_statement(
                 project,
                 module,
-                scope,
+                scope.clone(),
                 expr,
                 params_and_body,
                 catch_clauses,

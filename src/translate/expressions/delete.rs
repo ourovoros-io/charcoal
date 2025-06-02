@@ -6,13 +6,13 @@ use std::{cell::RefCell, rc::Rc};
 pub fn translate_delete_expression(
     project: &mut Project,
     module: Rc<RefCell<TranslatedModule>>,
-    scope: &Rc<RefCell<TranslationScope>>,
+    scope: Rc<RefCell<TranslationScope>>,
     expression: &solidity::Expression,
 ) -> Result<sway::Expression, Error> {
     let Some(TranslatedVariableAccess {
         variable: Some(variable),
         expression: expr,
-    }) = translate_variable_access_expression(project, module.clone(), scope, expression)?
+    }) = translate_variable_access_expression(project, module.clone(), scope.clone(), expression)?
     else {
         panic!("Variable not found: {}", sway::TabbedDisplayer(&expression));
     };
@@ -30,11 +30,12 @@ pub fn translate_delete_expression(
                     (name.as_str(), generic_parameters.as_ref())
                 {
                     let mut expression =
-                        translate_expression(project, module.clone(), scope, expression)?;
+                        translate_expression(project, module.clone(), scope.clone(), expression)?;
+                    
                     let index = translate_expression(
                         project,
                         module.clone(),
-                        scope,
+                        scope.clone(),
                         index.as_ref().unwrap(),
                     )?;
 
@@ -57,13 +58,14 @@ pub fn translate_delete_expression(
     }
 
     let value = create_value_expression(module.clone(), scope.clone(), &type_name, None);
+    
     create_assignment_expression(
         project,
-        module.clone(),
+        module,
         scope,
         "=",
         &expr,
-        &variable,
+        Some(variable),
         &value,
         &type_name,
     )

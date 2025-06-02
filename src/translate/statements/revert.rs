@@ -8,7 +8,7 @@ use std::{cell::RefCell, rc::Rc};
 pub fn translate_revert_statement(
     project: &mut Project,
     module: Rc<RefCell<TranslatedModule>>,
-    scope: &Rc<RefCell<TranslationScope>>,
+    scope: Rc<RefCell<TranslationScope>>,
     error_type: &Option<solidity::IdentifierPath>,
     parameters: &[solidity::Expression],
 ) -> Result<sway::Statement, Error> {
@@ -103,12 +103,12 @@ pub fn translate_revert_statement(
                                 let parameter_expression = translate_expression(
                                     project,
                                     module.clone(),
-                                    scope,
+                                    scope.clone(),
                                     &parameters[0],
                                 )?;
                                 let parameter_expression_type = module
                                     .borrow_mut()
-                                    .get_expression_type(scope, &parameter_expression)?;
+                                    .get_expression_type(scope.clone(), &parameter_expression)?;
                                 coerce_expression(
                                     &parameter_expression,
                                     &parameter_expression_type,
@@ -128,13 +128,13 @@ pub fn translate_revert_statement(
                                             let parameter_expression = translate_expression(
                                                 project,
                                                 module.clone(),
-                                                scope,
+                                                scope.clone(),
                                                 param,
                                             )
                                             .unwrap();
                                             let parameter_expression_type = module
                                                 .borrow_mut()
-                                                .get_expression_type(scope, &parameter_expression)
+                                                .get_expression_type(scope.clone(), &parameter_expression)
                                                 .unwrap();
                                             coerce_expression(
                                                 &parameter_expression,
@@ -202,7 +202,7 @@ pub fn translate_revert_statement(
             })));
         }
         Some(x) if matches!(x, solidity::Expression::Variable(_)) => {
-            let x_expr = translate_expression(project, module.clone(), scope, x)?;
+            let x_expr = translate_expression(project, module.clone(), scope.clone(), x)?;
             return Ok(sway::Statement::from(sway::Expression::from(sway::Block {
                 statements: vec![
                     // 1. log(reason)
@@ -253,7 +253,7 @@ pub fn translate_revert_statement(
 pub fn translate_revert_named_arguments(
     project: &mut Project,
     module: Rc<RefCell<TranslatedModule>>,
-    scope: &Rc<RefCell<TranslationScope>>,
+    scope: Rc<RefCell<TranslationScope>>,
     path: &Option<solidity::IdentifierPath>,
     named_args: &[solidity::NamedArgument],
 ) -> Result<sway::Statement, Error> {
@@ -273,7 +273,7 @@ pub fn translate_revert_named_arguments(
             .any(|v| v.name == error_identifier)
     }) {
         let error_expressions: Vec<_> = named_args.iter().map(|arg| arg.expr.clone()).collect();
-        return translate_revert_statement(project, module, scope, path, &error_expressions);
+        return translate_revert_statement(project, module, scope.clone(), path, &error_expressions);
     }
 
     todo!("translate revert named arguments: {:#?}", path)

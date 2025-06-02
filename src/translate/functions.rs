@@ -121,7 +121,7 @@ pub fn translate_function_declaration(
             .as_ref()
             .map(|args| {
                 args.iter()
-                    .map(|a| translate_expression(project, module.clone(), &scope, a))
+                    .map(|a| translate_expression(project, module.clone(), scope.clone(), a))
                     .collect::<Result<Vec<_>, _>>()
             })
             .unwrap_or_else(|| Ok(vec![]))?;
@@ -396,7 +396,7 @@ pub fn translate_modifier_definition(
                         scope.clone_from(&current_scope.borrow().parent)
                     }
 
-                    finalize_block_translation(project, &current_scope, block)?;
+                    finalize_block_translation(project, current_scope.clone(), block)?;
                 }
 
                 current_body = &mut modifier.post_body;
@@ -424,7 +424,7 @@ pub fn translate_modifier_definition(
 
         // Translate the statement
         let sway_statement =
-            translate_statement(project, module.clone(), &current_scope, statement)?;
+            translate_statement(project, module.clone(), current_scope.clone(), statement)?;
 
         // Store the index of the sway statement
         let statement_index = block.statements.len();
@@ -453,7 +453,7 @@ pub fn translate_modifier_definition(
     }
 
     if let Some(block) = current_body.as_mut() {
-        finalize_block_translation(project, &current_scope, block)?;
+        finalize_block_translation(project, current_scope.clone(), block)?;
     }
 
     let create_attributes =
@@ -984,7 +984,7 @@ pub fn translate_function_definition(
 
     // Translate the body for the toplevel function
     let mut function_body =
-        translate_block(project, module.clone(), &scope, statements.as_slice())?;
+        translate_block(project, module.clone(), scope.clone(), statements.as_slice())?;
 
     if is_constructor {
         let prefix = translate_naming_convention(module.borrow().name.as_str(), Case::Snake);

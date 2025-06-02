@@ -4,7 +4,7 @@ use std::{cell::RefCell, rc::Rc};
 pub fn translate_block(
     project: &mut Project,
     module: Rc<RefCell<TranslatedModule>>,
-    scope: &Rc<RefCell<TranslationScope>>,
+    scope: Rc<RefCell<TranslationScope>>,
     statements: &[solidity::Statement],
 ) -> Result<sway::Block, Error> {
     let mut block = sway::Block::default();
@@ -12,7 +12,7 @@ pub fn translate_block(
     // Translate each of the statements in the block
     for statement in statements {
         // Translate the statement
-        let sway_statement = match translate_statement(project, module.clone(), scope, statement) {
+        let sway_statement = match translate_statement(project, module.clone(), scope.clone(), statement) {
             Ok(statement) => statement,
             Err(Error::IneffectualStatement(_, statement)) => {
                 println!("WARNING: Skipping ineffectual statement: {statement}");
@@ -54,14 +54,14 @@ pub fn translate_block(
         }
     }
 
-    finalize_block_translation(project, scope, &mut block)?;
+    finalize_block_translation(project, scope.clone(), &mut block)?;
 
     Ok(block)
 }
 
 pub fn finalize_block_translation(
     _project: &mut Project,
-    scope: &Rc<RefCell<TranslationScope>>,
+    scope: Rc<RefCell<TranslationScope>>,
     block: &mut sway::Block,
 ) -> Result<(), Error> {
     // Check the block for variable declarations that need to be marked mutable
@@ -175,7 +175,7 @@ pub fn finalize_block_translation(
 pub fn translate_block_statement(
     project: &mut Project,
     module: Rc<RefCell<TranslatedModule>>,
-    scope: &Rc<RefCell<TranslationScope>>,
+    scope: Rc<RefCell<TranslationScope>>,
     statements: &[solidity::Statement],
 ) -> Result<sway::Statement, Error> {
     let scope = Rc::new(RefCell::new(TranslationScope {
@@ -185,7 +185,7 @@ pub fn translate_block_statement(
 
     // Translate the block
     let translated_block = sway::Statement::from(sway::Expression::from(translate_block(
-        project, module, &scope, statements,
+        project, module, scope.clone(), statements,
     )?));
 
     Ok(translated_block)

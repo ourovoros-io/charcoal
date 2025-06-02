@@ -10,7 +10,7 @@ use std::{cell::RefCell, rc::Rc};
 pub fn translate_builtin_function_call(
     project: &mut Project,
     module: Rc<RefCell<TranslatedModule>>,
-    scope: &Rc<RefCell<TranslationScope>>,
+    scope: Rc<RefCell<TranslationScope>>,
     function: &solidity::Expression,
     named_arguments: Option<&[solidity::NamedArgument]>,
     name: &str,
@@ -239,7 +239,7 @@ pub fn translate_builtin_function_call(
 
             let parameter_type = module
                 .borrow_mut()
-                .get_expression_type(scope, &parameters[0])?;
+                .get_expression_type(scope.clone(), &parameters[0])?;
 
             parameters[0] = coerce_expression(
                 &parameters[0],
@@ -312,14 +312,14 @@ pub fn translate_builtin_function_call(
         old_name => {
             let parameter_types = parameters
                 .iter()
-                .map(|p| module.borrow_mut().get_expression_type(scope, p))
+                .map(|p| module.borrow_mut().get_expression_type(scope.clone(), p))
                 .collect::<Result<Vec<_>, _>>()?;
 
             // Check to see if the expression is a by-value struct constructor
             if let Some(result) = resolve_struct_constructor(
                 project,
                 module.clone(),
-                scope,
+                scope.clone(),
                 module.borrow().structs.as_slice(),
                 old_name,
                 named_arguments,
@@ -334,7 +334,7 @@ pub fn translate_builtin_function_call(
                 if let Some(_external_definition) = project.find_module_with_contract(old_name) {
                     match module
                         .borrow_mut()
-                        .get_expression_type(scope, &parameters[0])?
+                        .get_expression_type(scope.clone(), &parameters[0])?
                     {
                         sway::TypeName::Identifier {
                             name,
@@ -403,7 +403,7 @@ pub fn translate_builtin_function_call(
             if let Some(result) = resolve_function_call(
                 project,
                 module.clone(),
-                scope,
+                scope.clone(),
                 module.clone(),
                 old_name,
                 named_arguments,
@@ -412,6 +412,12 @@ pub fn translate_builtin_function_call(
             )? {
                 return Ok(result);
             }
+
+            //
+            // TODO:
+            // Check all of the module's `use` statements for crate-local imports,
+            // find the module being imported, then check if the function lives there.
+            //
 
             panic!(
                 "{}error: Failed to find function `{old_name}({})` in scope: {function}({})",
