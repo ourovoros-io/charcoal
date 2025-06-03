@@ -50,7 +50,6 @@ pub fn translate_binary_expression(
         .get_expression_type(project, scope.clone(), &lhs)?;
 
     let mut rhs = translate_expression(project, module.clone(), scope.clone(), rhs)?;
-    println!("rhs : {}", sway::TabbedDisplayer(&rhs));
     let mut rhs_type = module
         .borrow_mut()
         .get_expression_type(project, scope.clone(), &rhs)?;

@@ -226,18 +226,10 @@ pub fn translate_contract_definition(
         });
     }
 
-    // Translate each modifier
-    for function_definition in function_definitions.iter() {
-        let is_modifier = matches!(function_definition.ty, solidity::FunctionTy::Modifier);
-        if !is_modifier || function_definition.body.is_none() {
-            continue;
-        }
-
-        translate_modifier_definition(project, module.clone(), function_definition)?;
-    }
-
     // Translate each function
-    for (i, function_definition) in function_definitions.into_iter().enumerate() {
+    let mut i = 0;
+
+    for function_definition in function_definitions.iter() {
         let is_modifier = matches!(function_definition.ty, solidity::FunctionTy::Modifier);
         if is_modifier {
             continue;
@@ -264,11 +256,19 @@ pub fn translate_contract_definition(
             }
         }
 
-        if abi_fn.is_none() {
+        module.borrow_mut().functions[functions_index + i].implementation = Some(function);
+
+        i += 1;
+    }
+
+    // Translate each modifier
+    for function_definition in function_definitions.iter() {
+        let is_modifier = matches!(function_definition.ty, solidity::FunctionTy::Modifier);
+        if !is_modifier || function_definition.body.is_none() {
             continue;
         }
 
-        module.borrow_mut().functions[functions_index + i].implementation = Some(function);
+        translate_modifier_definition(project, module.clone(), function_definition)?;
     }
 
     // Propagate deferred initializations into the constructor
@@ -323,11 +323,11 @@ pub fn translate_contract_definition(
         }
 
         // Create the constructor if it doesn't exist
-        if !module.borrow().functions.iter().any(|f| {
-            let sway::TypeName::Function { new_name, .. } = &f.signature else {
-                unreachable!()
+        if !contract.abi_impl.items.iter().any(|i| {
+            let sway::ImplItem::Function(f) = i else {
+                return false;
             };
-            new_name == "constructor"
+            f.name == "constructor"
         }) {
             let mut function = sway::Function {
                 attributes: None,
@@ -423,6 +423,10 @@ pub fn translate_contract_definition(
                 .abi_impl
                 .items
                 .insert(0, sway::ImplItem::Function(function));
+
+            //
+            // TODO: We need to insert a top level function for inheritence
+            //
         }
 
         let constructor_function = contract

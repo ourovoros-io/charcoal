@@ -233,7 +233,7 @@ pub enum Symbol {
     Abi(String),
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct TranslatedModule {
     pub name: String,
     pub path: PathBuf,
@@ -2823,6 +2823,163 @@ impl TranslatedModule {
                 "get type of {container_type} function call member_access: {} - {member_access:#?}",
                 sway::TabbedDisplayer(member_access)
             ),
+        }
+    }
+}
+
+impl From<TranslatedModule> for sway::Module {
+    fn from(module: TranslatedModule) -> Self {
+        let kind = if module.contracts.is_empty() {
+            sway::ModuleKind::Library
+        } else {
+            sway::ModuleKind::Contract
+        };
+
+        let mut items = vec![];
+
+        for x in module.uses {
+            items.push(sway::ModuleItem::Use(x));
+        }
+
+        for x in module.type_definitions {
+            items.push(sway::ModuleItem::TypeDefinition(x.implementation.unwrap()));
+        }
+
+        for x in module.structs {
+            items.push(sway::ModuleItem::Struct(
+                x.implementation.unwrap().borrow().clone(),
+            ));
+        }
+
+        for x in module.enums {
+            items.push(sway::ModuleItem::TypeDefinition(
+                x.implementation.as_ref().unwrap().type_definition.clone(),
+            ));
+
+            items.push(sway::ModuleItem::Impl(
+                x.implementation.unwrap().variants_impl,
+            ))
+        }
+
+        for (events_enum, abi_encode_impl) in module.events_enums {
+            items.push(sway::ModuleItem::Enum(events_enum.borrow().clone()));
+            items.push(sway::ModuleItem::Impl(abi_encode_impl.borrow().clone()));
+        }
+
+        for (errors_enum, abi_encode_impl) in module.errors_enums.iter() {
+            items.push(sway::ModuleItem::Enum(errors_enum.borrow().clone()));
+            items.push(sway::ModuleItem::Impl(abi_encode_impl.borrow().clone()));
+        }
+
+        for x in module.constants {
+            items.push(sway::ModuleItem::Constant(x));
+        }
+
+        if let Some(x) = module.configurable {
+            items.push(sway::ModuleItem::Configurable(x));
+        }
+
+        if let Some(x) = module.storage {
+            items.push(sway::ModuleItem::Storage(x));
+        }
+
+        for x in module.functions {
+            items.push(sway::ModuleItem::Function(x.implementation.unwrap()));
+        }
+
+        for x in module.contracts {
+            items.push(sway::ModuleItem::Abi(
+                x.implementation.as_ref().unwrap().abi.clone(),
+            ));
+
+            items.push(sway::ModuleItem::Impl(x.implementation.unwrap().abi_impl));
+        }
+
+        for x in module.impls {
+            items.push(sway::ModuleItem::Impl(x));
+        }
+
+        for x in module.submodules {
+            items.push(sway::ModuleItem::Submodule(x.borrow().clone().into()));
+        }
+
+        sway::Module { kind, items }
+    }
+}
+
+impl From<TranslatedModule> for sway::Submodule {
+    fn from(module: TranslatedModule) -> Self {
+        let mut items = vec![];
+
+        for x in module.uses {
+            items.push(sway::ModuleItem::Use(x));
+        }
+
+        for x in module.type_definitions {
+            items.push(sway::ModuleItem::TypeDefinition(x.implementation.unwrap()));
+        }
+
+        for x in module.structs {
+            items.push(sway::ModuleItem::Struct(
+                x.implementation.unwrap().borrow().clone(),
+            ));
+        }
+
+        for x in module.enums {
+            items.push(sway::ModuleItem::TypeDefinition(
+                x.implementation.as_ref().unwrap().type_definition.clone(),
+            ));
+
+            items.push(sway::ModuleItem::Impl(
+                x.implementation.unwrap().variants_impl,
+            ))
+        }
+
+        for (events_enum, abi_encode_impl) in module.events_enums {
+            items.push(sway::ModuleItem::Enum(events_enum.borrow().clone()));
+            items.push(sway::ModuleItem::Impl(abi_encode_impl.borrow().clone()));
+        }
+
+        for (errors_enum, abi_encode_impl) in module.errors_enums.iter() {
+            items.push(sway::ModuleItem::Enum(errors_enum.borrow().clone()));
+            items.push(sway::ModuleItem::Impl(abi_encode_impl.borrow().clone()));
+        }
+
+        for x in module.constants {
+            items.push(sway::ModuleItem::Constant(x));
+        }
+
+        if let Some(x) = module.configurable {
+            items.push(sway::ModuleItem::Configurable(x));
+        }
+
+        if let Some(x) = module.storage {
+            items.push(sway::ModuleItem::Storage(x));
+        }
+
+        for x in module.functions {
+            items.push(sway::ModuleItem::Function(x.implementation.unwrap()));
+        }
+
+        for x in module.contracts {
+            items.push(sway::ModuleItem::Abi(
+                x.implementation.as_ref().unwrap().abi.clone(),
+            ));
+
+            items.push(sway::ModuleItem::Impl(x.implementation.unwrap().abi_impl));
+        }
+
+        for x in module.impls {
+            items.push(sway::ModuleItem::Impl(x));
+        }
+
+        for x in module.submodules {
+            items.push(sway::ModuleItem::Submodule(x.borrow().clone().into()));
+        }
+
+        sway::Submodule {
+            name: module.name,
+            items,
         }
     }
 }

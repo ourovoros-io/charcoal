@@ -249,13 +249,14 @@ impl TabbedDisplay for Submodule {
                 writeln!(f)?;
             }
 
+            "".tabbed_fmt(depth + 1, f)?;
             item.tabbed_fmt(depth + 1, f)?;
             writeln!(f)?;
 
             prev_item = Some(item);
         }
 
-        write!(f, "}}")
+        "}".tabbed_fmt(depth, f)
     }
 }
 
@@ -304,8 +305,8 @@ pub struct Use {
     pub tree: UseTree,
 }
 
-impl Display for Use {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl TabbedDisplay for Use {
+    fn tabbed_fmt(&self, _depth: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.is_public {
             write!(f, "pub ")?;
         }
@@ -983,8 +984,8 @@ pub struct TypeDefinition {
     pub underlying_type: Option<TypeName>,
 }
 
-impl Display for TypeDefinition {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl TabbedDisplay for TypeDefinition {
+    fn tabbed_fmt(&self, _depth: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.is_public {
             write!(f, "pub ")?;
         }

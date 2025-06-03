@@ -12,6 +12,10 @@ pub struct Args {
     #[arg(short, long)]
     /// The output folder to store the translated contracts.
     pub output_directory: Option<std::path::PathBuf>,
+
+    #[arg(short, long)]
+    /// The name of the generated Sway project.
+    pub name: Option<String>,
 }
 
 impl Args {
@@ -23,6 +27,9 @@ impl Args {
         self.input = wrapped_err!(self.input.canonicalize())?;
 
         if let Some(output_directory) = self.output_directory.as_mut() {
+            if !output_directory.exists() {
+                wrapped_err!(std::fs::create_dir_all(&output_directory))?;
+            }
             *output_directory = wrapped_err!(output_directory.canonicalize())?;
         }
 

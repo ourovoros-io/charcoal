@@ -761,25 +761,27 @@ impl Project {
 
         None
     }
+
     pub fn translate(&mut self) -> Result<(), Error> {
         for source_unit_path in self.queue.clone() {
             self.translate_file(&source_unit_path)?;
         }
 
         match self.options.output_directory.clone() {
-            Some(output_directory) => {
-                todo!("{:#?}", output_directory);
-                // self.generate_forc_project(output_directory, source_unit_path)?;
+            Some(_) => {
+                self.generate_forc_project()?;
             }
 
             None => {
-                println!("{:#?}", self.translated_modules);
-                // for module in project.collect_translated_definitions(options.definition_name.as_ref(), source_unit_path) {
-                //     println!("// Translated from {}", module.path.to_string_lossy());
+                for module in self.translated_modules.iter() {
+                    println!(
+                        "// Translated from {}",
+                        module.borrow().path.to_string_lossy()
+                    );
 
-                //     let module: sway::Module = module.into();
-                //     println!("{}", sway::TabbedDisplayer(&module));
-                // }
+                    let module: sway::Module = module.borrow().clone().into();
+                    println!("{}", sway::TabbedDisplayer(&module));
+                }
             }
         }
 
@@ -1003,11 +1005,59 @@ impl Project {
         Ok(())
     }
 
-    fn generate_forc_project<P1: AsRef<Path>, P2: AsRef<Path>>(
-        &mut self,
-        output_directory: P1,
-        source_unit_path: P2,
-    ) -> Result<(), Error> {
-        todo!()
+    fn generate_forc_project(&mut self) -> Result<(), Error> {
+        let output_directory = self
+            .options
+            .output_directory
+            .clone()
+            .unwrap()
+            .join(self.options.name.clone().unwrap());
+        wrapped_err!(std::fs::create_dir_all(&output_directory))?;
+
+        let src_dir_path = output_directory.join("src");
+        wrapped_err!(std::fs::create_dir_all(&src_dir_path))?;
+
+        let mut dependencies = vec![];
+
+        for module in self.translated_modules.iter() {
+            dependencies.extend(module.borrow().dependencies.clone());
+
+            let module_path = src_dir_path
+                .join(&module.borrow().path)
+                .with_extension("sw");
+            wrapped_err!(std::fs::create_dir_all(&module_path.parent().unwrap()))?;
+
+            let module: sway::Module = module.borrow().clone().into();
+
+            std::fs::write(module_path, sway::TabbedDisplayer(&module).to_string())
+                .map_err(|e| Error::Wrapped(Box::new(e)))?;
+        }
+
+        std::fs::write(
+            output_directory.join(".gitignore"),
+            "out\ntarget\nForc.lock\n",
+        )
+        .map_err(|e| Error::Wrapped(Box::new(e)))?;
+
+        std::fs::write(
+            output_directory.join("Forc.toml"),
+            format!(
+                "[project]\n\
+                authors = [\"\"]\n\
+                entry = \"main.sw\"\n\
+                license = \"Apache-2.0\"\n\
+                name = \"{}\"\n\
+                \n\
+                [dependencies]\n\
+                {}\
+                \n\
+                ",
+                self.options.name.as_ref().unwrap(),
+                dependencies.join("\n"),
+            ),
+        )
+        .map_err(|e| Error::Wrapped(Box::new(e)))?;
+
+        Ok(())
     }
 }
