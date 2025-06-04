@@ -1796,29 +1796,7 @@ impl TranslatedModule {
         }
 
         for use_item in self.uses.iter() {
-            let sway::UseTree::Path { prefix, suffix } = &use_item.tree else {
-                continue;
-            };
-
-            if !prefix.is_empty() {
-                continue;
-            }
-
-            let mut use_tree = suffix.as_ref().clone();
-
-            let mut module_path = PathBuf::new();
-
-            while let sway::UseTree::Path { prefix, suffix } = &use_tree {
-                module_path.push(prefix);
-
-                if let sway::UseTree::Glob = suffix.as_ref() {
-                    break;
-                }
-
-                use_tree = suffix.as_ref().clone();
-            }
-
-            if let Some(found_module) = project.find_module(&module_path) {
+            if let Some(found_module) = project.resolve_use(use_item) {
                 if let Some(type_name) = check_function(
                     &mut found_module.borrow_mut(),
                     scope.clone(),
@@ -2837,6 +2815,13 @@ impl From<TranslatedModule> for sway::Module {
 
         let mut items = vec![];
 
+        for x in module.submodules {
+            items.push(sway::ModuleItem::Submodule(sway::Submodule {
+                is_public: true,
+                name: x.borrow().name.clone(),
+            }));
+        }
+
         for x in module.uses {
             items.push(sway::ModuleItem::Use(x));
         }
@@ -2897,90 +2882,9 @@ impl From<TranslatedModule> for sway::Module {
 
         for x in module.impls {
             items.push(sway::ModuleItem::Impl(x));
-        }
-
-        for x in module.submodules {
-            items.push(sway::ModuleItem::Submodule(x.borrow().clone().into()));
         }
 
         sway::Module { kind, items }
-    }
-}
-
-impl From<TranslatedModule> for sway::Submodule {
-    fn from(module: TranslatedModule) -> Self {
-        let mut items = vec![];
-
-        for x in module.uses {
-            items.push(sway::ModuleItem::Use(x));
-        }
-
-        for x in module.type_definitions {
-            items.push(sway::ModuleItem::TypeDefinition(x.implementation.unwrap()));
-        }
-
-        for x in module.structs {
-            items.push(sway::ModuleItem::Struct(
-                x.implementation.unwrap().borrow().clone(),
-            ));
-        }
-
-        for x in module.enums {
-            items.push(sway::ModuleItem::TypeDefinition(
-                x.implementation.as_ref().unwrap().type_definition.clone(),
-            ));
-
-            items.push(sway::ModuleItem::Impl(
-                x.implementation.unwrap().variants_impl,
-            ))
-        }
-
-        for (events_enum, abi_encode_impl) in module.events_enums {
-            items.push(sway::ModuleItem::Enum(events_enum.borrow().clone()));
-            items.push(sway::ModuleItem::Impl(abi_encode_impl.borrow().clone()));
-        }
-
-        for (errors_enum, abi_encode_impl) in module.errors_enums.iter() {
-            items.push(sway::ModuleItem::Enum(errors_enum.borrow().clone()));
-            items.push(sway::ModuleItem::Impl(abi_encode_impl.borrow().clone()));
-        }
-
-        for x in module.constants {
-            items.push(sway::ModuleItem::Constant(x));
-        }
-
-        if let Some(x) = module.configurable {
-            items.push(sway::ModuleItem::Configurable(x));
-        }
-
-        if let Some(x) = module.storage {
-            items.push(sway::ModuleItem::Storage(x));
-        }
-
-        for x in module.functions {
-            items.push(sway::ModuleItem::Function(x.implementation.unwrap()));
-        }
-
-        for x in module.contracts {
-            items.push(sway::ModuleItem::Abi(
-                x.implementation.as_ref().unwrap().abi.clone(),
-            ));
-
-            items.push(sway::ModuleItem::Impl(x.implementation.unwrap().abi_impl));
-        }
-
-        for x in module.impls {
-            items.push(sway::ModuleItem::Impl(x));
-        }
-
-        for x in module.submodules {
-            items.push(sway::ModuleItem::Submodule(x.borrow().clone().into()));
-        }
-
-        sway::Submodule {
-            name: module.name,
-            items,
-        }
     }
 }
 
@@ -3722,38 +3626,8 @@ pub fn resolve_symbol(
     }
 
     for use_expr in module.borrow().uses.iter() {
-        match &use_expr.tree {
-            sway::UseTree::Path { prefix, suffix } => {
-                if !prefix.is_empty() {
-                    return None;
-                }
-
-                let mut path = PathBuf::new();
-                let mut use_tree = suffix.as_ref().clone();
-
-                loop {
-                    match &use_tree {
-                        sway::UseTree::Path { prefix, suffix } => {
-                            path.push(prefix.clone());
-                            use_tree = suffix.as_ref().clone();
-                        }
-
-                        sway::UseTree::Glob => break,
-
-                        _ => todo!(),
-                    }
-                }
-
-                let Some(imported_module) = project.find_module(&path) else {
-                    return None;
-                };
-
-                return resolve_symbol(project, imported_module.clone(), symbol);
-            }
-            sway::UseTree::Group { imports } => todo!(),
-            sway::UseTree::Name { name } => todo!(),
-            sway::UseTree::Rename { name, alias } => todo!(),
-            sway::UseTree::Glob => todo!(),
+        if let Some(imported_module) = project.resolve_use(use_expr) {
+            return resolve_symbol(project, imported_module.clone(), symbol);
         }
     }
 

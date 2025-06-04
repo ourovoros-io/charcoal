@@ -225,38 +225,17 @@ impl TabbedDisplay for Module {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Submodule {
+    pub is_public: bool,
     pub name: String,
-    pub items: Vec<ModuleItem>,
 }
 
 impl TabbedDisplay for Submodule {
-    fn tabbed_fmt(&self, depth: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "mod {} {{", self.name)?;
-
-        let mut prev_item: Option<&ModuleItem> = None;
-
-        for (i, item) in self.items.iter().enumerate() {
-            if let Some(prev_item) = prev_item {
-                if !(matches!(prev_item, ModuleItem::Use(_)) && matches!(item, ModuleItem::Use(_))
-                    || matches!(prev_item, ModuleItem::Constant(_))
-                        && matches!(item, ModuleItem::Constant(_))
-                    || matches!(prev_item, ModuleItem::TypeDefinition(_))
-                        && matches!(item, ModuleItem::TypeDefinition(_)))
-                {
-                    writeln!(f)?;
-                }
-            } else if i > 0 {
-                writeln!(f)?;
-            }
-
-            "".tabbed_fmt(depth + 1, f)?;
-            item.tabbed_fmt(depth + 1, f)?;
-            writeln!(f)?;
-
-            prev_item = Some(item);
+    fn tabbed_fmt(&self, _depth: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.is_public {
+            write!(f, "pub ")?;
         }
 
-        "}".tabbed_fmt(depth, f)
+        writeln!(f, "mod {};", self.name)
     }
 }
 

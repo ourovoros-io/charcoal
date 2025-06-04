@@ -12,14 +12,10 @@ use std::{
 #[derive(Clone, Debug, Default)]
 pub enum Framework {
     Foundry {
+        src_path: Option<PathBuf>,
         remappings: HashMap<String, String>,
     },
     Hardhat,
-    Brownie {
-        remappings: HashMap<String, String>,
-    },
-    Truffle,
-    Dapp,
     #[default]
     Unknown,
 }
@@ -28,14 +24,12 @@ impl Framework {
     pub const FOUNDRY_CONFIG_FILE: &'static str = "foundry.toml";
     pub const HARDHAT_CONFIG_FILE: &'static str = "hardhat.config.js";
     pub const HARDHAT_CONFIG_FILE_TS: &'static str = "hardhat.config.ts";
-    pub const BROWNIE_CONFIG_FILE: &'static str = "brownie-config.yaml";
-    pub const TRUFFLE_CONFIG_FILE: &'static str = "truffle-config.js";
-    pub const DAPP_CONFIG_FILE: &'static str = "Dappfile";
 }
 
 #[derive(Default)]
 pub struct Project {
     pub options: Args,
+    pub contracts_path: PathBuf,
     pub framework: Framework,
     pub queue: Vec<PathBuf>,
     pub line_ranges: HashMap<PathBuf, Vec<(usize, usize)>>,
@@ -47,8 +41,29 @@ impl Project {
     pub fn new(options: &Args) -> Result<Self, Error> {
         let framework = Self::detect_project_type(&options.input)?;
 
+        let mut contracts_path = options.input.clone();
+        match &framework {
+            Framework::Foundry { src_path, .. } => match src_path.as_ref() {
+                Some(src_path) => contracts_path.extend(src_path),
+                None => contracts_path.push("src"),
+            },
+
+            _ => contracts_path.push("contracts"),
+        }
+
+        if !contracts_path.exists() || !contracts_path.is_dir() {
+            return Err(Error::Wrapped(Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!(
+                    "Contracts folder should be a directory: {}",
+                    contracts_path.to_string_lossy()
+                ),
+            ))));
+        }
+
         let mut result = Self {
             options: options.clone(),
+            contracts_path,
             framework,
             ..Default::default()
         };
@@ -62,51 +77,60 @@ impl Project {
     fn detect_project_type<P: AsRef<Path>>(path: P) -> Result<Framework, Error> {
         let path = path.as_ref();
         let mut framework = Framework::Unknown;
-        if path.join(Framework::FOUNDRY_CONFIG_FILE).exists() {
+
+        let foundry_config_path = path.join(Framework::FOUNDRY_CONFIG_FILE);
+
+        if foundry_config_path.exists() {
+            let foundry_toml_contents = wrapped_err!(std::fs::read_to_string(foundry_config_path))?;
+            let foundry_toml: toml::Value = wrapped_err!(toml::from_str(&foundry_toml_contents))?;
+
+            let src_path = Self::find_in_toml_value(&foundry_toml, "profile.default", "src")
+                .map(|v| {
+                    let toml::Value::String(s) = v else {
+                        return None;
+                    };
+
+                    Some(PathBuf::from(s))
+                })
+                .flatten();
+
             framework = Framework::Foundry {
+                src_path: src_path.clone(),
                 remappings: HashMap::new(),
             };
 
             let remappings = wrapped_err!(Self::get_remappings(&framework, path))?;
 
-            framework = Framework::Foundry { remappings };
+            framework = Framework::Foundry {
+                src_path,
+                remappings,
+            };
         } else if path.join(Framework::HARDHAT_CONFIG_FILE).exists()
             || path.join(Framework::HARDHAT_CONFIG_FILE_TS).exists()
         {
             framework = Framework::Hardhat;
-        } else if path.join(Framework::BROWNIE_CONFIG_FILE).exists() {
-            framework = Framework::Brownie {
-                remappings: HashMap::new(),
-            };
-
-            framework = Framework::Brownie {
-                remappings: wrapped_err!(Self::get_remappings(&framework, path))?,
-            };
-        } else if path.join(Framework::TRUFFLE_CONFIG_FILE).exists() {
-            framework = Framework::Truffle;
-        } else if path.join(Framework::DAPP_CONFIG_FILE).exists() {
-            framework = Framework::Dapp;
         }
 
         Ok(framework)
     }
 
     /// Find a key in a [toml::Table] and return the [toml::Value]
-    fn find_in_toml_value(value: &toml::Value, key: &str) -> Option<toml::Value> {
-        match value {
-            toml::Value::Table(table) => {
-                for (k, v) in table {
-                    if k == key {
-                        return Some(v.clone());
-                    }
-                    if let Some(val) = Self::find_in_toml_value(v, key) {
-                        return Some(val);
-                    }
-                }
-                None
-            }
-            _ => None,
+    #[inline(always)]
+    fn find_in_toml_value(value: &toml::Value, section: &str, key: &str) -> Option<toml::Value> {
+        let mut section = section.split(".");
+        let toml::Value::Table(mut table) = value.clone() else {
+            return None;
+        };
+
+        while let Some(section) = section.next() {
+            let Some(toml::Value::Table(table_2)) = table.get(section) else {
+                return None;
+            };
+
+            table = table_2.clone();
         }
+
+        table.get(key).cloned()
     }
 
     /// Get the project type path from the [Framework] and return a [PathBuf]
@@ -116,8 +140,8 @@ impl Project {
         filename: &str,
     ) -> Result<PathBuf, Error> {
         match &self.framework {
-            // Remappings in foundry and brownie are handled using the same pattern
-            Framework::Foundry { remappings } | Framework::Brownie { remappings } => {
+            // Remappings in foundry are handled using the same pattern
+            Framework::Foundry { remappings, .. } => {
                 for (k, v) in remappings {
                     if filename.starts_with(k) {
                         let project_full_path = self.options.input.join(v);
@@ -130,41 +154,14 @@ impl Project {
                 Ok(source_unit_directory.join(filename))
             }
 
-            // Remappings in hardhat and truffle are done using the @ symbol and the node_modules folder
-            Framework::Hardhat | Framework::Truffle => {
+            // Remappings in hardhat are done using the @ symbol and the node_modules folder
+            Framework::Hardhat => {
                 if filename.starts_with('.') {
                     Ok(source_unit_directory.join(filename))
                 } else if filename.starts_with('@') {
                     Ok(self.options.input.join("node_modules").join(filename))
                 } else {
                     Ok(self.options.input.join(filename))
-                }
-            }
-
-            Framework::Dapp => {
-                if filename.starts_with('.') {
-                    let result = source_unit_directory.join(filename);
-                    return Ok(result);
-                }
-
-                let filename = PathBuf::from(filename);
-                let mut components: Vec<_> = filename.components().collect();
-
-                if components.len() <= 1 {
-                    panic!("Dapp filename should have more than one component")
-                }
-
-                match &components[0] {
-                    Component::Normal(_) => {
-                        components.insert(1, Component::Normal("src".as_ref()));
-                        let component = components
-                            .iter()
-                            .map(|c| c.as_os_str())
-                            .collect::<PathBuf>();
-                        Ok(self.options.input.join("lib").join(component))
-                    }
-
-                    _ => Ok(self.options.input.join(filename)),
                 }
             }
 
@@ -206,7 +203,8 @@ impl Project {
 
                     let value = Self::find_in_toml_value(
                         &remappings_from_toml,
-                        remappings_filename.strip_suffix(".txt").unwrap(),
+                        "profile.default",
+                        "remappings",
                     );
 
                     let Some(value) = value.as_ref() else {
@@ -234,76 +232,8 @@ impl Project {
                 Ok(remappings)
             }
 
-            Framework::Brownie { .. } => {
-                let remappings_from_yaml_str = wrapped_err!(std::fs::read_to_string(
-                    root_folder_path.join(Framework::BROWNIE_CONFIG_FILE)
-                ))?;
-
-                let remappings_from_yaml: serde_yaml::Value =
-                    wrapped_err!(serde_yaml::from_str(&remappings_from_yaml_str))?;
-
-                let Some(compiler) = remappings_from_yaml.get("compiler") else {
-                    return Err(Error::Wrapped(
-                        "compiler key not found in brownie-config.yaml".into(),
-                    ));
-                };
-
-                let Some(solc) = compiler.get("solc") else {
-                    return Err(Error::Wrapped(
-                        "solc key not found in brownie-config.yaml".into(),
-                    ));
-                };
-
-                let Some(remappings) = solc
-                    .get("solidity.remappings")
-                    .or_else(|| solc.get("remappings"))
-                else {
-                    return Err(Error::Wrapped(
-                        "solidity.remappings key not found in brownie-config.yaml".into(),
-                    ));
-                };
-
-                let serde_yaml::Value::Sequence(seq) = remappings else {
-                    return Err(Error::Wrapped(
-                        "solidity.remappings should be a sequence".into(),
-                    ));
-                };
-
-                let mut remappings = HashMap::new();
-
-                for v in seq {
-                    let mut split = v.as_str().unwrap().split('=');
-                    let from = split.next().unwrap().to_string();
-                    let to = split.next().unwrap().to_string();
-                    remappings.insert(from, to);
-                }
-
-                Ok(remappings)
-            }
-
             _ => Ok(HashMap::new()),
         }
-    }
-
-    /// Recursively check to find the root folder of the project and return a [PathBuf]
-    fn find_project_root_folder<P: AsRef<Path>>(path: P) -> Option<PathBuf> {
-        let path = path.as_ref();
-
-        if path.join(Framework::FOUNDRY_CONFIG_FILE).exists()
-            || path.join(Framework::HARDHAT_CONFIG_FILE).exists()
-            || path.join(Framework::HARDHAT_CONFIG_FILE_TS).exists()
-            || path.join(Framework::BROWNIE_CONFIG_FILE).exists()
-            || path.join(Framework::TRUFFLE_CONFIG_FILE).exists()
-            || path.join(Framework::DAPP_CONFIG_FILE).exists()
-        {
-            return Some(path.to_path_buf());
-        }
-
-        if let Some(parent) = path.parent() {
-            return Self::find_project_root_folder(parent);
-        }
-
-        None
     }
 
     /// Recursively search for .sol files in the given directory
@@ -313,7 +243,7 @@ impl Project {
     ) -> Result<Vec<PathBuf>, Error> {
         let mut source_unit_paths = vec![];
 
-        if let Framework::Hardhat | Framework::Truffle = framework {
+        if let Framework::Hardhat = framework {
             // Skip the node_modules folder. Only translate things that are imported explicitly.
             if path
                 .to_string_lossy()
@@ -360,7 +290,7 @@ impl Project {
     }
 
     fn create_usage_queue(&mut self) -> Result<Vec<PathBuf>, Error> {
-        let paths = Self::collect_source_unit_paths(&self.options.input, &self.framework)?;
+        let paths = Self::collect_source_unit_paths(&self.contracts_path, &self.framework)?;
 
         // Build a mapping of file paths to import paths, and file paths to the number of times that that file is imported from another file
         let mut import_paths = HashMap::new();
@@ -609,6 +539,73 @@ impl Project {
         }
 
         None
+    }
+
+    pub fn resolve_use(&mut self, use_expr: &sway::Use) -> Option<Rc<RefCell<TranslatedModule>>> {
+        let sway::UseTree::Path { prefix, suffix } = &use_expr.tree else {
+            return None;
+        };
+
+        if !prefix.is_empty() {
+            return None;
+        }
+
+        let mut use_tree = suffix.as_ref().clone();
+        let mut path = PathBuf::new();
+
+        while let sway::UseTree::Path { prefix, suffix } = &use_tree {
+            path.push(prefix);
+
+            if let sway::UseTree::Glob = suffix.as_ref() {
+                break;
+            }
+
+            use_tree = suffix.as_ref().clone();
+        }
+
+        path = PathBuf::from(path).with_extension("");
+        let mut parent_module: Option<Rc<RefCell<TranslatedModule>>> = None;
+
+        for comp in path.components() {
+            if let Component::RootDir = comp {
+                continue;
+            }
+
+            let comp = comp
+                .as_os_str()
+                .to_string_lossy()
+                .to_string()
+                .replace(".", "_")
+                .to_case(Case::Snake);
+
+            match parent_module.clone() {
+                Some(parent) => {
+                    if let Some(module) = parent
+                        .borrow()
+                        .submodules
+                        .iter()
+                        .find(|s| s.borrow().name == comp)
+                    {
+                        parent_module = Some(module.clone());
+                    } else {
+                        return None;
+                    }
+                }
+                None => {
+                    if let Some(module) = self
+                        .translated_modules
+                        .iter()
+                        .find(|t| t.borrow().name == comp)
+                    {
+                        parent_module = Some(module.clone());
+                    } else {
+                        return None;
+                    }
+                }
+            }
+        }
+
+        parent_module
     }
 
     pub fn find_module(&mut self, path: &Path) -> Option<Rc<RefCell<TranslatedModule>>> {
@@ -1006,6 +1003,62 @@ impl Project {
     }
 
     fn generate_forc_project(&mut self) -> Result<(), Error> {
+        let mut lib_module = sway::Module {
+            kind: sway::ModuleKind::Library,
+            items: vec![],
+        };
+
+        let mut modules: Vec<(PathBuf, sway::Module)> = vec![];
+        let mut dependencies = vec![];
+
+        for module in self.translated_modules.iter() {
+            lib_module
+                .items
+                .push(sway::ModuleItem::Submodule(sway::Submodule {
+                    is_public: true,
+                    name: module.borrow().name.clone(),
+                }));
+
+            fn process_submodules(
+                dependencies: &mut Vec<String>,
+                modules: &mut Vec<(PathBuf, sway::Module)>,
+                module: Rc<RefCell<TranslatedModule>>,
+            ) {
+                let dirty_module_path = module.borrow().path.clone();
+                let mut module_path = PathBuf::new();
+
+                for component in dirty_module_path.components() {
+                    match component {
+                        Component::Normal(component) => {
+                            module_path.push(
+                                component
+                                    .to_string_lossy()
+                                    .replace(".", "_")
+                                    .to_case(Case::Snake),
+                            );
+                        }
+
+                        _ => module_path.push(component.clone()),
+                    }
+                }
+
+                dependencies.extend(module.borrow().dependencies.clone());
+
+                modules.push((
+                    module_path.with_extension("sw"),
+                    module.borrow().clone().into(),
+                ));
+
+                for submodule in module.borrow().submodules.iter() {
+                    process_submodules(dependencies, modules, submodule.clone());
+                }
+            }
+
+            process_submodules(&mut dependencies, &mut modules, module.clone());
+        }
+
+        modules.push(("lib.sw".into(), lib_module));
+
         let output_directory = self
             .options
             .output_directory
@@ -1017,17 +1070,9 @@ impl Project {
         let src_dir_path = output_directory.join("src");
         wrapped_err!(std::fs::create_dir_all(&src_dir_path))?;
 
-        let mut dependencies = vec![];
-
-        for module in self.translated_modules.iter() {
-            dependencies.extend(module.borrow().dependencies.clone());
-
-            let module_path = src_dir_path
-                .join(&module.borrow().path)
-                .with_extension("sw");
+        for (module_path, module) in modules {
+            let module_path = src_dir_path.join(&module_path);
             wrapped_err!(std::fs::create_dir_all(&module_path.parent().unwrap()))?;
-
-            let module: sway::Module = module.borrow().clone().into();
 
             std::fs::write(module_path, sway::TabbedDisplayer(&module).to_string())
                 .map_err(|e| Error::Wrapped(Box::new(e)))?;

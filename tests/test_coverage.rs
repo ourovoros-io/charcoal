@@ -5,13 +5,6 @@ use rayon::iter::ParallelIterator;
 const LINE_LENGTH: usize = 100;
 
 #[test]
-fn test_ds_token() {
-    let path = std::path::Path::new("./tests/ds-token");
-    let repo = "https://github.com/dapphub/ds-token.git";
-    run_test(path, Some(repo));
-}
-
-#[test]
 fn test_compound_protocol() {
     let path = std::path::Path::new("./tests/compound-protocol");
     let repo = "https://github.com/compound-finance/compound-protocol.git";

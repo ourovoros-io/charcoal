@@ -1,5 +1,6 @@
 use super::TranslatedModule;
 use crate::{error::Error, project::Project, sway};
+use convert_case::Casing;
 use solang_parser::{helpers::CodeLocation, pt as solidity};
 use std::{cell::RefCell, path::PathBuf, rc::Rc};
 
@@ -9,18 +10,13 @@ pub fn translate_import_directives(
     module: Rc<RefCell<TranslatedModule>>,
     import_directives: &[solidity::Import],
 ) -> Result<(), Error> {
-    let source_unit_directory = project
-        .options
-        .input
-        .join(module.borrow().path.parent().map(PathBuf::from).unwrap());
-
     for import_directive in import_directives.iter() {
         match import_directive {
             solidity::Import::Plain(solidity::ImportPath::Filename(filename), _) => {
                 // Canonicalize the import path
                 let import_path = PathBuf::from(
                     project
-                        .canonicalize_import_path(&source_unit_directory, &filename.string)?
+                        .canonicalize_import_path(&project.contracts_path, &filename.string)?
                         .to_string_lossy()
                         .to_string()
                         .trim_start_matches(&project.options.input.to_string_lossy().to_string()),
@@ -37,11 +33,24 @@ pub fn translate_import_directives(
                         {
                             Some((line, col)) => format!(
                                 "{}:{}:{}: ",
-                                project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy(),
+                                project
+                                    .options
+                                    .input
+                                    .join(module.borrow().path.clone())
+                                    .with_extension("sol")
+                                    .to_string_lossy(),
                                 line,
                                 col
                             ),
-                            None => format!("{}: ", project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy()),
+                            None => format!(
+                                "{}: ",
+                                project
+                                    .options
+                                    .input
+                                    .join(module.borrow().path.clone())
+                                    .with_extension("sol")
+                                    .to_string_lossy()
+                            ),
                         }
                     );
                 };
@@ -66,7 +75,10 @@ pub fn translate_import_directives(
 
                         std::path::Component::Normal(name) => {
                             use_tree = sway::UseTree::Path {
-                                prefix: name.to_string_lossy().to_string(),
+                                prefix: name
+                                    .to_string_lossy()
+                                    .to_string()
+                                    .to_case(convert_case::Case::Snake),
                                 suffix: Box::new(use_tree),
                             };
                         }
@@ -99,7 +111,7 @@ pub fn translate_import_directives(
                     }
 
                     let import_path = project
-                        .canonicalize_import_path(&source_unit_directory, &filename.string)?;
+                        .canonicalize_import_path(&project.contracts_path, &filename.string)?;
 
                     todo!()
                     // let found = process_import(project, translated_module, Some(&identifier.name), &import_path)?;

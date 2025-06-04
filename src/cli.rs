@@ -6,7 +6,7 @@ use crate::{error::Error, wrapped_err};
 /// Charcoal is a Solidity to Sway translator.
 pub struct Args {
     #[arg(short, long)]
-    /// The contract file or folder of contracts to translate.
+    /// The input directory for the project to be translated. The input must be a valid project root.
     pub input: std::path::PathBuf,
 
     #[arg(short, long)]

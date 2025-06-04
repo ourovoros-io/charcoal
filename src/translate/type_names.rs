@@ -428,11 +428,24 @@ pub fn translate_type_name(
                 match project.loc_to_line_and_column(module.clone(), &type_name.loc()) {
                     Some((line, col)) => format!(
                         "{}:{}:{}",
-                        project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy(),
+                        project
+                            .options
+                            .input
+                            .join(module.borrow().path.clone())
+                            .with_extension("sol")
+                            .to_string_lossy(),
                         line,
                         col
                     ),
-                    None => format!("{}", project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy()),
+                    None => format!(
+                        "{}",
+                        project
+                            .options
+                            .input
+                            .join(module.borrow().path.clone())
+                            .with_extension("sol")
+                            .to_string_lossy()
+                    ),
                 },
                 type_name.to_string(),
             )
@@ -442,24 +455,22 @@ pub fn translate_type_name(
             Some(length) => sway::TypeName::Array {
                 type_name: Box::new(translate_type_name(
                     project,
-                    module,
+                    module.clone(),
                     type_name,
                     is_storage,
                     is_parameter,
                 )),
                 length: {
                     // Create an empty scope to translate the array length expression
-                    todo!()
-                    // let scope = Rc::new(RefCell::new(TranslationScope {
-                    //     parent: Some(module.toplevel_scope.clone()),
-                    //     ..Default::default()
-                    // }));
+                    let scope = Rc::new(RefCell::new(TranslationScope::default()));
 
-                    // match translate_expression(project, module, scope.clone(), length.as_ref()) {
-                    //     Ok(sway::Expression::Literal(sway::Literal::DecInt(length, _) | sway::Literal::HexInt(length, _))) => length.try_into().unwrap(),
-                    //     Ok(_) => panic!("Invalid array length expression: {length:#?}"),
-                    //     Err(e) => panic!("Failed to translate array length expression: {e}"),
-                    // }
+                    match translate_expression(project, module, scope.clone(), length.as_ref()) {
+                        Ok(sway::Expression::Literal(
+                            sway::Literal::DecInt(length, _) | sway::Literal::HexInt(length, _),
+                        )) => length.try_into().unwrap(),
+                        Ok(_) => panic!("Invalid array length expression: {length:#?}"),
+                        Err(e) => panic!("Failed to translate array length expression: {e}"),
+                    }
                 },
             },
 
@@ -596,11 +607,24 @@ pub fn translate_type_name(
                     match project.loc_to_line_and_column(module.clone(), &type_name.loc()) {
                         Some((line, col)) => format!(
                             "{}:{}:{}",
-                            project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy(),
+                            project
+                                .options
+                                .input
+                                .join(module.borrow().path.clone())
+                                .with_extension("sol")
+                                .to_string_lossy(),
                             line,
                             col
                         ),
-                        None => format!("{}", project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy()),
+                        None => format!(
+                            "{}",
+                            project
+                                .options
+                                .input
+                                .join(module.borrow().path.clone())
+                                .with_extension("sol")
+                                .to_string_lossy()
+                        ),
                     },
                 )
             }
@@ -610,11 +634,24 @@ pub fn translate_type_name(
                 match project.loc_to_line_and_column(module.clone(), &type_name.loc()) {
                     Some((line, col)) => format!(
                         "{}:{}:{}",
-                        project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy(),
+                        project
+                            .options
+                            .input
+                            .join(module.borrow().path.clone())
+                            .with_extension("sol")
+                            .to_string_lossy(),
                         line,
                         col
                     ),
-                    None => format!("{}", project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy()),
+                    None => format!(
+                        "{}",
+                        project
+                            .options
+                            .input
+                            .join(module.borrow().path.clone())
+                            .with_extension("sol")
+                            .to_string_lossy()
+                    ),
                 },
             ),
         },
@@ -624,11 +661,24 @@ pub fn translate_type_name(
             match project.loc_to_line_and_column(module.clone(), &type_name.loc()) {
                 Some((line, col)) => format!(
                     "{}:{}:{}",
-                    project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy(),
+                    project
+                        .options
+                        .input
+                        .join(module.borrow().path.clone())
+                        .with_extension("sol")
+                        .to_string_lossy(),
                     line,
                     col
                 ),
-                None => format!("{}", project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy()),
+                None => format!(
+                    "{}",
+                    project
+                        .options
+                        .input
+                        .join(module.borrow().path.clone())
+                        .with_extension("sol")
+                        .to_string_lossy()
+                ),
             },
         ),
     }
