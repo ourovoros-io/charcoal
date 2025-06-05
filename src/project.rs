@@ -1,4 +1,4 @@
-use crate::{cli::Args, error::Error, sway, translate::*, wrapped_err};
+use crate::{cli::Args, error::Error, sway, translate::*, utils, wrapped_err};
 use convert_case::{Case, Casing};
 use solang_parser::pt as solidity;
 use std::{
@@ -11,19 +11,101 @@ use std::{
 /// Represents the type of project as [Framework] default is [Framework::Unknown]
 #[derive(Clone, Debug, Default)]
 pub enum Framework {
+    #[default]
+    Unknown,
     Foundry {
         src_path: Option<PathBuf>,
         remappings: HashMap<String, String>,
     },
     Hardhat,
-    #[default]
-    Unknown,
 }
 
 impl Framework {
     pub const FOUNDRY_CONFIG_FILE: &'static str = "foundry.toml";
     pub const HARDHAT_CONFIG_FILE: &'static str = "hardhat.config.js";
     pub const HARDHAT_CONFIG_FILE_TS: &'static str = "hardhat.config.ts";
+
+    /// Attempt to get the [Framework] from the supplied path.
+    pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Framework, Error> {
+        let path = path.as_ref();
+        let foundry_config_path = path.join(Framework::FOUNDRY_CONFIG_FILE);
+
+        if foundry_config_path.exists() {
+            let foundry_toml_contents = wrapped_err!(std::fs::read_to_string(foundry_config_path))?;
+            let foundry_toml: toml::Value = wrapped_err!(toml::from_str(&foundry_toml_contents))?;
+
+            let src_path = utils::find_in_toml_value(&foundry_toml, "profile.default", "src")
+                .map(|v| {
+                    let toml::Value::String(s) = v else {
+                        return None;
+                    };
+
+                    Some(PathBuf::from(s))
+                })
+                .flatten();
+
+            let remappings_filename = "remappings.txt";
+
+            let lines: Vec<String> = if path.join(remappings_filename).exists() {
+                // Get the remappings.txt file from the root of the project folder
+                let remappings_content =
+                    wrapped_err!(std::fs::read_to_string(path.join(remappings_filename)))?;
+
+                remappings_content.lines().map(str::to_string).collect()
+            } else {
+                // Get foundry toml file from the root of the project folder
+                let remappings_from_toml_str = wrapped_err!(std::fs::read_to_string(
+                    path.join(Framework::FOUNDRY_CONFIG_FILE)
+                ))?;
+
+                let remappings_from_toml: toml::Value =
+                    wrapped_err!(toml::from_str(&remappings_from_toml_str))?;
+
+                let value = utils::find_in_toml_value(
+                    &remappings_from_toml,
+                    "profile.default",
+                    "remappings",
+                );
+
+                let Some(value) = value.as_ref() else {
+                    return Ok(Framework::Foundry {
+                        src_path,
+                        remappings: HashMap::new(),
+                    });
+                };
+
+                let toml::Value::Array(arr) = value else {
+                    panic!("remappings key in foundry.toml should be an array")
+                };
+
+                arr.iter()
+                    .map(|x| x.as_str().unwrap().to_string())
+                    .collect()
+            };
+
+            let mut remappings = HashMap::new();
+
+            for line in lines {
+                let mut split = line.split('=');
+                let from = split.next().unwrap().to_string();
+                let to = split.next().unwrap().to_string();
+                remappings.insert(from, to);
+            }
+
+            return Ok(Framework::Foundry {
+                src_path,
+                remappings,
+            });
+        }
+
+        if path.join(Framework::HARDHAT_CONFIG_FILE).exists()
+            || path.join(Framework::HARDHAT_CONFIG_FILE_TS).exists()
+        {
+            return Ok(Framework::Hardhat);
+        }
+
+        Ok(Framework::Unknown)
+    }
 }
 
 #[derive(Default)]
@@ -38,10 +120,9 @@ pub struct Project {
 }
 
 impl Project {
-    pub fn new(options: &Args) -> Result<Self, Error> {
-        let framework = Self::detect_project_type(&options.input)?;
-
+    pub fn new(options: Args, framework: Framework) -> Result<Self, Error> {
         let mut contracts_path = options.input.clone();
+
         match &framework {
             Framework::Foundry { src_path, .. } => match src_path.as_ref() {
                 Some(src_path) => contracts_path.extend(src_path),
@@ -62,7 +143,7 @@ impl Project {
         }
 
         let mut result = Self {
-            options: options.clone(),
+            options,
             contracts_path,
             framework,
             ..Default::default()
@@ -71,66 +152,6 @@ impl Project {
         result.queue = result.create_usage_queue()?;
 
         Ok(result)
-    }
-
-    /// Get the project type from the [PathBuf] and return a [Framework]
-    fn detect_project_type<P: AsRef<Path>>(path: P) -> Result<Framework, Error> {
-        let path = path.as_ref();
-        let mut framework = Framework::Unknown;
-
-        let foundry_config_path = path.join(Framework::FOUNDRY_CONFIG_FILE);
-
-        if foundry_config_path.exists() {
-            let foundry_toml_contents = wrapped_err!(std::fs::read_to_string(foundry_config_path))?;
-            let foundry_toml: toml::Value = wrapped_err!(toml::from_str(&foundry_toml_contents))?;
-
-            let src_path = Self::find_in_toml_value(&foundry_toml, "profile.default", "src")
-                .map(|v| {
-                    let toml::Value::String(s) = v else {
-                        return None;
-                    };
-
-                    Some(PathBuf::from(s))
-                })
-                .flatten();
-
-            framework = Framework::Foundry {
-                src_path: src_path.clone(),
-                remappings: HashMap::new(),
-            };
-
-            let remappings = wrapped_err!(Self::get_remappings(&framework, path))?;
-
-            framework = Framework::Foundry {
-                src_path,
-                remappings,
-            };
-        } else if path.join(Framework::HARDHAT_CONFIG_FILE).exists()
-            || path.join(Framework::HARDHAT_CONFIG_FILE_TS).exists()
-        {
-            framework = Framework::Hardhat;
-        }
-
-        Ok(framework)
-    }
-
-    /// Find a key in a [toml::Table] and return the [toml::Value]
-    #[inline(always)]
-    fn find_in_toml_value(value: &toml::Value, section: &str, key: &str) -> Option<toml::Value> {
-        let mut section = section.split(".");
-        let toml::Value::Table(mut table) = value.clone() else {
-            return None;
-        };
-
-        while let Some(section) = section.next() {
-            let Some(toml::Value::Table(table_2)) = table.get(section) else {
-                return None;
-            };
-
-            table = table_2.clone();
-        }
-
-        table.get(key).cloned()
     }
 
     /// Get the project type path from the [Framework] and return a [PathBuf]
@@ -173,66 +194,6 @@ impl Project {
                 );
                 Ok(PathBuf::from(filename))
             }
-        }
-    }
-
-    /// Get the re mappings from the re mappings file on the root folder of the project represented by the [PathBuf]
-    fn get_remappings(
-        framework: &Framework,
-        root_folder_path: &Path,
-    ) -> Result<HashMap<String, String>, Error> {
-        match framework {
-            Framework::Foundry { .. } => {
-                let remappings_filename = "remappings.txt";
-
-                let lines: Vec<String> = if root_folder_path.join(remappings_filename).exists() {
-                    // Get the remappings.txt file from the root of the project folder
-                    let remappings_content = wrapped_err!(std::fs::read_to_string(
-                        root_folder_path.join(remappings_filename)
-                    ))?;
-
-                    remappings_content.lines().map(str::to_string).collect()
-                } else {
-                    // Get foundry toml file from the root of the project folder
-                    let remappings_from_toml_str = wrapped_err!(std::fs::read_to_string(
-                        root_folder_path.join(Framework::FOUNDRY_CONFIG_FILE)
-                    ))?;
-
-                    let remappings_from_toml: toml::Value =
-                        wrapped_err!(toml::from_str(&remappings_from_toml_str))?;
-
-                    let value = Self::find_in_toml_value(
-                        &remappings_from_toml,
-                        "profile.default",
-                        "remappings",
-                    );
-
-                    let Some(value) = value.as_ref() else {
-                        return Ok(HashMap::new());
-                    };
-
-                    let toml::Value::Array(arr) = value else {
-                        panic!("remappings key in foundry.toml should be an array")
-                    };
-
-                    arr.iter()
-                        .map(|x| x.as_str().unwrap().to_string())
-                        .collect::<Vec<_>>()
-                };
-
-                let mut remappings = HashMap::new();
-
-                for line in lines {
-                    let mut split = line.split('=');
-                    let from = split.next().unwrap().to_string();
-                    let to = split.next().unwrap().to_string();
-                    remappings.insert(from, to);
-                }
-
-                Ok(remappings)
-            }
-
-            _ => Ok(HashMap::new()),
         }
     }
 

@@ -1,14 +1,12 @@
-#![warn(clippy::all, clippy::pedantic)]
-
-use clap::Parser;
-use error::Error;
-use project::Project;
-
 pub mod cli;
 pub mod error;
 pub mod project;
 pub mod sway;
 pub mod translate;
+pub mod utils;
+
+#[cfg(test)]
+mod tests;
 
 fn main() {
     if let Err(e) = translate_project() {
@@ -17,10 +15,8 @@ fn main() {
     }
 }
 
-fn translate_project() -> Result<(), Error> {
-    let mut options = cli::Args::parse();
-
-    options.canonicalize()?;
-
-    Project::new(&options)?.translate()
+fn translate_project() -> Result<(), error::Error> {
+    let options = cli::Args::new()?;
+    let framework = project::Framework::from_path(&options.input)?;
+    project::Project::new(options, framework)?.translate()
 }

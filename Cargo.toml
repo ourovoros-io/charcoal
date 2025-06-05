@@ -14,7 +14,6 @@ sha3 = "0.10.8"
 solang-parser = "0.3.4"
 toml = "0.8.20"
 
-
 [dev-dependencies]
 colorize = "0.1.0"
 walkdir = "2.5.0"
