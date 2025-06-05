@@ -177,10 +177,16 @@ impl Test {
         match framework {
             Framework::Unknown => panic!("Unknown project framework"),
 
-            Framework::Foundry {
-                src_path,
-                remappings,
-            } => todo!("Handle dependency installation for Foundry project frameworks"),
+            Framework::Foundry { .. } => {
+                // Run `forge install`
+                let output = Command::new("forge")
+                    .current_dir(self.options.input.clone())
+                    .arg("install")
+                    .output()
+                    .expect("Failed to execute command");
+
+                result = output.status.success();
+            }
 
             Framework::Hardhat => {
                 //

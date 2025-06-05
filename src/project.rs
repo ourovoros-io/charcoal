@@ -264,18 +264,17 @@ impl Project {
             import_counts: &mut HashMap<PathBuf, i32>,
         ) {
             import_counts.entry(path.into()).or_insert(0);
-
             let ast = project.parse_solidity_source_unit(path).cloned().unwrap();
 
             if !import_paths.contains_key(path) {
                 let paths = project.get_import_paths(&ast, path).unwrap();
 
+                import_paths.insert(path.into(), paths.clone());
+
                 for import_path in paths.iter() {
                     collect_imports(project, import_path, import_paths, import_counts);
                     *import_counts.entry(import_path.clone()).or_insert(0) += 1;
                 }
-
-                import_paths.insert(path.into(), paths);
             }
         }
 
@@ -526,6 +525,7 @@ impl Project {
 
         path = PathBuf::from(path).with_extension("");
         let mut parent_module: Option<Rc<RefCell<TranslatedModule>>> = None;
+        let mut first = true;
 
         for comp in path.components() {
             if let Component::RootDir = comp {
@@ -538,6 +538,14 @@ impl Project {
                 .to_string()
                 .replace(".", "_")
                 .to_case(Case::Snake);
+
+            if first {
+                first = false;
+
+                if let "lib" | "src" = comp.as_str() {
+                    continue;
+                }
+            }
 
             match parent_module.clone() {
                 Some(parent) => {
@@ -972,48 +980,78 @@ impl Project {
         let mut modules: Vec<(PathBuf, sway::Module)> = vec![];
         let mut dependencies = vec![];
 
+        fn process_submodules(
+            dependencies: &mut Vec<String>,
+            modules: &mut Vec<(PathBuf, sway::Module)>,
+            module: Rc<RefCell<TranslatedModule>>,
+        ) {
+            let dirty_module_path = module.borrow().path.clone();
+
+            let mut module_path = PathBuf::new();
+            let mut first = true;
+
+            for component in dirty_module_path.components() {
+                let component = component
+                    .as_os_str()
+                    .to_string_lossy()
+                    .to_string()
+                    .replace(".", "_")
+                    .to_case(Case::Snake);
+
+                if first {
+                    first = false;
+
+                    if let "lib" | "src" = component.as_str() {
+                        continue;
+                    }
+                }
+
+                module_path.push(component);
+            }
+
+            dependencies.extend(module.borrow().dependencies.clone());
+
+            modules.push((
+                module_path.with_extension("sw"),
+                module.borrow().clone().into(),
+            ));
+
+            for submodule in module.borrow().submodules.iter() {
+                process_submodules(dependencies, modules, submodule.clone());
+            }
+        }
+
         for module in self.translated_modules.iter() {
+            if module
+                .borrow()
+                .path
+                .file_stem()
+                .map(|p| matches!(p.to_str().unwrap(), "lib" | "src"))
+                .unwrap_or(false)
+            {
+                lib_module.items.extend(
+                    module
+                        .borrow()
+                        .uses
+                        .iter()
+                        .map(|u| sway::ModuleItem::Use(u.clone())),
+                );
+
+                dependencies.extend(module.borrow().dependencies.clone());
+
+                for submodule in module.borrow().submodules.iter() {
+                    process_submodules(&mut dependencies, &mut modules, submodule.clone());
+                }
+
+                continue;
+            }
+
             lib_module
                 .items
                 .push(sway::ModuleItem::Submodule(sway::Submodule {
                     is_public: true,
                     name: module.borrow().name.clone(),
                 }));
-
-            fn process_submodules(
-                dependencies: &mut Vec<String>,
-                modules: &mut Vec<(PathBuf, sway::Module)>,
-                module: Rc<RefCell<TranslatedModule>>,
-            ) {
-                let dirty_module_path = module.borrow().path.clone();
-                let mut module_path = PathBuf::new();
-
-                for component in dirty_module_path.components() {
-                    match component {
-                        Component::Normal(component) => {
-                            module_path.push(
-                                component
-                                    .to_string_lossy()
-                                    .replace(".", "_")
-                                    .to_case(Case::Snake),
-                            );
-                        }
-
-                        _ => module_path.push(component.clone()),
-                    }
-                }
-
-                dependencies.extend(module.borrow().dependencies.clone());
-
-                modules.push((
-                    module_path.with_extension("sw"),
-                    module.borrow().clone().into(),
-                ));
-
-                for submodule in module.borrow().submodules.iter() {
-                    process_submodules(dependencies, modules, submodule.clone());
-                }
-            }
 
             process_submodules(&mut dependencies, &mut modules, module.clone());
         }

@@ -18,9 +18,7 @@ Cargo.lock
 .vscode
 
 tests/compound-protocol/
-tests/gearbox-contracts/
 tests/openzeppelin-contracts/
 tests/solidity-by-example/
-tests/stork-external/
 tests/uniswap/
 output/

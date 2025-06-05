@@ -1,6 +1,6 @@
 use super::TranslatedModule;
 use crate::{error::Error, project::Project, sway};
-use convert_case::Casing;
+use convert_case::{Case, Casing};
 use solang_parser::{helpers::CodeLocation, pt as solidity};
 use std::{cell::RefCell, path::PathBuf, rc::Rc};
 
@@ -12,11 +12,18 @@ pub fn translate_import_directives(
 ) -> Result<(), Error> {
     for import_directive in import_directives.iter() {
         match import_directive {
-            solidity::Import::Plain(solidity::ImportPath::Filename(filename), _) => {
+            solidity::Import::Plain(solidity::ImportPath::Filename(filename), _)
+            | solidity::Import::Rename(solidity::ImportPath::Filename(filename), _, _) => {
                 // Canonicalize the import path
                 let import_path = PathBuf::from(
                     project
-                        .canonicalize_import_path(&project.contracts_path, &filename.string)?
+                        .canonicalize_import_path(
+                            &project
+                                .options
+                                .input
+                                .join(module.borrow().path.parent().unwrap()),
+                            &filename.string,
+                        )?
                         .to_string_lossy()
                         .to_string()
                         .trim_start_matches(&project.options.input.to_string_lossy().to_string()),
@@ -74,11 +81,20 @@ pub fn translate_import_directives(
                         }
 
                         std::path::Component::Normal(name) => {
+                            let name = name
+                                .to_string_lossy()
+                                .to_string()
+                                .replace(".", "_")
+                                .to_case(Case::Snake);
+
+                            if let "lib" | "src" = name.as_str() {
+                                if let sway::UseTree::Glob = &use_tree {
+                                    continue;
+                                }
+                            }
+
                             use_tree = sway::UseTree::Path {
-                                prefix: name
-                                    .to_string_lossy()
-                                    .to_string()
-                                    .to_case(convert_case::Case::Snake),
+                                prefix: name,
                                 suffix: Box::new(use_tree),
                             };
                         }
@@ -101,30 +117,6 @@ pub fn translate_import_directives(
 
                 if !module.borrow().uses.contains(&use_expr) {
                     module.borrow_mut().uses.push(use_expr);
-                }
-            }
-
-            solidity::Import::Rename(solidity::ImportPath::Filename(filename), identifiers, _) => {
-                for (identifier, alias_identifier) in identifiers.iter() {
-                    if alias_identifier.is_some() {
-                        todo!("Handle import aliases");
-                    }
-
-                    let import_path = project
-                        .canonicalize_import_path(&project.contracts_path, &filename.string)?;
-
-                    todo!()
-                    // let found = process_import(project, translated_module, Some(&identifier.name), &import_path)?;
-
-                    // if !found {
-                    //     panic!(
-                    //         "{}ERROR: failed to resolve import directive from `{import_directive}`",
-                    //         match project.loc_to_line_and_column(&translated_module.path, &import_directive.loc()) {
-                    //             Some((line, col)) => format!("{}:{}:{}: ", translated_module.path.to_string_lossy(), line, col),
-                    //             None => format!("{}: ", translated_module.path.to_string_lossy()),
-                    //         }
-                    //     );
-                    // }
                 }
             }
 

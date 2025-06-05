@@ -2891,7 +2891,7 @@ impl From<TranslatedModule> for sway::Module {
 #[inline]
 pub fn translate_naming_convention(name: &str, case: Case) -> String {
     // HACK: do not allow dollar signs
-    let mut name = name.replace('$', "dollar_sign").to_case(case).to_string();
+    let mut name = name.replace('$', "dollar_sign").to_string();
 
     // HACK: do not allow name to start with double underscore
     while name.starts_with("__") {

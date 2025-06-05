@@ -36,6 +36,7 @@ pub fn translate_function_name(
             .as_ref()
             .map(|i| i.name.clone())
             .unwrap_or_default();
+
         let mut new_name = translate_naming_convention(old_name.as_str(), Case::Snake);
 
         // Increase the function name count

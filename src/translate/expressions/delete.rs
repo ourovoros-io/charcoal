@@ -10,14 +10,19 @@ pub fn translate_delete_expression(
     expression: &solidity::Expression,
 ) -> Result<sway::Expression, Error> {
     let Some(TranslatedVariableAccess {
-        variable: Some(variable),
+        variable,
         expression: expr,
     }) = translate_variable_access_expression(project, module.clone(), scope.clone(), expression)?
     else {
         panic!("Variable not found: {}", sway::TabbedDisplayer(&expression));
     };
 
-    let type_name = variable.borrow().type_name.clone();
+    let type_name = match variable.as_ref() {
+        Some(variable) => variable.borrow().type_name.clone(),
+        None => module
+            .borrow_mut()
+            .get_expression_type(project, scope.clone(), &expr)?,
+    };
 
     if let solidity::Expression::ArraySubscript(_, expression, index) = expression {
         if let Some(storage_type_name) = type_name.storage_key_type() {
@@ -31,7 +36,7 @@ pub fn translate_delete_expression(
                 {
                     let mut expression =
                         translate_expression(project, module.clone(), scope.clone(), expression)?;
-                    
+
                     let index = translate_expression(
                         project,
                         module.clone(),
@@ -58,15 +63,8 @@ pub fn translate_delete_expression(
     }
 
     let value = create_value_expression(project, module.clone(), scope.clone(), &type_name, None);
-    
+
     create_assignment_expression(
-        project,
-        module,
-        scope,
-        "=",
-        &expr,
-        Some(variable),
-        &value,
-        &type_name,
+        project, module, scope, "=", &expr, variable, &value, &type_name,
     )
 }

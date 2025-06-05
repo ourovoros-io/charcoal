@@ -285,7 +285,6 @@ pub fn create_assignment_expression(
         }
     }
 
-    // Handle vector assignments
     if let sway::TypeName::Identifier {
         name,
         generic_parameters,
