@@ -110,6 +110,7 @@ pub fn translate_variable_access_expression(
                         .iter()
                         .find(|f| f.old_name == *name)
                         .unwrap();
+
                     return Ok(Some(TranslatedVariableAccess {
                         variable: None,
                         expression: sway::Expression::create_function_calls(
@@ -389,57 +390,23 @@ pub fn translate_variable_access_expression(
         }
 
         solidity::Expression::MemberAccess(_, container, member) => {
-            if let solidity::Expression::Variable(solidity::Identifier { name, .. }) =
-                container.as_ref()
-            {
-                fn check_module(
-                    name: &str,
-                    external_module: Rc<RefCell<TranslatedModule>>,
-                ) -> bool {
-                    for external_definition in external_module.borrow().contracts.iter() {
-                        let external_definition =
-                            external_definition.implementation.as_ref().unwrap();
-
-                        if !matches!(external_definition.kind, solidity::ContractTy::Library(_)) {
-                            continue;
-                        }
-
-                        if external_definition.name != name {
-                            continue;
-                        }
-
-                        return true;
-                    }
-
-                    for submodule in external_module.borrow().submodules.iter() {
-                        if check_module(name, submodule.clone()) {
-                            return true;
-                        }
-                    }
-
-                    false
-                }
-
-                for external_module in project.translated_modules.iter() {
-                    if check_module(name, external_module.clone()) {
-                        let new_name = translate_naming_convention(&member.name, Case::Snake);
-
-                        return Ok(Some(TranslatedVariableAccess {
-                            variable: None,
-                            expression: sway::Expression::create_identifier(new_name),
-                        }));
-                    }
-                }
-            }
-
-            let translated_container =
+            let mut translated_container =
                 translate_expression(project, module.clone(), scope.clone(), container)?;
 
-            let container_type_name = module.borrow_mut().get_expression_type(
+            let mut container_type_name = module.borrow_mut().get_expression_type(
                 project,
                 scope.clone(),
                 &translated_container,
             )?;
+
+            if let Some(container_type) = container_type_name.storage_key_type() {
+                translated_container = sway::Expression::create_function_calls(
+                    Some(translated_container),
+                    &[("read", Some((None, vec![])))],
+                );
+                container_type_name = container_type;
+            }
+
             let container_type_name_string = container_type_name.to_string();
 
             let Some(TranslatedVariableAccess { variable, .. }) =

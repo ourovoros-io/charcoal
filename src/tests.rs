@@ -13,6 +13,11 @@ use std::{
 use walkdir::WalkDir;
 
 #[test]
+fn test_foundry_template() {
+    Test::new("foundry-template", "./tests/foundry-template").run();
+}
+
+#[test]
 fn test_custom_tests() {
     Test::new("custom_tests", "./tests/custom-tests").run();
 }
@@ -114,7 +119,6 @@ impl Test {
         if !self.clone_repo() {
             panic!()
         }
-
         let framework = Framework::from_path(&self.options.input)
             .expect("Failed to detect a Solidity project framework");
 
@@ -175,7 +179,7 @@ impl Test {
         let mut result = true;
 
         match framework {
-            Framework::Unknown => panic!("Unknown project framework"),
+            Framework::Unknown => {}
 
             Framework::Foundry { .. } => {
                 // Run `forge install`

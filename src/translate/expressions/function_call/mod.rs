@@ -133,15 +133,182 @@ pub fn translate_function_call_expression(
                 .map(|a| translate_expression(project, module.clone(), scope.clone(), a))
                 .collect::<Result<Vec<_>, _>>()?;
 
-            translate_builtin_function_call(
+            if let Some(expression) = translate_builtin_function_call(
                 project,
                 module.clone(),
                 scope.clone(),
-                function,
-                named_arguments,
                 name,
                 expression,
-                parameters,
+                parameters.clone(),
+            )? {
+                return Ok(expression);
+            }
+
+            let parameter_types = parameters
+                .iter()
+                .map(|p| {
+                    module
+                        .borrow_mut()
+                        .get_expression_type(project, scope.clone(), p)
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+
+            // Check to see if the expression is a by-value struct constructor
+            let structs = {
+                let module = module.borrow();
+                module.structs.clone()
+            };
+
+            if let Some(result) = resolve_struct_constructor(
+                project,
+                module.clone(),
+                scope.clone(),
+                structs.as_slice(),
+                &name,
+                named_arguments,
+                parameters.clone(),
+                parameter_types.clone(),
+            )? {
+                return Ok(result);
+            }
+
+            // Check to see if the expression is an ABI cast
+            if parameters.len() == 1 {
+                if let Some(_external_definition) = project.find_module_with_contract(name) {
+                    match module.borrow_mut().get_expression_type(
+                        project,
+                        scope.clone(),
+                        &parameters[0],
+                    )? {
+                        sway::TypeName::Identifier {
+                            name: type_name,
+                            generic_parameters,
+                        } => match (type_name.as_str(), generic_parameters.as_ref()) {
+                            ("Identity", None) => {
+                                //
+                                // TODO: Ensure a use statement for the ABI is added to the current module
+                                //
+
+                                // abi(T, x.as_contract_id().unwrap().into())
+                                return Ok(sway::Expression::create_function_calls(
+                                    None,
+                                    &[(
+                                        "abi",
+                                        Some((
+                                            None,
+                                            vec![
+                                                sway::Expression::create_identifier(name.into()),
+                                                sway::Expression::create_function_calls(
+                                                    Some(parameters[0].clone()),
+                                                    &[
+                                                        ("as_contract_id", Some((None, vec![]))),
+                                                        ("unwrap", Some((None, vec![]))),
+                                                        ("into", Some((None, vec![]))),
+                                                    ],
+                                                ),
+                                            ],
+                                        )),
+                                    )],
+                                ));
+                            }
+
+                            ("u256" | "b256", None) => {
+                                // Thing(x) => abi(Thing, Identity::from(ContractId::from(x)))
+
+                                //
+                                // TODO Ensure a use statement for the ABI is added to the current module
+                                //
+
+                                // abi(T, Identity::from(ContractId::from(x)))
+                                return Ok(sway::Expression::create_function_calls(None, &[
+                                    ("abi", Some((None, vec![
+                                        sway::Expression::create_identifier(name.into()),
+                                        sway::Expression::create_function_calls(None, &[
+                                            ("Identity::from", Some((None, vec![
+                                                // ContractId::from(x)
+                                                sway::Expression::create_function_calls(None, &[("ContractId::from", Some((None, vec![parameters[0].clone()])))]),
+                                            ]))),
+                                        ]),
+                                    ]))),
+                                ]));
+                            }
+
+                            _ => {}
+                        },
+
+                        _ => {}
+                    }
+                }
+            }
+
+            // Try to resolve the function call
+            if let Some(result) = resolve_function_call(
+                project,
+                module.clone(),
+                scope.clone(),
+                module.clone(),
+                name,
+                named_arguments,
+                parameters.clone(),
+                parameter_types.clone(),
+            )? {
+                return Ok(result);
+            }
+
+            // Check all of the module's `use` statements for crate-local imports,
+            // find the module being imported, then check if the function lives there.
+            for use_item in module.borrow().uses.iter() {
+                if let Some(found_module) = project.resolve_use(use_item) {
+                    // Try to resolve the function call
+                    if let Some(result) = resolve_function_call(
+                        project,
+                        module.clone(),
+                        scope.clone(),
+                        found_module.clone(),
+                        name,
+                        named_arguments,
+                        parameters.clone(),
+                        parameter_types.clone(),
+                    )? {
+                        return Ok(result);
+                    }
+                }
+            }
+
+            panic!(
+                "{}error: Failed to find function `{name}({})` in scope: {function}({})",
+                match project.loc_to_line_and_column(module.clone(), &function.loc()) {
+                    Some((line, col)) => format!(
+                        "{}:{}:{}: ",
+                        project
+                            .options
+                            .input
+                            .join(module.borrow().path.clone())
+                            .with_extension("sol")
+                            .to_string_lossy(),
+                        line,
+                        col
+                    ),
+                    None => format!(
+                        "{}: ",
+                        project
+                            .options
+                            .input
+                            .join(module.borrow().path.clone())
+                            .with_extension("sol")
+                            .to_string_lossy()
+                    ),
+                },
+                parameter_types
+                    .iter()
+                    .map(|t| t.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                parameters
+                    .iter()
+                    .map(|t| sway::TabbedDisplayer(t).to_string())
+                    .collect::<Vec<_>>()
+                    .join(", "),
             )
         }
 
@@ -270,13 +437,18 @@ pub fn translate_function_call_expression(
                     }
 
                     // Check if function is contained in an external definition
-                    if let Some(external_definition) = project.find_module_with_contract(&name) {
+                    if let Some(external_module) = project.find_module_with_contract(&name) {
                         // Check to see if the expression is a by-value struct constructor
+                        let structs = {
+                            let module = external_module.borrow();
+                            module.structs.clone()
+                        };
+
                         if let Some(result) = resolve_struct_constructor(
                             project,
                             module.clone(),
                             scope.clone(),
-                            external_definition.borrow().structs.clone().as_slice(),
+                            structs.as_slice(),
                             member.name.as_str(),
                             named_arguments,
                             parameters.clone(),
@@ -290,7 +462,7 @@ pub fn translate_function_call_expression(
                             project,
                             module.clone(),
                             scope.clone(),
-                            external_definition.clone(),
+                            external_module.clone(),
                             member.name.as_str(),
                             named_arguments,
                             parameters.clone(),

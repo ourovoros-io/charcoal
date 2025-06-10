@@ -1169,6 +1169,13 @@ impl TranslatedModule {
                 }));
             }
 
+            "Secp256k1::from" => {
+                return Ok(Some(sway::TypeName::Identifier {
+                    name: "Secp256k1".into(),
+                    generic_parameters: None,
+                }));
+            }
+
             "std::alloc::alloc" => {
                 return Ok(Some(sway::TypeName::Identifier {
                     name: "raw_ptr".into(),
@@ -2159,6 +2166,40 @@ impl TranslatedModule {
                         name: "raw_ptr".into(),
                         generic_parameters: None,
                     }),
+
+                    _ => todo!(
+                        "get type of function call expression: {} - {member_access:#?}",
+                        sway::TabbedDisplayer(member_access)
+                    ),
+                },
+
+                ("Secp256k1", None) => match member_access.member.as_str() {
+                    // Result<Address, SignatureError>
+                    "address" if parameters.len() == 1 => {
+                        self.ensure_use_declared("std::crypto::signature_error::SignatureError");
+
+                        Ok(sway::TypeName::Identifier {
+                            name: "Result".into(),
+                            generic_parameters: Some(sway::GenericParameterList {
+                                entries: vec![
+                                    sway::GenericParameter {
+                                        type_name: sway::TypeName::Identifier {
+                                            name: "Address".into(),
+                                            generic_parameters: None,
+                                        },
+                                        implements: None,
+                                    },
+                                    sway::GenericParameter {
+                                        type_name: sway::TypeName::Identifier {
+                                            name: "SignatureError".into(),
+                                            generic_parameters: None,
+                                        },
+                                        implements: None,
+                                    },
+                                ],
+                            }),
+                        })
+                    }
 
                     _ => todo!(
                         "get type of function call expression: {} - {member_access:#?}",

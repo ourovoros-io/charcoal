@@ -370,7 +370,16 @@ pub fn translate_type_name(
 
         solidity::Expression::Variable(solidity::Identifier { name, .. }) => {
             // Check if type is a type definition
-            if module.borrow().type_definitions.iter().any(|t| matches!(&t.implementation.as_ref().unwrap().name, sway::TypeName::Identifier { name: type_name, generic_parameters: None } if type_name == name)) {
+            if module.borrow().type_definitions.iter().any(|t| {
+                let sway::TypeName::Identifier {
+                    name: type_name,
+                    generic_parameters: None,
+                } = &t.signature
+                else {
+                    return false;
+                };
+                type_name == name
+            }) {
                 return sway::TypeName::Identifier {
                     name: name.clone(),
                     generic_parameters: None,
@@ -378,12 +387,17 @@ pub fn translate_type_name(
             }
 
             // Check if type is a struct
-            if module
-                .borrow()
-                .structs
-                .iter()
-                .any(|n| n.implementation.as_ref().unwrap().borrow().name == *name)
-            {
+            if module.borrow().structs.iter().any(|n| {
+                let sway::TypeName::Identifier {
+                    name: struct_name,
+                    generic_parameters: None,
+                } = &n.signature
+                else {
+                    return false;
+                };
+
+                struct_name == name
+            }) {
                 return sway::TypeName::Identifier {
                     name: name.clone(),
                     generic_parameters: None,
@@ -392,13 +406,15 @@ pub fn translate_type_name(
 
             // Check if type is an enum
             if module.borrow().enums.iter().any(|t| {
-                match &t.implementation.as_ref().unwrap().type_definition.name {
-                    sway::TypeName::Identifier {
-                        name: type_name,
-                        generic_parameters: None,
-                    } => type_name == name,
-                    _ => false,
-                }
+                let sway::TypeName::Identifier {
+                    name: type_name,
+                    generic_parameters: None,
+                } = &t.signature
+                else {
+                    return false;
+                };
+
+                type_name == name
             }) {
                 return sway::TypeName::Identifier {
                     name: name.clone(),

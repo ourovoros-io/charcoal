@@ -75,10 +75,12 @@ pub fn translate_assignment_expression(
         }
 
         if !is_storage_keyword {
-            if let sway::TypeName::Identifier { name, .. } = module
-                .borrow_mut()
-                .get_expression_type(project, scope.clone(), &member_access.expression)?
-            {
+            let expression_type = {
+                let mut module = module.borrow_mut();
+                module.get_expression_type(project, scope.clone(), &member_access.expression)?
+            };
+
+            if let sway::TypeName::Identifier { name, .. } = expression_type {
                 if let Some(struct_definition) = module
                     .borrow()
                     .structs

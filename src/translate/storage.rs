@@ -167,13 +167,16 @@ pub fn translate_state_variable(
 
                 // HACK: Add to mapping names for toplevel structs in storage that contain storage mappings
                 if generic_parameters.is_none() {
-                    if let Some(struct_definition) = module
-                        .borrow()
-                        .structs
-                        .iter()
-                        .find(|s| s.signature.to_string() == name)
-                        .cloned()
-                    {
+                    let struct_defintion = {
+                        let module = module.borrow();
+                        module
+                            .structs
+                            .iter()
+                            .find(|s| s.signature.to_string() == name)
+                            .cloned()
+                    };
+
+                    if let Some(struct_definition) = &struct_defintion {
                         let struct_definition = struct_definition.implementation.as_ref().unwrap();
 
                         for field in struct_definition.borrow().fields.iter() {
@@ -219,7 +222,7 @@ pub fn translate_state_variable(
                                 );
                             } else {
                                 storage.fields.push(sway::StorageField {
-                                    old_name: old_name.clone(),
+                                    old_name: String::new(),
                                     name: instance_field_name,
                                     type_name: sway::TypeName::Identifier {
                                         name: "u64".into(),
@@ -246,7 +249,7 @@ pub fn translate_state_variable(
                                 }
                             } else {
                                 storage.fields.push(sway::StorageField {
-                                    old_name: old_name.clone(),
+                                    old_name: String::new(),
                                     name: mapping_field_name,
                                     type_name: sway::TypeName::Identifier {
                                         name: "StorageMap".into(),

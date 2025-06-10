@@ -525,6 +525,68 @@ pub fn translate_identity_member_access_function_call(
 
             name = abi_type_name;
         }
+    } else {
+        let mut expression = container.clone();
+        
+        // HACK: remove `.read()`
+        if let sway::Expression::FunctionCall(f) = &expression {
+            if let sway::Expression::MemberAccess(m) = &f.function {
+                if m.member == "read" && f.parameters.is_empty() {
+                    expression = m.expression.clone();
+                }
+            }
+        }
+
+        if let sway::Expression::MemberAccess(m) = &expression {
+            if let sway::Expression::PathExpr(path_expr) = &m.expression {
+                if let sway::PathExprRoot::Identifier(root_ident) =  &path_expr.root {
+                    if root_ident == "storage" {
+                        let mut storage_namespace: Option<sway::StorageNamespace> = None;
+            
+                        for segment in path_expr.segments.iter() {
+                            let namespace = match storage_namespace {
+                                None => {
+                                    let module = module.borrow(); 
+                                    let storage = module.storage.as_ref().unwrap();
+                                    storage.namespaces.iter().find(|s| s.name == segment.name).cloned()
+                                },
+                                Some(storage_namespace) => storage_namespace.namespaces.iter().find(|s| s.name == segment.name).cloned(),
+                            };
+
+                            if namespace.is_none() {
+                                storage_namespace = None;
+                                break;
+                            }
+
+                            storage_namespace = namespace;
+                        }
+
+                        if let Some(storage_namespace) = storage_namespace {
+                            if let Some(storage_field) = storage_namespace.fields.iter().find(|s| s.name == m.member) {
+                                if let Some(abi_type_name) = storage_field.abi_type_name.as_ref() {
+                                    let abi_type_name = abi_type_name.to_string();
+
+                                    // Turn the expression into an ABI cast:
+                                    // abi(T, x.as_contract_id().unwrap().into())
+                                    container = sway::Expression::create_function_calls(None, &[
+                                        ("abi", Some((None, vec![
+                                            sway::Expression::create_identifier(abi_type_name.clone()),
+                                            sway::Expression::create_function_calls(Some(container), &[
+                                                ("as_contract_id", Some((None, vec![]))),
+                                                ("unwrap", Some((None, vec![]))),
+                                                ("into", Some((None, vec![]))),
+                                            ]),
+                                        ]))),
+                                    ]);
+
+                                    name = abi_type_name;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     // Check to see if the type is located in an external ABI

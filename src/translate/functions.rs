@@ -1016,73 +1016,87 @@ pub fn translate_function_definition(
         );
 
         let namespace_name = module.borrow().get_storage_namespace_name();
+        let mut has_field = false;
 
-        // Add the `constructor_called` field to the storage block
-        module
-            .borrow_mut()
-            .get_storage_namespace()
-            .fields
-            .push(sway::StorageField {
-                old_name: String::new(),
-                name: constructor_called_variable_name.clone(),
-                type_name: sway::TypeName::Identifier {
-                    name: "bool".into(),
-                    generic_parameters: None,
-                },
-                abi_type_name: None,
-                value: sway::Expression::from(sway::Literal::Bool(false)),
-            });
+        if let Some(storage) = module.borrow().storage.as_ref() {
+            if let Some(storage_namespace) =
+                storage.namespaces.iter().find(|s| s.name == namespace_name)
+            {
+                has_field = storage_namespace
+                    .fields
+                    .iter()
+                    .any(|s| s.name == constructor_called_variable_name);
+            }
+        }
 
-        // Add the `constructor_called` requirement to the beginning of the function
-        // require(!storage.initialized.read(), "The Contract constructor has already been called");
-        function_body.statements.insert(
-            0,
-            sway::Statement::from(sway::Expression::create_function_calls(
-                None,
-                &[(
-                    "require",
-                    Some((
-                        None,
-                        vec![
-                            sway::Expression::from(sway::UnaryExpression {
-                                operator: "!".into(),
-                                expression: sway::Expression::create_function_calls(
-                                    None,
-                                    &[
-                                        (format!("storage::{namespace_name}").as_str(), None),
-                                        (constructor_called_variable_name.as_str(), None),
-                                        ("read", Some((None, vec![]))),
-                                    ],
-                                ),
-                            }),
-                            sway::Expression::from(sway::Literal::String(format!(
-                                "The {} constructor has already been called",
-                                module.borrow().name
-                            ))),
-                        ],
-                    )),
-                )],
-            )),
-        );
+        if !has_field {
+            // Add the `constructor_called` field to the storage block
+            module
+                .borrow_mut()
+                .get_storage_namespace()
+                .fields
+                .push(sway::StorageField {
+                    old_name: String::new(),
+                    name: constructor_called_variable_name.clone(),
+                    type_name: sway::TypeName::Identifier {
+                        name: "bool".into(),
+                        generic_parameters: None,
+                    },
+                    abi_type_name: None,
+                    value: sway::Expression::from(sway::Literal::Bool(false)),
+                });
 
-        // Set the `constructor_called` storage field to `true` at the end of the function
-        // storage.initialized.write(true);
-        function_body.statements.push(sway::Statement::from(
-            sway::Expression::create_function_calls(
-                None,
-                &[
-                    (format!("storage::{namespace_name}").as_str(), None),
-                    (constructor_called_variable_name.as_str(), None),
-                    (
-                        "write",
+            // Add the `constructor_called` requirement to the beginning of the function
+            // require(!storage.initialized.read(), "The Contract constructor has already been called");
+            function_body.statements.insert(
+                0,
+                sway::Statement::from(sway::Expression::create_function_calls(
+                    None,
+                    &[(
+                        "require",
                         Some((
                             None,
-                            vec![sway::Expression::from(sway::Literal::Bool(true))],
+                            vec![
+                                sway::Expression::from(sway::UnaryExpression {
+                                    operator: "!".into(),
+                                    expression: sway::Expression::create_function_calls(
+                                        None,
+                                        &[
+                                            (format!("storage::{namespace_name}").as_str(), None),
+                                            (constructor_called_variable_name.as_str(), None),
+                                            ("read", Some((None, vec![]))),
+                                        ],
+                                    ),
+                                }),
+                                sway::Expression::from(sway::Literal::String(format!(
+                                    "The {} constructor has already been called",
+                                    module.borrow().name
+                                ))),
+                            ],
                         )),
-                    ),
-                ],
-            ),
-        ));
+                    )],
+                )),
+            );
+
+            // Set the `constructor_called` storage field to `true` at the end of the function
+            // storage.initialized.write(true);
+            function_body.statements.push(sway::Statement::from(
+                sway::Expression::create_function_calls(
+                    None,
+                    &[
+                        (format!("storage::{namespace_name}").as_str(), None),
+                        (constructor_called_variable_name.as_str(), None),
+                        (
+                            "write",
+                            Some((
+                                None,
+                                vec![sway::Expression::from(sway::Literal::Bool(true))],
+                            )),
+                        ),
+                    ],
+                ),
+            ));
+        }
     }
 
     // Check for parameters that were mutated and make them local variables

@@ -121,9 +121,25 @@ pub struct Project {
 
 impl Project {
     pub fn new(options: Args, framework: Framework) -> Result<Self, Error> {
+        let contracts_path = Self::resolve_input_path(&options, &framework)?;
+
+        let mut result = Self {
+            options,
+            contracts_path,
+            framework,
+            ..Default::default()
+        };
+
+        result.queue = result.create_usage_queue()?;
+
+        Ok(result)
+    }
+
+    /// Resolve the input path based on the remappings of the [Framework]
+    pub fn resolve_input_path(options: &Args, framework: &Framework) -> Result<PathBuf, Error> {
         let mut contracts_path = options.input.clone();
 
-        match &framework {
+        match framework {
             Framework::Foundry { src_path, .. } => match src_path.as_ref() {
                 Some(src_path) => contracts_path.extend(src_path),
                 None => contracts_path.push("src"),
@@ -142,20 +158,11 @@ impl Project {
             ))));
         }
 
-        let mut result = Self {
-            options,
-            contracts_path,
-            framework,
-            ..Default::default()
-        };
-
-        result.queue = result.create_usage_queue()?;
-
-        Ok(result)
+        Ok(contracts_path)
     }
 
-    /// Get the project type path from the [Framework] and return a [PathBuf]
-    fn get_project_type_path(
+    /// Resolve the import path based on the remappings of the [Framework]
+    fn resolve_import_path(
         &self,
         source_unit_directory: &Path,
         filename: &str,
@@ -372,7 +379,7 @@ impl Project {
                 } else {
                     // If we have detected a framework we need to resolve the path based on the remappings if found
                     import_path = self
-                        .get_project_type_path(source_unit_path.parent().unwrap(), &import_path)?
+                        .resolve_import_path(source_unit_path.parent().unwrap(), &import_path)?
                         .to_str()
                         .unwrap()
                         .to_string();
@@ -396,7 +403,7 @@ impl Project {
 
         if !import_path.to_string_lossy().starts_with('.') {
             import_path = self
-                .get_project_type_path(source_unit_directory, path_string)
+                .resolve_import_path(source_unit_directory, path_string)
                 .unwrap();
         } else {
             import_path = source_unit_directory.join(import_path);
@@ -506,6 +513,7 @@ impl Project {
             return None;
         };
 
+        // Only check crate-local imports
         if !prefix.is_empty() {
             return None;
         }

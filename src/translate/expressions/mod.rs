@@ -132,6 +132,10 @@ pub fn evaluate_expression(
                             return expression.clone();
                         }
 
+                        "b256::zero" => {
+                            return expression.clone();
+                        }
+
                         "keccak256" | "std::hash::keccak256"
                             if function_call.parameters.len() == 1 =>
                         {
