@@ -7,8 +7,8 @@ use std::{cell::RefCell, rc::Rc};
 
 pub fn translate_member_access_function_call(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
-    scope: Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
     function: &solidity::Expression,
     args: &[solidity::Expression],
     expression: &solidity::Expression,
@@ -168,8 +168,8 @@ pub fn translate_member_access_function_call(
 
 pub fn translate_function_call_block_member_access(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
-    scope: Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
     expression: &solidity::Expression,
     arguments: &[solidity::Expression],
     container: &solidity::Expression,
@@ -367,8 +367,8 @@ pub fn translate_function_call_block_member_access(
 
 pub fn translate_identity_member_access_function_call(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
-    scope: Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
     expression: &solidity::Expression,
     arguments: &[solidity::Expression],
     mut container: sway::Expression,
@@ -500,7 +500,7 @@ pub fn translate_identity_member_access_function_call(
     // }
 
     let variable = match translate_variable_access_expression(project, module.clone(), scope.clone(), solidity_container)? {
-        Some(TranslatedVariableAccess { variable, .. }) => variable,
+        Some(ir::VariableAccess { variable, .. }) => variable,
         None => None,
     };
 
@@ -643,14 +643,14 @@ pub fn translate_identity_member_access_function_call(
 
 pub fn translate_storage_vec_member_access_function_call(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
-    scope: Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
     arguments: &[solidity::Expression],
     member: &solidity::Identifier,
     solidity_container: &solidity::Expression,
     container: &sway::Expression,
 ) -> Result<sway::Expression, Error> {
-    let Some(TranslatedVariableAccess {
+    let Some(ir::VariableAccess {
         mut expression,
         ..
     }) = translate_variable_access_expression(project, module.clone(), scope.clone(), solidity_container)?
@@ -704,8 +704,8 @@ pub fn translate_storage_vec_member_access_function_call(
 
 pub fn translate_vec_member_access_function_call(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
-    scope: Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
     arguments: &[solidity::Expression],
     member: &solidity::Identifier,
     solidity_container: &solidity::Expression,
@@ -714,7 +714,7 @@ pub fn translate_vec_member_access_function_call(
     match member.name.as_str() {
         "push" => {
             let (variable, container_access) = match translate_variable_access_expression(project, module.clone(), scope.clone(), solidity_container)? {
-                Some(TranslatedVariableAccess { variable, expression }) => (Some(variable), Some(expression)),
+                Some(ir::VariableAccess { variable, expression }) => (Some(variable), Some(expression)),
                 None => (None, None),
             };
 
@@ -734,7 +734,7 @@ pub fn translate_vec_member_access_function_call(
 
         "pop" => {
             let (variable, container_access) = match translate_variable_access_expression(project, module.clone(), scope.clone(), solidity_container)? {
-                Some(TranslatedVariableAccess { variable, expression }) => (Some(variable), Some(expression)),
+                Some(ir::VariableAccess { variable, expression }) => (Some(variable), Some(expression)),
                 None => (None, None),
             };
 
@@ -747,7 +747,7 @@ pub fn translate_vec_member_access_function_call(
 
         "remove" => {
             let (variable, container_access) = match translate_variable_access_expression(project, module.clone(), scope.clone(), solidity_container)? {
-                Some(TranslatedVariableAccess { variable, expression }) => (Some(variable), Some(expression)),
+                Some(ir::VariableAccess { variable, expression }) => (Some(variable), Some(expression)),
                 None => (None, None),
             };
 
@@ -771,8 +771,8 @@ pub fn translate_vec_member_access_function_call(
 
 pub fn translate_builtin_abi_member_access_function_call(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
-    scope: Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
     member_name: &str,
     arguments: &[solidity::Expression],
     named_arguments: Option<&[solidity::NamedArgument]>,
@@ -1121,8 +1121,8 @@ pub fn translate_builtin_abi_member_access_function_call(
 
 pub fn translate_super_member_access_function_call(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
-    scope: Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
     member: &str,
     arguments: &[solidity::Expression],
     named_arguments: Option<&[solidity::NamedArgument]>,
@@ -1168,8 +1168,8 @@ pub fn translate_super_member_access_function_call(
 
 pub fn translate_this_member_access_function_call(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
-    scope: Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
     member: &str,
     arguments: &[solidity::Expression],
     named_arguments: Option<&[solidity::NamedArgument]>,

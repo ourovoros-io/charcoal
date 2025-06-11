@@ -5,8 +5,8 @@ use std::{cell::RefCell, rc::Rc};
 #[inline]
 pub fn translate_return_statement(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
-    scope: Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
     expression: &Option<solidity::Expression>,
 ) -> Result<sway::Statement, Error> {
     let Some(expression) = expression else {

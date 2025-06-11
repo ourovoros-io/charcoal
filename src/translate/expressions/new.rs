@@ -7,8 +7,8 @@ use std::{cell::RefCell, rc::Rc};
 #[inline]
 pub fn translate_new_expression(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
-    scope: Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
     expression: &solidity::Expression,
 ) -> Result<sway::Expression, Error> {
     let solidity::Expression::FunctionCall(_, mut expr, args) = expression.clone() else {
@@ -26,7 +26,8 @@ pub fn translate_new_expression(
             let mut fields = vec![];
 
             for block_arg in block_args.iter() {
-                let value = translate_expression(project, module.clone(), scope.clone(), &block_arg.expr)?;
+                let value =
+                    translate_expression(project, module.clone(), scope.clone(), &block_arg.expr)?;
 
                 match block_arg.name.name.as_str() {
                     "value" => fields.push(sway::ConstructorField {
@@ -53,7 +54,15 @@ pub fn translate_new_expression(
                                 line,
                                 col
                             ),
-                            None => format!("{}: ", project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy()),
+                            None => format!(
+                                "{}: ",
+                                project
+                                    .options
+                                    .input
+                                    .join(module.borrow().path.clone())
+                                    .with_extension("sol")
+                                    .to_string_lossy()
+                            ),
                         }
                     ),
                 }

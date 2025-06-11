@@ -5,11 +5,11 @@ use std::{cell::RefCell, rc::Rc};
 #[inline]
 pub fn translate_delete_expression(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
-    scope: Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
     expression: &solidity::Expression,
 ) -> Result<sway::Expression, Error> {
-    let Some(TranslatedVariableAccess {
+    let Some(ir::VariableAccess {
         variable,
         expression: expr,
     }) = translate_variable_access_expression(project, module.clone(), scope.clone(), expression)?

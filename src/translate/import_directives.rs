@@ -1,5 +1,4 @@
-use super::TranslatedModule;
-use crate::{error::Error, project::Project, sway};
+use crate::{error::Error, ir, project::Project, sway};
 use convert_case::{Case, Casing};
 use solang_parser::{helpers::CodeLocation, pt as solidity};
 use std::{cell::RefCell, path::PathBuf, rc::Rc};
@@ -7,7 +6,7 @@ use std::{cell::RefCell, path::PathBuf, rc::Rc};
 #[inline]
 pub fn translate_import_directives(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
+    module: Rc<RefCell<ir::Module>>,
     import_directives: &[solidity::Import],
 ) -> Result<(), Error> {
     for import_directive in import_directives.iter() {

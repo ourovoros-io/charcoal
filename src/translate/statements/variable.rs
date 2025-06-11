@@ -8,8 +8,8 @@ use std::{cell::RefCell, rc::Rc};
 #[inline]
 pub fn translate_variable_definition_statement(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
-    scope: Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
     variable_declaration: &solidity::VariableDeclaration,
     initializer: Option<&solidity::Expression>,
 ) -> Result<sway::Statement, Error> {
@@ -78,7 +78,8 @@ pub fn translate_variable_definition_statement(
                 }
 
                 let element_type_name = &generic_parameters.entries.first().unwrap().type_name;
-                let length = translate_expression(project, module.clone(), scope.clone(), &args[0])?;
+                let length =
+                    translate_expression(project, module.clone(), scope.clone(), &args[0])?;
 
                 value = Some(sway::Expression::from(sway::Block {
                     statements: vec![
@@ -132,7 +133,8 @@ pub fn translate_variable_definition_statement(
                                                 "push",
                                                 Some((
                                                     None,
-                                                    vec![create_value_expression(project, 
+                                                    vec![create_value_expression(
+                                                        project,
                                                         module.clone(),
                                                         scope.clone(),
                                                         element_type_name,
@@ -169,11 +171,20 @@ pub fn translate_variable_definition_statement(
     }
 
     let value = if let Some(value) = value {
-        let value_type = module.borrow_mut().get_expression_type(project, scope.clone(), &value)?;
+        let value_type = module
+            .borrow_mut()
+            .get_expression_type(project, scope.clone(), &value)?;
         coerce_expression(&value, &value_type, &type_name).unwrap()
     } else if let Some(x) = initializer.as_ref() {
-        let x = translate_pre_or_post_operator_value_expression(project, module.clone(), scope.clone(), x)?;
-        let value_type = module.borrow_mut().get_expression_type(project, scope.clone(), &x)?;
+        let x = translate_pre_or_post_operator_value_expression(
+            project,
+            module.clone(),
+            scope.clone(),
+            x,
+        )?;
+        let value_type = module
+            .borrow_mut()
+            .get_expression_type(project, scope.clone(), &x)?;
         coerce_expression(&x, &value_type, &type_name).unwrap()
     } else {
         create_value_expression(project, module.clone(), scope.clone(), &type_name, None)
@@ -199,7 +210,7 @@ pub fn translate_variable_definition_statement(
     scope
         .borrow_mut()
         .variables
-        .push(Rc::new(RefCell::new(TranslatedVariable {
+        .push(Rc::new(RefCell::new(ir::Variable {
             old_name,
             new_name,
             type_name,

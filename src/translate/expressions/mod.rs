@@ -37,8 +37,8 @@ pub use variable::*;
 
 pub fn evaluate_expression(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
-    scope: Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
     type_name: &sway::TypeName,
     expression: &sway::Expression,
 ) -> sway::Expression {
@@ -358,8 +358,8 @@ pub fn evaluate_expression(
 
 pub fn translate_expression(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
-    scope: Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
     expression: &solidity::Expression,
 ) -> Result<sway::Expression, Error> {
     // println!(
@@ -683,8 +683,8 @@ pub fn translate_expression(
 
 pub fn create_value_expression(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
-    scope: Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
     type_name: &sway::TypeName,
     value: Option<&sway::Expression>,
 ) -> sway::Expression {

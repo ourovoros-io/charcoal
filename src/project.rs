@@ -1,4 +1,4 @@
-use crate::{cli::Args, error::Error, sway, translate::*, utils, wrapped_err};
+use crate::{cli::Args, error::Error, ir, sway, translate::*, utils, wrapped_err};
 use convert_case::{Case, Casing};
 use solang_parser::pt as solidity;
 use std::{
@@ -116,7 +116,7 @@ pub struct Project {
     pub queue: Vec<PathBuf>,
     pub line_ranges: HashMap<PathBuf, Vec<(usize, usize)>>,
     pub solidity_source_units: HashMap<PathBuf, solidity::SourceUnit>,
-    pub translated_modules: Vec<Rc<RefCell<TranslatedModule>>>,
+    pub translated_modules: Vec<Rc<RefCell<ir::Module>>>,
 }
 
 impl Project {
@@ -478,7 +478,7 @@ impl Project {
     #[inline]
     pub fn loc_to_line_and_column(
         &self,
-        module: Rc<RefCell<TranslatedModule>>,
+        module: Rc<RefCell<ir::Module>>,
         loc: &solidity::Loc,
     ) -> Option<(usize, usize)> {
         let path = self
@@ -508,7 +508,10 @@ impl Project {
         None
     }
 
-    pub fn resolve_use(&mut self, use_expr: &sway::Use) -> Option<Rc<RefCell<TranslatedModule>>> {
+    pub fn resolve_use(
+        &mut self,
+        use_expr: &sway::Use,
+    ) -> Option<Rc<RefCell<ir::Module>>> {
         let sway::UseTree::Path { prefix, suffix } = &use_expr.tree else {
             return None;
         };
@@ -532,7 +535,7 @@ impl Project {
         }
 
         path = PathBuf::from(path).with_extension("");
-        let mut parent_module: Option<Rc<RefCell<TranslatedModule>>> = None;
+        let mut parent_module: Option<Rc<RefCell<ir::Module>>> = None;
         let mut first = true;
 
         for comp in path.components() {
@@ -585,9 +588,9 @@ impl Project {
         parent_module
     }
 
-    pub fn find_module(&mut self, path: &Path) -> Option<Rc<RefCell<TranslatedModule>>> {
+    pub fn find_module(&mut self, path: &Path) -> Option<Rc<RefCell<ir::Module>>> {
         let path = PathBuf::from(path).with_extension("");
-        let mut parent_module: Option<Rc<RefCell<TranslatedModule>>> = None;
+        let mut parent_module: Option<Rc<RefCell<ir::Module>>> = None;
 
         for comp in path.components() {
             if let Component::RootDir = comp {
@@ -630,7 +633,7 @@ impl Project {
         parent_module
     }
 
-    pub fn find_or_create_module(&mut self, path: &Path) -> Rc<RefCell<TranslatedModule>> {
+    pub fn find_or_create_module(&mut self, path: &Path) -> Rc<RefCell<ir::Module>> {
         let mut current_path = PathBuf::new();
 
         let components = path
@@ -654,7 +657,7 @@ impl Project {
             Some(result) => result.clone(),
             None => {
                 self.translated_modules
-                    .push(Rc::new(RefCell::new(TranslatedModule {
+                    .push(Rc::new(RefCell::new(ir::Module {
                         name: component,
                         path: current_path.clone(),
                         ..Default::default()
@@ -686,7 +689,7 @@ impl Project {
                     parent_module
                         .borrow_mut()
                         .submodules
-                        .push(Rc::new(RefCell::new(TranslatedModule {
+                        .push(Rc::new(RefCell::new(ir::Module {
                             name: component,
                             path: current_path.clone(),
                             ..Default::default()
@@ -704,11 +707,11 @@ impl Project {
     pub fn find_module_with_contract(
         &mut self,
         contract_name: &str,
-    ) -> Option<Rc<RefCell<TranslatedModule>>> {
+    ) -> Option<Rc<RefCell<ir::Module>>> {
         fn check_module(
-            module: Rc<RefCell<TranslatedModule>>,
+            module: Rc<RefCell<ir::Module>>,
             contract_name: &str,
-        ) -> Option<Rc<RefCell<TranslatedModule>>> {
+        ) -> Option<Rc<RefCell<ir::Module>>> {
             if module
                 .borrow()
                 .contracts
@@ -854,7 +857,7 @@ impl Project {
         let type_definitions_index = module.borrow().type_definitions.len();
 
         for type_definition in type_definitions.iter() {
-            module.borrow_mut().type_definitions.push(TranslatedItem {
+            module.borrow_mut().type_definitions.push(ir::Item {
                 signature: sway::TypeName::Identifier {
                     name: type_definition.name.name.clone(),
                     generic_parameters: None,
@@ -867,7 +870,7 @@ impl Project {
         let enums_index = module.borrow().enums.len();
 
         for enum_definition in enum_definitions.iter() {
-            module.borrow_mut().enums.push(TranslatedItem {
+            module.borrow_mut().enums.push(ir::Item {
                 signature: sway::TypeName::Identifier {
                     name: enum_definition.name.as_ref().unwrap().name.clone(),
                     generic_parameters: None,
@@ -880,7 +883,7 @@ impl Project {
         let structs_index = module.borrow().structs.len();
 
         for struct_definition in struct_definitions.iter() {
-            module.borrow_mut().structs.push(TranslatedItem {
+            module.borrow_mut().structs.push(ir::Item {
                 signature: sway::TypeName::Identifier {
                     name: struct_definition.name.as_ref().unwrap().name.clone(),
                     generic_parameters: None,
@@ -900,7 +903,7 @@ impl Project {
             let declaration =
                 translate_function_declaration(self, module.clone(), function_definition)?;
 
-            module.borrow_mut().functions.push(TranslatedItem {
+            module.borrow_mut().functions.push(ir::Item {
                 signature: declaration.type_name,
                 implementation: None,
             });
@@ -910,7 +913,7 @@ impl Project {
         let contracts_index = module.borrow().contracts.len();
 
         for contract_definition in contract_definitions.iter() {
-            module.borrow_mut().contracts.push(TranslatedItem {
+            module.borrow_mut().contracts.push(ir::Item {
                 signature: sway::TypeName::Identifier {
                     name: contract_definition
                         .name
@@ -991,7 +994,7 @@ impl Project {
         fn process_submodules(
             dependencies: &mut Vec<String>,
             modules: &mut Vec<(PathBuf, sway::Module)>,
-            module: Rc<RefCell<TranslatedModule>>,
+            module: Rc<RefCell<ir::Module>>,
         ) {
             let dirty_module_path = module.borrow().path.clone();
 

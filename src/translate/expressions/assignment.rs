@@ -5,8 +5,8 @@ use std::{cell::RefCell, rc::Rc};
 #[inline]
 pub fn translate_assignment_expression(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
-    scope: Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
     operator: &str,
     lhs: &solidity::Expression,
     rhs: &solidity::Expression,
@@ -40,7 +40,7 @@ pub fn translate_assignment_expression(
         .borrow_mut()
         .get_expression_type(project, scope.clone(), &rhs)?;
 
-    let Some(TranslatedVariableAccess {
+    let Some(ir::VariableAccess {
         variable,
         mut expression,
     }) = translate_variable_access_expression(project, module.clone(), scope.clone(), lhs)?
@@ -198,11 +198,11 @@ pub fn translate_assignment_expression(
 #[inline]
 pub fn create_assignment_expression(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
-    scope: Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
     operator: &str,
     expression: &sway::Expression,
-    variable: Option<Rc<RefCell<TranslatedVariable>>>,
+    variable: Option<Rc<RefCell<ir::Variable>>>,
     rhs: &sway::Expression,
     rhs_type_name: &sway::TypeName,
 ) -> Result<sway::Expression, Error> {

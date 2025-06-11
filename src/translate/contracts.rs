@@ -5,9 +5,9 @@ use std::{cell::RefCell, rc::Rc};
 #[inline]
 pub fn translate_contract_definition(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
+    module: Rc<RefCell<ir::Module>>,
     contract_definition: &solidity::ContractDefinition,
-) -> Result<TranslatedContract, Error> {
+) -> Result<ir::Contract, Error> {
     // println!("Translating contract `{}`", contract_definition.name.as_ref().map(|x| x.name.as_str()).unwrap());
 
     // Create a new contract
@@ -17,7 +17,7 @@ pub fn translate_contract_definition(
         .map(|n| n.name.clone())
         .unwrap();
 
-    let mut contract = TranslatedContract::new(
+    let mut contract = ir::Contract::new(
         &contract_name,
         contract_definition.ty.clone(),
         contract_definition
@@ -96,7 +96,7 @@ pub fn translate_contract_definition(
     let type_definitions_index = module.borrow().type_definitions.len();
 
     for type_definition in type_definitions.iter() {
-        module.borrow_mut().type_definitions.push(TranslatedItem {
+        module.borrow_mut().type_definitions.push(ir::Item {
             signature: sway::TypeName::Identifier {
                 name: type_definition.name.name.clone(),
                 generic_parameters: None,
@@ -109,7 +109,7 @@ pub fn translate_contract_definition(
     let enums_index = module.borrow().enums.len();
 
     for enum_definition in enum_definitions.iter() {
-        module.borrow_mut().enums.push(TranslatedItem {
+        module.borrow_mut().enums.push(ir::Item {
             signature: sway::TypeName::Identifier {
                 name: enum_definition.name.as_ref().unwrap().name.clone(),
                 generic_parameters: None,
@@ -122,7 +122,7 @@ pub fn translate_contract_definition(
     let structs_index = module.borrow().structs.len();
 
     for struct_definition in struct_definitions.iter() {
-        module.borrow_mut().structs.push(TranslatedItem {
+        module.borrow_mut().structs.push(ir::Item {
             signature: sway::TypeName::Identifier {
                 name: struct_definition.name.as_ref().unwrap().name.clone(),
                 generic_parameters: None,
@@ -220,7 +220,7 @@ pub fn translate_contract_definition(
         let signature =
             translate_function_declaration(project, module.clone(), function_definition)?.type_name;
 
-        module.borrow_mut().functions.push(TranslatedItem {
+        module.borrow_mut().functions.push(ir::Item {
             signature,
             implementation: None,
         });
@@ -491,7 +491,7 @@ pub fn translate_contract_definition(
 #[inline]
 pub fn translate_using_directive(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
+    module: Rc<RefCell<ir::Module>>,
     using_directive: &solidity::Using,
 ) -> Result<(), Error> {
     let for_type = using_directive
@@ -514,7 +514,7 @@ pub fn translate_using_directive(
                 module
                     .borrow_mut()
                     .using_directives
-                    .push(TranslatedUsingDirective {
+                    .push(ir::UsingDirective {
                         library_name,
                         for_type,
                         functions: vec![],
@@ -556,7 +556,7 @@ pub fn translate_using_directive(
                 )
             };
 
-            let mut translated_using_directive = TranslatedUsingDirective {
+            let mut translated_using_directive = ir::UsingDirective {
                 library_name,
                 for_type,
                 functions: vec![],

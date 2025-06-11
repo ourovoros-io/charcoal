@@ -7,9 +7,9 @@ use std::{cell::RefCell, rc::Rc};
 #[inline]
 pub fn translate_enum_definition(
     _project: &mut Project,
-    _module: Rc<RefCell<TranslatedModule>>,
+    _module: Rc<RefCell<ir::Module>>,
     enum_definition: &solidity::EnumDefinition,
-) -> Result<TranslatedEnum, Error> {
+) -> Result<ir::Enum, Error> {
     // Create the enum's type definition
     let type_definition = sway::TypeDefinition {
         is_public: false,
@@ -50,7 +50,7 @@ pub fn translate_enum_definition(
             }));
     }
 
-    Ok(TranslatedEnum {
+    Ok(ir::Enum {
         type_definition,
         variants_impl,
     })
@@ -59,7 +59,7 @@ pub fn translate_enum_definition(
 #[inline]
 pub fn translate_event_definition(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
+    module: Rc<RefCell<ir::Module>>,
     event_definition: &solidity::EventDefinition,
 ) -> Result<(), Error> {
     let events_enum_name = format!("{}Event", module.borrow().name);
@@ -170,7 +170,7 @@ pub fn translate_event_definition(
 #[inline]
 pub fn translate_error_definition(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
+    module: Rc<RefCell<ir::Module>>,
     error_definition: &solidity::ErrorDefinition,
 ) -> Result<(), Error> {
     let errors_enum_name = format!("{}Error", module.borrow().name);
@@ -241,7 +241,7 @@ pub fn translate_error_definition(
 #[inline]
 pub fn generate_enum_abi_encode_function(
     _project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
+    module: Rc<RefCell<ir::Module>>,
     sway_enum: Rc<RefCell<sway::Enum>>,
     abi_encode_impl: Rc<RefCell<sway::Impl>>,
 ) -> Result<(), Error> {

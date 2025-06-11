@@ -8,8 +8,8 @@ use std::{cell::RefCell, rc::Rc};
 #[inline]
 pub fn resolve_abi_function_call(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
-    scope: Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
     abi: &sway::Abi,
     container: &sway::Expression,
     function_name: &str,
@@ -266,9 +266,9 @@ pub fn resolve_abi_function_call(
 #[inline]
 pub fn resolve_function_call(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
-    scope: Rc<RefCell<TranslationScope>>,
-    external_module: Rc<RefCell<TranslatedModule>>,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
+    external_module: Rc<RefCell<ir::Module>>,
     function_name: &str,
     named_arguments: Option<&[solidity::NamedArgument]>,
     mut parameters: Vec<sway::Expression>,
@@ -524,9 +524,9 @@ pub fn resolve_function_call(
 #[inline]
 pub fn resolve_struct_constructor(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
-    scope: Rc<RefCell<TranslationScope>>,
-    structs: &[TranslatedItem<Rc<RefCell<sway::Struct>>>],
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
+    structs: &[ir::Item<Rc<RefCell<sway::Struct>>>],
     struct_name: &str,
     named_arguments: Option<&[solidity::NamedArgument]>,
     mut parameters: Vec<sway::Expression>,

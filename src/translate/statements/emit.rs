@@ -6,8 +6,8 @@ use std::{cell::RefCell, rc::Rc};
 #[inline]
 pub fn translate_emit_statement(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
-    scope: Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
     expression: &solidity::Expression,
 ) -> Result<sway::Statement, Error> {
     match expression {

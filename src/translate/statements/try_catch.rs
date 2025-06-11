@@ -6,8 +6,8 @@ use std::{cell::RefCell, rc::Rc};
 #[allow(clippy::type_complexity)]
 pub fn translate_try_catch_statement(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
-    scope: Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
     expr: &solidity::Expression,
     params_and_body: &Option<(
         Vec<(solidity::Loc, Option<solidity::Parameter>)>,
@@ -55,7 +55,7 @@ pub fn translate_try_catch_statement(
                 };
                 let store_let_identifier =
                     |id: &sway::LetIdentifier, type_name: &sway::TypeName| {
-                        let variable = Rc::new(RefCell::new(TranslatedVariable {
+                        let variable = Rc::new(RefCell::new(ir::Variable {
                             old_name: id.name.clone(),
                             new_name: id.name.clone(),
                             type_name: type_name.clone(),

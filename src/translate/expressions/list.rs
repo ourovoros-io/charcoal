@@ -5,8 +5,8 @@ use std::{cell::RefCell, rc::Rc};
 #[inline]
 pub fn translate_list_expression(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
-    scope: Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
     parameters: &[(solidity::Loc, Option<solidity::Parameter>)],
 ) -> Result<sway::Expression, Error> {
     //

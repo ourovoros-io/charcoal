@@ -1,13 +1,13 @@
-use crate::{error::Error, project::Project, translate::*};
+use crate::{error::Error, ir, project::Project, translate::*};
 use solang_parser::pt as solidity;
 use std::{cell::RefCell, rc::Rc};
 
 #[inline]
 pub fn translate_state_variable(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
+    module: Rc<RefCell<ir::Module>>,
     variable_definition: &solidity::VariableDefinition,
-) -> Result<(Vec<DeferredInitialization>, Vec<(String, Vec<String>)>), Error> {
+) -> Result<(Vec<ir::DeferredInitialization>, Vec<(String, Vec<String>)>), Error> {
     // Collect information about the variable from its attributes
     let is_public = variable_definition.attrs.iter().any(|x| {
         matches!(
@@ -87,7 +87,7 @@ pub fn translate_state_variable(
     }
 
     // Translate the variable's initial value
-    let value_scope = Rc::new(RefCell::new(TranslationScope::default()));
+    let value_scope = Rc::new(RefCell::new(ir::Scope::default()));
 
     let mut deferred_initializations = vec![];
     let mut mapping_names = vec![];
@@ -103,7 +103,7 @@ pub fn translate_state_variable(
                     let value =
                         translate_expression(project, module.clone(), value_scope.clone(), x)?;
 
-                    deferred_initializations.push(DeferredInitialization {
+                    deferred_initializations.push(ir::DeferredInitialization {
                         name: new_name.clone(),
                         is_storage,
                         is_constant,
@@ -345,7 +345,7 @@ pub fn translate_state_variable(
 
     // Handle constant variable definitions
     if is_constant {
-        let scope = Rc::new(RefCell::new(TranslationScope::default()));
+        let scope = Rc::new(RefCell::new(ir::Scope::default()));
 
         // Evaluate the value ahead of time in order to generate an appropriate constant value expression
         let value = evaluate_expression(
@@ -402,7 +402,7 @@ pub fn translate_state_variable(
 #[inline]
 pub fn translate_storage_name(
     _project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
+    module: Rc<RefCell<ir::Module>>,
     name: &str,
 ) -> String {
     let mut module = module.borrow_mut();

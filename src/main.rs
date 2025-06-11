@@ -1,5 +1,6 @@
 pub mod cli;
 pub mod error;
+pub mod ir;
 pub mod project;
 pub mod sway;
 pub mod translate;

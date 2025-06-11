@@ -9,8 +9,8 @@ use std::{cell::RefCell, rc::Rc};
 /// should be removed at some point
 pub fn translate_builtin_function_call(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
-    scope: Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
     name: &str,
     expression: &solidity::Expression,
     mut parameters: Vec<sway::Expression>,

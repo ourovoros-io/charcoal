@@ -8,8 +8,8 @@ use std::{cell::RefCell, rc::Rc};
 #[inline]
 pub fn translate_member_access_expression(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
-    scope: Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
     expression: &solidity::Expression,
     container: &solidity::Expression,
     member: &solidity::Identifier,
@@ -348,8 +348,8 @@ pub fn translate_member_access_expression(
 #[inline]
 fn translate_builtin_function_call_member_access_expression(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
-    _scope: Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    _scope: Rc<RefCell<ir::Scope>>,
     function: &solidity::Expression,
     parameters: &[solidity::Expression],
     member: &str,
@@ -441,8 +441,8 @@ fn translate_builtin_function_call_member_access_expression(
 #[inline]
 fn translate_builtin_variable_member_access_expression(
     _project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
-    _scope: Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    _scope: Rc<RefCell<ir::Scope>>,
     name: &str,
     member: &str,
 ) -> Result<Option<sway::Expression>, Error> {

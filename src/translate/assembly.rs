@@ -8,13 +8,13 @@ use std::{cell::RefCell, rc::Rc};
 #[inline]
 pub fn translate_assembly_statement(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
-    scope: Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
     _dialect: &Option<solidity::StringLiteral>,
     _flags: &Option<Vec<solidity::StringLiteral>>,
     yul_block: &solidity::YulBlock,
 ) -> Result<sway::Statement, Error> {
-    let scope = Rc::new(RefCell::new(TranslationScope {
+    let scope = Rc::new(RefCell::new(ir::Scope {
         parent: Some(scope.clone()),
         ..Default::default()
     }));
@@ -33,13 +33,13 @@ pub fn translate_assembly_statement(
 #[inline]
 pub fn translate_yul_block(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
-    scope: Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
     yul_block: &solidity::YulBlock,
 ) -> Result<sway::Block, Error> {
     let mut block = sway::Block::default();
 
-    let scope = Rc::new(RefCell::new(TranslationScope {
+    let scope = Rc::new(RefCell::new(ir::Scope {
         parent: Some(scope.clone()),
         ..Default::default()
     }));
@@ -91,8 +91,8 @@ pub fn translate_yul_block(
 #[inline]
 pub fn translate_yul_statement(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
-    scope: Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
     yul_statement: &solidity::YulStatement,
 ) -> Result<sway::Statement, Error> {
     match yul_statement {
@@ -155,8 +155,8 @@ pub fn translate_yul_statement(
 #[inline]
 pub fn translate_yul_assign_statement(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
-    scope: Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
     identifiers: &[solidity::YulExpression],
     value: &solidity::YulExpression,
 ) -> Result<sway::Statement, Error> {
@@ -219,8 +219,8 @@ pub fn translate_yul_assign_statement(
 #[inline]
 pub fn translate_yul_variable_declaration_statement(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
-    scope: Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
     identifiers: &[solidity::YulTypedIdentifier],
     value: &Option<solidity::YulExpression>,
 ) -> Result<sway::Statement, Error> {
@@ -228,7 +228,7 @@ pub fn translate_yul_variable_declaration_statement(
     let mut variables = vec![];
 
     for p in identifiers.iter() {
-        variables.push(Rc::new(RefCell::new(TranslatedVariable {
+        variables.push(Rc::new(RefCell::new(ir::Variable {
             old_name: p.id.name.clone(),
             new_name: translate_naming_convention(p.id.name.as_str(), Case::Snake),
             type_name: sway::TypeName::Identifier {
@@ -282,8 +282,8 @@ pub fn translate_yul_variable_declaration_statement(
 #[inline]
 pub fn translate_yul_if_statement(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
-    scope: Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
     condition: &solidity::YulExpression,
     then_block: &solidity::YulBlock,
 ) -> Result<sway::Statement, Error> {
@@ -300,8 +300,8 @@ pub fn translate_yul_if_statement(
 #[inline]
 pub fn translate_yul_for_statement(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
-    scope: Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
     yul_for: &solidity::YulFor,
 ) -> Result<sway::Statement, Error> {
     // {
@@ -313,7 +313,7 @@ pub fn translate_yul_for_statement(
     // }
 
     // Create a scope for the block that will contain the for loop logic
-    let scope = Rc::new(RefCell::new(TranslationScope {
+    let scope = Rc::new(RefCell::new(ir::Scope {
         parent: Some(scope.clone()),
         ..Default::default()
     }));
@@ -397,8 +397,8 @@ pub fn translate_yul_for_statement(
 #[inline]
 pub fn translate_yul_switch_statement(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
-    scope: Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
     yul_switch: &solidity::YulSwitch,
 ) -> Result<sway::Statement, Error> {
     let expression = translate_yul_expression(
@@ -445,8 +445,8 @@ pub fn translate_yul_switch_statement(
 #[inline]
 pub fn translate_yul_function_call_statement(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
-    scope: Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
     yul_function_call: &solidity::YulFunctionCall,
 ) -> Result<sway::Statement, Error> {
     Ok(sway::Statement::from(
@@ -461,8 +461,8 @@ pub fn translate_yul_function_call_statement(
 
 pub fn translate_yul_expression(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
-    scope: Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
     expression: &solidity::YulExpression,
 ) -> Result<sway::Expression, Error> {
     match expression {
@@ -513,8 +513,8 @@ pub fn translate_yul_expression(
 #[inline]
 pub fn translate_yul_variable_expression(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
-    scope: Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
     expression: &solidity::YulExpression,
     name: &str,
 ) -> Result<sway::Expression, Error> {
@@ -616,8 +616,8 @@ pub fn translate_yul_variable_expression(
 #[inline]
 pub fn translate_yul_function_call_expression(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
-    scope: Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
     function_call: &solidity::YulFunctionCall,
 ) -> Result<sway::Expression, Error> {
     let parameters = function_call

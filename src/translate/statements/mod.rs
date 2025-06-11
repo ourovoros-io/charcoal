@@ -30,8 +30,8 @@ pub use r#while::*;
 #[inline(always)]
 pub fn translate_statement(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
-    scope: Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
     statement: &solidity::Statement,
 ) -> Result<sway::Statement, Error> {
     match statement {

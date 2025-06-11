@@ -1,4 +1,4 @@
-use crate::{error::Error, project::Project, sway, translate::*};
+use crate::{error::Error, ir, project::Project, sway, translate::*};
 use convert_case::Case;
 use solang_parser::pt as solidity;
 use std::{cell::RefCell, rc::Rc};
@@ -6,7 +6,7 @@ use std::{cell::RefCell, rc::Rc};
 #[inline]
 pub fn translate_struct_definition(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
+    module: Rc<RefCell<ir::Module>>,
     struct_definition: &solidity::StructDefinition,
 ) -> Result<Rc<RefCell<sway::Struct>>, Error> {
     let mut fields = vec![];

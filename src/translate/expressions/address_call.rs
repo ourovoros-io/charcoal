@@ -6,8 +6,8 @@ use std::{cell::RefCell, rc::Rc};
 #[inline]
 pub fn translate_address_call_expression(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
-    scope: Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
     payload: &sway::Expression,
     coins: Option<sway::Expression>,
     asset_id: Option<sway::Expression>,

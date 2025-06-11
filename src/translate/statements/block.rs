@@ -3,8 +3,8 @@ use std::{cell::RefCell, rc::Rc};
 
 pub fn translate_block(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
-    scope: Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
     statements: &[solidity::Statement],
 ) -> Result<sway::Block, Error> {
     let mut block = sway::Block::default();
@@ -61,7 +61,7 @@ pub fn translate_block(
 
 pub fn finalize_block_translation(
     _project: &mut Project,
-    scope: Rc<RefCell<TranslationScope>>,
+    scope: Rc<RefCell<ir::Scope>>,
     block: &mut sway::Block,
 ) -> Result<(), Error> {
     // Check the block for variable declarations that need to be marked mutable
@@ -174,11 +174,11 @@ pub fn finalize_block_translation(
 #[inline]
 pub fn translate_block_statement(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
-    scope: Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
     statements: &[solidity::Statement],
 ) -> Result<sway::Statement, Error> {
-    let scope = Rc::new(RefCell::new(TranslationScope {
+    let scope = Rc::new(RefCell::new(ir::Scope {
         parent: Some(scope.clone()),
         ..Default::default()
     }));

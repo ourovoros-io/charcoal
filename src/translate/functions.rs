@@ -5,7 +5,7 @@ use std::{cell::RefCell, rc::Rc};
 #[inline]
 pub fn translate_function_name(
     _project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
+    module: Rc<RefCell<ir::Module>>,
     function_definition: &solidity::FunctionDefinition,
 ) -> String {
     // Generate the function signature
@@ -60,9 +60,9 @@ pub fn translate_function_name(
 #[inline]
 pub fn translate_function_declaration(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
+    module: Rc<RefCell<ir::Module>>,
     function_definition: &solidity::FunctionDefinition,
-) -> Result<TranslatedFunction, Error> {
+) -> Result<ir::Function, Error> {
     // let module_name = module.borrow().get_module_name();
 
     let (old_name, new_name) = match &function_definition.ty {
@@ -75,7 +75,7 @@ pub fn translate_function_declaration(
     };
 
     // Create a scope for modifier invocation translations
-    let scope = Rc::new(RefCell::new(TranslationScope::default()));
+    let scope = Rc::new(RefCell::new(ir::Scope::default()));
 
     // Add the function parameters to the scope
     for (_, p) in function_definition.params.iter() {
@@ -91,7 +91,7 @@ pub fn translate_function_declaration(
         scope
             .borrow_mut()
             .variables
-            .push(Rc::new(RefCell::new(TranslatedVariable {
+            .push(Rc::new(RefCell::new(ir::Variable {
                 old_name,
                 new_name,
                 type_name,
@@ -198,7 +198,7 @@ pub fn translate_function_declaration(
     let is_fallback = matches!(function_definition.ty, solidity::FunctionTy::Fallback);
 
     // Translate the function
-    let translated_function = TranslatedFunction {
+    let translated_function = ir::Function {
         old_name: old_name.clone(),
         new_name: new_name.clone(),
         attributes: if is_fallback {
@@ -258,7 +258,7 @@ pub fn translate_function_declaration(
 #[inline]
 pub fn translate_modifier_definition(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
+    module: Rc<RefCell<ir::Module>>,
     function_definition: &solidity::FunctionDefinition,
 ) -> Result<(), Error> {
     let old_name = function_definition.name.as_ref().unwrap().name.clone();
@@ -296,7 +296,7 @@ pub fn translate_modifier_definition(
     //     },
     // );
 
-    let mut modifier = TranslatedModifier {
+    let mut modifier = ir::Modifier {
         old_name: old_name.clone(),
         new_name: new_name.clone(),
         parameters: sway::ParameterList::default(),
@@ -306,7 +306,7 @@ pub fn translate_modifier_definition(
         post_body: None,
     };
 
-    let scope = Rc::new(RefCell::new(TranslationScope::default()));
+    let scope = Rc::new(RefCell::new(ir::Scope::default()));
 
     for (_, p) in function_definition.params.iter() {
         let old_name = p
@@ -342,7 +342,7 @@ pub fn translate_modifier_definition(
         scope
             .borrow_mut()
             .variables
-            .push(Rc::new(RefCell::new(TranslatedVariable {
+            .push(Rc::new(RefCell::new(ir::Variable {
                 old_name,
                 new_name,
                 type_name,
@@ -384,7 +384,7 @@ pub fn translate_modifier_definition(
                     //
                     // TODO: check if any storage fields were read from or written to
                     //
-                    
+
                     let mut scope = Some(current_scope.clone());
 
                     while let Some(current_scope) = scope.clone() {
@@ -502,7 +502,7 @@ pub fn translate_modifier_definition(
         (Some(pre_body), Some(post_body)) => {
             let modifier_pre_function_name = format!("{}_pre", modifier.new_name);
 
-            module.borrow_mut().functions.push(TranslatedItem {
+            module.borrow_mut().functions.push(ir::Item {
                 signature: sway::TypeName::Function {
                     old_name: String::new(),
                     new_name: String::new(),
@@ -524,7 +524,7 @@ pub fn translate_modifier_definition(
 
             let modifier_post_function_name = format!("{}_post", modifier.new_name);
 
-            module.borrow_mut().functions.push(TranslatedItem {
+            module.borrow_mut().functions.push(ir::Item {
                 signature: sway::TypeName::Function {
                     old_name: String::new(),
                     new_name: String::new(),
@@ -546,7 +546,7 @@ pub fn translate_modifier_definition(
         }
 
         (Some(pre_body), None) => {
-            module.borrow_mut().functions.push(TranslatedItem {
+            module.borrow_mut().functions.push(ir::Item {
                 signature: sway::TypeName::Function {
                     old_name: String::new(),
                     new_name: String::new(),
@@ -568,7 +568,7 @@ pub fn translate_modifier_definition(
         }
 
         (None, Some(post_body)) => {
-            module.borrow_mut().functions.push(TranslatedItem {
+            module.borrow_mut().functions.push(ir::Item {
                 signature: sway::TypeName::Function {
                     old_name: String::new(),
                     new_name: String::new(),
@@ -618,7 +618,7 @@ pub fn translate_modifier_definition(
 #[inline]
 pub fn translate_function_definition(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
+    module: Rc<RefCell<ir::Module>>,
     function_definition: &solidity::FunctionDefinition,
 ) -> Result<
     (
@@ -897,7 +897,7 @@ pub fn translate_function_definition(
     };
 
     // Create the scope for the body of the toplevel function
-    let scope = Rc::new(RefCell::new(TranslationScope::default()));
+    let scope = Rc::new(RefCell::new(ir::Scope::default()));
 
     // Add the function parameters to the scope
     let mut parameters = vec![];
@@ -942,7 +942,7 @@ pub fn translate_function_definition(
             }
         }
 
-        let translated_variable = TranslatedVariable {
+        let translated_variable = ir::Variable {
             old_name,
             new_name,
             type_name,
@@ -992,7 +992,7 @@ pub fn translate_function_definition(
             }
         }
 
-        let translated_variable = TranslatedVariable {
+        let translated_variable = ir::Variable {
             old_name,
             new_name,
             type_name,
@@ -1136,7 +1136,7 @@ pub fn translate_function_definition(
 
     // Propagate the return variable declarations
     for return_parameter in return_parameters.iter().rev() {
-        let scope = Rc::new(RefCell::new(TranslationScope::default()));
+        let scope = Rc::new(RefCell::new(ir::Scope::default()));
 
         function_body.statements.insert(
             0,

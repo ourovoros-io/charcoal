@@ -12,8 +12,8 @@ pub use self::{build_ins::*, casting::*, member_access::*, utils::*};
 #[inline]
 pub fn translate_function_call_expression(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
-    scope: Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
     expression: &solidity::Expression,
     function: &solidity::Expression,
     named_arguments: Option<&[solidity::NamedArgument]>,
@@ -1115,8 +1115,8 @@ pub fn translate_function_call_expression(
 #[inline]
 pub fn translate_function_call_block_expression(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
-    scope: Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
     function: &solidity::Expression,
     block: &solidity::Statement,
 ) -> Result<sway::Expression, Error> {
@@ -1153,8 +1153,8 @@ pub fn translate_function_call_block_expression(
 
 fn translate_builtin_type_member_access_function_call(
     _project: &mut Project,
-    _module: Rc<RefCell<TranslatedModule>>,
-    _scope: Rc<RefCell<TranslationScope>>,
+    _module: Rc<RefCell<ir::Module>>,
+    _scope: Rc<RefCell<ir::Scope>>,
     ty: &solidity::Type,
     member: &str,
     arguments: &[solidity::Expression],
@@ -1208,8 +1208,8 @@ fn translate_builtin_type_member_access_function_call(
 
 fn translate_builtin_variable_member_access_function_call(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
-    scope: Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
     name: &str,
     member: &str,
     arguments: &[solidity::Expression],

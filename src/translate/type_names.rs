@@ -1,11 +1,11 @@
-use crate::{project::Project, sway, translate::*};
+use crate::{ir, project::Project, sway, translate::*};
 use solang_parser::{helpers::CodeLocation, pt as solidity};
 use std::{cell::RefCell, rc::Rc};
 
 #[inline]
 pub fn translate_return_type_name(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
+    module: Rc<RefCell<ir::Module>>,
     type_name: &sway::TypeName,
 ) -> sway::TypeName {
     match type_name {
@@ -41,7 +41,7 @@ pub fn translate_return_type_name(
 
 pub fn translate_type_name(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
+    module: Rc<RefCell<ir::Module>>,
     type_name: &solidity::Expression,
     is_storage: bool,
     is_parameter: bool,
@@ -478,7 +478,7 @@ pub fn translate_type_name(
                 )),
                 length: {
                     // Create an empty scope to translate the array length expression
-                    let scope = Rc::new(RefCell::new(TranslationScope::default()));
+                    let scope = Rc::new(RefCell::new(ir::Scope::default()));
 
                     match translate_expression(project, module, scope.clone(), length.as_ref()) {
                         Ok(sway::Expression::Literal(
@@ -523,7 +523,9 @@ pub fn translate_type_name(
                 let mut translated_struct = None;
                 let mut translated_type = None;
 
-                let mut check_definition = |external_definition: Rc<RefCell<TranslatedModule>>| {
+                let mut check_definition = |external_definition: Rc<
+                    RefCell<ir::Module>,
+                >| {
                     // Check to see if member is an enum
                     if let Some(external_enum) =
                         external_definition.borrow().enums.iter().find(|e| {

@@ -1,10 +1,10 @@
-use crate::{error::Error, project::Project, sway, translate::*};
+use crate::{error::Error, ir, project::Project, sway, translate::*};
 use solang_parser::pt as solidity;
 
 #[inline]
 pub fn translate_type_definition(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
+    module: Rc<RefCell<ir::Module>>,
     type_definition: &solidity::TypeDefinition,
 ) -> Result<sway::TypeDefinition, Error> {
     let underlying_type =

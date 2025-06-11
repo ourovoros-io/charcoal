@@ -6,8 +6,8 @@ use std::{cell::RefCell, rc::Rc};
 #[inline]
 pub fn translate_variable_expression(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
-    scope: Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
     expression: &solidity::Expression,
 ) -> Result<sway::Expression, Error> {
     //
@@ -36,7 +36,7 @@ pub fn translate_variable_expression(
         _ => {}
     }
 
-    let Some(TranslatedVariableAccess {
+    let Some(ir::VariableAccess {
         variable,
         expression,
     }) = translate_variable_access_expression(project, module.clone(), scope.clone(), expression)?
@@ -78,10 +78,10 @@ pub fn translate_variable_expression(
 
 pub fn translate_variable_access_expression(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
-    scope: Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
     solidity_expression: &solidity::Expression,
-) -> Result<Option<TranslatedVariableAccess>, Error> {
+) -> Result<Option<ir::VariableAccess>, Error> {
     // println!(
     //     "{}Translating variable access expression: {solidity_expression}",
     //     match project.loc_to_line_and_column(module.clone(), &solidity_expression.loc()) {
@@ -95,7 +95,7 @@ pub fn translate_variable_access_expression(
             if let Some(variable) = scope.borrow().get_variable_from_old_name(name) {
                 let variable_name = variable.borrow().new_name.clone();
 
-                return Ok(Some(TranslatedVariableAccess {
+                return Ok(Some(ir::VariableAccess {
                     variable: Some(variable),
                     expression: sway::Expression::create_identifier(variable_name),
                 }));
@@ -111,7 +111,7 @@ pub fn translate_variable_access_expression(
                         .find(|f| f.old_name == *name)
                         .unwrap();
 
-                    return Ok(Some(TranslatedVariableAccess {
+                    return Ok(Some(ir::VariableAccess {
                         variable: None,
                         expression: sway::Expression::create_function_calls(
                             None,
@@ -129,7 +129,7 @@ pub fn translate_variable_access_expression(
                 };
                 old_name == name
             }) {
-                return Ok(Some(TranslatedVariableAccess {
+                return Ok(Some(ir::VariableAccess {
                     variable: None,
                     expression: sway::Expression::create_identifier({
                         let sway::TypeName::Function { new_name, .. } = &function.signature else {
@@ -144,13 +144,13 @@ pub fn translate_variable_access_expression(
                 .iter()
                 .find(|c| c.old_name == *name)
             {
-                return Ok(Some(TranslatedVariableAccess {
+                return Ok(Some(ir::VariableAccess {
                     variable: None,
                     expression: sway::Expression::create_identifier(constant.name.clone()),
                 }));
             } else if let Some(configurable) = module.borrow().configurable.as_ref() {
                 if let Some(field) = configurable.fields.iter().find(|f| f.old_name == *name) {
-                    return Ok(Some(TranslatedVariableAccess {
+                    return Ok(Some(ir::VariableAccess {
                         variable: None,
                         expression: sway::Expression::create_identifier(field.name.clone()),
                     }));
@@ -164,7 +164,7 @@ pub fn translate_variable_access_expression(
             let mut index =
                 translate_expression(project, module.clone(), scope.clone(), index.as_ref())?;
 
-            let Some(TranslatedVariableAccess {
+            let Some(ir::VariableAccess {
                 variable,
                 mut expression,
             }) = translate_variable_access_expression(
@@ -199,7 +199,7 @@ pub fn translate_variable_access_expression(
                     .borrow_mut()
                     .get_expression_type(project, scope.clone(), &expression)?;
 
-            Ok(Some(TranslatedVariableAccess {
+            Ok(Some(ir::VariableAccess {
                 variable,
                 expression: match type_name {
                     sway::TypeName::Identifier {
@@ -409,13 +409,12 @@ pub fn translate_variable_access_expression(
 
             let container_type_name_string = container_type_name.to_string();
 
-            let Some(TranslatedVariableAccess { variable, .. }) =
-                translate_variable_access_expression(
-                    project,
-                    module.clone(),
-                    scope.clone(),
-                    container,
-                )?
+            let Some(ir::VariableAccess { variable, .. }) = translate_variable_access_expression(
+                project,
+                module.clone(),
+                scope.clone(),
+                container,
+            )?
             else {
                 return Ok(None);
             };
@@ -435,7 +434,7 @@ pub fn translate_variable_access_expression(
                     .iter()
                     .any(|f| f.name == field_name)
                 {
-                    return Ok(Some(TranslatedVariableAccess {
+                    return Ok(Some(ir::VariableAccess {
                         variable,
                         expression: sway::Expression::from(sway::MemberAccess {
                             expression: translated_container,
@@ -484,10 +483,10 @@ pub fn translate_variable_access_expression(
                 scope.clone(),
                 function,
             )? {
-                Some(TranslatedVariableAccess {
+                Some(ir::VariableAccess {
                     variable,
                     expression,
-                }) => Ok(Some(TranslatedVariableAccess {
+                }) => Ok(Some(ir::VariableAccess {
                     variable,
                     expression: sway::Expression::from(sway::FunctionCall {
                         function: expression,
@@ -496,7 +495,7 @@ pub fn translate_variable_access_expression(
                     }),
                 })),
 
-                None => Ok(Some(TranslatedVariableAccess {
+                None => Ok(Some(ir::VariableAccess {
                     variable: None,
                     expression: translate_expression(
                         project,

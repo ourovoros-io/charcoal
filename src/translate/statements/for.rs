@@ -5,8 +5,8 @@ use std::{cell::RefCell, rc::Rc};
 #[inline]
 pub fn translate_for_statement(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
-    scope: Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
     initialization: &Option<Box<solidity::Statement>>,
     condition: &Option<Box<solidity::Expression>>,
     update: &Option<Box<solidity::Expression>>,
@@ -21,7 +21,7 @@ pub fn translate_for_statement(
     // }
 
     // Create a scope for the block that will contain the for loop logic
-    let scope = Rc::new(RefCell::new(TranslationScope {
+    let scope = Rc::new(RefCell::new(ir::Scope {
         parent: Some(scope.clone()),
         ..Default::default()
     }));

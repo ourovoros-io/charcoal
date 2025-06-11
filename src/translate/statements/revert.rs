@@ -7,8 +7,8 @@ use std::{cell::RefCell, rc::Rc};
 #[inline]
 pub fn translate_revert_statement(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
-    scope: Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
     error_type: &Option<solidity::IdentifierPath>,
     parameters: &[solidity::Expression],
 ) -> Result<sway::Statement, Error> {
@@ -252,8 +252,8 @@ pub fn translate_revert_statement(
 #[inline]
 pub fn translate_revert_named_arguments(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
-    scope: Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
     path: &Option<solidity::IdentifierPath>,
     named_args: &[solidity::NamedArgument],
 ) -> Result<sway::Statement, Error> {

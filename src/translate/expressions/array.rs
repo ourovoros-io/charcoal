@@ -5,8 +5,8 @@ use std::{cell::RefCell, rc::Rc};
 #[inline]
 pub fn translate_array_literal_expression(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
-    scope: Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
     expressions: &[solidity::Expression],
 ) -> Result<sway::Expression, Error> {
     Ok(sway::Expression::Array(sway::Array {
@@ -20,8 +20,8 @@ pub fn translate_array_literal_expression(
 #[inline]
 pub fn translate_array_subscript_expression(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
-    scope: Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
     expression: &solidity::Expression,
 ) -> Result<sway::Expression, Error> {
     //
@@ -30,7 +30,7 @@ pub fn translate_array_subscript_expression(
     // Writes are handled when translating assignment expressions.
     //
 
-    let Some(TranslatedVariableAccess {
+    let Some(ir::VariableAccess {
         variable,
         expression,
     }) = translate_variable_access_expression(project, module.clone(), scope.clone(), expression)?
@@ -51,8 +51,8 @@ pub fn translate_array_subscript_expression(
 #[inline]
 pub fn translate_array_slice_expression(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
-    scope: Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
     expression: &solidity::Expression,
 ) -> Result<sway::Expression, Error> {
     let solidity::Expression::ArraySlice(_, array_expression, from_index, to_index) = expression

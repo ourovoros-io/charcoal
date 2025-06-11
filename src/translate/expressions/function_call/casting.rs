@@ -6,8 +6,8 @@ use std::{cell::RefCell, rc::Rc};
 
 pub fn translate_address_type_cast_function_call(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
-    scope: Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
     expression: &solidity::Expression,
     argument: &solidity::Expression,
 ) -> Result<sway::Expression, Error> {
@@ -238,8 +238,8 @@ pub fn translate_address_type_cast_function_call(
 // payable(x) => x
 pub fn translate_payable_type_cast_function_call(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
-    scope: Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
     expression: &solidity::Expression,
     arguments: &[solidity::Expression],
 ) -> Result<sway::Expression, Error> {
@@ -257,8 +257,8 @@ pub fn translate_payable_type_cast_function_call(
 
 pub fn translate_int_types_cast_function_call(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
-    scope: Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
     expression: &solidity::Expression,
     argument: &solidity::Expression,
     bits: usize,
@@ -388,8 +388,8 @@ pub fn translate_int_types_cast_function_call(
 
 pub fn translate_uint_types_cast_function_call(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
-    scope: Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
     expression: &solidity::Expression,
     argument: &solidity::Expression,
     bits: usize,
@@ -798,8 +798,8 @@ pub fn translate_uint_types_cast_function_call(
 // bytesN(x) => ???
 pub fn translate_bytes_type_cast_function_call(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
-    scope: Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
     argument: &solidity::Expression,
     byte_count: usize,
     function: &solidity::Expression,
@@ -1094,8 +1094,8 @@ pub fn translate_bytes_type_cast_function_call(
 // bytes(x) => ???
 pub fn translate_dynamic_bytes_type_cast_function_call(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
-    scope: Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
     argument: &solidity::Expression,
 ) -> Result<sway::Expression, Error> {
     let value_expression = translate_expression(project, module.clone(), scope.clone(), argument)?;
@@ -1240,8 +1240,8 @@ pub fn translate_dynamic_bytes_type_cast_function_call(
 // string(x) => ???
 pub fn translate_string_type_cast_function_call(
     project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
-    scope: Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
     expression: &solidity::Expression,
     argument: &solidity::Expression,
 ) -> Result<sway::Expression, Error> {
