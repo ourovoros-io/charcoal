@@ -381,10 +381,18 @@ pub fn translate_modifier_definition(
                 modifier.has_underscore = true;
 
                 if let Some(block) = current_body.as_mut() {
+                    //
+                    // TODO: check if any storage fields were read from or written to
+                    //
+                    
                     let mut scope = Some(current_scope.clone());
 
                     while let Some(current_scope) = scope.clone() {
                         for variable in current_scope.borrow_mut().variables.iter() {
+                            //
+                            // TODO: check if variable is a storage key that was read from or written to
+                            //
+
                             if *has_storage_read && *has_storage_write {
                                 break;
                             }

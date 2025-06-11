@@ -372,7 +372,6 @@ pub fn translate_identity_member_access_function_call(
     expression: &solidity::Expression,
     arguments: &[solidity::Expression],
     mut container: sway::Expression,
-    type_name: &sway::TypeName,
     member: &solidity::Identifier,
     solidity_container: &solidity::Expression,
     name: String,
@@ -452,15 +451,17 @@ pub fn translate_identity_member_access_function_call(
     let new_name_lower = translate_naming_convention(member.name.as_str(), Case::Snake);
     let new_name_upper = translate_naming_convention(member.name.as_str(), Case::Constant);
 
-    // TODO
-    // Check using directives for Identity-specific function
+    //
+    // TODO:
+    //
+    // // Check using directives for Identity-specific function
     // for using_directive in module.using_directives.iter() {
     //     let Some(external_definition) =
     //         project.find_module_with_contract(&using_directive.library_name).cloned()
     //     else {
     //         continue;
     //     };
-
+    //
     //     if let Some(for_type_name) = &using_directive.for_type {
     //         if !type_name.is_identity() && for_type_name != type_name {
     //             // println!(
@@ -471,28 +472,28 @@ pub fn translate_identity_member_access_function_call(
     //             continue;
     //         }
     //     }
-
+    //
     //     for f in external_definition.toplevel_scope.borrow().functions.iter() {
     //         let f = f.borrow();
-
+    //
     //         let sway::TypeName::Function { parameters: f_parameters, .. } = &f.type_name else {
     //             panic!("Invalid function type name: {:#?}", f.type_name)
     //         };
-
+    //
     //         if f.old_name != member.name {
     //             continue;
     //         }
-
+    //
     //         let Some(parameter) = f_parameters.entries.first() else { continue };
     //         let Some(parameter_type_name) = parameter.type_name.as_ref() else { continue };
-
+    //
     //         if parameter_type_name == type_name {
     //             let mut parameters = arguments.iter()
     //                 .map(|a| translate_expression(project, module.clone(), scope.clone(), a))
     //                 .collect::<Result<Vec<_>, _>>()?;
-
+    //
     //             parameters.insert(0, container.clone());
-
+    //
     //             return Ok(sway::Expression::create_function_calls(None, &[(f.new_name.as_str(), Some((None, parameters)))]));
     //         }
     //     }
@@ -644,7 +645,6 @@ pub fn translate_storage_vec_member_access_function_call(
     project: &mut Project,
     module: Rc<RefCell<TranslatedModule>>,
     scope: Rc<RefCell<TranslationScope>>,
-    expression: &solidity::Expression,
     arguments: &[solidity::Expression],
     member: &solidity::Identifier,
     solidity_container: &solidity::Expression,

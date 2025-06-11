@@ -91,10 +91,10 @@ impl TranslationScope {
             parent.borrow().dump();
         }
 
-        // println!("variables:");
+        println!("variables:");
 
         for v in self.variables.iter() {
-            // println!("{v:#?}");
+            println!("{v:#?}");
         }
     }
 

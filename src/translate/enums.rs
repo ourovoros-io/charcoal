@@ -7,7 +7,7 @@ use std::{cell::RefCell, rc::Rc};
 #[inline]
 pub fn translate_enum_definition(
     _project: &mut Project,
-    module: Rc<RefCell<TranslatedModule>>,
+    _module: Rc<RefCell<TranslatedModule>>,
     enum_definition: &solidity::EnumDefinition,
 ) -> Result<TranslatedEnum, Error> {
     // Create the enum's type definition

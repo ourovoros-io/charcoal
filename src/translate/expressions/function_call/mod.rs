@@ -504,8 +504,6 @@ pub fn translate_function_call_expression(
                     //     }
                     // }
 
-                    let solidity_container = container;
-
                     let container =
                         translate_expression(project, module.clone(), scope.clone(), container)?;
 
@@ -703,7 +701,6 @@ pub fn translate_function_call_expression(
                         expression,
                         arguments,
                         container,
-                        &type_name,
                         member,
                         solidity_container,
                         name.to_string(),
@@ -714,7 +711,6 @@ pub fn translate_function_call_expression(
                         project,
                         module.clone(),
                         scope.clone(),
-                        expression,
                         arguments,
                         member,
                         solidity_container,
