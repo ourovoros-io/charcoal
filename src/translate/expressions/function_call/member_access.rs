@@ -769,14 +769,14 @@ pub fn translate_vec_member_access_function_call(
     }
 }
 
-pub fn translate_abi_member_access_function_call(
+pub fn translate_builtin_abi_member_access_function_call(
     project: &mut Project,
     module: Rc<RefCell<TranslatedModule>>,
     scope: Rc<RefCell<TranslationScope>>,
-    arguments: &[solidity::Expression],
-    expression: &solidity::Expression,
     member_name: &str,
-) -> Result<sway::Expression, Error> {
+    arguments: &[solidity::Expression],
+    named_arguments: Option<&[solidity::NamedArgument]>,
+) -> Result<Option<sway::Expression>, Error> {
     match member_name {
         "decode" => {
             // abi.decode(encodedData, (uint256, bool)) =>
@@ -791,7 +791,7 @@ pub fn translate_abi_member_access_function_call(
             // };
 
             if arguments.len() != 2 {
-                panic!("Invalid `abi.decode` call: expected 2 arguments, found {}: {} - {expression:#?}", arguments.len(), expression);
+                return Ok(None);
             }
 
             let encoded_data =
@@ -824,10 +824,7 @@ pub fn translate_abi_member_access_function_call(
                 }
 
                 _ => {
-                    panic!(
-                        "Invalid `abi.decode` call: expected type list, found {} - {:#?}",
-                        arguments[1], arguments[1]
-                    );
+                    return Ok(None);
                 }
             };
 
@@ -838,13 +835,13 @@ pub fn translate_abi_member_access_function_call(
                 .collect::<Vec<_>>();
 
             if parameter_types.len() != parameter_names.len() {
-                panic!("Failed to generate parameter names for `{expression}`");
+                return Ok(None);
             }
 
             // If we only have 1 parameter to decode, just decode it directly
             if parameter_types.len() == 1 {
                 // encoded_data.as_raw_slice().ptr().read::<u256>()
-                return Ok(sway::Expression::create_function_calls(
+                return Ok(Some(sway::Expression::create_function_calls(
                     Some(encoded_data.clone()),
                     &[
                         ("as_raw_slice", Some((None, vec![]))),
@@ -862,7 +859,7 @@ pub fn translate_abi_member_access_function_call(
                             )),
                         ),
                     ],
-                ));
+                )));
             }
 
             let mut block = sway::Block {
@@ -958,7 +955,7 @@ pub fn translate_abi_member_access_function_call(
                 }
             }
 
-            Ok(sway::Expression::from(block))
+            Ok(Some(sway::Expression::from(block)))
         }
 
         "encode" | "encodePacked" => {
@@ -1070,7 +1067,7 @@ pub fn translate_abi_member_access_function_call(
                 ));
             }
 
-            Ok(sway::Expression::from(block))
+            Ok(Some(sway::Expression::from(block)))
         }
 
         "encodeWithSelector" => {
@@ -1080,7 +1077,12 @@ pub fn translate_abi_member_access_function_call(
             // TODO: how should this be handled?
             //
 
-            Ok(sway::Expression::create_todo(Some(expression.to_string())))
+            Ok(Some(sway::Expression::create_todo(Some(
+                format!(
+                    "abi.encodeWithSelector({})",
+                    arguments.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(", "),
+                )
+            ))))
         }
 
         "encodeWithSignature" => {
@@ -1090,7 +1092,12 @@ pub fn translate_abi_member_access_function_call(
             // TODO: how should this be handled?
             //
 
-            Ok(sway::Expression::create_todo(Some(expression.to_string())))
+            Ok(Some(sway::Expression::create_todo(Some(
+                format!(
+                    "abi.encodeWithSignature({})",
+                    arguments.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(", "),
+                )
+            ))))
         }
 
         "encodeCall" => {
@@ -1100,10 +1107,15 @@ pub fn translate_abi_member_access_function_call(
             // TODO: how should this be handled?
             //
 
-            Ok(sway::Expression::create_todo(Some(expression.to_string())))
+            Ok(Some(sway::Expression::create_todo(Some(
+                format!(
+                    "abi.encodeCall({})",
+                    arguments.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(", "),
+                )
+            ))))
         }
 
-        member => todo!("handle `abi.{member}` translation"),
+        _ => Ok(None),
     }
 }
 
@@ -1111,10 +1123,10 @@ pub fn translate_super_member_access_function_call(
     project: &mut Project,
     module: Rc<RefCell<TranslatedModule>>,
     scope: Rc<RefCell<TranslationScope>>,
+    member: &str,
     arguments: &[solidity::Expression],
     named_arguments: Option<&[solidity::NamedArgument]>,
-    member: &solidity::Identifier,
-) -> Result<sway::Expression, Error> {
+) -> Result<Option<sway::Expression>, Error> {
     let parameters = arguments
         .iter()
         .map(|a| translate_expression(project, module.clone(), scope.clone(), a))
@@ -1151,28 +1163,17 @@ pub fn translate_super_member_access_function_call(
     //     }
     // }
 
-    panic!(
-        "{}TODO: handle super member access function `{member:#?}`",
-        match project.loc_to_line_and_column(module.clone(), &member.loc()) {
-            Some((line, col)) => format!(
-                "{}:{}:{}: ",
-                project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy(),
-                line,
-                col
-            ),
-            None => format!("{}: ", project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy()),
-        },
-    )
+    Ok(None)
 }
 
 pub fn translate_this_member_access_function_call(
     project: &mut Project,
     module: Rc<RefCell<TranslatedModule>>,
     scope: Rc<RefCell<TranslationScope>>,
+    member: &str,
     arguments: &[solidity::Expression],
     named_arguments: Option<&[solidity::NamedArgument]>,
-    member: &solidity::Identifier,
-) -> Result<sway::Expression, Error> {
+) -> Result<Option<sway::Expression>, Error> {
     let parameters = arguments
         .iter()
         .map(|a| translate_expression(project, module.clone(), scope.clone(), a))
@@ -1188,13 +1189,13 @@ pub fn translate_this_member_access_function_call(
         module.clone(),
         scope.clone(),
         module.clone(),
-        member.name.as_str(),
+        member,
         named_arguments,
         parameters,
         parameter_types,
     )? {
-        Ok(result)
-    } else {
-        Err(Error::Wrapped("Failed to translate this expression".into()))
+        return Ok(Some(result));
     }
+    
+    Ok(None)
 }

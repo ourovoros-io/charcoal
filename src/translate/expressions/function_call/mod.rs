@@ -313,74 +313,30 @@ pub fn translate_function_call_expression(
         }
 
         solidity::Expression::MemberAccess(_, container, member) => {
-            let value = match container.as_ref() {
-                solidity::Expression::Type(_, ty) => match ty {
-                    solidity::Type::String => match member.name.as_str() {
-                        "concat" => {
-                            // string.concat(x) => ???
-
-                            //
-                            // TODO: how should this be handled?
-                            //
-
-                            Some(sway::Expression::create_todo(Some(expression.to_string())))
-                        }
-
-                        member => todo!("translate `string.{member}``"),
-                    },
-
-                    solidity::Type::DynamicBytes => match member.name.as_str() {
-                        "concat" => {
-                            // bytes.concat(x) => ???
-
-                            //
-                            // TODO: how should this be handled?
-                            //
-
-                            Some(sway::Expression::create_todo(Some(expression.to_string())))
-                        }
-
-                        member => todo!("translate `bytes.{member}`"),
-                    },
-
-                    _ => todo!(
-                        "translate member access function call: {expression} - {expression:#?}"
-                    ),
-                },
+            match container.as_ref() {
+                solidity::Expression::Type(_, ty) => {
+                    if let Some(result) = translate_builtin_type_member_access_function_call(
+                        project,
+                        module.clone(),
+                        scope.clone(),
+                        ty,
+                        member.name.as_str(),
+                        arguments,
+                    )? {
+                        return Ok(result);
+                    }
+                }
 
                 solidity::Expression::Variable(solidity::Identifier { name, .. }) => {
-                    let value = match name.as_str() {
-                        "abi" => Some(translate_abi_member_access_function_call(
-                            project,
-                            module.clone(),
-                            scope.clone(),
-                            arguments,
-                            expression,
-                            &member.name,
-                        )?),
-
-                        "super" => Some(translate_super_member_access_function_call(
-                            project,
-                            module.clone(),
-                            scope.clone(),
-                            arguments,
-                            named_arguments,
-                            member,
-                        )?),
-
-                        "this" => Some(translate_this_member_access_function_call(
-                            project,
-                            module.clone(),
-                            scope.clone(),
-                            arguments,
-                            named_arguments,
-                            member,
-                        )?),
-
-                        _ => None,
-                    };
-
-                    if let Some(value) = value {
+                    if let Some(value) = translate_builtin_variable_member_access_function_call(
+                        project,
+                        module.clone(),
+                        scope.clone(),
+                        name.as_str(),
+                        member.name.as_str(),
+                        arguments,
+                        named_arguments,
+                    )? {
                         return Ok(value);
                     }
 
@@ -488,7 +444,7 @@ pub fn translate_function_call_expression(
                     //     )? {
                     //         return Ok(result);
                     //     }
-
+                    //
                     //     // Try to resolve the function call
                     //     if let Some(result) = resolve_function_call(
                     //         project,
@@ -652,16 +608,11 @@ pub fn translate_function_call_expression(
                     //         (&f.new_name, Some((None, parameters)))
                     //     ]))
                     // }
-
-                    None
                 }
 
-                _ => None,
-            };
-
-            if let Some(value) = value {
-                return Ok(value);
+                _ => {}
             }
+
             let solidity_container = container;
 
             let mut container =
@@ -1198,4 +1149,100 @@ pub fn translate_function_call_block_expression(
             ),
         },
     )
+}
+
+fn translate_builtin_type_member_access_function_call(
+    _project: &mut Project,
+    _module: Rc<RefCell<TranslatedModule>>,
+    _scope: Rc<RefCell<TranslationScope>>,
+    ty: &solidity::Type,
+    member: &str,
+    arguments: &[solidity::Expression],
+) -> Result<Option<sway::Expression>, Error> {
+    match ty {
+        solidity::Type::String => match member {
+            "concat" => {
+                // string.concat(x) => ???
+
+                //
+                // TODO: how should this be handled?
+                //
+
+                Ok(Some(sway::Expression::create_todo(Some(format!(
+                    "string.concat({})",
+                    arguments
+                        .iter()
+                        .map(|p| p.to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )))))
+            }
+
+            _ => Ok(None),
+        },
+
+        solidity::Type::DynamicBytes => match member {
+            "concat" => {
+                // bytes.concat(x) => ???
+
+                //
+                // TODO: how should this be handled?
+                //
+
+                Ok(Some(sway::Expression::create_todo(Some(format!(
+                    "bytes.concat({})",
+                    arguments
+                        .iter()
+                        .map(|p| p.to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )))))
+            }
+
+            _ => Ok(None),
+        },
+
+        _ => Ok(None),
+    }
+}
+
+fn translate_builtin_variable_member_access_function_call(
+    project: &mut Project,
+    module: Rc<RefCell<TranslatedModule>>,
+    scope: Rc<RefCell<TranslationScope>>,
+    name: &str,
+    member: &str,
+    arguments: &[solidity::Expression],
+    named_arguments: Option<&[solidity::NamedArgument]>,
+) -> Result<Option<sway::Expression>, Error> {
+    match name {
+        "abi" => translate_builtin_abi_member_access_function_call(
+            project,
+            module.clone(),
+            scope.clone(),
+            member,
+            arguments,
+            named_arguments,
+        ),
+
+        "super" => translate_super_member_access_function_call(
+            project,
+            module.clone(),
+            scope.clone(),
+            member,
+            arguments,
+            named_arguments,
+        ),
+
+        "this" => translate_this_member_access_function_call(
+            project,
+            module.clone(),
+            scope.clone(),
+            member,
+            arguments,
+            named_arguments,
+        ),
+
+        _ => Ok(None),
+    }
 }
