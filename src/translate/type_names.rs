@@ -42,6 +42,7 @@ pub fn translate_return_type_name(
 pub fn translate_type_name(
     project: &mut Project,
     module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
     type_name: &solidity::Expression,
     is_storage: bool,
     is_parameter: bool,
@@ -253,6 +254,7 @@ pub fn translate_type_name(
                                                 type_name: translate_type_name(
                                                     project,
                                                     module.clone(),
+                                                    scope.clone(),
                                                     key.as_ref(),
                                                     is_storage,
                                                     is_parameter,
@@ -263,6 +265,7 @@ pub fn translate_type_name(
                                                 type_name: translate_type_name(
                                                     project,
                                                     module,
+                                                    scope.clone(),
                                                     value.as_ref(),
                                                     is_storage,
                                                     is_parameter,
@@ -285,6 +288,7 @@ pub fn translate_type_name(
                                     type_name: translate_type_name(
                                         project,
                                         module.clone(),
+                                        scope.clone(),
                                         key.as_ref(),
                                         is_storage,
                                         is_parameter,
@@ -295,6 +299,7 @@ pub fn translate_type_name(
                                     type_name: translate_type_name(
                                         project,
                                         module,
+                                        scope.clone(),
                                         value.as_ref(),
                                         is_storage,
                                         is_parameter,
@@ -325,6 +330,7 @@ pub fn translate_type_name(
                                     type_name: Some(translate_type_name(
                                         project,
                                         module.clone(),
+                                        scope.clone(),
                                         &p.ty,
                                         false,
                                         true,
@@ -343,9 +349,14 @@ pub fn translate_type_name(
                     let returns: Option<Vec<sway::TypeName>> = returns.as_ref().map(|r| {
                         r.0.iter()
                             .map(|(_, p)| match p.as_ref() {
-                                Some(p) => {
-                                    translate_type_name(project, module.clone(), &p.ty, false, true)
-                                }
+                                Some(p) => translate_type_name(
+                                    project,
+                                    module.clone(),
+                                    scope.clone(),
+                                    &p.ty,
+                                    false,
+                                    true,
+                                ),
                                 None => sway::TypeName::Identifier {
                                     name: "_".into(),
                                     generic_parameters: None,
@@ -472,13 +483,18 @@ pub fn translate_type_name(
                 type_name: Box::new(translate_type_name(
                     project,
                     module.clone(),
+                    scope.clone(),
                     type_name,
                     is_storage,
                     is_parameter,
                 )),
                 length: {
                     // Create an empty scope to translate the array length expression
-                    let scope = Rc::new(RefCell::new(ir::Scope::default()));
+                    let scope = Rc::new(RefCell::new(ir::Scope {
+                        contract_name: scope.borrow().contract_name.clone(),
+                        parent: Some(scope.clone()),
+                        ..Default::default()
+                    }));
 
                     match translate_expression(project, module, scope.clone(), length.as_ref()) {
                         Ok(sway::Expression::Literal(
@@ -506,6 +522,7 @@ pub fn translate_type_name(
                         type_name: translate_type_name(
                             project,
                             module,
+                            scope.clone(),
                             type_name,
                             is_storage,
                             is_parameter,
@@ -523,9 +540,7 @@ pub fn translate_type_name(
                 let mut translated_struct = None;
                 let mut translated_type = None;
 
-                let mut check_definition = |external_definition: Rc<
-                    RefCell<ir::Module>,
-                >| {
+                let mut check_definition = |external_definition: Rc<RefCell<ir::Module>>| {
                     // Check to see if member is an enum
                     if let Some(external_enum) =
                         external_definition.borrow().enums.iter().find(|e| {

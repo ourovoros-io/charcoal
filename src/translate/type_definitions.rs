@@ -5,10 +5,22 @@ use solang_parser::pt as solidity;
 pub fn translate_type_definition(
     project: &mut Project,
     module: Rc<RefCell<ir::Module>>,
+    contract_name: Option<&str>,
     type_definition: &solidity::TypeDefinition,
 ) -> Result<sway::TypeDefinition, Error> {
-    let underlying_type =
-        translate_type_name(project, module.clone(), &type_definition.ty, false, false);
+    let scope = Rc::new(RefCell::new(ir::Scope {
+        contract_name: contract_name.map(|s| s.to_string()),
+        ..Default::default()
+    }));
+
+    let underlying_type = translate_type_name(
+        project,
+        module.clone(),
+        scope,
+        &type_definition.ty,
+        false,
+        false,
+    );
 
     Ok(sway::TypeDefinition {
         is_public: true,

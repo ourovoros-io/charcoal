@@ -89,7 +89,12 @@ pub fn translate_contract_definition(
 
     // Translate contract using directives
     for using_directive in using_directives {
-        translate_using_directive(project, module.clone(), &using_directive)?;
+        translate_using_directive(
+            project,
+            module.clone(),
+            Some(&contract_name),
+            &using_directive,
+        )?;
     }
 
     // Collect the signatures of the contract type definitions
@@ -133,9 +138,13 @@ pub fn translate_contract_definition(
 
     // Translate contract type definitions
     for (i, type_definition) in type_definitions.into_iter().enumerate() {
-        module.borrow_mut().type_definitions[type_definitions_index + i].implementation = Some(
-            translate_type_definition(project, module.clone(), type_definition.as_ref())?,
-        );
+        module.borrow_mut().type_definitions[type_definitions_index + i].implementation =
+            Some(translate_type_definition(
+                project,
+                module.clone(),
+                Some(&contract_name),
+                type_definition.as_ref(),
+            )?);
     }
 
     // Translate contract enum definitions
@@ -147,14 +156,23 @@ pub fn translate_contract_definition(
 
     // Translate contract struct definitions
     for (i, struct_definition) in struct_definitions.into_iter().enumerate() {
-        module.borrow_mut().structs[structs_index + i].implementation = Some(
-            translate_struct_definition(project, module.clone(), struct_definition.as_ref())?,
-        );
+        module.borrow_mut().structs[structs_index + i].implementation =
+            Some(translate_struct_definition(
+                project,
+                module.clone(),
+                Some(&contract_name),
+                struct_definition.as_ref(),
+            )?);
     }
 
     // Translate contract event definitions
     for event_definition in event_definitions {
-        translate_event_definition(project, module.clone(), &event_definition)?;
+        translate_event_definition(
+            project,
+            module.clone(),
+            Some(&contract_name),
+            &event_definition,
+        )?;
     }
 
     // Create the abi encoding function for the events enum (if any)
@@ -177,7 +195,12 @@ pub fn translate_contract_definition(
 
     // Translate contract error definitions
     for error_definition in error_definitions {
-        translate_error_definition(project, module.clone(), &error_definition)?;
+        translate_error_definition(
+            project,
+            module.clone(),
+            Some(&contract_name),
+            &error_definition,
+        )?;
     }
 
     // Create the abi encoding function for the errors enum (if any)
@@ -203,7 +226,12 @@ pub fn translate_contract_definition(
     let mut mapping_names = vec![];
 
     for variable_definition in variable_definitions {
-        let (d, m) = translate_state_variable(project, module.clone(), &variable_definition)?;
+        let (d, m) = translate_state_variable(
+            project,
+            module.clone(),
+            Some(&contract_name),
+            &variable_definition,
+        )?;
         deferred_initializations.extend(d);
         mapping_names.extend(m);
     }
@@ -217,8 +245,13 @@ pub fn translate_contract_definition(
             continue;
         }
 
-        let signature =
-            translate_function_declaration(project, module.clone(), function_definition)?.type_name;
+        let signature = translate_function_declaration(
+            project,
+            module.clone(),
+            Some(&contract_name),
+            function_definition,
+        )?
+        .type_name;
 
         module.borrow_mut().functions.push(ir::Item {
             signature,
@@ -235,8 +268,12 @@ pub fn translate_contract_definition(
             continue;
         }
 
-        let (function, mut abi_fn, impl_item) =
-            translate_function_definition(project, module.clone(), &function_definition)?;
+        let (function, mut abi_fn, impl_item) = translate_function_definition(
+            project,
+            module.clone(),
+            Some(&contract_name),
+            &function_definition,
+        )?;
 
         assert_eq!(abi_fn.is_some(), impl_item.is_some());
 
@@ -268,13 +305,26 @@ pub fn translate_contract_definition(
             continue;
         }
 
-        translate_modifier_definition(project, module.clone(), function_definition)?;
+        translate_modifier_definition(
+            project,
+            module.clone(),
+            Some(&contract_name),
+            function_definition,
+        )?;
     }
 
     // Propagate deferred initializations into the constructor
     if !deferred_initializations.is_empty() {
+        let scope = Rc::new(RefCell::new(ir::Scope {
+            contract_name: Some(contract_name),
+            ..Default::default()
+        }));
+
         let mut assignment_statements = vec![];
-        let namespace_name = module.borrow().get_storage_namespace_name();
+        let namespace_name = module
+            .borrow()
+            .get_storage_namespace_name(scope.clone())
+            .unwrap();
 
         // Create assignment statements for all of the deferred initializations
         for deferred_initialization in deferred_initializations.iter().rev() {
@@ -355,7 +405,8 @@ pub fn translate_contract_definition(
             // Add the `constructor_called` field to the storage block
             module
                 .borrow_mut()
-                .get_storage_namespace()
+                .get_storage_namespace(scope)
+                .unwrap()
                 .fields
                 .push(sway::StorageField {
                     old_name: String::new(),
@@ -492,12 +543,18 @@ pub fn translate_contract_definition(
 pub fn translate_using_directive(
     project: &mut Project,
     module: Rc<RefCell<ir::Module>>,
+    contract_name: Option<&str>,
     using_directive: &solidity::Using,
 ) -> Result<(), Error> {
+    let scope = Rc::new(RefCell::new(ir::Scope {
+        contract_name: contract_name.map(|s| s.to_string()),
+        ..Default::default()
+    }));
+
     let for_type = using_directive
         .ty
         .as_ref()
-        .map(|t| translate_type_name(project, module.clone(), t, false, false))
+        .map(|t| translate_type_name(project, module.clone(), scope.clone(), t, false, false))
         .map_or(Ok(None), |t| Ok(Some(t)))?;
 
     match &using_directive.list {

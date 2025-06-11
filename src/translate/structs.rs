@@ -7,15 +7,28 @@ use std::{cell::RefCell, rc::Rc};
 pub fn translate_struct_definition(
     project: &mut Project,
     module: Rc<RefCell<ir::Module>>,
+    contract_name: Option<&str>,
     struct_definition: &solidity::StructDefinition,
 ) -> Result<Rc<RefCell<sway::Struct>>, Error> {
     let mut fields = vec![];
+
+    let scope = Rc::new(RefCell::new(ir::Scope {
+        contract_name: contract_name.map(|s| s.to_string()),
+        ..Default::default()
+    }));
 
     for field in struct_definition.fields.iter() {
         // TODO: keep track of original struct name?
         let name =
             translate_naming_convention(field.name.as_ref().unwrap().name.as_str(), Case::Snake);
-        let mut type_name = translate_type_name(project, module.clone(), &field.ty, false, false);
+        let mut type_name = translate_type_name(
+            project,
+            module.clone(),
+            scope.clone(),
+            &field.ty,
+            false,
+            false,
+        );
 
         if let sway::TypeName::Identifier {
             name,

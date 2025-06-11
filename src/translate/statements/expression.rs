@@ -56,6 +56,7 @@ pub fn translate_expression_statement(
                         type_name: translate_type_name(
                             project,
                             module.clone(),
+                            scope.clone(),
                             &p.ty,
                             false,
                             false,
@@ -94,6 +95,7 @@ pub fn translate_expression_statement(
                                     translate_type_name(
                                         project,
                                         module.clone(),
+                                        scope.clone(),
                                         &p.ty,
                                         false,
                                         false,

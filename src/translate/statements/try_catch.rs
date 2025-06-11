@@ -71,6 +71,7 @@ pub fn translate_try_catch_statement(
                         let type_name = translate_type_name(
                             project,
                             module.clone(),
+                            scope.clone(),
                             &params[0].1.as_ref().unwrap().ty,
                             false,
                             false,
@@ -84,6 +85,7 @@ pub fn translate_try_catch_statement(
                                 translate_type_name(
                                     project,
                                     module.clone(),
+                                    scope.clone(),
                                     &p.as_ref().unwrap().ty,
                                     false,
                                     false,
@@ -112,7 +114,10 @@ pub fn translate_try_catch_statement(
             };
         }
         None => statements.push(sway::Statement::from(translate_expression(
-            project, module, scope.clone(), expr,
+            project,
+            module,
+            scope.clone(),
+            expr,
         )?)),
     }
 

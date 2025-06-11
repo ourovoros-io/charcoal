@@ -164,7 +164,136 @@ pub fn translate_member_access_expression(
         _ => {}
     }
 
-    let container = translate_expression(project, module.clone(), scope.clone(), container)?;
+    let check_container = |project: &mut Project,
+                           container: &sway::Expression|
+     -> Result<Option<sway::Expression>, Error> {
+        let container_type_name =
+            module
+                .borrow_mut()
+                .get_expression_type(project, scope.clone(), container)?;
+        let container_type_name_string = container_type_name.to_string();
+
+        // Check if container is a struct
+        if let Some(struct_definition) = module.borrow().structs.iter().find(|s| {
+            s.implementation.as_ref().unwrap().borrow().name == container_type_name_string
+        }) {
+            let field_name = translate_naming_convention(member.name.as_str(), Case::Snake);
+
+            if struct_definition
+                .implementation
+                .as_ref()
+                .unwrap()
+                .borrow()
+                .fields
+                .iter()
+                .any(|f| f.name == field_name)
+            {
+                return Ok(Some(sway::Expression::from(sway::MemberAccess {
+                    expression: container.clone(),
+                    member: field_name,
+                })));
+            }
+        }
+
+        // Check for fields of built-in solidity value types
+        match container_type_name {
+            sway::TypeName::Identifier {
+                name,
+                generic_parameters,
+            } => match (name.as_str(), generic_parameters.as_ref()) {
+                ("Bytes", None) => match member.name.as_str() {
+                    "length" => {
+                        return Ok(Some(sway::Expression::create_function_calls(
+                            Some(container.clone()),
+                            &[("len", Some((None, vec![])))],
+                        )));
+                    }
+
+                    _ => {}
+                },
+
+                ("Identity", None) => match member.name.as_str() {
+                    "balance" => {
+                        return Ok(Some(sway::Expression::from(sway::FunctionCall {
+                            function: sway::Expression::create_identifier(
+                                "std::context::balance_of".into(),
+                            ),
+                            generic_parameters: None,
+                            parameters: vec![
+                                sway::Expression::create_function_calls(
+                                    Some(container.clone()),
+                                    &[
+                                        ("as_contract_id", Some((None, vec![]))),
+                                        ("unwrap", Some((None, vec![]))),
+                                    ],
+                                ),
+                                sway::Expression::create_function_calls(
+                                    None,
+                                    &[("AssetId::default", Some((None, vec![])))],
+                                ),
+                            ],
+                        })));
+                    }
+
+                    _ => {}
+                },
+
+                ("StorageKey", Some(generic_parameters))
+                    if generic_parameters.entries.len() == 1 =>
+                {
+                    match &generic_parameters.entries[0].type_name {
+                        sway::TypeName::Identifier {
+                            name,
+                            generic_parameters,
+                        } => match (name.as_str(), generic_parameters.as_ref()) {
+                            ("StorageVec", Some(_)) => match member.name.as_str() {
+                                "length" => {
+                                    return Ok(Some(sway::Expression::create_function_calls(
+                                        Some(container.clone()),
+                                        &[("len", Some((None, vec![])))],
+                                    )));
+                                }
+
+                                _ => {}
+                            },
+
+                            _ => {}
+                        },
+
+                        _ => {}
+                    }
+                }
+
+                ("Vec", Some(_)) => match member.name.as_str() {
+                    "length" => {
+                        return Ok(Some(sway::Expression::create_function_calls(
+                            Some(container.clone()),
+                            &[("len", Some((None, vec![])))],
+                        )));
+                    }
+
+                    _ => {}
+                },
+
+                _ => {}
+            },
+
+            _ => {}
+        }
+
+        Ok(None)
+    };
+
+    let mut container = translate_expression(project, module.clone(), scope.clone(), container)?;
+
+    // HACK: remove read if present
+    if let sway::Expression::FunctionCall(f) = &container {
+        if let sway::Expression::MemberAccess(m) = &f.function {
+            if m.member == "read" && f.parameters.is_empty() {
+                container = m.expression.clone();
+            }
+        }
+    }
 
     let container_type_name =
         module
@@ -173,126 +302,7 @@ pub fn translate_member_access_expression(
 
     let container_type_name_string = container_type_name.to_string();
 
-    let mut check_container =
-        |container: &sway::Expression| -> Result<Option<sway::Expression>, Error> {
-            let container_type_name =
-                module
-                    .borrow_mut()
-                    .get_expression_type(project, scope.clone(), container)?;
-            let container_type_name_string = container_type_name.to_string();
-
-            // Check if container is a struct
-            if let Some(struct_definition) = module.borrow().structs.iter().find(|s| {
-                s.implementation.as_ref().unwrap().borrow().name == container_type_name_string
-            }) {
-                let field_name = translate_naming_convention(member.name.as_str(), Case::Snake);
-
-                if struct_definition
-                    .implementation
-                    .as_ref()
-                    .unwrap()
-                    .borrow()
-                    .fields
-                    .iter()
-                    .any(|f| f.name == field_name)
-                {
-                    return Ok(Some(sway::Expression::from(sway::MemberAccess {
-                        expression: container.clone(),
-                        member: field_name,
-                    })));
-                }
-            }
-
-            // Check for fields of built-in solidity value types
-            match container_type_name {
-                sway::TypeName::Identifier {
-                    name,
-                    generic_parameters,
-                } => match (name.as_str(), generic_parameters.as_ref()) {
-                    ("Bytes", None) => match member.name.as_str() {
-                        "length" => {
-                            return Ok(Some(sway::Expression::create_function_calls(
-                                Some(container.clone()),
-                                &[("len", Some((None, vec![])))],
-                            )));
-                        }
-
-                        _ => {}
-                    },
-
-                    ("Identity", None) => match member.name.as_str() {
-                        "balance" => {
-                            return Ok(Some(sway::Expression::from(sway::FunctionCall {
-                                function: sway::Expression::create_identifier(
-                                    "std::context::balance_of".into(),
-                                ),
-                                generic_parameters: None,
-                                parameters: vec![
-                                    sway::Expression::create_function_calls(
-                                        Some(container.clone()),
-                                        &[
-                                            ("as_contract_id", Some((None, vec![]))),
-                                            ("unwrap", Some((None, vec![]))),
-                                        ],
-                                    ),
-                                    sway::Expression::create_function_calls(
-                                        None,
-                                        &[("AssetId::default", Some((None, vec![])))],
-                                    ),
-                                ],
-                            })));
-                        }
-
-                        _ => {}
-                    },
-
-                    ("StorageKey", Some(generic_parameters))
-                        if generic_parameters.entries.len() == 1 =>
-                    {
-                        match &generic_parameters.entries[0].type_name {
-                            sway::TypeName::Identifier {
-                                name,
-                                generic_parameters,
-                            } => match (name.as_str(), generic_parameters.as_ref()) {
-                                ("StorageVec", Some(_)) => match member.name.as_str() {
-                                    "length" => {
-                                        return Ok(Some(sway::Expression::create_function_calls(
-                                            Some(container.clone()),
-                                            &[("len", Some((None, vec![])))],
-                                        )));
-                                    }
-
-                                    _ => {}
-                                },
-
-                                _ => {}
-                            },
-
-                            _ => {}
-                        }
-                    }
-
-                    ("Vec", Some(_)) => match member.name.as_str() {
-                        "length" => {
-                            return Ok(Some(sway::Expression::create_function_calls(
-                                Some(container.clone()),
-                                &[("len", Some((None, vec![])))],
-                            )));
-                        }
-
-                        _ => {}
-                    },
-
-                    _ => {}
-                },
-
-                _ => {}
-            }
-
-            Ok(None)
-        };
-
-    if let Some(result) = check_container(&container)? {
+    if let Some(result) = check_container(project, &container)? {
         return Ok(result);
     }
 
@@ -311,10 +321,13 @@ pub fn translate_member_access_expression(
     }
 
     // HACK: try tacking `.read()` onto the end and checking again
-    if let Ok(Some(result)) = check_container(&sway::Expression::create_function_calls(
-        Some(container.clone()),
-        &[("read", Some((None, vec![])))],
-    )) {
+    if let Ok(Some(result)) = check_container(
+        project,
+        &sway::Expression::create_function_calls(
+            Some(container.clone()),
+            &[("read", Some((None, vec![])))],
+        ),
+    ) {
         return Ok(result);
     }
 
@@ -349,7 +362,7 @@ pub fn translate_member_access_expression(
 fn translate_builtin_function_call_member_access_expression(
     project: &mut Project,
     module: Rc<RefCell<ir::Module>>,
-    _scope: Rc<RefCell<ir::Scope>>,
+    scope: Rc<RefCell<ir::Scope>>,
     function: &solidity::Expression,
     parameters: &[solidity::Expression],
     member: &str,
@@ -373,8 +386,14 @@ fn translate_builtin_function_call_member_access_expression(
                 );
             }
 
-            let type_name =
-                translate_type_name(project, module.clone(), &parameters[0], false, false);
+            let type_name = translate_type_name(
+                project,
+                module.clone(),
+                scope.clone(),
+                &parameters[0],
+                false,
+                false,
+            );
 
             let type_name = module.borrow().get_underlying_type(&type_name);
 

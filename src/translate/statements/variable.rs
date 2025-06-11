@@ -18,6 +18,7 @@ pub fn translate_variable_definition_statement(
     let mut type_name = translate_type_name(
         project,
         module.clone(),
+        scope.clone(),
         &variable_declaration.ty,
         false,
         false,
@@ -47,7 +48,8 @@ pub fn translate_variable_definition_statement(
             panic!("Unexpected new expression: {new_expression} - {new_expression:#?}",);
         };
 
-        let new_type_name = translate_type_name(project, module.clone(), ty, false, false);
+        let new_type_name =
+            translate_type_name(project, module.clone(), scope.clone(), ty, false, false);
 
         if type_name != new_type_name {
             panic!(

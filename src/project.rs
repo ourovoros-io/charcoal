@@ -508,10 +508,7 @@ impl Project {
         None
     }
 
-    pub fn resolve_use(
-        &mut self,
-        use_expr: &sway::Use,
-    ) -> Option<Rc<RefCell<ir::Module>>> {
+    pub fn resolve_use(&mut self, use_expr: &sway::Use) -> Option<Rc<RefCell<ir::Module>>> {
         let sway::UseTree::Path { prefix, suffix } = &use_expr.tree else {
             return None;
         };
@@ -901,7 +898,7 @@ impl Project {
             }
 
             let declaration =
-                translate_function_declaration(self, module.clone(), function_definition)?;
+                translate_function_declaration(self, module.clone(), None, function_definition)?;
 
             module.borrow_mut().functions.push(ir::Item {
                 signature: declaration.type_name,
@@ -928,7 +925,7 @@ impl Project {
 
         for (i, type_definition) in type_definitions.into_iter().enumerate() {
             module.borrow_mut().type_definitions[type_definitions_index + i].implementation = Some(
-                translate_type_definition(self, module.clone(), &type_definition)?,
+                translate_type_definition(self, module.clone(), None, &type_definition)?,
             );
         }
 
@@ -940,21 +937,21 @@ impl Project {
 
         for (i, struct_definition) in struct_definitions.into_iter().enumerate() {
             module.borrow_mut().structs[structs_index + i].implementation = Some(
-                translate_struct_definition(self, module.clone(), &struct_definition)?,
+                translate_struct_definition(self, module.clone(), None, &struct_definition)?,
             );
         }
 
         for event_definition in event_definitions {
-            translate_event_definition(self, module.clone(), &event_definition)?;
+            translate_event_definition(self, module.clone(), None, &event_definition)?;
         }
 
         for error_definition in error_definitions {
-            translate_error_definition(self, module.clone(), &error_definition)?;
+            translate_error_definition(self, module.clone(), None, &error_definition)?;
         }
 
         for variable_definition in variable_definitions {
             let (deferred_initializations, mapping_names) =
-                translate_state_variable(self, module.clone(), &variable_definition)?;
+                translate_state_variable(self, module.clone(), None, &variable_definition)?;
             assert!(deferred_initializations.is_empty());
             assert!(mapping_names.is_empty());
         }
@@ -965,7 +962,7 @@ impl Project {
             }
 
             let (function, abi_function, impl_item) =
-                translate_function_definition(self, module.clone(), &function_definition)?;
+                translate_function_definition(self, module.clone(), None, &function_definition)?;
 
             assert!(abi_function.is_none());
             assert!(impl_item.is_none());

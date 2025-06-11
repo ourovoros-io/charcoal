@@ -61,11 +61,10 @@ pub fn translate_function_name(
 pub fn translate_function_declaration(
     project: &mut Project,
     module: Rc<RefCell<ir::Module>>,
+    contract_name: Option<&str>,
     function_definition: &solidity::FunctionDefinition,
 ) -> Result<ir::Function, Error> {
-    // let module_name = module.borrow().get_module_name();
-
-    let (old_name, new_name) = match &function_definition.ty {
+    let (old_name, mut new_name) = match &function_definition.ty {
         solidity::FunctionTy::Function | solidity::FunctionTy::Modifier => {
             let old_name = function_definition.name.as_ref().unwrap().name.clone();
             let new_name = translate_function_name(project, module.clone(), function_definition);
@@ -74,8 +73,15 @@ pub fn translate_function_declaration(
         _ => (String::new(), function_definition.ty.to_string()),
     };
 
+    if let Some(contract_name) = contract_name {
+        new_name = format!("{}_{}", contract_name.to_case(Case::Snake), new_name);
+    }
+
     // Create a scope for modifier invocation translations
-    let scope = Rc::new(RefCell::new(ir::Scope::default()));
+    let scope = Rc::new(RefCell::new(ir::Scope {
+        contract_name: contract_name.map(|s| s.to_string()),
+        ..Default::default()
+    }));
 
     // Add the function parameters to the scope
     for (_, p) in function_definition.params.iter() {
@@ -86,7 +92,8 @@ pub fn translate_function_declaration(
 
         let old_name = parameter_identifier.name.clone();
         let new_name = translate_naming_convention(old_name.as_str(), Case::Snake);
-        let type_name = translate_type_name(project, module.clone(), &p.ty, false, true);
+        let type_name =
+            translate_type_name(project, module.clone(), scope.clone(), &p.ty, false, true);
 
         scope
             .borrow_mut()
@@ -168,6 +175,7 @@ pub fn translate_function_declaration(
         let mut type_name = translate_type_name(
             project,
             module.clone(),
+            scope.clone(),
             &parameter.as_ref().unwrap().ty,
             false,
             true,
@@ -225,6 +233,7 @@ pub fn translate_function_declaration(
                     let type_name = translate_type_name(
                         project,
                         module.clone(),
+                        scope.clone(),
                         &function_definition.returns[0].1.as_ref().unwrap().ty,
                         false,
                         true,
@@ -239,6 +248,7 @@ pub fn translate_function_declaration(
                                 let type_name = translate_type_name(
                                     project,
                                     module.clone(),
+                                    scope.clone(),
                                     &p.as_ref().unwrap().ty,
                                     false,
                                     true,
@@ -259,6 +269,7 @@ pub fn translate_function_declaration(
 pub fn translate_modifier_definition(
     project: &mut Project,
     module: Rc<RefCell<ir::Module>>,
+    contract_name: Option<&str>,
     function_definition: &solidity::FunctionDefinition,
 ) -> Result<(), Error> {
     let old_name = function_definition.name.as_ref().unwrap().name.clone();
@@ -306,7 +317,10 @@ pub fn translate_modifier_definition(
         post_body: None,
     };
 
-    let scope = Rc::new(RefCell::new(ir::Scope::default()));
+    let scope = Rc::new(RefCell::new(ir::Scope {
+        contract_name: contract_name.map(|s| s.to_string()),
+        ..Default::default()
+    }));
 
     for (_, p) in function_definition.params.iter() {
         let old_name = p
@@ -328,6 +342,7 @@ pub fn translate_modifier_definition(
         let type_name = translate_type_name(
             project,
             module.clone(),
+            scope.clone(),
             &p.as_ref().unwrap().ty,
             false,
             true,
@@ -619,6 +634,7 @@ pub fn translate_modifier_definition(
 pub fn translate_function_definition(
     project: &mut Project,
     module: Rc<RefCell<ir::Module>>,
+    contract_name: Option<&str>,
     function_definition: &solidity::FunctionDefinition,
 ) -> Result<
     (
@@ -632,6 +648,12 @@ pub fn translate_function_definition(
         function_definition.ty,
         solidity::FunctionTy::Modifier
     ));
+
+    // Create the scope for the body of the toplevel function
+    let scope = Rc::new(RefCell::new(ir::Scope {
+        contract_name: contract_name.map(|s| s.to_string()),
+        ..Default::default()
+    }));
 
     // Collect information about the function from its type
     let is_constructor = matches!(function_definition.ty, solidity::FunctionTy::Constructor);
@@ -697,7 +719,7 @@ pub fn translate_function_definition(
         translate_function_name(project, module.clone(), function_definition)
     };
 
-    let (old_name, new_name) = if matches!(
+    let (old_name, mut new_name) = if matches!(
         function_definition.ty,
         solidity::FunctionTy::Function | solidity::FunctionTy::Modifier
     ) {
@@ -706,6 +728,10 @@ pub fn translate_function_definition(
     } else {
         (String::new(), new_name_2.clone())
     };
+
+    if let Some(contract_name) = contract_name {
+        new_name = format!("{}_{}", contract_name.to_case(Case::Snake), new_name);
+    }
 
     // println!(
     //     "Translating function {}.{} {}",
@@ -757,6 +783,7 @@ pub fn translate_function_definition(
         let mut type_name = translate_type_name(
             project,
             module.clone(),
+            scope.clone(),
             &parameter.as_ref().unwrap().ty,
             false,
             true,
@@ -831,6 +858,7 @@ pub fn translate_function_definition(
                 let type_name = translate_type_name(
                     project,
                     module.clone(),
+                    scope.clone(),
                     &function_definition.returns[0].1.as_ref().unwrap().ty,
                     false,
                     true,
@@ -845,6 +873,7 @@ pub fn translate_function_definition(
                             let type_name = translate_type_name(
                                 project,
                                 module.clone(),
+                                scope.clone(),
                                 &p.as_ref().unwrap().ty,
                                 false,
                                 true,
@@ -896,9 +925,6 @@ pub fn translate_function_definition(
         return Ok((sway_function, None, None));
     };
 
-    // Create the scope for the body of the toplevel function
-    let scope = Rc::new(RefCell::new(ir::Scope::default()));
-
     // Add the function parameters to the scope
     let mut parameters = vec![];
 
@@ -913,6 +939,7 @@ pub fn translate_function_definition(
         let mut type_name = translate_type_name(
             project,
             module.clone(),
+            scope.clone(),
             &p.as_ref().unwrap().ty,
             false,
             true,
@@ -971,8 +998,14 @@ pub fn translate_function_definition(
 
         let new_name = translate_naming_convention(old_name.as_str(), Case::Snake);
 
-        let mut type_name =
-            translate_type_name(project, module.clone(), &return_parameter.ty, false, true);
+        let mut type_name = translate_type_name(
+            project,
+            module.clone(),
+            scope.clone(),
+            &return_parameter.ty,
+            false,
+            true,
+        );
 
         let mut abi_type_name = None;
 
@@ -1023,7 +1056,10 @@ pub fn translate_function_definition(
             format!("{prefix}_constructor_called").as_str(),
         );
 
-        let namespace_name = module.borrow().get_storage_namespace_name();
+        let namespace_name = module
+            .borrow()
+            .get_storage_namespace_name(scope.clone())
+            .unwrap();
         let mut has_field = false;
 
         if let Some(storage) = module.borrow().storage.as_ref() {
@@ -1041,7 +1077,8 @@ pub fn translate_function_definition(
             // Add the `constructor_called` field to the storage block
             module
                 .borrow_mut()
-                .get_storage_namespace()
+                .get_storage_namespace(scope.clone())
+                .unwrap()
                 .fields
                 .push(sway::StorageField {
                     old_name: String::new(),
@@ -1136,7 +1173,10 @@ pub fn translate_function_definition(
 
     // Propagate the return variable declarations
     for return_parameter in return_parameters.iter().rev() {
-        let scope = Rc::new(RefCell::new(ir::Scope::default()));
+        let scope = Rc::new(RefCell::new(ir::Scope {
+            contract_name: contract_name.map(|s| s.to_string()),
+            ..Default::default()
+        }));
 
         function_body.statements.insert(
             0,

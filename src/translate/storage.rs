@@ -6,8 +6,14 @@ use std::{cell::RefCell, rc::Rc};
 pub fn translate_state_variable(
     project: &mut Project,
     module: Rc<RefCell<ir::Module>>,
+    contract_name: Option<&str>,
     variable_definition: &solidity::VariableDefinition,
 ) -> Result<(Vec<ir::DeferredInitialization>, Vec<(String, Vec<String>)>), Error> {
+    let value_scope = Rc::new(RefCell::new(ir::Scope {
+        contract_name: contract_name.map(|s| s.to_string()),
+        ..Default::default()
+    }));
+
     // Collect information about the variable from its attributes
     let is_public = variable_definition.attrs.iter().any(|x| {
         matches!(
@@ -56,6 +62,7 @@ pub fn translate_state_variable(
     let mut variable_type_name = translate_type_name(
         project,
         module.clone(),
+        value_scope.clone(),
         &variable_definition.ty,
         is_storage,
         false,
@@ -87,7 +94,6 @@ pub fn translate_state_variable(
     }
 
     // Translate the variable's initial value
-    let value_scope = Rc::new(RefCell::new(ir::Scope::default()));
 
     let mut deferred_initializations = vec![];
     let mut mapping_names = vec![];
@@ -209,7 +215,8 @@ pub fn translate_state_variable(
                             let mapping_field_name = format!("{struct_name}_{}s", field.name);
 
                             let mut module = module.borrow_mut();
-                            let storage = module.get_storage_namespace();
+                            let storage =
+                                module.get_storage_namespace(value_scope.clone()).unwrap();
 
                             if let Some(field) = storage
                                 .fields
@@ -345,7 +352,10 @@ pub fn translate_state_variable(
 
     // Handle constant variable definitions
     if is_constant {
-        let scope = Rc::new(RefCell::new(ir::Scope::default()));
+        let scope = Rc::new(RefCell::new(ir::Scope {
+            contract_name: contract_name.map(|s| s.to_string()),
+            ..Default::default()
+        }));
 
         // Evaluate the value ahead of time in order to generate an appropriate constant value expression
         let value = evaluate_expression(
@@ -385,7 +395,8 @@ pub fn translate_state_variable(
     else if storage_namespace.is_some() {
         module
             .borrow_mut()
-            .get_storage_namespace()
+            .get_storage_namespace(value_scope.clone())
+            .unwrap()
             .fields
             .push(sway::StorageField {
                 old_name: old_name.clone(),

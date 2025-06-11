@@ -56,6 +56,7 @@ pub struct Modifier {
 
 #[derive(Default, Debug, Clone)]
 pub struct Scope {
+    pub contract_name: Option<String>,
     pub parent: Option<Rc<RefCell<Scope>>>,
     pub variables: Vec<Rc<RefCell<Variable>>>,
 }
@@ -71,6 +72,20 @@ impl Scope {
         for v in self.variables.iter() {
             println!("{v:#?}");
         }
+    }
+
+    pub fn get_contract_name(&self) -> Option<String> {
+        if let Some(contract_name) = self.contract_name.as_ref() {
+            return Some(contract_name.clone());
+        }
+
+        if let Some(parent) = self.parent.as_ref() {
+            if let Some(contract_name) = parent.borrow().get_contract_name() {
+                return Some(contract_name.clone());
+            }
+        }
+
+        None
     }
 
     #[inline]
@@ -289,8 +304,11 @@ impl Module {
 
     /// Attempt to get storage namespace by name from the translated definition. If it doesn't exist, it gets created.
     #[inline]
-    pub fn get_storage_namespace(&mut self) -> &mut sway::StorageNamespace {
-        let namespace_name = self.get_storage_namespace_name();
+    pub fn get_storage_namespace(
+        &mut self,
+        scope: Rc<RefCell<Scope>>,
+    ) -> Option<&mut sway::StorageNamespace> {
+        let namespace_name = self.get_storage_namespace_name(scope.clone())?;
         let storage = self.get_storage();
 
         if !storage.namespaces.iter().any(|s| s.name == namespace_name) {
@@ -305,13 +323,14 @@ impl Module {
             .namespaces
             .iter_mut()
             .find(|s| s.name == namespace_name)
-            .unwrap()
     }
 
     /// Gets the name of the storage namespace from the translated definition.
     #[inline]
-    pub fn get_storage_namespace_name(&self) -> String {
-        translate_naming_convention(&self.name, Case::Snake)
+    pub fn get_storage_namespace_name(&self, scope: Rc<RefCell<Scope>>) -> Option<String> {
+        let contract_name = scope.borrow().get_contract_name()?;
+
+        Some(translate_naming_convention(&contract_name, Case::Snake))
     }
 
     /// Attempts to find the translated definitions `impl` block mutability, if available.

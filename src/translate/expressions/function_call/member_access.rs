@@ -804,6 +804,7 @@ pub fn translate_builtin_abi_member_access_function_call(
                         translate_type_name(
                             project,
                             module.clone(),
+                            scope.clone(),
                             &p.as_ref().unwrap().ty,
                             false,
                             false,
@@ -817,6 +818,7 @@ pub fn translate_builtin_abi_member_access_function_call(
                     vec![translate_type_name(
                         project,
                         module.clone(),
+                        scope.clone(),
                         expression,
                         false,
                         false,

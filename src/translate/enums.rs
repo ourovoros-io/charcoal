@@ -60,14 +60,21 @@ pub fn translate_enum_definition(
 pub fn translate_event_definition(
     project: &mut Project,
     module: Rc<RefCell<ir::Module>>,
+    contract_name: Option<&str>,
     event_definition: &solidity::EventDefinition,
 ) -> Result<(), Error> {
     let events_enum_name = format!("{}Event", module.borrow().name);
+
+    let scope = Rc::new(RefCell::new(ir::Scope {
+        contract_name: contract_name.map(|s| s.to_string()),
+        ..Default::default()
+    }));
 
     let type_name = if event_definition.fields.len() == 1 {
         match translate_type_name(
             project,
             module.clone(),
+            scope.clone(),
             &event_definition.fields[0].ty,
             false,
             false,
@@ -96,8 +103,15 @@ pub fn translate_event_definition(
             type_names: event_definition
                 .fields
                 .iter()
-                .map(
-                    |f| match translate_type_name(project, module.clone(), &f.ty, false, false) {
+                .map(|f| {
+                    match translate_type_name(
+                        project,
+                        module.clone(),
+                        scope.clone(),
+                        &f.ty,
+                        false,
+                        false,
+                    ) {
                         sway::TypeName::Identifier {
                             name,
                             generic_parameters,
@@ -116,8 +130,8 @@ pub fn translate_event_definition(
                         }
 
                         type_name => type_name,
-                    },
-                )
+                    }
+                })
                 .collect(),
         }
     };
@@ -171,14 +185,21 @@ pub fn translate_event_definition(
 pub fn translate_error_definition(
     project: &mut Project,
     module: Rc<RefCell<ir::Module>>,
+    contract_name: Option<&str>,
     error_definition: &solidity::ErrorDefinition,
 ) -> Result<(), Error> {
     let errors_enum_name = format!("{}Error", module.borrow().name);
+
+    let scope = Rc::new(RefCell::new(ir::Scope {
+        contract_name: contract_name.map(|s| s.to_string()),
+        ..Default::default()
+    }));
 
     let type_name = if error_definition.fields.len() == 1 {
         translate_type_name(
             project,
             module.clone(),
+            scope.clone(),
             &error_definition.fields[0].ty,
             false,
             false,
@@ -188,7 +209,9 @@ pub fn translate_error_definition(
             type_names: error_definition
                 .fields
                 .iter()
-                .map(|f| translate_type_name(project, module.clone(), &f.ty, false, false))
+                .map(|f| {
+                    translate_type_name(project, module.clone(), scope.clone(), &f.ty, false, false)
+                })
                 .collect(),
         }
     };

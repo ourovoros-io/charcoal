@@ -1,7 +1,7 @@
 use crate::{error::Error, project::Project, sway, translate::*};
 use num_bigint::BigUint;
 use num_traits::{Num, Zero};
-use solang_parser::pt as solidity;
+use solang_parser::{helpers::CodeLocation, pt as solidity};
 use std::{cell::RefCell, rc::Rc};
 
 mod address_call;
@@ -364,10 +364,28 @@ pub fn translate_expression(
 ) -> Result<sway::Expression, Error> {
     // println!(
     //     "Translating expression: {expression}; from {}",
-    //     match project.loc_to_line_and_column(&module.path, &expression.loc()) {
-    //         Some((line, col)) => format!("{}:{}:{}: ", module.path.to_string_lossy(), line, col),
-    //         None => format!("{}: ", module.path.to_string_lossy()),
-    //     },
+    //     match project.loc_to_line_and_column(module.clone(), &expression.loc()) {
+    //         Some((line, col)) => format!(
+    //             "{}:{}:{}: ",
+    //             project
+    //                 .options
+    //                 .input
+    //                 .join(module.borrow().path.clone())
+    //                 .with_extension("sol")
+    //                 .to_string_lossy(),
+    //             line,
+    //             col
+    //         ),
+    //         None => format!(
+    //             "{}: ",
+    //             project
+    //                 .options
+    //                 .input
+    //                 .join(module.borrow().path.clone())
+    //                 .with_extension("sol")
+    //                 .to_string_lossy()
+    //         ),
+    //     }
     // );
 
     match expression {
