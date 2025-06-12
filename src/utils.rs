@@ -1,4 +1,3 @@
-
 /// Find a key in a [toml::Table] and return the [toml::Value]
 #[inline(always)]
 pub fn find_in_toml_value(value: &toml::Value, section: &str, key: &str) -> Option<toml::Value> {

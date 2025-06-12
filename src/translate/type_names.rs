@@ -26,7 +26,7 @@ pub fn translate_return_type_name(
                 generic_parameters: None,
             } = &type_name
             {
-                if project.find_module_with_contract(&name).is_some() {
+                if project.find_contract(&name).is_some() {
                     return sway::TypeName::Identifier {
                         name: "Identity".into(),
                         generic_parameters: None,
@@ -434,7 +434,7 @@ pub fn translate_type_name(
             }
 
             // Check if type is an ABI
-            if project.find_module_with_contract(name).is_some() {
+            if project.find_contract(name).is_some() {
                 //
                 // TODO: add a use statement for the external definition into the current module
                 //
@@ -491,7 +491,11 @@ pub fn translate_type_name(
                 length: {
                     // Create an empty scope to translate the array length expression
                     let scope = Rc::new(RefCell::new(ir::Scope::new(
-                        scope.borrow().get_contract_name().as_ref().map(|s| s.as_str()),
+                        scope
+                            .borrow()
+                            .get_contract_name()
+                            .as_ref()
+                            .map(|s| s.as_str()),
                         Some(scope.clone()),
                     )));
 

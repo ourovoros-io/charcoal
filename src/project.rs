@@ -540,7 +540,7 @@ impl Project {
                 continue;
             }
 
-            let comp = comp
+            let mut comp = comp
                 .as_os_str()
                 .to_string_lossy()
                 .to_string()
@@ -550,8 +550,8 @@ impl Project {
             if first {
                 first = false;
 
-                if let "lib" | "src" = comp.as_str() {
-                    continue;
+                if let "lib" | "src" | "main" = comp.as_str() {
+                    comp = format!("_{comp}");
                 }
             }
 
@@ -594,12 +594,17 @@ impl Project {
                 continue;
             }
 
-            let comp = comp
+            let mut comp = comp
                 .as_os_str()
                 .to_string_lossy()
                 .to_string()
                 .replace(".", "_")
                 .to_case(Case::Snake);
+
+            if let "lib" | "src" | "main" = comp.as_str() {
+                comp = format!("_{comp}");
+            }
+
             match parent_module.clone() {
                 Some(parent) => {
                     if let Some(module) = parent
@@ -639,12 +644,16 @@ impl Project {
             .collect::<Vec<_>>();
         current_path.push(components[0].clone());
 
-        let component = components[0]
+        let mut component = components[0]
             .as_os_str()
             .to_string_lossy()
             .to_string()
             .replace(".", "_")
             .to_case(Case::Snake);
+
+        if let "lib" | "src" | "main" = component.as_str() {
+            component = format!("_{component}");
+        }
 
         let mut parent_module = match self
             .translated_modules
@@ -666,12 +675,16 @@ impl Project {
 
         for component in &components[1..] {
             current_path.push(component.clone());
-            let component = component
+            let mut component = component
                 .as_os_str()
                 .to_string_lossy()
                 .to_string()
                 .replace(".", "_")
                 .to_case(Case::Snake);
+
+            if let "lib" | "src" | "main" = component.as_str() {
+                component = format!("_{component}");
+            }
 
             let found = parent_module
                 .borrow()
@@ -699,6 +712,38 @@ impl Project {
         }
 
         parent_module
+    }
+
+    pub fn find_contract(&mut self, contract_name: &str) -> Option<Rc<RefCell<ir::Contract>>> {
+        fn check_module(
+            module: Rc<RefCell<ir::Module>>,
+            contract_name: &str,
+        ) -> Option<Rc<RefCell<ir::Contract>>> {
+            if let Some(contract) = module
+                .borrow()
+                .contracts
+                .iter()
+                .find(|c| c.borrow().name == contract_name)
+            {
+                return Some(contract.clone());
+            }
+
+            for module in module.borrow().submodules.iter() {
+                if let Some(contract) = check_module(module.clone(), contract_name) {
+                    return Some(contract.clone());
+                }
+            }
+
+            None
+        }
+
+        for module in self.translated_modules.iter() {
+            if let Some(contract) = check_module(module.clone(), contract_name) {
+                return Some(contract.clone());
+            }
+        }
+
+        None
     }
 
     pub fn find_module_with_contract(
@@ -1008,7 +1053,7 @@ impl Project {
             let mut first = true;
 
             for component in dirty_module_path.components() {
-                let component = component
+                let mut component = component
                     .as_os_str()
                     .to_string_lossy()
                     .to_string()
@@ -1018,8 +1063,8 @@ impl Project {
                 if first {
                     first = false;
 
-                    if let "lib" | "src" = component.as_str() {
-                        continue;
+                    if let "lib" | "src" | "main" = component.as_str() {
+                        component = format!("_{component}");
                     }
                 }
 
@@ -1043,7 +1088,7 @@ impl Project {
                 .borrow()
                 .path
                 .file_stem()
-                .map(|p| matches!(p.to_str().unwrap(), "lib" | "src"))
+                .map(|p| matches!(p.to_str().unwrap(), "lib" | "src" | "main"))
                 .unwrap_or(false)
             {
                 lib_module.items.extend(

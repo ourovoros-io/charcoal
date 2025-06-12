@@ -713,6 +713,14 @@ pub fn create_value_expression(
             name,
             generic_parameters,
         } => match (name.as_str(), generic_parameters.as_ref()) {
+            ("todo!", None) => match value {
+                Some(value) => value.clone(),
+                None => sway::Expression::create_function_calls(
+                    None,
+                    &[("todo!", Some((None, vec![])))],
+                ),
+            },
+
             ("bool", None) => match value {
                 None => sway::Expression::Literal(sway::Literal::Bool(false)),
                 Some(sway::Expression::Literal(sway::Literal::Bool(value))) => {

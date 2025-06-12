@@ -1122,7 +1122,7 @@ impl Module {
                 }));
             }
 
-            "ContractId::this" => {
+            "ContractId::from" | "ContractId::this" => {
                 return Ok(Some(sway::TypeName::Identifier {
                     name: "ContractId".into(),
                     generic_parameters: None,
@@ -2867,6 +2867,15 @@ impl Module {
                     "get type of function call expression: {} - {member_access:#?}",
                     sway::TabbedDisplayer(member_access)
                 ),
+            },
+
+            sway::TypeName::Array { .. } => match member_access.member.as_str() {
+                "len" => Ok(sway::TypeName::Identifier {
+                    name: "u64".into(),
+                    generic_parameters: None,
+                }),
+
+                value => todo!("{value}"),
             },
 
             _ => todo!(

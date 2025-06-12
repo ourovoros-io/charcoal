@@ -131,10 +131,7 @@ pub fn translate_function_declaration(
             .unwrap_or_else(|| Ok(vec![]))?;
 
         // Check to see if base is a constructor call
-        if project
-            .find_module_with_contract(old_name.as_str())
-            .is_some()
-        {
+        if project.find_contract(old_name.as_str()).is_some() {
             let prefix = translate_naming_convention(old_name.as_str(), Case::Snake);
             let name = format!("{prefix}_constructor");
 
@@ -183,7 +180,7 @@ pub fn translate_function_declaration(
             generic_parameters: None,
         } = &type_name
         {
-            if project.find_module_with_contract(&name).is_some() {
+            if project.find_contract(&name).is_some() {
                 type_name = sway::TypeName::Identifier {
                     name: "Identity".into(),
                     generic_parameters: None,
@@ -794,7 +791,7 @@ pub fn translate_function_definition(
             generic_parameters: None,
         } = &type_name
         {
-            if project.find_module_with_contract(&name).is_some() {
+            if project.find_contract(&name).is_some() {
                 type_name = sway::TypeName::Identifier {
                     name: "Identity".into(),
                     generic_parameters: None,
@@ -921,6 +918,10 @@ pub fn translate_function_definition(
     // Convert the statements in the function's body (if any)
     let Some(solidity::Statement::Block { statements, .. }) = function_definition.body.as_ref()
     else {
+        if contract_name.is_some() {
+            sway_function.name = new_name_2;
+        }
+
         return Ok((sway_function, None, None));
     };
 
@@ -951,7 +952,7 @@ pub fn translate_function_definition(
             generic_parameters: None,
         } = &type_name
         {
-            if let Some(_external_definition) = project.find_module_with_contract(&name) {
+            if let Some(_external_definition) = project.find_contract(&name) {
                 // TODO:
                 // for entry in external_definition.uses.iter() {
                 //     if !module.uses.contains(entry) {
@@ -1014,7 +1015,7 @@ pub fn translate_function_definition(
             generic_parameters: None,
         } = &type_name
         {
-            if project.find_module_with_contract(&name).is_some() {
+            if project.find_contract(&name).is_some() {
                 abi_type_name = Some(type_name.clone());
 
                 type_name = sway::TypeName::Identifier {
@@ -1373,10 +1374,14 @@ pub fn translate_function_definition(
             )),
         });
 
-        sway_function.name = new_name_2;
+        sway_function.name = new_name_2.clone();
 
         // Create the function wrapper item for the contract impl block
         impl_item = Some(sway::ImplItem::Function(sway_function.clone()));
+    }
+
+    if abi_fn.is_none() && toplevel_function.body.is_none() {
+        toplevel_function.name = new_name_2;
     }
 
     Ok((toplevel_function, abi_fn, impl_item))

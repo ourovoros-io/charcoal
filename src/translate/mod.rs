@@ -723,6 +723,28 @@ pub fn coerce_expression(
                 _ => todo!("{}", sway::TabbedDisplayer(&to_type_name)),
             },
 
+            ("b256", None) => match from_type_name {
+                sway::TypeName::Array { type_name, length } => match type_name.as_ref() {
+                    sway::TypeName::Identifier {
+                        name,
+                        generic_parameters,
+                    } => match (name.as_str(), generic_parameters.as_ref(), *length) {
+                        ("u8", None, 32) => {
+                            expression = sway::Expression::create_function_calls(
+                                None,
+                                &[("b256::from_be_bytes", Some((None, vec![expression])))],
+                            )
+                        }
+
+                        _ => return None,
+                    },
+
+                    _ => return None,
+                },
+
+                _ => return None,
+            },
+
             _ => return None,
         },
 

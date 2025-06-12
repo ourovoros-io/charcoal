@@ -73,7 +73,7 @@ pub fn translate_state_variable(
         generic_parameters: None,
     } = &variable_type_name
     {
-        if project.find_module_with_contract(name.as_str()).is_some() {
+        if project.find_contract(name.as_str()).is_some() {
             // TODO:
             // for entry in external_definition.uses.iter() {
             //     if !module.uses.contains(entry) {
@@ -215,7 +215,8 @@ pub fn translate_state_variable(
                             let storage =
                                 module.get_storage_namespace(value_scope.clone()).unwrap();
 
-                            if let Some(field) = storage.borrow()
+                            if let Some(field) = storage
+                                .borrow()
                                 .fields
                                 .iter()
                                 .find(|f| f.name == instance_field_name)
@@ -240,8 +241,11 @@ pub fn translate_state_variable(
                                 });
                             }
 
-                            if let Some(field) =
-                                storage.borrow().fields.iter().find(|f| f.name == mapping_field_name)
+                            if let Some(field) = storage
+                                .borrow()
+                                .fields
+                                .iter()
+                                .find(|f| f.name == mapping_field_name)
                             {
                                 if let Some((k, v)) = field.type_name.storage_map_type() {
                                     assert!(
@@ -382,6 +386,7 @@ pub fn translate_state_variable(
                 old_name,
                 name: new_name.clone(),
                 type_name: variable_type_name.clone(),
+                abi_type_name,
                 value,
             });
     }

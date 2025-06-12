@@ -203,7 +203,7 @@ pub fn translate_variable_access_expression(
 
             Ok(Some(ir::VariableAccess {
                 variable,
-                expression: match type_name {
+                expression: match &type_name {
                     sway::TypeName::Identifier {
                         name,
                         generic_parameters,
@@ -300,8 +300,18 @@ pub fn translate_variable_access_expression(
                                     ),
                                 },
 
+                                sway::TypeName::Array { .. } => {
+                                    sway::Expression::from(sway::ArrayAccess {
+                                        expression: sway::Expression::create_function_calls(
+                                            Some(expression),
+                                            &[("read", Some((None, vec![])))],
+                                        ),
+                                        index,
+                                    })
+                                }
+
                                 _ => todo!(
-                                    "{}TODO: translate {name} array subscript expression: {solidity_expression} - {} {expression:#?}",
+                                    "{}TODO: translate {} array subscript expression: {solidity_expression} - {} {expression:#?}",
                                     match project.loc_to_line_and_column(
                                         module.clone(),
                                         &solidity_expression.loc()
@@ -327,6 +337,7 @@ pub fn translate_variable_access_expression(
                                                 .to_string_lossy()
                                         ),
                                     },
+                                    type_name,
                                     sway::TabbedDisplayer(&expression),
                                 ),
                             }

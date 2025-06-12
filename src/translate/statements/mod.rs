@@ -1,5 +1,5 @@
 use crate::{error::Error, project::Project, translate::*};
-use solang_parser::pt as solidity;
+use solang_parser::{helpers::CodeLocation, pt as solidity};
 use std::{cell::RefCell, rc::Rc};
 
 mod arguments;
@@ -34,6 +34,32 @@ pub fn translate_statement(
     scope: Rc<RefCell<ir::Scope>>,
     statement: &solidity::Statement,
 ) -> Result<sway::Statement, Error> {
+    // println!(
+    //     "Translating statement {}",
+    //     match project.loc_to_line_and_column(module.clone(), &statement.loc()) {
+    //         Some((line, col)) => format!(
+    //             "at {}:{}:{}",
+    //             project
+    //                 .options
+    //                 .input
+    //                 .join(module.borrow().path.clone())
+    //                 .with_extension("sol")
+    //                 .to_string_lossy(),
+    //             line,
+    //             col
+    //         ),
+    //         None => format!(
+    //             "in {}...",
+    //             project
+    //                 .options
+    //                 .input
+    //                 .join(module.borrow().path.clone())
+    //                 .with_extension("sol")
+    //                 .to_string_lossy()
+    //         ),
+    //     },
+    // );
+
     match statement {
         solidity::Statement::Block { statements, .. } => {
             translate_block_statement(project, module, scope.clone(), statements)
@@ -47,9 +73,14 @@ pub fn translate_statement(
         solidity::Statement::Args(_, named_arguments) => {
             translate_args_statement(project, module, scope.clone(), named_arguments)
         }
-        solidity::Statement::If(_, condition, then_body, else_if) => {
-            translate_if_statement(project, module, scope.clone(), condition, then_body, else_if)
-        }
+        solidity::Statement::If(_, condition, then_body, else_if) => translate_if_statement(
+            project,
+            module,
+            scope.clone(),
+            condition,
+            then_body,
+            else_if,
+        ),
         solidity::Statement::While(_, condition, body) => {
             translate_while_statement(project, module, scope.clone(), condition, body)
         }

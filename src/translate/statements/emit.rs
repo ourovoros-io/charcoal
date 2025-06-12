@@ -34,39 +34,61 @@ pub fn translate_emit_statement(
                             for variant in events_enum.0.borrow().variants.clone() {
                                 if variant.name == event_variant_name {
                                     if !module.borrow().events_enums.contains(events_enum) {
-                                        module.borrow_mut()
-                                            .events_enums
-                                            .push(events_enum.clone());
+                                        module.borrow_mut().events_enums.push(events_enum.clone());
                                     }
 
-                                    return Ok(sway::Statement::from(sway::Expression::create_function_calls(None, &[
-                                        ("log", Some((None, vec![
-                                            if arguments.is_empty() {
-                                                sway::Expression::create_identifier(format!(
-                                                    "{}::{}",
-                                                    events_enum.0.borrow().name,
-                                                    event_variant_name,
-                                                ))
-                                            } else {
-                                                sway::Expression::create_function_calls(None, &[
-                                                    (format!(
-                                                        "{}::{}",
-                                                        events_enum.0.borrow().name,
-                                                        event_variant_name,
-                                                    ).as_str(), Some((None, vec![
-                                                        if arguments.len() == 1 {
-                                                            let argument = translate_expression(
-                                                                project,
-                                                                module.clone(),
-                                                                scope.clone(),
-                                                                &arguments[0],
-                                                            )?;
-                                                            
-                                                            let argument_type = module.borrow_mut().get_expression_type(project, scope.clone(), &argument)?;
-                                                            
-                                                            coerce_expression(&argument, &argument_type, &variant.type_name).unwrap()
-                                                        } else {
-                                                            let mut arguments = arguments
+                                    return Ok(sway::Statement::from(
+                                        sway::Expression::create_function_calls(
+                                            None,
+                                            &[(
+                                                "log",
+                                                Some((
+                                                    None,
+                                                    vec![if arguments.is_empty() {
+                                                        sway::Expression::create_identifier(
+                                                            format!(
+                                                                "{}::{}",
+                                                                events_enum.0.borrow().name,
+                                                                event_variant_name,
+                                                            ),
+                                                        )
+                                                    } else {
+                                                        sway::Expression::create_function_calls(
+                                                            None,
+                                                            &[(
+                                                                format!(
+                                                                    "{}::{}",
+                                                                    events_enum.0.borrow().name,
+                                                                    event_variant_name,
+                                                                )
+                                                                .as_str(),
+                                                                Some((
+                                                                    None,
+                                                                    vec![if arguments.len() == 1 {
+                                                                        let argument =
+                                                                            translate_expression(
+                                                                                project,
+                                                                                module.clone(),
+                                                                                scope.clone(),
+                                                                                &arguments[0],
+                                                                            )?;
+
+                                                                        let argument_type = module
+                                                                            .borrow_mut()
+                                                                            .get_expression_type(
+                                                                                project,
+                                                                                scope.clone(),
+                                                                                &argument,
+                                                                            )?;
+
+                                                                        coerce_expression(
+                                                                            &argument,
+                                                                            &argument_type,
+                                                                            &variant.type_name,
+                                                                        )
+                                                                        .unwrap()
+                                                                    } else {
+                                                                        let mut arguments = arguments
                                                                 .iter()
                                                                 .map(|p| {
                                                                     translate_expression(
@@ -78,24 +100,36 @@ pub fn translate_emit_statement(
                                                                 })
                                                                 .collect::<Result<Vec<_>, _>>()?;
 
-                                                            let mut arguments_types = arguments.iter().map(|a| module.borrow_mut().get_expression_type(project, scope.clone(), a).unwrap()).collect::<Vec<_>>();
+                                                                        let mut arguments_types = arguments.iter().map(|a| module.borrow_mut().get_expression_type(project, scope.clone(), a).unwrap()).collect::<Vec<_>>();
 
-                                                            let sway::TypeName::Tuple { ref type_names } = variant.type_name else { panic!("Expected a tuple") };
+                                                                        let sway::TypeName::Tuple {
+                                                                            ref type_names,
+                                                                        } = variant.type_name
+                                                                        else {
+                                                                            panic!(
+                                                                                "Expected a tuple"
+                                                                            )
+                                                                        };
 
-                                                            let coerced: Vec<sway::Expression> = arguments
+                                                                        let coerced: Vec<sway::Expression> = arguments
                                                                 .iter_mut().zip(arguments_types.iter_mut().zip(type_names))
-                                                                .map(|(expr, (from_type_name, to_type_name))| {                                        
+                                                                .map(|(expr, (from_type_name, to_type_name))| {                    
                                                                     coerce_expression(expr, from_type_name, to_type_name).unwrap()
                                                                 })
                                                                 .collect();
-                                                            
-                                                            sway::Expression::Tuple(coerced)
-                                                        },
-                                                    ]))),
-                                                ])
-                                            },
-                                        ])))
-                                    ])));
+
+                                                                        sway::Expression::Tuple(
+                                                                            coerced,
+                                                                        )
+                                                                    }],
+                                                                )),
+                                                            )],
+                                                        )
+                                                    }],
+                                                )),
+                                            )],
+                                        ),
+                                    ));
                                 }
                             }
                         }
@@ -107,8 +141,16 @@ pub fn translate_emit_statement(
                 _ => todo!(),
             };
 
-            if let Some(event_variant) = resolve_symbol(project, module.clone(), Symbol::Event(event_variant_name.clone())) {
-                let Some((event_enum_name, event_variant)) = event_variant.downcast_ref::<(String, sway::EnumVariant)>() else { panic!("Invalid enum variant") };
+            if let Some(event_variant) = resolve_symbol(
+                project,
+                module.clone(),
+                Symbol::Event(event_variant_name.clone()),
+            ) {
+                let Some((event_enum_name, event_variant)) =
+                    event_variant.downcast_ref::<(String, sway::EnumVariant)>()
+                else {
+                    panic!("Invalid enum variant")
+                };
 
                 return Ok(sway::Statement::from(sway::Expression::from(
                     sway::FunctionCall {
@@ -117,51 +159,87 @@ pub fn translate_emit_statement(
                         parameters: vec![if arguments.is_empty() {
                             sway::Expression::create_identifier(format!(
                                 "{}::{}",
-                                event_enum_name,
-                                event_variant_name,
+                                event_enum_name, event_variant_name,
                             ))
                         } else {
-                            sway::Expression::create_function_calls(None, &[
-                                (format!("{}::{}", event_enum_name, event_variant_name).as_str(), Some((None, vec![
-                                    if arguments.len() == 1 {
-                                        let argument = translate_expression(
-                                            project,
-                                            module.clone(),
-                                            scope.clone(),
-                                            &arguments[0],
-                                        )?;
-                                        
-                                        let argument_type = module.borrow_mut().get_expression_type(project, scope.clone(), &argument)?;
-                                        
-                                        coerce_expression(&argument, &argument_type, &event_variant.type_name).unwrap()
-                                    } else {
-                                        let mut arguments = arguments
-                                            .iter()
-                                            .map(|p| {
-                                                translate_expression(
+                            sway::Expression::create_function_calls(
+                                None,
+                                &[(
+                                    format!("{}::{}", event_enum_name, event_variant_name).as_str(),
+                                    Some((
+                                        None,
+                                        vec![if arguments.len() == 1 {
+                                            let argument = translate_expression(
+                                                project,
+                                                module.clone(),
+                                                scope.clone(),
+                                                &arguments[0],
+                                            )?;
+
+                                            let argument_type =
+                                                module.borrow_mut().get_expression_type(
                                                     project,
-                                                    module.clone(),
                                                     scope.clone(),
-                                                    p,
-                                                )
-                                            })
-                                            .collect::<Result<Vec<_>, _>>()?;
+                                                    &argument,
+                                                )?;
 
-                                        let mut arguments_types = arguments.iter().map(|a| module.borrow_mut().get_expression_type(project, scope.clone(), a).unwrap()).collect::<Vec<_>>();
+                                            coerce_expression(
+                                                &argument,
+                                                &argument_type,
+                                                &event_variant.type_name,
+                                            )
+                                            .unwrap()
+                                        } else {
+                                            let mut arguments = arguments
+                                                .iter()
+                                                .map(|p| {
+                                                    translate_expression(
+                                                        project,
+                                                        module.clone(),
+                                                        scope.clone(),
+                                                        p,
+                                                    )
+                                                })
+                                                .collect::<Result<Vec<_>, _>>()?;
 
-                                        let sway::TypeName::Tuple { ref type_names } = event_variant.type_name else { panic!("Expected a tuple") };
+                                            let mut arguments_types = arguments
+                                                .iter()
+                                                .map(|a| {
+                                                    module
+                                                        .borrow_mut()
+                                                        .get_expression_type(
+                                                            project,
+                                                            scope.clone(),
+                                                            a,
+                                                        )
+                                                        .unwrap()
+                                                })
+                                                .collect::<Vec<_>>();
 
-                                        let coerced: Vec<sway::Expression> = arguments
-                                            .iter_mut().zip(arguments_types.iter_mut().zip(type_names))
-                                            .map(|(expr, (from_type_name, to_type_name))| {                                        
-                                                coerce_expression(expr, from_type_name, to_type_name).unwrap()
-                                            })
-                                            .collect();
-                                        
-                                        sway::Expression::Tuple(coerced)
-                                    },
-                                ]))),
-                            ])
+                                            let sway::TypeName::Tuple { ref type_names } =
+                                                event_variant.type_name
+                                            else {
+                                                panic!("Expected a tuple")
+                                            };
+
+                                            let coerced: Vec<sway::Expression> = arguments
+                                                .iter_mut()
+                                                .zip(arguments_types.iter_mut().zip(type_names))
+                                                .map(|(expr, (from_type_name, to_type_name))| {
+                                                    coerce_expression(
+                                                        expr,
+                                                        from_type_name,
+                                                        to_type_name,
+                                                    )
+                                                    .unwrap()
+                                                })
+                                                .collect();
+
+                                            sway::Expression::Tuple(coerced)
+                                        }],
+                                    )),
+                                )],
+                            )
                         }],
                     },
                 )));
@@ -178,11 +256,24 @@ pub fn translate_emit_statement(
             match project.loc_to_line_and_column(module.clone(), &expression.loc()) {
                 Some((line, col)) => format!(
                     "{}:{}:{}: ",
-                    project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy(),
+                    project
+                        .options
+                        .input
+                        .join(module.borrow().path.clone())
+                        .with_extension("sol")
+                        .to_string_lossy(),
                     line,
                     col
                 ),
-                None => format!("{}: ", project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy()),
+                None => format!(
+                    "{}: ",
+                    project
+                        .options
+                        .input
+                        .join(module.borrow().path.clone())
+                        .with_extension("sol")
+                        .to_string_lossy()
+                ),
             },
         ),
     }

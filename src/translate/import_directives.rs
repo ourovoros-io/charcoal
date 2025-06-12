@@ -80,16 +80,14 @@ pub fn translate_import_directives(
                         }
 
                         std::path::Component::Normal(name) => {
-                            let name = name
+                            let mut name = name
                                 .to_string_lossy()
                                 .to_string()
                                 .replace(".", "_")
                                 .to_case(Case::Snake);
 
-                            if let "lib" | "src" = name.as_str() {
-                                if let sway::UseTree::Glob = &use_tree {
-                                    continue;
-                                }
+                            if let "lib" | "src" | "main" = name.as_str() {
+                                name = format!("_{name}");
                             }
 
                             use_tree = sway::UseTree::Path {

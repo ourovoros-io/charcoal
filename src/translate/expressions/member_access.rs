@@ -113,13 +113,14 @@ pub fn translate_member_access_expression(
                         // }
                     }
 
-                    if let Some(external_definition) = project.find_module_with_contract(&name) {
-                        if external_definition.borrow().functions.iter().any(|f| {
-                            let sway::TypeName::Function { old_name, .. } = &f.signature else {
-                                unreachable!()
-                            };
-                            *old_name == member1.name
-                        }) {
+                    if let Some(external_definition) = project.find_contract(&name) {
+                        if external_definition
+                            .borrow()
+                            .abi
+                            .functions
+                            .iter()
+                            .any(|f| f.old_name == member1.name)
+                        {
                             return Ok(sway::Expression::create_todo(Some(expression.to_string())));
                         }
                     }
@@ -278,6 +279,17 @@ pub fn translate_member_access_expression(
                 _ => {}
             },
 
+            sway::TypeName::Array { .. } => match member.name.as_str() {
+                "length" => {
+                    return Ok(Some(sway::Expression::create_function_calls(
+                        Some(container.clone()),
+                        &[("len", Some((None, vec![])))],
+                    )));
+                }
+
+                _ => {}
+            },
+
             _ => {}
         }
 
@@ -321,14 +333,16 @@ pub fn translate_member_access_expression(
     }
 
     // HACK: try tacking `.read()` onto the end and checking again
-    if let Ok(Some(result)) = check_container(
-        project,
-        &sway::Expression::create_function_calls(
-            Some(container.clone()),
-            &[("read", Some((None, vec![])))],
-        ),
-    ) {
-        return Ok(result);
+    if container_type_name.is_storage_key() {
+        if let Ok(Some(result)) = check_container(
+            project,
+            &sway::Expression::create_function_calls(
+                Some(container.clone()),
+                &[("read", Some((None, vec![])))],
+            ),
+        ) {
+            return Ok(result);
+        }
     }
 
     todo!(
@@ -454,7 +468,7 @@ fn translate_builtin_function_call_member_access_expression(
         _ => {}
     }
 
-    todo!()
+    Ok(None)
 }
 
 #[inline]

@@ -136,8 +136,6 @@ impl Test {
         let framework = Framework::from_path(&self.options.input)
             .expect("Failed to detect a Solidity project framework");
 
-        println!("Framework: {framework:#?}");
-
         if !self.install_dependencies(&framework) {
             panic!()
         }

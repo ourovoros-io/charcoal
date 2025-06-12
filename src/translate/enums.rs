@@ -80,7 +80,7 @@ pub fn translate_event_definition(
                 name,
                 generic_parameters,
             } => {
-                if project.find_module_with_contract(&name).is_some() {
+                if project.find_contract(&name).is_some() {
                     sway::TypeName::Identifier {
                         name: "Identity".into(),
                         generic_parameters: None,
@@ -113,7 +113,7 @@ pub fn translate_event_definition(
                             name,
                             generic_parameters,
                         } => {
-                            if project.find_module_with_contract(&name).is_some() {
+                            if project.find_contract(&name).is_some() {
                                 sway::TypeName::Identifier {
                                     name: "Identity".into(),
                                     generic_parameters: None,

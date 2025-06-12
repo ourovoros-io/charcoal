@@ -555,11 +555,7 @@ pub fn translate_using_directive(
             }
 
             // Find the translated library definition
-            let Some(library_definition) = project
-                .translated_modules
-                .iter()
-                .find(|d| d.borrow().name == library_name)
-            else {
+            let Some(library_definition) = project.find_module_with_contract(&library_name) else {
                 panic!(
                     "Failed to find translated library: \"{library_name}\"; from {}",
                     match project.loc_to_line_and_column(module.clone(), &using_directive.loc) {

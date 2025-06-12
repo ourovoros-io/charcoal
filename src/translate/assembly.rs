@@ -62,7 +62,7 @@ pub fn translate_yul_block(
                 let scope_entry = scope
                     .find_variable(|v| v.borrow().new_name == id.name)
                     .unwrap();
-                
+
                 scope_entry.borrow_mut().statement_index = Some(statement_index);
             };
 

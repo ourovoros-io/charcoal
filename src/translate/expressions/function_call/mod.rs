@@ -174,7 +174,7 @@ pub fn translate_function_call_expression(
 
             // Check to see if the expression is an ABI cast
             if parameters.len() == 1 {
-                if let Some(_external_definition) = project.find_module_with_contract(name) {
+                if let Some(_external_definition) = project.find_contract(name) {
                     match module.borrow_mut().get_expression_type(
                         project,
                         scope.clone(),
@@ -504,27 +504,9 @@ pub fn translate_function_call_expression(
                     if let Some(abi_type_name) = abi_type_name.as_ref() {
                         let abi_type_name_string = abi_type_name.to_string();
 
-                        let found_abi = if let Some(external_definition) =
-                            project.find_module_with_contract(&abi_type_name_string)
-                        {
-                            external_definition
-                                .borrow()
-                                .contracts
-                                .iter()
-                                .find(|contract| contract.borrow().name == abi_type_name_string)
-                                .cloned()
-                                .map(|contract| contract.borrow().abi.clone())
-                        } else {
-                            module
-                                .borrow()
-                                .contracts
-                                .iter()
-                                .find(|contract| contract.borrow().name == abi_type_name_string)
-                                .cloned()
-                                .map(|contract| contract.borrow().abi.clone())
-                        };
+                        if let Some(contract) = project.find_contract(&abi_type_name_string) {
+                            let abi = contract.borrow().abi.clone();
 
-                        if let Some(abi) = found_abi {
                             if let Some(result) = resolve_abi_function_call(
                                 project,
                                 module.clone(),
@@ -702,31 +684,25 @@ pub fn translate_function_call_expression(
                                 }
                             }
 
-                            // TODO
                             // Look up the definition of the using directive
-                            // let external_scope = if matches!(module.borrow().kind, Some(solidity::ContractTy::Library(_))) && using_directive.library_name == module.borrow().name {
-                            //     module.borrow().toplevel_scope.clone()
-                            // } else {
-                            //     match project.find_module_with_contract(&using_directive.library_name)
-                            //     .map(|d| d.toplevel_scope.clone()) {
-                            //         Some(s) => s,
-                            //         None => continue,
-                            //     }
-                            // };
+                            let Some(external_module) =
+                                project.find_module_with_contract(&using_directive.library_name)
+                            else {
+                                continue;
+                            };
 
-                            // TODO
-                            // if let Some(result) = resolve_function_call(
-                            //     project,
-                            //     module.clone(),
-                            //     scope.clone(),
-                            //     &external_scope,
-                            //     member.name.as_str(),
-                            //     named_arguments,
-                            //     using_parameters.clone(),
-                            //     using_parameter_types.clone(),
-                            // )? {
-                            //     return Ok(result);
-                            // }
+                            if let Some(result) = resolve_function_call(
+                                project,
+                                module.clone(),
+                                scope.clone(),
+                                external_module.clone(),
+                                member.name.as_str(),
+                                named_arguments,
+                                using_parameters.clone(),
+                                using_parameter_types.clone(),
+                            )? {
+                                return Ok(result);
+                            }
                         }
 
                         // Check if this is a function from an ABI

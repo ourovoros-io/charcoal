@@ -106,9 +106,12 @@ pub fn translate_revert_statement(
                                     scope.clone(),
                                     &parameters[0],
                                 )?;
-                                let parameter_expression_type = module
-                                    .borrow_mut()
-                                    .get_expression_type(project, scope.clone(), &parameter_expression)?;
+                                let parameter_expression_type =
+                                    module.borrow_mut().get_expression_type(
+                                        project,
+                                        scope.clone(),
+                                        &parameter_expression,
+                                    )?;
                                 coerce_expression(
                                     &parameter_expression,
                                     &parameter_expression_type,
@@ -134,7 +137,11 @@ pub fn translate_revert_statement(
                                             .unwrap();
                                             let parameter_expression_type = module
                                                 .borrow_mut()
-                                                .get_expression_type(project, scope.clone(), &parameter_expression)
+                                                .get_expression_type(
+                                                    project,
+                                                    scope.clone(),
+                                                    &parameter_expression,
+                                                )
                                                 .unwrap();
                                             coerce_expression(
                                                 &parameter_expression,
@@ -273,7 +280,13 @@ pub fn translate_revert_named_arguments(
             .any(|v| v.name == error_identifier)
     }) {
         let error_expressions: Vec<_> = named_args.iter().map(|arg| arg.expr.clone()).collect();
-        return translate_revert_statement(project, module, scope.clone(), path, &error_expressions);
+        return translate_revert_statement(
+            project,
+            module,
+            scope.clone(),
+            path,
+            &error_expressions,
+        );
     }
 
     todo!("translate revert named arguments: {:#?}", path)

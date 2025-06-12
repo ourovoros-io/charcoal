@@ -16,7 +16,7 @@ pub fn translate_try_catch_statement(
     catch_clauses: &[solidity::CatchClause],
 ) -> Result<sway::Statement, Error> {
     let mut statements = vec![];
-    
+
     match params_and_body.as_ref() {
         Some((params, body)) => {
             if !params.is_empty() {

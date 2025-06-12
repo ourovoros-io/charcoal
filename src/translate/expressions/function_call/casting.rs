@@ -91,8 +91,11 @@ pub fn translate_address_type_cast_function_call(
         }
 
         value => {
-            let value = translate_expression(project, module.clone(), scope.clone(), value)?;
-            let value_type_name = module.borrow_mut().get_expression_type(project, scope.clone(), &value)?;
+            let mut value = translate_expression(project, module.clone(), scope.clone(), value)?;
+            let value_type_name =
+                module
+                    .borrow_mut()
+                    .get_expression_type(project, scope.clone(), &value)?;
 
             match &value_type_name {
                 // No reason to cast if it's already an Identity
@@ -116,9 +119,37 @@ pub fn translate_address_type_cast_function_call(
                         )],
                     )),
 
-                    _ => panic!(
-                        "translate cast from {value_type_name} to address: {expression} - {value:#?}"
-                    ),
+                    _ => {
+                        let mut comment = None;
+
+                        if let sway::Expression::Commented(c, e) = &value {
+                            comment = Some(c.clone());
+                            value = e.as_ref().clone();
+                        }
+
+                        if let sway::Expression::FunctionCall(f) = &value {
+                            if let sway::Expression::PathExpr(path_expr) = &f.function {
+                                if let Some(ident) = path_expr.as_identifier() {
+                                    if ident == "abi" && f.parameters.len() == 2 {
+                                        match comment {
+                                            Some(comment) => {
+                                                return Ok(sway::Expression::Commented(
+                                                    comment,
+                                                    Box::new(f.parameters[1].clone()),
+                                                ));
+                                            }
+                                            None => return Ok(f.parameters[1].clone()),
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        panic!(
+                            "translate cast from {value_type_name} to Identity: {expression} - {}",
+                            sway::TabbedDisplayer(&value)
+                        )
+                    }
                 },
 
                 sway::TypeName::Array {
@@ -189,31 +220,54 @@ pub fn translate_address_type_cast_function_call(
 
                         _ => panic!(
                             "{}translate cast from {value_type_name} to address: {expression} - {value_type_name:#?}",
-                            match project
-                                .loc_to_line_and_column(module.clone(), &argument.loc())
-                            {
+                            match project.loc_to_line_and_column(module.clone(), &argument.loc()) {
                                 Some((line, col)) => format!(
                                     "{}:{}:{}: ",
-                                    project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy(),
+                                    project
+                                        .options
+                                        .input
+                                        .join(module.borrow().path.clone())
+                                        .with_extension("sol")
+                                        .to_string_lossy(),
                                     line,
                                     col
                                 ),
-                                None => format!("{}: ", project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy()),
+                                None => format!(
+                                    "{}: ",
+                                    project
+                                        .options
+                                        .input
+                                        .join(module.borrow().path.clone())
+                                        .with_extension("sol")
+                                        .to_string_lossy()
+                                ),
                             },
                         ),
                     },
 
                     _ => panic!(
                         "{}translate cast from {value_type_name} to address: {expression} - {value_type_name:#?}",
-                        match project.loc_to_line_and_column(module.clone(), &argument.loc())
-                        {
+                        match project.loc_to_line_and_column(module.clone(), &argument.loc()) {
                             Some((line, col)) => format!(
                                 "{}:{}:{}: ",
-                                project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy(),
+                                project
+                                    .options
+                                    .input
+                                    .join(module.borrow().path.clone())
+                                    .with_extension("sol")
+                                    .to_string_lossy(),
                                 line,
                                 col
                             ),
-                            None => format!("{}: ", project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy()),
+                            None => format!(
+                                "{}: ",
+                                project
+                                    .options
+                                    .input
+                                    .join(module.borrow().path.clone())
+                                    .with_extension("sol")
+                                    .to_string_lossy()
+                            ),
                         },
                     ),
                 },
@@ -223,11 +277,24 @@ pub fn translate_address_type_cast_function_call(
                     match project.loc_to_line_and_column(module.clone(), &argument.loc()) {
                         Some((line, col)) => format!(
                             "{}:{}:{}: ",
-                            project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy(),
+                            project
+                                .options
+                                .input
+                                .join(module.borrow().path.clone())
+                                .with_extension("sol")
+                                .to_string_lossy(),
                             line,
                             col
                         ),
-                        None => format!("{}: ", project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy()),
+                        None => format!(
+                            "{}: ",
+                            project
+                                .options
+                                .input
+                                .join(module.borrow().path.clone())
+                                .with_extension("sol")
+                                .to_string_lossy()
+                        ),
                     },
                 ),
             }
@@ -264,9 +331,10 @@ pub fn translate_int_types_cast_function_call(
     bits: usize,
 ) -> Result<sway::Expression, Error> {
     let value_expression = translate_expression(project, module.clone(), scope.clone(), argument)?;
-    let value_type_name = module
-        .borrow_mut()
-        .get_expression_type(project, scope.clone(), &value_expression)?;
+    let value_type_name =
+        module
+            .borrow_mut()
+            .get_expression_type(project, scope.clone(), &value_expression)?;
     let value_type_name = module.borrow().get_underlying_type(&value_type_name);
 
     let create_int_try_from_unwrap_expression = |from_bits: usize,
@@ -395,9 +463,10 @@ pub fn translate_uint_types_cast_function_call(
     bits: usize,
 ) -> Result<sway::Expression, Error> {
     let value_expression = translate_expression(project, module.clone(), scope.clone(), argument)?;
-    let value_type_name = module
-        .borrow_mut()
-        .get_expression_type(project, scope.clone(), &value_expression)?;
+    let value_type_name =
+        module
+            .borrow_mut()
+            .get_expression_type(project, scope.clone(), &value_expression)?;
     let value_type_name = module.borrow().get_underlying_type(&value_type_name);
 
     if value_type_name.is_int() {
@@ -708,11 +777,24 @@ pub fn translate_uint_types_cast_function_call(
                 match project.loc_to_line_and_column(module.clone(), &argument.loc()) {
                     Some((line, col)) => format!(
                         "{}:{}:{}: ",
-                        project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy(),
+                        project
+                            .options
+                            .input
+                            .join(module.borrow().path.clone())
+                            .with_extension("sol")
+                            .to_string_lossy(),
                         line,
                         col
                     ),
-                    None => format!("{}: ", project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy()),
+                    None => format!(
+                        "{}: ",
+                        project
+                            .options
+                            .input
+                            .join(module.borrow().path.clone())
+                            .with_extension("sol")
+                            .to_string_lossy()
+                    ),
                 },
             ),
         },
@@ -805,9 +887,10 @@ pub fn translate_bytes_type_cast_function_call(
     function: &solidity::Expression,
 ) -> Result<sway::Expression, Error> {
     let value_expression = translate_expression(project, module.clone(), scope.clone(), argument)?;
-    let value_type_name = module
-        .borrow_mut()
-        .get_expression_type(project, scope.clone(), &value_expression)?;
+    let value_type_name =
+        module
+            .borrow_mut()
+            .get_expression_type(project, scope.clone(), &value_expression)?;
 
     match &value_type_name {
         sway::TypeName::Undefined => panic!("Undefined type name"),
@@ -1055,11 +1138,24 @@ pub fn translate_bytes_type_cast_function_call(
                 match project.loc_to_line_and_column(module.clone(), &function.loc()) {
                     Some((line, col)) => format!(
                         "{}:{}:{}: ",
-                        project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy(),
+                        project
+                            .options
+                            .input
+                            .join(module.borrow().path.clone())
+                            .with_extension("sol")
+                            .to_string_lossy(),
                         line,
                         col
                     ),
-                    None => format!("{}: ", project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy()),
+                    None => format!(
+                        "{}: ",
+                        project
+                            .options
+                            .input
+                            .join(module.borrow().path.clone())
+                            .with_extension("sol")
+                            .to_string_lossy()
+                    ),
                 },
             ),
         },
@@ -1099,9 +1195,10 @@ pub fn translate_dynamic_bytes_type_cast_function_call(
     argument: &solidity::Expression,
 ) -> Result<sway::Expression, Error> {
     let value_expression = translate_expression(project, module.clone(), scope.clone(), argument)?;
-    let value_type_name = module
-        .borrow_mut()
-        .get_expression_type(project, scope.clone(), &value_expression)?;
+    let value_type_name =
+        module
+            .borrow_mut()
+            .get_expression_type(project, scope.clone(), &value_expression)?;
 
     match &value_type_name {
         sway::TypeName::Undefined => panic!("Undefined type name"),
@@ -1246,9 +1343,10 @@ pub fn translate_string_type_cast_function_call(
     argument: &solidity::Expression,
 ) -> Result<sway::Expression, Error> {
     let value_expression = translate_expression(project, module.clone(), scope.clone(), argument)?;
-    let value_type_name = module
-        .borrow_mut()
-        .get_expression_type(project, scope.clone(), &value_expression)?;
+    let value_type_name =
+        module
+            .borrow_mut()
+            .get_expression_type(project, scope.clone(), &value_expression)?;
 
     match &value_type_name {
         sway::TypeName::Identifier {
