@@ -11,7 +11,7 @@ mod tests;
 
 fn main() {
     if let Err(e) = translate_project() {
-        eprintln!("{e}");
+        eprintln!("ERROR: {e}");
         std::process::exit(1);
     }
 }

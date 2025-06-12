@@ -1086,6 +1086,7 @@ impl Project {
             .clone()
             .unwrap()
             .join(self.options.name.clone().unwrap());
+        
         wrapped_err!(std::fs::create_dir_all(&output_directory))?;
 
         let src_dir_path = output_directory.join("src");
