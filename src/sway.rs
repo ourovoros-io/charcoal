@@ -203,7 +203,9 @@ impl TabbedDisplay for Module {
                     || matches!(prev_item, ModuleItem::Constant(_))
                         && matches!(item, ModuleItem::Constant(_))
                     || matches!(prev_item, ModuleItem::TypeDefinition(_))
-                        && matches!(item, ModuleItem::TypeDefinition(_)))
+                        && matches!(item, ModuleItem::TypeDefinition(_))
+                    || matches!(prev_item, ModuleItem::Submodule(_))
+                        && matches!(item, ModuleItem::Submodule(_)))
                 {
                     writeln!(f)?;
                 }
@@ -235,7 +237,7 @@ impl TabbedDisplay for Submodule {
             write!(f, "pub ")?;
         }
 
-        writeln!(f, "mod {};", self.name)
+        write!(f, "mod {};", self.name)
     }
 }
 
