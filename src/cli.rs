@@ -18,23 +18,18 @@ pub struct Args {
 }
 
 impl Args {
-    pub fn new() -> Result<Self, Error> {
-        let mut result = Self::parse();
-
-        if !result.input.is_dir() {
+    pub fn canonicalize(mut self) -> Result<Self, Error> {
+        if !self.input.is_dir() {
             return Err(Error::Wrapped(Box::new(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
-                format!(
-                    "Input is not a directory: {}",
-                    result.input.to_string_lossy()
-                ),
+                format!("Input is not a directory: {}", self.input.to_string_lossy()),
             ))));
         }
 
-        result.input = wrapped_err!(result.input.canonicalize())?;
+        self.input = wrapped_err!(self.input.canonicalize())?;
 
-        if let Some(output_directory) = result.output_directory.as_mut() {
-            if result.name.is_none() {
+        if let Some(output_directory) = self.output_directory.as_mut() {
+            if self.name.is_none() {
                 return Err(Error::Wrapped(Box::new(std::io::Error::new(
                     std::io::ErrorKind::InvalidInput,
                     "No output project name provided",
@@ -48,6 +43,6 @@ impl Args {
             *output_directory = wrapped_err!(output_directory.canonicalize())?;
         }
 
-        Ok(result)
+        Ok(self)
     }
 }

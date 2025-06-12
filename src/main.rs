@@ -17,7 +17,8 @@ fn main() {
 }
 
 fn translate_project() -> Result<(), error::Error> {
-    let options = cli::Args::new()?;
+    use clap::Parser;
+    let options = cli::Args::parse().canonicalize()?;
     let framework = project::Framework::from_path(&options.input)?;
     project::Project::new(options, framework)?.translate()
 }

@@ -29,9 +29,12 @@ fn test_code_samples_x() {
 
 #[test]
 fn test_solidity_by_example() {
-    Test::new("solidity_by_example", "./tests/solidity-by-example")
-        .with_repo("https://github.com/solidity-by-example/solidity-by-example.github.io.git")
-        .run();
+    Test::new(
+        "solidity_by_example",
+        "./tests/solidity-by-example/contracts",
+    )
+    .with_repo("https://github.com/solidity-by-example/solidity-by-example.github.io.git")
+    .run();
 }
 
 #[test]
@@ -105,7 +108,9 @@ impl Test {
                 input: path.as_ref().into(),
                 output_directory: Some(format!("./output/{}", name.as_ref()).into()),
                 name: Some(name.as_ref().into()),
-            },
+            }
+            .canonicalize()
+            .unwrap(),
             repo: None,
         }
     }
