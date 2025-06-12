@@ -982,12 +982,7 @@ impl Project {
         for (i, contract_definition) in contract_definitions.into_iter().enumerate() {
             let contract = module.borrow().contracts[contracts_index + i].clone();
 
-            translate_contract_definition(
-                self,
-                module.clone(),
-                &contract_definition,
-                contract,
-            )?;
+            translate_contract_definition(self, module.clone(), &contract_definition, contract)?;
         }
 
         Ok(())
@@ -1086,7 +1081,7 @@ impl Project {
             .clone()
             .unwrap()
             .join(self.options.name.clone().unwrap());
-        
+
         wrapped_err!(std::fs::create_dir_all(&output_directory))?;
 
         let src_dir_path = output_directory.join("src");

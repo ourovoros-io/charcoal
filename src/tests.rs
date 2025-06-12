@@ -33,70 +33,72 @@ fn test_solidity_by_example() {
         "solidity_by_example",
         "./tests/solidity-by-example/contracts",
     )
-    .with_repo("https://github.com/solidity-by-example/solidity-by-example.github.io.git")
+    .with_repo_url("https://github.com/solidity-by-example/solidity-by-example.github.io.git")
+    .with_repo_dir("./tests/solidity-by-example")
     .run();
 }
 
 #[test]
 fn test_compound_protocol() {
     Test::new("compound_protocol", "./tests/compound-protocol")
-        .with_repo("https://github.com/compound-finance/compound-protocol.git")
+        .with_repo_url("https://github.com/compound-finance/compound-protocol.git")
         .run();
 }
 
 #[test]
 fn test_openzeppelin_contracts() {
     Test::new("openzeppelin_contracts", "./tests/openzeppelin-contracts")
-        .with_repo("https://github.com/OpenZeppelin/openzeppelin-contracts.git")
+        .with_repo_url("https://github.com/OpenZeppelin/openzeppelin-contracts.git")
         .run();
 }
 
 #[test]
 fn test_uniswap_v2_core() {
     Test::new("uniswap_v2_core", "./tests/uniswap/v2-core")
-        .with_repo("https://github.com/Uniswap/v2-core.git")
+        .with_repo_url("https://github.com/Uniswap/v2-core.git")
         .run();
 }
 
 #[test]
 fn test_uniswap_v2_periphery() {
     Test::new("uniswap_v2_periphery", "./tests/uniswap/v2-periphery")
-        .with_repo("https://github.com/Uniswap/v2-periphery.git")
+        .with_repo_url("https://github.com/Uniswap/v2-periphery.git")
         .run();
 }
 
 #[test]
 fn test_uniswap_v3_core() {
     Test::new("uniswap_v3_core", "./tests/uniswap/v3-core")
-        .with_repo("https://github.com/Uniswap/v3-core.git")
+        .with_repo_url("https://github.com/Uniswap/v3-core.git")
         .run();
 }
 
 #[test]
 fn test_uniswap_v3_periphery() {
     Test::new("uniswap_v3_periphery", "./tests/uniswap/v3-periphery")
-        .with_repo("https://github.com/Uniswap/v3-periphery.git")
+        .with_repo_url("https://github.com/Uniswap/v3-periphery.git")
         .run();
 }
 
 #[test]
 fn test_uniswap_v4_core() {
     Test::new("uniswap_v4_core", "./tests/uniswap/v4-core")
-        .with_repo("https://github.com/Uniswap/v4-core.git")
+        .with_repo_url("https://github.com/Uniswap/v4-core.git")
         .run();
 }
 
 #[test]
 fn test_uniswap_v4_periphery() {
     Test::new("uniswap_v4_periphery", "./tests/uniswap/v4-periphery")
-        .with_repo("https://github.com/Uniswap/v4-periphery.git")
+        .with_repo_url("https://github.com/Uniswap/v4-periphery.git")
         .run();
 }
 
 #[derive(Debug)]
 pub struct Test {
     pub options: cli::Args,
-    pub repo: Option<String>,
+    pub repo_url: Option<String>,
+    pub repo_dir: Option<String>,
 }
 
 impl Test {
@@ -108,24 +110,33 @@ impl Test {
                 input: path.as_ref().into(),
                 output_directory: Some(format!("./output/{}", name.as_ref()).into()),
                 name: Some(name.as_ref().into()),
-            }
-            .canonicalize()
-            .unwrap(),
-            repo: None,
+            },
+            repo_url: None,
+            repo_dir: None,
         }
     }
 
-    pub fn with_repo(mut self, url: &str) -> Self {
-        self.repo = Some(url.into());
+    pub fn with_repo_url(mut self, url: &str) -> Self {
+        self.repo_url = Some(url.into());
         self
     }
 
-    pub fn run(&self) {
+    pub fn with_repo_dir(mut self, dir: &str) -> Self {
+        self.repo_dir = Some(dir.into());
+        self
+    }
+
+    pub fn run(&mut self) {
         if !self.clone_repo() {
             panic!()
         }
+
+        self.options = self.options.clone().canonicalize().unwrap();
+
         let framework = Framework::from_path(&self.options.input)
             .expect("Failed to detect a Solidity project framework");
+
+        println!("Framework: {framework:#?}");
 
         if !self.install_dependencies(&framework) {
             panic!()
@@ -146,26 +157,23 @@ impl Test {
     }
 
     fn clone_repo(&self) -> bool {
-        let Some(repo) = self.repo.as_ref() else {
+        let Some(repo_url) = self.repo_url.as_ref() else {
             return true;
+        };
+
+        let repo_dir = match self.repo_dir.as_ref() {
+            Some(repo_dir) => repo_dir.clone(),
+            None => self.options.input.to_string_lossy().to_string(),
         };
 
         if self.options.input.exists() {
             return true;
         }
 
-        print!("Cloning repository: {} ...", repo);
+        print!("Cloning repository: {} ...", repo_url);
 
         let output = Command::new("git")
-            .args(&[
-                "clone",
-                "--recursive",
-                repo,
-                self.options
-                    .input
-                    .to_str()
-                    .expect("Failed to convert path to string"),
-            ])
+            .args(&["clone", "--recursive", repo_url, &repo_dir])
             .output()
             .expect("Failed to execute git clone command");
 
