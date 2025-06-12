@@ -113,7 +113,7 @@ pub fn translate_emit_statement(
 
                                                                         let coerced: Vec<sway::Expression> = arguments
                                                                 .iter_mut().zip(arguments_types.iter_mut().zip(type_names))
-                                                                .map(|(expr, (from_type_name, to_type_name))| {                    
+                                                                .map(|(expr, (from_type_name, to_type_name))| {
                                                                     coerce_expression(expr, from_type_name, to_type_name).unwrap()
                                                                 })
                                                                 .collect();

@@ -1343,7 +1343,7 @@ pub fn translate_builtin_abi_member_access_function_call(
                                                                                 ],
                                                                             })
                                                                         },
-                                                                        
+
                                                                         ("I8" | "I16" | "I32" | "I64" | "I128" | "I256", None) => {
                                                                             sway::Expression::create_function_calls(Some(parameter), &[
                                                                                 ("underlying", Some((None, vec![])))
