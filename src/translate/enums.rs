@@ -65,10 +65,7 @@ pub fn translate_event_definition(
 ) -> Result<(), Error> {
     let events_enum_name = format!("{}Event", module.borrow().name);
 
-    let scope = Rc::new(RefCell::new(ir::Scope {
-        contract_name: contract_name.map(|s| s.to_string()),
-        ..Default::default()
-    }));
+    let scope = Rc::new(RefCell::new(ir::Scope::new(contract_name, None)));
 
     let type_name = if event_definition.fields.len() == 1 {
         match translate_type_name(
@@ -189,11 +186,7 @@ pub fn translate_error_definition(
     error_definition: &solidity::ErrorDefinition,
 ) -> Result<(), Error> {
     let errors_enum_name = format!("{}Error", module.borrow().name);
-
-    let scope = Rc::new(RefCell::new(ir::Scope {
-        contract_name: contract_name.map(|s| s.to_string()),
-        ..Default::default()
-    }));
+    let scope = Rc::new(RefCell::new(ir::Scope::new(contract_name, None)));
 
     let type_name = if error_definition.fields.len() == 1 {
         translate_type_name(

@@ -542,16 +542,24 @@ pub fn translate_identity_member_access_function_call(
             if let sway::Expression::PathExpr(path_expr) = &m.expression {
                 if let sway::PathExprRoot::Identifier(root_ident) =  &path_expr.root {
                     if root_ident == "storage" {
-                        let mut storage_namespace: Option<sway::StorageNamespace> = None;
+                        let mut storage_namespace: Option<Rc<RefCell<sway::StorageNamespace>>> = None;
             
                         for segment in path_expr.segments.iter() {
                             let namespace = match storage_namespace {
                                 None => {
-                                    let module = module.borrow(); 
-                                    let storage = module.storage.as_ref().unwrap();
-                                    storage.namespaces.iter().find(|s| s.name == segment.name).cloned()
+                                    let mut module = module.borrow_mut(); 
+                                    let storage = module.get_storage(scope.clone());
+                                    storage.borrow().namespaces.iter().find(|s| s.borrow().name == segment.name).cloned()
                                 },
-                                Some(storage_namespace) => storage_namespace.namespaces.iter().find(|s| s.name == segment.name).cloned(),
+
+                                Some(storage_namespace) => {
+                                    storage_namespace
+                                        .borrow()
+                                        .namespaces
+                                        .iter()
+                                        .find(|s| s.borrow().name == segment.name)
+                                        .cloned()
+                                }
                             };
 
                             if namespace.is_none() {
@@ -563,7 +571,7 @@ pub fn translate_identity_member_access_function_call(
                         }
 
                         if let Some(storage_namespace) = storage_namespace {
-                            if let Some(storage_field) = storage_namespace.fields.iter().find(|s| s.name == m.member) {
+                            if let Some(storage_field) = storage_namespace.borrow().fields.iter().find(|s| s.name == m.member) {
                                 if let Some(abi_type_name) = storage_field.abi_type_name.as_ref() {
                                     let abi_type_name = abi_type_name.to_string();
 

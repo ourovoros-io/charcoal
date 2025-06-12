@@ -54,23 +54,19 @@ pub struct Modifier {
     pub post_body: Option<sway::Block>,
 }
 
-#[derive(Default, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct Scope {
-    pub contract_name: Option<String>,
-    pub parent: Option<Rc<RefCell<Scope>>>,
-    pub variables: Vec<Rc<RefCell<Variable>>>,
+    contract_name: Option<String>,
+    parent: Option<Rc<RefCell<Scope>>>,
+    variables: Vec<Rc<RefCell<Variable>>>,
 }
 
 impl Scope {
-    pub fn dump(&self) {
-        if let Some(parent) = self.parent.as_ref() {
-            parent.borrow().dump();
-        }
-
-        println!("variables:");
-
-        for v in self.variables.iter() {
-            println!("{v:#?}");
+    pub fn new(contract_name: Option<&str>, parent: Option<Rc<RefCell<Scope>>>) -> Self {
+        Self {
+            contract_name: contract_name.map(|s| s.to_string()),
+            parent,
+            variables: vec![],
         }
     }
 
@@ -86,6 +82,33 @@ impl Scope {
         }
 
         None
+    }
+
+    #[inline]
+    pub fn get_parent(&self) -> Option<Rc<RefCell<Scope>>> {
+        self.parent.clone()
+    }
+
+    #[inline]
+    pub fn get_variables(&self) -> Vec<Rc<RefCell<Variable>>> {
+        self.variables.clone()
+    }
+
+    #[inline]
+    pub fn add_variable(&mut self, variable: Rc<RefCell<Variable>>) {
+        self.variables.push(variable);
+    }
+
+    pub fn dump(&self) {
+        if let Some(parent) = self.parent.as_ref() {
+            parent.borrow().dump();
+        }
+
+        println!("variables:");
+
+        for v in self.variables.iter() {
+            println!("{v:#?}");
+        }
     }
 
     #[inline]
@@ -179,6 +202,7 @@ pub struct Contract {
     pub kind: solidity::ContractTy,
     pub abi: sway::Abi,
     pub abi_impl: sway::Impl,
+    pub storage: Option<Rc<RefCell<sway::Storage>>>,
 }
 
 impl Contract {
@@ -203,6 +227,7 @@ impl Contract {
                 }),
                 items: vec![],
             },
+            storage: None,
         }
     }
 }
@@ -223,19 +248,15 @@ pub struct Module {
     pub errors_enums: Vec<(Rc<RefCell<sway::Enum>>, Rc<RefCell<sway::Impl>>)>,
     pub constants: Vec<sway::Constant>,
     pub configurable: Option<sway::Configurable>,
-    pub storage: Option<sway::Storage>,
     pub modifiers: Vec<Modifier>,
     pub functions: Vec<Item<sway::Function>>,
-    pub contracts: Vec<Item<Contract>>,
+    pub contracts: Vec<Rc<RefCell<Contract>>>,
     pub impls: Vec<sway::Impl>,
 
     pub function_name_counts: HashMap<String, usize>,
     pub function_names: HashMap<String, String>,
     pub function_constructor_calls: HashMap<String, Vec<sway::FunctionCall>>,
     pub function_modifiers: HashMap<String, Vec<sway::FunctionCall>>,
-
-    pub storage_fields_name_counts: HashMap<String, usize>,
-    pub storage_fields_names: HashMap<String, String>,
 }
 
 impl Module {
@@ -294,12 +315,19 @@ impl Module {
 
     /// Gets the storage block for the translated definition. If it doesn't exist, it gets created.
     #[inline]
-    pub fn get_storage(&mut self) -> &mut sway::Storage {
-        if self.storage.is_none() {
-            self.storage = Some(sway::Storage::default());
+    pub fn get_storage(&mut self, scope: Rc<RefCell<Scope>>) -> Rc<RefCell<sway::Storage>> {
+        let contract_name = scope.borrow().get_contract_name().unwrap();
+        let contract = self
+            .contracts
+            .iter()
+            .find(|c| c.borrow().name == contract_name)
+            .unwrap();
+
+        if contract.borrow().storage.is_none() {
+            contract.borrow_mut().storage = Some(Rc::new(RefCell::new(sway::Storage::default())));
         }
 
-        self.storage.as_mut().unwrap()
+        contract.borrow().storage.clone().unwrap()
     }
 
     /// Attempt to get storage namespace by name from the translated definition. If it doesn't exist, it gets created.
@@ -307,22 +335,32 @@ impl Module {
     pub fn get_storage_namespace(
         &mut self,
         scope: Rc<RefCell<Scope>>,
-    ) -> Option<&mut sway::StorageNamespace> {
+    ) -> Option<Rc<RefCell<sway::StorageNamespace>>> {
         let namespace_name = self.get_storage_namespace_name(scope.clone())?;
-        let storage = self.get_storage();
+        let storage = self.get_storage(scope.clone());
 
-        if !storage.namespaces.iter().any(|s| s.name == namespace_name) {
-            storage.namespaces.push(sway::StorageNamespace {
-                name: namespace_name.clone(),
-                fields: vec![],
-                namespaces: vec![],
-            });
+        if !storage
+            .borrow()
+            .namespaces
+            .iter()
+            .any(|s| s.borrow().name == namespace_name)
+        {
+            storage
+                .borrow_mut()
+                .namespaces
+                .push(Rc::new(RefCell::new(sway::StorageNamespace {
+                    name: namespace_name.clone(),
+                    fields: vec![],
+                    namespaces: vec![],
+                })));
         }
 
         storage
+            .borrow()
             .namespaces
-            .iter_mut()
-            .find(|s| s.name == namespace_name)
+            .iter()
+            .find(|s| s.borrow().name == namespace_name)
+            .cloned()
     }
 
     /// Gets the name of the storage namespace from the translated definition.
@@ -625,10 +663,7 @@ impl Module {
             return Ok(sway::TypeName::Tuple { type_names: vec![] });
         };
 
-        let inner_scope = Rc::new(RefCell::new(Scope {
-            parent: Some(scope.clone()),
-            ..Default::default()
-        }));
+        let inner_scope = Rc::new(RefCell::new(Scope::new(None, Some(scope.clone()))));
 
         for statement in block.statements.iter() {
             let sway::Statement::Let(sway::Let {
@@ -749,21 +784,37 @@ impl Module {
 
                 assert!(parts.len() == 2);
 
-                let Some(namespace) = self
+                let contract_name = scope.borrow().get_contract_name().unwrap();
+                let contract = self
+                    .contracts
+                    .iter()
+                    .find(|c| c.borrow().name == contract_name)
+                    .unwrap()
+                    .borrow();
+
+                let Some(namespace) = contract
                     .storage
                     .as_ref()
-                    .map(|s| s.namespaces.iter().find(|n| n.name == parts[1]))
+                    .map(|s| {
+                        s.borrow()
+                            .namespaces
+                            .iter()
+                            .find(|n| n.borrow().name == parts[1])
+                            .cloned()
+                    })
                     .flatten()
                 else {
                     panic!(
                         "Failed to find storage namespace {}. Available namespaces : {}",
                         parts[1],
-                        self.storage
+                        contract
+                            .storage
                             .as_ref()
                             .map(|s| s
+                                .borrow()
                                 .namespaces
                                 .iter()
-                                .map(|n| n.name.clone())
+                                .map(|n| n.borrow().name.clone())
                                 .collect::<Vec<_>>()
                                 .join(", "))
                             .unwrap_or("<none>".into())
@@ -771,9 +822,11 @@ impl Module {
                 };
 
                 let Some(storage_field) = namespace
+                    .borrow()
                     .fields
                     .iter()
                     .find(|f| f.name == member_access.member)
+                    .cloned()
                 else {
                     panic!(
                         "Failed to find storage variable in scope: `{}`",
@@ -2776,7 +2829,7 @@ impl Module {
 
                 (name, None) => {
                     for contract in self.contracts.iter() {
-                        let contract = contract.implementation.as_ref().unwrap();
+                        let contract = contract.borrow();
 
                         if contract.abi.name == name {
                             if let Some(function_definition) = contract
@@ -2883,8 +2936,71 @@ impl From<Module> for sway::Module {
             items.push(sway::ModuleItem::Configurable(x));
         }
 
-        if let Some(x) = module.storage {
-            items.push(sway::ModuleItem::Storage(x));
+        let mut module_storage: Option<Rc<RefCell<sway::Storage>>> = None;
+
+        for x in module.contracts.iter() {
+            let x = x.borrow();
+
+            let Some(storage) = x.storage.as_ref() else {
+                continue;
+            };
+
+            let Some(module_storage) = module_storage.as_mut() else {
+                module_storage = Some(storage.clone());
+                continue;
+            };
+
+            for field in storage.borrow().fields.iter() {
+                if !module_storage.borrow().fields.contains(field) {
+                    module_storage.borrow_mut().fields.push(field.clone());
+                }
+            }
+
+            for namespace in storage.borrow().namespaces.iter() {
+                let mut module_storage = module_storage.borrow_mut();
+
+                let Some(module_namespace) = module_storage
+                    .namespaces
+                    .iter()
+                    .find(|n| n.borrow().name == namespace.borrow().name)
+                else {
+                    module_storage.namespaces.push(namespace.clone());
+                    continue;
+                };
+
+                fn expand_storage_namespace(
+                    input: Rc<RefCell<sway::StorageNamespace>>,
+                    output: Rc<RefCell<sway::StorageNamespace>>,
+                ) {
+                    let input = input.borrow();
+                    let mut output = output.borrow_mut();
+
+                    for input_field in input.fields.iter() {
+                        if !output.fields.contains(input_field) {
+                            output.fields.push(input_field.clone());
+                        }
+                    }
+
+                    for input_namespace in input.namespaces.iter() {
+                        let Some(output_namespace) = output
+                            .namespaces
+                            .iter_mut()
+                            .find(|n| n.borrow().name == input_namespace.borrow().name)
+                        else {
+                            output.namespaces.push(input_namespace.clone());
+                            continue;
+                        };
+
+                        expand_storage_namespace(input_namespace.clone(), output_namespace.clone());
+                    }
+                }
+
+                expand_storage_namespace(namespace.clone(), module_namespace.clone());
+            }
+        }
+
+        if let Some(x) = module_storage {
+            items.push(sway::ModuleItem::Storage(x.borrow().clone()));
         }
 
         for x in module.functions {
@@ -2892,11 +3008,10 @@ impl From<Module> for sway::Module {
         }
 
         for x in module.contracts {
-            items.push(sway::ModuleItem::Abi(
-                x.implementation.as_ref().unwrap().abi.clone(),
-            ));
+            let x = x.borrow();
 
-            items.push(sway::ModuleItem::Impl(x.implementation.unwrap().abi_impl));
+            items.push(sway::ModuleItem::Abi(x.abi.clone()));
+            items.push(sway::ModuleItem::Impl(x.abi_impl.clone()));
         }
 
         for x in module.impls {

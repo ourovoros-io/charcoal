@@ -490,11 +490,10 @@ pub fn translate_type_name(
                 )),
                 length: {
                     // Create an empty scope to translate the array length expression
-                    let scope = Rc::new(RefCell::new(ir::Scope {
-                        contract_name: scope.borrow().contract_name.clone(),
-                        parent: Some(scope.clone()),
-                        ..Default::default()
-                    }));
+                    let scope = Rc::new(RefCell::new(ir::Scope::new(
+                        scope.borrow().get_contract_name().as_ref().map(|s| s.as_str()),
+                        Some(scope.clone()),
+                    )));
 
                     match translate_expression(project, module, scope.clone(), length.as_ref()) {
                         Ok(sway::Expression::Literal(

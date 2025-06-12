@@ -2,12 +2,12 @@ use crate::{error::Error, project::Project, sway, translate::*};
 use solang_parser::helpers::CodeLocation;
 use std::{cell::RefCell, rc::Rc};
 
-mod build_ins;
+mod builtins;
 mod casting;
 mod member_access;
 mod utils;
 
-pub use self::{build_ins::*, casting::*, member_access::*, utils::*};
+pub use self::{builtins::*, casting::*, member_access::*, utils::*};
 
 #[inline]
 pub fn translate_function_call_expression(
@@ -485,27 +485,16 @@ pub fn translate_function_call_expression(
 
                     // Check to see if the container is a storage field
                     if abi_type_name.is_none() {
-                        if let Some(storage_field) = module
+                        let mut module = module.borrow_mut();
+
+                        let storage_namespace =
+                            module.get_storage_namespace(scope.clone()).unwrap();
+
+                        if let Some(storage_field) = storage_namespace
                             .borrow()
-                            .storage
-                            .as_ref()
-                            .map(|s| {
-                                if let Some(field) = s.fields.iter().find(|f| f.old_name == *name) {
-                                    return Some(field);
-                                }
-
-                                // TODO: get contract namespace from scope?
-                                for namespace in s.namespaces.iter() {
-                                    if let Some(field) =
-                                        namespace.fields.iter().find(|f| f.old_name == *name)
-                                    {
-                                        return Some(field);
-                                    }
-                                }
-
-                                None
-                            })
-                            .flatten()
+                            .fields
+                            .iter()
+                            .find(|f| f.old_name == *name)
                         {
                             abi_type_name = storage_field.abi_type_name.clone();
                         }
@@ -522,21 +511,17 @@ pub fn translate_function_call_expression(
                                 .borrow()
                                 .contracts
                                 .iter()
-                                .find(|contract| {
-                                    contract.signature.to_string() == abi_type_name_string
-                                })
+                                .find(|contract| contract.borrow().name == abi_type_name_string)
                                 .cloned()
-                                .map(|contract| contract.implementation.unwrap().abi)
+                                .map(|contract| contract.borrow().abi.clone())
                         } else {
                             module
                                 .borrow()
                                 .contracts
                                 .iter()
-                                .find(|contract| {
-                                    contract.signature.to_string() == abi_type_name_string
-                                })
+                                .find(|contract| contract.borrow().name == abi_type_name_string)
                                 .cloned()
-                                .map(|contract| contract.implementation.unwrap().abi)
+                                .map(|contract| contract.borrow().abi.clone())
                         };
 
                         if let Some(abi) = found_abi {
@@ -839,9 +824,9 @@ pub fn translate_function_call_expression(
                             };
 
                         for contract in module.borrow().contracts.clone() {
-                            if let Some(result) =
-                                check_abi(&contract.implementation.as_ref().unwrap().abi)?
-                            {
+                            let abi = contract.borrow().abi.clone();
+
+                            if let Some(result) = check_abi(&abi)? {
                                 return Ok(result);
                             }
                         }

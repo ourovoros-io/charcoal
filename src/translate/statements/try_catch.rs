@@ -16,6 +16,7 @@ pub fn translate_try_catch_statement(
     catch_clauses: &[solidity::CatchClause],
 ) -> Result<sway::Statement, Error> {
     let mut statements = vec![];
+    
     match params_and_body.as_ref() {
         Some((params, body)) => {
             if !params.is_empty() {
@@ -53,6 +54,7 @@ pub fn translate_try_catch_statement(
                     type_name: None,
                     value: translate_expression(project, module.clone(), scope.clone(), expr)?,
                 };
+
                 let store_let_identifier =
                     |id: &sway::LetIdentifier, type_name: &sway::TypeName| {
                         let variable = Rc::new(RefCell::new(ir::Variable {
@@ -61,11 +63,13 @@ pub fn translate_try_catch_statement(
                             type_name: type_name.clone(),
                             ..Default::default()
                         }));
-                        scope.borrow_mut().variables.push(variable);
+
+                        scope.borrow_mut().add_variable(variable);
 
                         let variable = scope.borrow().get_variable_from_new_name(&id.name).unwrap();
                         variable.borrow_mut().statement_index = Some(statements.len());
                     };
+
                 match &let_statement.pattern {
                     sway::LetPattern::Identifier(id) => {
                         let type_name = translate_type_name(
@@ -78,6 +82,7 @@ pub fn translate_try_catch_statement(
                         );
                         store_let_identifier(id, &type_name);
                     }
+
                     sway::LetPattern::Tuple(ids) => {
                         let type_names = params
                             .iter()
@@ -97,6 +102,7 @@ pub fn translate_try_catch_statement(
                             .for_each(|(id, type_name)| store_let_identifier(id, type_name));
                     }
                 }
+
                 statements.push(sway::Statement::from(let_statement));
             }
 
@@ -110,9 +116,11 @@ pub fn translate_try_catch_statement(
                         )));
                     }
                 }
+
                 stmt => statements.push(stmt),
             };
         }
+
         None => statements.push(sway::Statement::from(translate_expression(
             project,
             module,

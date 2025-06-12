@@ -713,7 +713,7 @@ impl Project {
                 .borrow()
                 .contracts
                 .iter()
-                .any(|c| c.signature.to_string() == contract_name)
+                .any(|c| c.borrow().name == contract_name)
             {
                 return Some(module.clone());
             }
@@ -910,17 +910,26 @@ impl Project {
         let contracts_index = module.borrow().contracts.len();
 
         for contract_definition in contract_definitions.iter() {
-            module.borrow_mut().contracts.push(ir::Item {
-                signature: sway::TypeName::Identifier {
-                    name: contract_definition
-                        .name
-                        .as_ref()
-                        .map(|name| name.name.clone())
-                        .unwrap(),
-                    generic_parameters: None,
-                },
-                implementation: None,
-            });
+            module
+                .borrow_mut()
+                .contracts
+                .push(Rc::new(RefCell::new(ir::Contract::new(
+                    contract_definition.name.as_ref().unwrap().name.as_str(),
+                    contract_definition.ty.clone(),
+                    contract_definition
+                        .base
+                        .iter()
+                        .map(|b| {
+                            assert!(b.args.is_none());
+                            assert!(b.name.identifiers.len() == 1);
+                            sway::TypeName::Identifier {
+                                name: b.name.identifiers[0].name.clone(),
+                                generic_parameters: None,
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                        .as_slice(),
+                ))));
         }
 
         for (i, type_definition) in type_definitions.into_iter().enumerate() {
@@ -971,9 +980,14 @@ impl Project {
         }
 
         for (i, contract_definition) in contract_definitions.into_iter().enumerate() {
-            module.borrow_mut().contracts[contracts_index + i].implementation = Some(
-                translate_contract_definition(self, module.clone(), &contract_definition)?,
-            );
+            let contract = module.borrow().contracts[contracts_index + i].clone();
+
+            translate_contract_definition(
+                self,
+                module.clone(),
+                &contract_definition,
+                contract,
+            )?;
         }
 
         Ok(())

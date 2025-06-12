@@ -78,10 +78,7 @@ pub fn translate_function_declaration(
     }
 
     // Create a scope for modifier invocation translations
-    let scope = Rc::new(RefCell::new(ir::Scope {
-        contract_name: contract_name.map(|s| s.to_string()),
-        ..Default::default()
-    }));
+    let scope = Rc::new(RefCell::new(ir::Scope::new(contract_name, None)));
 
     // Add the function parameters to the scope
     for (_, p) in function_definition.params.iter() {
@@ -97,8 +94,7 @@ pub fn translate_function_declaration(
 
         scope
             .borrow_mut()
-            .variables
-            .push(Rc::new(RefCell::new(ir::Variable {
+            .add_variable(Rc::new(RefCell::new(ir::Variable {
                 old_name,
                 new_name,
                 type_name,
@@ -317,10 +313,7 @@ pub fn translate_modifier_definition(
         post_body: None,
     };
 
-    let scope = Rc::new(RefCell::new(ir::Scope {
-        contract_name: contract_name.map(|s| s.to_string()),
-        ..Default::default()
-    }));
+    let scope = Rc::new(RefCell::new(ir::Scope::new(contract_name, None)));
 
     for (_, p) in function_definition.params.iter() {
         let old_name = p
@@ -356,8 +349,7 @@ pub fn translate_modifier_definition(
 
         scope
             .borrow_mut()
-            .variables
-            .push(Rc::new(RefCell::new(ir::Variable {
+            .add_variable(Rc::new(RefCell::new(ir::Variable {
                 old_name,
                 new_name,
                 type_name,
@@ -403,31 +395,41 @@ pub fn translate_modifier_definition(
                     let mut scope = Some(current_scope.clone());
 
                     while let Some(current_scope) = scope.clone() {
-                        for variable in current_scope.borrow_mut().variables.iter() {
-                            //
-                            // TODO: check if variable is a storage key that was read from or written to
-                            //
+                        // for variable in current_scope.borrow_mut().variables.iter() {
+                        //     //
+                        //     // TODO: check if variable is a storage key that was read from or written to
+                        //     //
 
-                            if *has_storage_read && *has_storage_write {
-                                break;
-                            }
-                        }
+                        //     if *has_storage_read && *has_storage_write {
+                        //         break;
+                        //     }
+                        // }
 
                         if *has_storage_read && *has_storage_write {
                             break;
                         }
 
-                        scope.clone_from(&current_scope.borrow().parent)
+                        scope.clone_from(&current_scope.borrow().get_parent())
                     }
 
                     finalize_block_translation(project, current_scope.clone(), block)?;
                 }
 
                 current_body = &mut modifier.post_body;
-                let mut new_scope = current_scope.borrow().clone();
 
-                for v in new_scope.variables.iter_mut() {
-                    v.borrow_mut().statement_index = None;
+                let mut new_scope = ir::Scope::new(
+                    scope
+                        .borrow()
+                        .get_contract_name()
+                        .as_ref()
+                        .map(|s| s.as_str()),
+                    scope.borrow().get_parent(),
+                );
+
+                for v in scope.borrow().get_variables() {
+                    let mut v = v.borrow().clone();
+                    v.statement_index = None;
+                    new_scope.add_variable(Rc::new(RefCell::new(v)));
                 }
 
                 current_scope = Rc::new(RefCell::new(new_scope));
@@ -460,8 +462,8 @@ pub fn translate_modifier_definition(
         if let Some(sway::Statement::Let(sway_variable)) = block.statements.last() {
             let store_variable_statement_index = |id: &sway::LetIdentifier| {
                 let scope = current_scope.borrow_mut();
-                let scope_entry = scope
-                    .variables
+                let scope_variables = scope.get_variables();
+                let scope_entry = scope_variables
                     .iter()
                     .rev()
                     .find(|v| v.borrow().new_name == id.name)
@@ -650,10 +652,7 @@ pub fn translate_function_definition(
     ));
 
     // Create the scope for the body of the toplevel function
-    let scope = Rc::new(RefCell::new(ir::Scope {
-        contract_name: contract_name.map(|s| s.to_string()),
-        ..Default::default()
-    }));
+    let scope = Rc::new(RefCell::new(ir::Scope::new(contract_name, None)));
 
     // Collect information about the function from its type
     let is_constructor = matches!(function_definition.ty, solidity::FunctionTy::Constructor);
@@ -978,10 +977,10 @@ pub fn translate_function_definition(
         };
 
         parameters.push(translated_variable.clone());
+
         scope
             .borrow_mut()
-            .variables
-            .push(Rc::new(RefCell::new(translated_variable)));
+            .add_variable(Rc::new(RefCell::new(translated_variable)));
     }
 
     // Add the function's named return parameters to the scope
@@ -1034,10 +1033,10 @@ pub fn translate_function_definition(
         };
 
         return_parameters.push(translated_variable.clone());
+
         scope
             .borrow_mut()
-            .variables
-            .push(Rc::new(RefCell::new(translated_variable)));
+            .add_variable(Rc::new(RefCell::new(translated_variable)));
     }
 
     // Translate the body for the toplevel function
@@ -1050,28 +1049,18 @@ pub fn translate_function_definition(
 
     if is_constructor {
         let prefix = translate_naming_convention(module.borrow().name.as_str(), Case::Snake);
-        let constructor_called_variable_name = translate_storage_name(
-            project,
-            module.clone(),
-            format!("{prefix}_constructor_called").as_str(),
-        );
+        let constructor_called_variable_name = format!("{prefix}_constructor_called");
 
-        let namespace_name = module
-            .borrow()
-            .get_storage_namespace_name(scope.clone())
+        let storage_namespace = module
+            .borrow_mut()
+            .get_storage_namespace(scope.clone())
             .unwrap();
-        let mut has_field = false;
 
-        if let Some(storage) = module.borrow().storage.as_ref() {
-            if let Some(storage_namespace) =
-                storage.namespaces.iter().find(|s| s.name == namespace_name)
-            {
-                has_field = storage_namespace
-                    .fields
-                    .iter()
-                    .any(|s| s.name == constructor_called_variable_name);
-            }
-        }
+        let has_field = storage_namespace
+            .borrow()
+            .fields
+            .iter()
+            .any(|s| s.name == constructor_called_variable_name);
 
         if !has_field {
             // Add the `constructor_called` field to the storage block
@@ -1079,6 +1068,7 @@ pub fn translate_function_definition(
                 .borrow_mut()
                 .get_storage_namespace(scope.clone())
                 .unwrap()
+                .borrow_mut()
                 .fields
                 .push(sway::StorageField {
                     old_name: String::new(),
@@ -1107,7 +1097,14 @@ pub fn translate_function_definition(
                                     expression: sway::Expression::create_function_calls(
                                         None,
                                         &[
-                                            (format!("storage::{namespace_name}").as_str(), None),
+                                            (
+                                                format!(
+                                                    "storage::{}",
+                                                    storage_namespace.borrow().name
+                                                )
+                                                .as_str(),
+                                                None,
+                                            ),
                                             (constructor_called_variable_name.as_str(), None),
                                             ("read", Some((None, vec![]))),
                                         ],
@@ -1129,7 +1126,10 @@ pub fn translate_function_definition(
                 sway::Expression::create_function_calls(
                     None,
                     &[
-                        (format!("storage::{namespace_name}").as_str(), None),
+                        (
+                            format!("storage::{}", storage_namespace.borrow().name).as_str(),
+                            None,
+                        ),
                         (constructor_called_variable_name.as_str(), None),
                         (
                             "write",
@@ -1173,10 +1173,7 @@ pub fn translate_function_definition(
 
     // Propagate the return variable declarations
     for return_parameter in return_parameters.iter().rev() {
-        let scope = Rc::new(RefCell::new(ir::Scope {
-            contract_name: contract_name.map(|s| s.to_string()),
-            ..Default::default()
-        }));
+        let scope = Rc::new(RefCell::new(ir::Scope::new(contract_name, None)));
 
         function_body.statements.insert(
             0,

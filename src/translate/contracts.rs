@@ -7,35 +7,9 @@ pub fn translate_contract_definition(
     project: &mut Project,
     module: Rc<RefCell<ir::Module>>,
     contract_definition: &solidity::ContractDefinition,
-) -> Result<ir::Contract, Error> {
+    contract: Rc<RefCell<ir::Contract>>,
+) -> Result<(), Error> {
     // println!("Translating contract `{}`", contract_definition.name.as_ref().map(|x| x.name.as_str()).unwrap());
-
-    // Create a new contract
-    let contract_name = contract_definition
-        .name
-        .as_ref()
-        .map(|n| n.name.clone())
-        .unwrap();
-
-    let mut contract = ir::Contract::new(
-        &contract_name,
-        contract_definition.ty.clone(),
-        contract_definition
-            .base
-            .iter()
-            .map(|b| sway::TypeName::Identifier {
-                name: b
-                    .name
-                    .identifiers
-                    .iter()
-                    .map(|i| i.name.clone())
-                    .collect::<Vec<_>>()
-                    .join("."),
-                generic_parameters: None,
-            })
-            .collect::<Vec<_>>()
-            .as_slice(),
-    );
 
     // Collect each contract part into separate collections
     let mut using_directives = vec![];
@@ -88,6 +62,8 @@ pub fn translate_contract_definition(
     }
 
     // Translate contract using directives
+    let contract_name = contract.borrow().name.clone();
+
     for using_directive in using_directives {
         translate_using_directive(
             project,
@@ -282,14 +258,14 @@ pub fn translate_contract_definition(
         }
 
         if let Some(function) = abi_fn.take() {
-            if !contract.abi.functions.contains(&function) {
-                contract.abi.functions.push(function);
+            if !contract.borrow().abi.functions.contains(&function) {
+                contract.borrow_mut().abi.functions.push(function);
             }
         }
 
         if let Some(impl_item) = impl_item {
-            if !contract.abi_impl.items.contains(&impl_item) {
-                contract.abi_impl.items.push(impl_item);
+            if !contract.borrow().abi_impl.items.contains(&impl_item) {
+                contract.borrow_mut().abi_impl.items.push(impl_item);
             }
         }
 
@@ -315,16 +291,13 @@ pub fn translate_contract_definition(
 
     // Propagate deferred initializations into the constructor
     if !deferred_initializations.is_empty() {
-        let scope = Rc::new(RefCell::new(ir::Scope {
-            contract_name: Some(contract_name),
-            ..Default::default()
-        }));
+        let namespace_name = translate_naming_convention(&contract_name, Case::Snake);
+        let scope = Rc::new(RefCell::new(ir::Scope::new(
+            Some(contract_name.as_str()),
+            None,
+        )));
 
         let mut assignment_statements = vec![];
-        let namespace_name = module
-            .borrow()
-            .get_storage_namespace_name(scope.clone())
-            .unwrap();
 
         // Create assignment statements for all of the deferred initializations
         for deferred_initialization in deferred_initializations.iter().rev() {
@@ -335,7 +308,7 @@ pub fn translate_contract_definition(
 
             let value_type_name = module.borrow_mut().get_expression_type(
                 project,
-                Default::default(),
+                scope.clone(),
                 &deferred_initialization.value,
             )?;
 
@@ -360,7 +333,7 @@ pub fn translate_contract_definition(
                         create_assignment_expression(
                             project,
                             module.clone(),
-                            Default::default(),
+                            scope.clone(),
                             "=",
                             &lhs,
                             None,
@@ -373,7 +346,7 @@ pub fn translate_contract_definition(
         }
 
         // Create the constructor if it doesn't exist
-        if !contract.abi_impl.items.iter().any(|i| {
+        if !contract.borrow().abi_impl.items.iter().any(|i| {
             let sway::ImplItem::Function(f) = i else {
                 return false;
             };
@@ -390,23 +363,24 @@ pub fn translate_contract_definition(
                 body: None,
             };
 
-            contract.abi.functions.insert(0, function.clone());
+            contract
+                .borrow_mut()
+                .abi
+                .functions
+                .insert(0, function.clone());
 
             function.body = Some(sway::Block::default());
             let function_body = function.body.as_mut().unwrap();
 
-            let prefix = translate_naming_convention(contract.name.as_str(), Case::Snake);
-            let constructor_called_variable_name = translate_storage_name(
-                project,
-                module.clone(),
-                format!("{prefix}_constructor_called").as_str(),
-            );
+            let prefix = translate_naming_convention(contract_name.as_str(), Case::Snake);
+            let constructor_called_variable_name = format!("{prefix}_constructor_called");
 
             // Add the `constructor_called` field to the storage block
             module
                 .borrow_mut()
                 .get_storage_namespace(scope)
                 .unwrap()
+                .borrow_mut()
                 .fields
                 .push(sway::StorageField {
                     old_name: String::new(),
@@ -443,7 +417,7 @@ pub fn translate_contract_definition(
                                 }),
                                 sway::Expression::from(sway::Literal::String(format!(
                                     "The {} constructor has already been called",
-                                    contract.name
+                                    contract.borrow().name
                                 ))),
                             ],
                         )),
@@ -471,6 +445,7 @@ pub fn translate_contract_definition(
             ));
 
             contract
+                .borrow_mut()
                 .abi_impl
                 .items
                 .insert(0, sway::ImplItem::Function(function));
@@ -479,6 +454,8 @@ pub fn translate_contract_definition(
             // TODO: We need to insert a top level function for inheritence
             //
         }
+
+        let mut contract = contract.borrow_mut();
 
         let constructor_function = contract
             .abi_impl
@@ -536,7 +513,7 @@ pub fn translate_contract_definition(
         }
     }
 
-    Ok(contract)
+    Ok(())
 }
 
 #[inline]
@@ -546,10 +523,7 @@ pub fn translate_using_directive(
     contract_name: Option<&str>,
     using_directive: &solidity::Using,
 ) -> Result<(), Error> {
-    let scope = Rc::new(RefCell::new(ir::Scope {
-        contract_name: contract_name.map(|s| s.to_string()),
-        ..Default::default()
-    }));
+    let scope = Rc::new(RefCell::new(ir::Scope::new(contract_name, None)));
 
     let for_type = using_directive
         .ty

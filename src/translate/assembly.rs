@@ -14,10 +14,7 @@ pub fn translate_assembly_statement(
     _flags: &Option<Vec<solidity::StringLiteral>>,
     yul_block: &solidity::YulBlock,
 ) -> Result<sway::Statement, Error> {
-    let scope = Rc::new(RefCell::new(ir::Scope {
-        parent: Some(scope.clone()),
-        ..Default::default()
-    }));
+    let scope = Rc::new(RefCell::new(ir::Scope::new(None, Some(scope.clone()))));
 
     // Translate the block
     let translated_block = sway::Statement::from(sway::Expression::from(translate_yul_block(
@@ -39,10 +36,7 @@ pub fn translate_yul_block(
 ) -> Result<sway::Block, Error> {
     let mut block = sway::Block::default();
 
-    let scope = Rc::new(RefCell::new(ir::Scope {
-        parent: Some(scope.clone()),
-        ..Default::default()
-    }));
+    let scope = Rc::new(RefCell::new(ir::Scope::new(None, Some(scope.clone()))));
 
     // Translate each of the statements in the block
     for statement in yul_block.statements.iter() {
@@ -66,14 +60,10 @@ pub fn translate_yul_block(
                 let scope = scope.borrow();
 
                 let scope_entry = scope
-                    .variables
-                    .iter()
-                    .rev()
-                    .find(|v| v.borrow().new_name == id.name)
+                    .find_variable(|v| v.borrow().new_name == id.name)
                     .unwrap();
-                let mut scope_entry = scope_entry.borrow_mut();
-
-                scope_entry.statement_index = Some(statement_index);
+                
+                scope_entry.borrow_mut().statement_index = Some(statement_index);
             };
 
             match &sway_variable.pattern {
@@ -239,7 +229,9 @@ pub fn translate_yul_variable_declaration_statement(
         })));
     }
 
-    scope.borrow_mut().variables.extend(variables.clone());
+    for variable in variables.iter() {
+        scope.borrow_mut().add_variable(variable.clone());
+    }
 
     // Create the variable declaration statement
     Ok(sway::Statement::from(sway::Let {
@@ -313,10 +305,7 @@ pub fn translate_yul_for_statement(
     // }
 
     // Create a scope for the block that will contain the for loop logic
-    let scope = Rc::new(RefCell::new(ir::Scope {
-        parent: Some(scope.clone()),
-        ..Default::default()
-    }));
+    let scope = Rc::new(RefCell::new(ir::Scope::new(None, Some(scope.clone()))));
 
     // Collect statements for the for loop logic block
     let mut statements = vec![];

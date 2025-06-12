@@ -12,10 +12,7 @@ pub fn translate_struct_definition(
 ) -> Result<Rc<RefCell<sway::Struct>>, Error> {
     let mut fields = vec![];
 
-    let scope = Rc::new(RefCell::new(ir::Scope {
-        contract_name: contract_name.map(|s| s.to_string()),
-        ..Default::default()
-    }));
+    let scope = Rc::new(RefCell::new(ir::Scope::new(contract_name, None)));
 
     for field in struct_definition.fields.iter() {
         // TODO: keep track of original struct name?

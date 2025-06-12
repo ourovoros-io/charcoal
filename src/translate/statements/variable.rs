@@ -211,8 +211,7 @@ pub fn translate_variable_definition_statement(
 
     scope
         .borrow_mut()
-        .variables
-        .push(Rc::new(RefCell::new(ir::Variable {
+        .add_variable(Rc::new(RefCell::new(ir::Variable {
             old_name,
             new_name,
             type_name,

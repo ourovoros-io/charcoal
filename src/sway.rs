@@ -1,5 +1,5 @@
 use num_bigint::BigUint;
-use std::fmt::Display;
+use std::{cell::RefCell, fmt::Display, rc::Rc};
 
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -1283,7 +1283,7 @@ impl TabbedDisplay for TraitItem {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Storage {
     pub fields: Vec<StorageField>,
-    pub namespaces: Vec<StorageNamespace>,
+    pub namespaces: Vec<Rc<RefCell<StorageNamespace>>>,
 }
 
 impl TabbedDisplay for Storage {
@@ -1298,7 +1298,7 @@ impl TabbedDisplay for Storage {
 
         for namespace in self.namespaces.iter() {
             "".tabbed_fmt(depth + 1, f)?;
-            namespace.tabbed_fmt(depth + 1, f)?;
+            namespace.borrow().tabbed_fmt(depth + 1, f)?;
             writeln!(f, ",")?;
         }
 
@@ -1312,7 +1312,7 @@ impl TabbedDisplay for Storage {
 pub struct StorageNamespace {
     pub name: String,
     pub fields: Vec<StorageField>,
-    pub namespaces: Vec<StorageNamespace>,
+    pub namespaces: Vec<Rc<RefCell<StorageNamespace>>>,
 }
 
 impl TabbedDisplay for StorageNamespace {
@@ -1327,7 +1327,7 @@ impl TabbedDisplay for StorageNamespace {
 
         for namespace in self.namespaces.iter() {
             "".tabbed_fmt(depth + 1, f)?;
-            namespace.tabbed_fmt(depth + 1, f)?;
+            namespace.borrow().tabbed_fmt(depth + 1, f)?;
             writeln!(f, ",")?;
         }
 

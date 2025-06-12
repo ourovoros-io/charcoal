@@ -65,7 +65,9 @@ pub fn translate_expression_statement(
                     })));
                 }
 
-                scope.borrow_mut().variables.extend(variables);
+                for variable in variables {
+                    scope.borrow_mut().add_variable(variable);
+                }
 
                 // Create the variable declaration statement
                 return Ok(sway::Statement::from(sway::Let {

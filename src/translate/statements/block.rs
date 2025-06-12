@@ -12,14 +12,15 @@ pub fn translate_block(
     // Translate each of the statements in the block
     for statement in statements {
         // Translate the statement
-        let sway_statement = match translate_statement(project, module.clone(), scope.clone(), statement) {
-            Ok(statement) => statement,
-            Err(Error::IneffectualStatement(_, statement)) => {
-                println!("WARNING: Skipping ineffectual statement: {statement}");
-                continue;
-            }
-            Err(error) => return Err(error),
-        };
+        let sway_statement =
+            match translate_statement(project, module.clone(), scope.clone(), statement) {
+                Ok(statement) => statement,
+                Err(Error::IneffectualStatement(_, statement)) => {
+                    println!("WARNING: Skipping ineffectual statement: {statement}");
+                    continue;
+                }
+                Err(error) => return Err(error),
+            };
 
         // Store the index of the sway statement
         let statement_index = block.statements.len();
@@ -34,17 +35,12 @@ pub fn translate_block(
                     return;
                 }
 
-                let scope = scope.borrow();
-
                 let scope_entry = scope
-                    .variables
-                    .iter()
-                    .rev()
-                    .find(|v| v.borrow().new_name == id.name)
+                    .borrow()
+                    .find_variable(|v| v.borrow().new_name == id.name)
                     .unwrap();
-                let mut scope_entry = scope_entry.borrow_mut();
 
-                scope_entry.statement_index = Some(statement_index);
+                scope_entry.borrow_mut().statement_index = Some(statement_index);
             };
 
             match &sway_variable.pattern {
@@ -65,7 +61,7 @@ pub fn finalize_block_translation(
     block: &mut sway::Block,
 ) -> Result<(), Error> {
     // Check the block for variable declarations that need to be marked mutable
-    for variable in scope.borrow().variables.iter() {
+    for variable in scope.borrow().get_variables() {
         // Only check variables that are declared as statements
         let Some(statement_index) = variable.borrow().statement_index else {
             continue;
@@ -122,7 +118,7 @@ pub fn finalize_block_translation(
                 };
 
                 let mut check_let_identifier = |identifier: &sway::LetIdentifier| {
-                    if let Some(scope) = scope.borrow().parent.as_ref() {
+                    if let Some(scope) = scope.borrow().get_parent() {
                         if scope
                             .borrow()
                             .get_variable_from_new_name(&identifier.name)
@@ -178,14 +174,14 @@ pub fn translate_block_statement(
     scope: Rc<RefCell<ir::Scope>>,
     statements: &[solidity::Statement],
 ) -> Result<sway::Statement, Error> {
-    let scope = Rc::new(RefCell::new(ir::Scope {
-        parent: Some(scope.clone()),
-        ..Default::default()
-    }));
+    let scope = Rc::new(RefCell::new(ir::Scope::new(None, Some(scope.clone()))));
 
     // Translate the block
     let translated_block = sway::Statement::from(sway::Expression::from(translate_block(
-        project, module, scope.clone(), statements,
+        project,
+        module,
+        scope.clone(),
+        statements,
     )?));
 
     Ok(translated_block)

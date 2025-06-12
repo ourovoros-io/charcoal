@@ -9,10 +9,7 @@ pub fn translate_state_variable(
     contract_name: Option<&str>,
     variable_definition: &solidity::VariableDefinition,
 ) -> Result<(Vec<ir::DeferredInitialization>, Vec<(String, Vec<String>)>), Error> {
-    let value_scope = Rc::new(RefCell::new(ir::Scope {
-        contract_name: contract_name.map(|s| s.to_string()),
-        ..Default::default()
-    }));
+    let value_scope = Rc::new(RefCell::new(ir::Scope::new(contract_name, None)));
 
     // Collect information about the variable from its attributes
     let is_public = variable_definition.attrs.iter().any(|x| {
@@ -218,7 +215,7 @@ pub fn translate_state_variable(
                             let storage =
                                 module.get_storage_namespace(value_scope.clone()).unwrap();
 
-                            if let Some(field) = storage
+                            if let Some(field) = storage.borrow()
                                 .fields
                                 .iter()
                                 .find(|f| f.name == instance_field_name)
@@ -228,7 +225,7 @@ pub fn translate_state_variable(
                                     "Instance count field already exists: {field:#?}"
                                 );
                             } else {
-                                storage.fields.push(sway::StorageField {
+                                storage.borrow_mut().fields.push(sway::StorageField {
                                     old_name: String::new(),
                                     name: instance_field_name,
                                     type_name: sway::TypeName::Identifier {
@@ -244,7 +241,7 @@ pub fn translate_state_variable(
                             }
 
                             if let Some(field) =
-                                storage.fields.iter().find(|f| f.name == mapping_field_name)
+                                storage.borrow().fields.iter().find(|f| f.name == mapping_field_name)
                             {
                                 if let Some((k, v)) = field.type_name.storage_map_type() {
                                     assert!(
@@ -255,7 +252,7 @@ pub fn translate_state_variable(
                                     panic!("Instance mapping field already exists: {field:#?}");
                                 }
                             } else {
-                                storage.fields.push(sway::StorageField {
+                                storage.borrow_mut().fields.push(sway::StorageField {
                                     old_name: String::new(),
                                     name: mapping_field_name,
                                     type_name: sway::TypeName::Identifier {
@@ -352,10 +349,7 @@ pub fn translate_state_variable(
 
     // Handle constant variable definitions
     if is_constant {
-        let scope = Rc::new(RefCell::new(ir::Scope {
-            contract_name: contract_name.map(|s| s.to_string()),
-            ..Default::default()
-        }));
+        let scope = Rc::new(RefCell::new(ir::Scope::new(contract_name, None)));
 
         // Evaluate the value ahead of time in order to generate an appropriate constant value expression
         let value = evaluate_expression(
@@ -397,6 +391,7 @@ pub fn translate_state_variable(
             .borrow_mut()
             .get_storage_namespace(value_scope.clone())
             .unwrap()
+            .borrow_mut()
             .fields
             .push(sway::StorageField {
                 old_name: old_name.clone(),
@@ -408,30 +403,4 @@ pub fn translate_state_variable(
     }
 
     Ok((deferred_initializations, mapping_names))
-}
-
-#[inline]
-pub fn translate_storage_name(
-    _project: &mut Project,
-    module: Rc<RefCell<ir::Module>>,
-    name: &str,
-) -> String {
-    let mut module = module.borrow_mut();
-    if !module.storage_fields_names.contains_key(name) {
-        let mut new_name = translate_naming_convention(name, Case::Snake);
-
-        let count = module
-            .storage_fields_name_counts
-            .entry(new_name.clone())
-            .or_insert(0);
-        *count += 1;
-
-        if *count > 1 {
-            new_name = format!("{new_name}_{}", *count);
-        }
-
-        module.storage_fields_names.insert(name.into(), new_name);
-    }
-
-    module.storage_fields_names.get(name).unwrap().clone()
 }

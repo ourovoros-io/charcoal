@@ -99,31 +99,36 @@ pub fn translate_variable_access_expression(
                     variable: Some(variable),
                     expression: sway::Expression::create_identifier(variable_name),
                 }));
-            } else if let Some(storage) = module.borrow().storage.as_ref() {
-                if let Some(namespace) = storage
-                    .namespaces
-                    .iter()
-                    .find(|n| n.fields.iter().any(|f| f.old_name == *name))
-                {
-                    let field = namespace
-                        .fields
-                        .iter()
-                        .find(|f| f.old_name == *name)
-                        .unwrap();
+            }
 
+            let mut module = module.borrow_mut();
+
+            if let Some(storage_namespace) = module.get_storage_namespace(scope.clone()) {
+                if let Some(field) = storage_namespace
+                    .borrow()
+                    .fields
+                    .iter()
+                    .find(|f| f.old_name == *name)
+                {
                     return Ok(Some(ir::VariableAccess {
                         variable: None,
                         expression: sway::Expression::create_function_calls(
                             None,
                             &[
-                                (format!("storage::{}", namespace.name).as_str(), None),
+                                (
+                                    format!("storage::{}", storage_namespace.borrow().name)
+                                        .as_str(),
+                                    None,
+                                ),
                                 (field.name.as_str(), None),
                                 ("read", Some((None, vec![]))),
                             ],
                         ),
                     }));
                 }
-            } else if let Some(function) = module.borrow().functions.iter().find(|f| {
+            }
+
+            if let Some(function) = module.functions.iter().find(|f| {
                 let sway::TypeName::Function { old_name, .. } = &f.signature else {
                     unreachable!()
                 };
@@ -138,17 +143,14 @@ pub fn translate_variable_access_expression(
                         new_name.clone()
                     }),
                 }));
-            } else if let Some(constant) = module
-                .borrow()
-                .constants
-                .iter()
-                .find(|c| c.old_name == *name)
-            {
+            }
+
+            if let Some(constant) = module.constants.iter().find(|c| c.old_name == *name) {
                 return Ok(Some(ir::VariableAccess {
                     variable: None,
                     expression: sway::Expression::create_identifier(constant.name.clone()),
                 }));
-            } else if let Some(configurable) = module.borrow().configurable.as_ref() {
+            } else if let Some(configurable) = module.configurable.as_ref() {
                 if let Some(field) = configurable.fields.iter().find(|f| f.old_name == *name) {
                     return Ok(Some(ir::VariableAccess {
                         variable: None,
