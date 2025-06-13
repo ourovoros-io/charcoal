@@ -162,29 +162,8 @@ pub fn translate_yul_assign_statement(
 
         let Some(variable) = scope.borrow().get_variable_from_new_name(name) else {
             panic!(
-                "{}error: Variable not found in scope: \"{name}\"",
-                match project.loc_to_line_and_column(module.clone(), &identifiers[i].loc()) {
-                    Some((line, col)) => format!(
-                        "{}:{}:{}: ",
-                        project
-                            .options
-                            .input
-                            .join(module.borrow().path.clone())
-                            .with_extension("sol")
-                            .to_string_lossy(),
-                        line,
-                        col
-                    ),
-                    None => format!(
-                        "{}: ",
-                        project
-                            .options
-                            .input
-                            .join(module.borrow().path.clone())
-                            .with_extension("sol")
-                            .to_string_lossy()
-                    ),
-                }
+                "{}: ERROR: Variable not found in scope: \"{name}\"",
+                project.loc_to_file_location_string(module.clone(), &identifiers[i].loc()),
             );
         };
 
@@ -569,29 +548,8 @@ pub fn translate_yul_variable_expression(
 
     let Some(variable) = scope.borrow().get_variable_from_old_name(name) else {
         panic!(
-            "{}error: Variable not found in scope: \"{name}\"",
-            match project.loc_to_line_and_column(module.clone(), &expression.loc()) {
-                Some((line, col)) => format!(
-                    "{}:{}:{}: ",
-                    project
-                        .options
-                        .input
-                        .join(module.borrow().path.clone())
-                        .with_extension("sol")
-                        .to_string_lossy(),
-                    line,
-                    col
-                ),
-                None => format!(
-                    "{}: ",
-                    project
-                        .options
-                        .input
-                        .join(module.borrow().path.clone())
-                        .with_extension("sol")
-                        .to_string_lossy()
-                ),
-            }
+            "{}: ERROR: Variable not found in scope: \"{name}\"",
+            project.loc_to_file_location_string(module.clone(), &expression.loc()),
         );
     };
 

@@ -269,35 +269,14 @@ pub fn translate_modifier_definition(
     let new_name = translate_naming_convention(old_name.as_str(), Case::Snake);
 
     // println!(
-    //     "Translating modifier {}.{} {}",
+    //     "Translating modifier {}.{} at {}",
     //     module.borrow().name,
     //     function_definition
     //         .name
     //         .as_ref()
     //         .map(|n| n.name.as_str())
     //         .unwrap_or_else(|| new_name.as_str()),
-    //     match project.loc_to_line_and_column(module.clone(), &function_definition.loc) {
-    //         Some((line, col)) => format!(
-    //             "at {}:{}:{}",
-    //             project
-    //                 .options
-    //                 .input
-    //                 .join(module.borrow().path.clone())
-    //                 .with_extension("sol")
-    //                 .to_string_lossy(),
-    //             line,
-    //             col
-    //         ),
-    //         None => format!(
-    //             "in {}...",
-    //             project
-    //                 .options
-    //                 .input
-    //                 .join(module.borrow().path.clone())
-    //                 .with_extension("sol")
-    //                 .to_string_lossy()
-    //         ),
-    //     },
+    //     project.loc_to_file_location_string(module.clone(), &function_definition.loc),
     // );
 
     let mut modifier = ir::Modifier {
@@ -604,6 +583,10 @@ pub fn translate_modifier_definition(
         }
 
         (None, None) => {
+            //
+            // TODO:
+            //
+
             // let path = project
             //     .root_folder
             //     .clone()
@@ -612,11 +595,8 @@ pub fn translate_modifier_definition(
             //     .with_extension("sol");
 
             // panic!(
-            //     "{}: Malformed modifier missing pre and post bodies",
-            //     match project.loc_to_line_and_column(&path, &function_definition.loc) {
-            //         Some((line, col)) => format!("{}:{}:{}", path.to_string_lossy(), line, col),
-            //         None => path.to_string_lossy().to_string(),
-            //     },
+            //     "{}: ERROR: Malformed modifier missing pre and post bodies",
+            //     project.loc_to_file_location_string(module.clone(), &function_definition.loc),
             // );
 
             return Ok(());
@@ -730,35 +710,14 @@ pub fn translate_function_definition(
     }
 
     // println!(
-    //     "Translating function {}.{} {}",
+    //     "Translating function {}.{} at {}",
     //     module.borrow().name,
     //     function_definition
     //         .name
     //         .as_ref()
     //         .map(|n| n.name.as_str())
     //         .unwrap_or_else(|| new_name_2.as_str()),
-    //     match project.loc_to_line_and_column(module.clone(), &function_definition.loc) {
-    //         Some((line, col)) => format!(
-    //             "at {}:{}:{}",
-    //             project
-    //                 .options
-    //                 .input
-    //                 .join(module.borrow().path.clone())
-    //                 .with_extension("sol")
-    //                 .to_string_lossy(),
-    //             line,
-    //             col
-    //         ),
-    //         None => format!(
-    //             "in {}...",
-    //             project
-    //                 .options
-    //                 .input
-    //                 .join(module.borrow().path.clone())
-    //                 .with_extension("sol")
-    //                 .to_string_lossy()
-    //         ),
-    //     },
+    //     project.loc_to_file_location_string(module.clone(), &function_definition.loc),
     // );
 
     // Translate the functions parameters

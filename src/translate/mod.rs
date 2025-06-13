@@ -770,7 +770,8 @@ pub fn resolve_symbol(
     symbol: Symbol,
 ) -> Option<Box<dyn std::any::Any>> {
     match &symbol {
-        Symbol::TypeDefinition(name) => todo!(),
+        Symbol::TypeDefinition(_) => todo!(),
+
         Symbol::Event(name) => {
             if let Some(event_enum) = module
                 .borrow()
@@ -790,11 +791,12 @@ pub fn resolve_symbol(
                 return Some(Box::new((event_enum.0.borrow().name.clone(), variant)));
             }
         }
-        Symbol::Enum(name) => todo!(),
-        Symbol::Error(name) => todo!(),
-        Symbol::Struct(name) => todo!(),
-        Symbol::Function(name) => todo!(),
-        Symbol::Abi(name) => todo!(),
+
+        Symbol::Enum(_) => todo!(),
+        Symbol::Error(_) => todo!(),
+        Symbol::Struct(_) => todo!(),
+        Symbol::Function(_) => todo!(),
+        Symbol::Abi(_) => todo!(),
     }
 
     for use_expr in module.borrow().uses.iter() {

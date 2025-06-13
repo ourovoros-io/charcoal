@@ -452,28 +452,7 @@ pub fn translate_type_name(
 
             todo!(
                 "{} - translate variable type expression: {} - {type_name:#?}",
-                match project.loc_to_line_and_column(module.clone(), &type_name.loc()) {
-                    Some((line, col)) => format!(
-                        "{}:{}:{}",
-                        project
-                            .options
-                            .input
-                            .join(module.borrow().path.clone())
-                            .with_extension("sol")
-                            .to_string_lossy(),
-                        line,
-                        col
-                    ),
-                    None => format!(
-                        "{}",
-                        project
-                            .options
-                            .input
-                            .join(module.borrow().path.clone())
-                            .with_extension("sol")
-                            .to_string_lossy()
-                    ),
-                },
+                project.loc_to_file_location_string(module.clone(), &type_name.loc()),
                 type_name.to_string(),
             )
         }
@@ -576,7 +555,7 @@ pub fn translate_type_name(
                     // Check to see if member is a struct
                     else if let Some(external_struct) =
                         external_definition.borrow().structs.iter().find(|s| {
-                            s.implementation.as_ref().unwrap().borrow().name == member.name
+                            s.signature.to_string() == member.name
                         })
                     {
                         translated_struct =
@@ -640,82 +619,19 @@ pub fn translate_type_name(
 
                 todo!(
                     "{} - member access type name expression: {type_name}",
-                    match project.loc_to_line_and_column(module.clone(), &type_name.loc()) {
-                        Some((line, col)) => format!(
-                            "{}:{}:{}",
-                            project
-                                .options
-                                .input
-                                .join(module.borrow().path.clone())
-                                .with_extension("sol")
-                                .to_string_lossy(),
-                            line,
-                            col
-                        ),
-                        None => format!(
-                            "{}",
-                            project
-                                .options
-                                .input
-                                .join(module.borrow().path.clone())
-                                .with_extension("sol")
-                                .to_string_lossy()
-                        ),
-                    },
+                    project.loc_to_file_location_string(module.clone(), &type_name.loc()),
                 )
             }
 
             _ => todo!(
                 "{} - member access type name expression: {type_name}",
-                match project.loc_to_line_and_column(module.clone(), &type_name.loc()) {
-                    Some((line, col)) => format!(
-                        "{}:{}:{}",
-                        project
-                            .options
-                            .input
-                            .join(module.borrow().path.clone())
-                            .with_extension("sol")
-                            .to_string_lossy(),
-                        line,
-                        col
-                    ),
-                    None => format!(
-                        "{}",
-                        project
-                            .options
-                            .input
-                            .join(module.borrow().path.clone())
-                            .with_extension("sol")
-                            .to_string_lossy()
-                    ),
-                },
+                project.loc_to_file_location_string(module.clone(), &type_name.loc()),
             ),
         },
 
         _ => unimplemented!(
             "{} - type name expression: {type_name}",
-            match project.loc_to_line_and_column(module.clone(), &type_name.loc()) {
-                Some((line, col)) => format!(
-                    "{}:{}:{}",
-                    project
-                        .options
-                        .input
-                        .join(module.borrow().path.clone())
-                        .with_extension("sol")
-                        .to_string_lossy(),
-                    line,
-                    col
-                ),
-                None => format!(
-                    "{}",
-                    project
-                        .options
-                        .input
-                        .join(module.borrow().path.clone())
-                        .with_extension("sol")
-                        .to_string_lossy()
-                ),
-            },
+            project.loc_to_file_location_string(module.clone(), &type_name.loc()),
         ),
     }
 }

@@ -346,29 +346,8 @@ pub fn translate_member_access_expression(
     }
 
     todo!(
-        "{}translate {container_type_name_string} member access expression: {expression} - {expression:#?}",
-        match project.loc_to_line_and_column(module.clone(), &expression.loc()) {
-            Some((line, col)) => format!(
-                "{}:{}:{}: ",
-                project
-                    .options
-                    .input
-                    .join(module.borrow().path.clone())
-                    .with_extension("sol")
-                    .to_string_lossy(),
-                line,
-                col
-            ),
-            None => format!(
-                "{}: ",
-                project
-                    .options
-                    .input
-                    .join(module.borrow().path.clone())
-                    .with_extension("sol")
-                    .to_string_lossy()
-            ),
-        },
+        "{}: TODO: translate {container_type_name_string} member access expression: {expression} - {expression:#?}",
+        project.loc_to_file_location_string(module.clone(), &expression.loc()),
     )
 }
 

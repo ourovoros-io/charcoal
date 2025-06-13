@@ -27,28 +27,7 @@ pub fn translate_function_call_expression(
 
     // println!(
     //     "Translating function call: {expression}; from {}",
-    //     match project.loc_to_line_and_column(module.clone(), &expression.loc()) {
-    //         Some((line, col)) => format!(
-    //             "{}:{}:{}: ",
-    //             project
-    //                 .options
-    //                 .input
-    //                 .join(module.borrow().path.clone())
-    //                 .with_extension("sol")
-    //                 .to_string_lossy(),
-    //             line,
-    //             col
-    //         ),
-    //         None => format!(
-    //             "{}: ",
-    //             project
-    //                 .options
-    //                 .input
-    //                 .join(module.borrow().path.clone())
-    //                 .with_extension("sol")
-    //                 .to_string_lossy()
-    //         ),
-    //     },
+    //     project.loc_to_file_location_string(module.clone(), &expression.loc()),
     // );
 
     match function {
@@ -276,29 +255,8 @@ pub fn translate_function_call_expression(
             }
 
             panic!(
-                "{}error: Failed to find function `{name}({})` in scope: {function}({})",
-                match project.loc_to_line_and_column(module.clone(), &function.loc()) {
-                    Some((line, col)) => format!(
-                        "{}:{}:{}: ",
-                        project
-                            .options
-                            .input
-                            .join(module.borrow().path.clone())
-                            .with_extension("sol")
-                            .to_string_lossy(),
-                        line,
-                        col
-                    ),
-                    None => format!(
-                        "{}: ",
-                        project
-                            .options
-                            .input
-                            .join(module.borrow().path.clone())
-                            .with_extension("sol")
-                            .to_string_lossy()
-                    ),
-                },
+                "{}: ERROR: Failed to find function `{name}({})` in scope: {function}({})",
+                project.loc_to_file_location_string(module.clone(), &function.loc()),
                 parameter_types
                     .iter()
                     .map(|t| t.to_string())
@@ -807,30 +765,9 @@ pub fn translate_function_call_expression(
                             }
                         }
 
-                        todo!(
-                            "{}translate {name} member function call: {}.{member}({}) - {container:#?}",
-                            match project.loc_to_line_and_column(module.clone(), &function.loc()) {
-                                Some((line, col)) => format!(
-                                    "{}:{}:{}: ",
-                                    project
-                                        .options
-                                        .input
-                                        .join(module.borrow().path.clone())
-                                        .with_extension("sol")
-                                        .to_string_lossy(),
-                                    line,
-                                    col
-                                ),
-                                None => format!(
-                                    "{}: ",
-                                    project
-                                        .options
-                                        .input
-                                        .join(module.borrow().path.clone())
-                                        .with_extension("sol")
-                                        .to_string_lossy()
-                                ),
-                            },
+                        panic!(
+                            "{}: TODO: translate {name} member function call: {}.{member}({}) - {container:#?}",
+                            project.loc_to_file_location_string(module.clone(), &function.loc()),
                             sway::TabbedDisplayer(&container),
                             parameter_types
                                 .iter()
@@ -903,30 +840,9 @@ pub fn translate_function_call_expression(
                         // }
                     }
 
-                    todo!(
-                        "{}translate array member function call: {} - {}",
-                        match project.loc_to_line_and_column(module.clone(), &function.loc()) {
-                            Some((line, col)) => format!(
-                                "{}:{}:{}: ",
-                                project
-                                    .options
-                                    .input
-                                    .join(module.borrow().path.clone())
-                                    .with_extension("sol")
-                                    .to_string_lossy(),
-                                line,
-                                col
-                            ),
-                            None => format!(
-                                "{}: ",
-                                project
-                                    .options
-                                    .input
-                                    .join(module.borrow().path.clone())
-                                    .with_extension("sol")
-                                    .to_string_lossy()
-                            ),
-                        },
+                    panic!(
+                        "{}: TODO: translate array member function call: {} - {}",
+                        project.loc_to_file_location_string(module.clone(), &function.loc()),
                         expression,
                         sway::TabbedDisplayer(&container),
                     )
@@ -994,29 +910,8 @@ pub fn translate_function_call_expression(
                     }
 
                     panic!(
-                        "{}TODO: translate string slice member function call: {function}({})",
-                        match project.loc_to_line_and_column(module.clone(), &function.loc()) {
-                            Some((line, col)) => format!(
-                                "{}:{}:{}: ",
-                                project
-                                    .options
-                                    .input
-                                    .join(module.borrow().path.clone())
-                                    .with_extension("sol")
-                                    .to_string_lossy(),
-                                line,
-                                col
-                            ),
-                            None => format!(
-                                "{}: ",
-                                project
-                                    .options
-                                    .input
-                                    .join(module.borrow().path.clone())
-                                    .with_extension("sol")
-                                    .to_string_lossy()
-                            ),
-                        },
+                        "{}: TODO: translate string slice member function call: {function}({})",
+                        project.loc_to_file_location_string(module.clone(), &function.loc()),
                         parameter_types
                             .iter()
                             .map(|t| t.to_string())
@@ -1086,29 +981,8 @@ pub fn translate_function_call_block_expression(
     }
 
     panic!(
-        "{}TODO: Translate function call block expression: `{function}{block}`",
-        match project.loc_to_line_and_column(module.clone(), &function.loc()) {
-            Some((line, col)) => format!(
-                "{}:{}:{}: ",
-                project
-                    .options
-                    .input
-                    .join(module.borrow().path.clone())
-                    .with_extension("sol")
-                    .to_string_lossy(),
-                line,
-                col
-            ),
-            None => format!(
-                "{}: ",
-                project
-                    .options
-                    .input
-                    .join(module.borrow().path.clone())
-                    .with_extension("sol")
-                    .to_string_lossy()
-            ),
-        },
+        "{}: TODO: Translate function call block expression: `{function}{block}`",
+        project.loc_to_file_location_string(module.clone(), &function.loc()),
     )
 }
 

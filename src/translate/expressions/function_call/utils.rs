@@ -534,7 +534,7 @@ pub fn resolve_struct_constructor(
 ) -> Result<Option<sway::Expression>, Error> {
     let Some(struct_definition) = structs
         .iter()
-        .find(|s| s.implementation.as_ref().unwrap().borrow().name == struct_name)
+        .find(|s| s.signature.to_string() == struct_name)
     else {
         return Ok(None);
     };

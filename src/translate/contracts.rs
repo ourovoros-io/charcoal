@@ -558,28 +558,7 @@ pub fn translate_using_directive(
             let Some(library_definition) = project.find_module_with_contract(&library_name) else {
                 panic!(
                     "Failed to find translated library: \"{library_name}\"; from {}",
-                    match project.loc_to_line_and_column(module.clone(), &using_directive.loc) {
-                        Some((line, col)) => format!(
-                            "{}:{}:{}: ",
-                            project
-                                .options
-                                .input
-                                .join(module.borrow().path.clone())
-                                .with_extension("sol")
-                                .to_string_lossy(),
-                            line,
-                            col
-                        ),
-                        None => format!(
-                            "{}: ",
-                            project
-                                .options
-                                .input
-                                .join(module.borrow().path.clone())
-                                .with_extension("sol")
-                                .to_string_lossy()
-                        ),
-                    },
+                    project.loc_to_file_location_string(module.clone(), &using_directive.loc),
                 )
             };
 

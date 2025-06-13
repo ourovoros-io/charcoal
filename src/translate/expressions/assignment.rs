@@ -14,10 +14,7 @@ pub fn translate_assignment_expression(
     // use solang_parser::helpers::CodeLocation;
     // println!(
     //     "Translating assignment expression: {lhs} {operator} {rhs}; from {}",
-    //     match project.loc_to_line_and_column(&module.path, &lhs.loc()) {
-    //         Some((line, col)) => format!("{}:{}:{}: ", module.path.to_string_lossy(), line, col),
-    //         None => format!("{}: ", module.path.to_string_lossy()),
-    //     },
+    //     project.loc_to_file_location_string(module.clone(), &lhs.loc()),
     // );
 
     let rhs = match operator {
@@ -85,7 +82,7 @@ pub fn translate_assignment_expression(
                     .borrow()
                     .structs
                     .iter()
-                    .find(|s| s.implementation.as_ref().unwrap().borrow().name == name)
+                    .find(|s| s.signature.to_string() == name)
                 {
                     if struct_definition
                         .implementation

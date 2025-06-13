@@ -33,31 +33,9 @@ pub fn translate_import_directives(
 
                 let Some(imported_module) = imported_module else {
                     panic!(
-                        "{}ERROR: failed to resolve import directive from `{import_directive}`",
-                        match project
-                            .loc_to_line_and_column(module.clone(), &import_directive.loc())
-                        {
-                            Some((line, col)) => format!(
-                                "{}:{}:{}: ",
-                                project
-                                    .options
-                                    .input
-                                    .join(module.borrow().path.clone())
-                                    .with_extension("sol")
-                                    .to_string_lossy(),
-                                line,
-                                col
-                            ),
-                            None => format!(
-                                "{}: ",
-                                project
-                                    .options
-                                    .input
-                                    .join(module.borrow().path.clone())
-                                    .with_extension("sol")
-                                    .to_string_lossy()
-                            ),
-                        }
+                        "{}: ERROR: failed to resolve import directive from `{import_directive}`",
+                        project
+                            .loc_to_file_location_string(module.clone(), &import_directive.loc(),),
                     );
                 };
 

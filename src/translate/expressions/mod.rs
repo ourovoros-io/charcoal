@@ -364,28 +364,7 @@ pub fn translate_expression(
 ) -> Result<sway::Expression, Error> {
     // println!(
     //     "Translating expression: {expression}; from {}",
-    //     match project.loc_to_line_and_column(module.clone(), &expression.loc()) {
-    //         Some((line, col)) => format!(
-    //             "{}:{}:{}: ",
-    //             project
-    //                 .options
-    //                 .input
-    //                 .join(module.borrow().path.clone())
-    //                 .with_extension("sol")
-    //                 .to_string_lossy(),
-    //             line,
-    //             col
-    //         ),
-    //         None => format!(
-    //             "{}: ",
-    //             project
-    //                 .options
-    //                 .input
-    //                 .join(module.borrow().path.clone())
-    //                 .with_extension("sol")
-    //                 .to_string_lossy()
-    //         ),
-    //     }
+    //     project.loc_to_file_location_string(module.clone(), &expression.loc()),
     // );
 
     match expression {
@@ -1154,7 +1133,7 @@ pub fn create_value_expression(
                     .borrow()
                     .structs
                     .iter()
-                    .find(|s| s.implementation.as_ref().unwrap().borrow().name == *name)
+                    .find(|s| s.signature.to_string() == *name)
                     .map(|s| s.implementation.as_ref().unwrap())
                     .cloned()
                 {

@@ -41,29 +41,8 @@ pub fn translate_new_expression(
                     }),
 
                     arg => println!(
-                        "{}WARNING: unsupported function call block arg: {arg}",
-                        match project.loc_to_line_and_column(module.clone(), &block_arg.loc()) {
-                            Some((line, col)) => format!(
-                                "{}:{}:{}: ",
-                                project
-                                    .options
-                                    .input
-                                    .join(module.borrow().path.clone())
-                                    .with_extension("sol")
-                                    .to_string_lossy(),
-                                line,
-                                col
-                            ),
-                            None => format!(
-                                "{}: ",
-                                project
-                                    .options
-                                    .input
-                                    .join(module.borrow().path.clone())
-                                    .with_extension("sol")
-                                    .to_string_lossy()
-                            ),
-                        }
+                        "{}: WARNING: unsupported function call block arg: {arg}",
+                        project.loc_to_file_location_string(module.clone(), &block_arg.loc()),
                     ),
                 }
             }
@@ -372,11 +351,8 @@ pub fn translate_new_expression(
 
         _ => {
             // println!(
-            //     "{}WARNING: unsupported function call block arg: {expr}",
-            //     match project.loc_to_line_and_column(module.clone(), &expr.loc()) {
-            //         Some((line, col)) => format!("{}:{}:{}: ", project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy() line, col),
-            //         None => format!("{}: ", project.options.input.join(module.borrow().path.clone()).with_extension("sol").to_string_lossy()),
-            //     }
+            //     "{}: WARNING: unsupported function call block arg: {expr}",
+            //     project.loc_to_file_location_string(module.clone(), &expr.loc()),
             // );
 
             todo!("translate new expression: {expr:#?} - {expression:#?}")

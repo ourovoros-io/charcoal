@@ -476,7 +476,7 @@ impl Project {
     }
 
     #[inline]
-    pub fn loc_to_line_and_column(
+    fn loc_to_line_and_column(
         &self,
         module: Rc<RefCell<ir::Module>>,
         loc: &solidity::Loc,
@@ -506,6 +506,34 @@ impl Project {
         }
 
         None
+    }
+
+    #[inline]
+    pub fn loc_to_file_location_string(
+        &self,
+        module: Rc<RefCell<ir::Module>>,
+        loc: &solidity::Loc,
+    ) -> String {
+        match self.loc_to_line_and_column(module.clone(), loc) {
+            Some((line, col)) => format!(
+                "{}:{}:{}",
+                self.options
+                    .input
+                    .join(module.borrow().path.clone())
+                    .with_extension("sol")
+                    .to_string_lossy(),
+                line,
+                col
+            ),
+            None => format!(
+                "{}",
+                self.options
+                    .input
+                    .join(module.borrow().path.clone())
+                    .with_extension("sol")
+                    .to_string_lossy()
+            ),
+        }
     }
 
     pub fn resolve_use(&mut self, use_expr: &sway::Use) -> Option<Rc<RefCell<ir::Module>>> {

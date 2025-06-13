@@ -24,12 +24,10 @@ pub fn translate_pre_or_post_operator_value_expression(
         }
 
         _ => {
+            // use solang_parser::pt::CodeLocation;
             // println!(
             //     "Translating pre- or post-operator value expression: {expression}; from {} - {expression:#?}",
-            //     match project.loc_to_line_and_column(&module.path, &expression.loc()) {
-            //         Some((line, col)) => format!("{}:{}:{}: ", module.path.to_string_lossy(), line, col),
-            //         None => format!("{}: ", module.path.to_string_lossy()),
-            //     },
+            //     project.loc_to_file_location_string(module.clone(), &expression.loc()),
             // );
 
             let result = translate_expression(project, module.clone(), scope.clone(), expression)?;

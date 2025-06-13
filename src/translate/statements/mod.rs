@@ -35,29 +35,8 @@ pub fn translate_statement(
     statement: &solidity::Statement,
 ) -> Result<sway::Statement, Error> {
     // println!(
-    //     "Translating statement {}",
-    //     match project.loc_to_line_and_column(module.clone(), &statement.loc()) {
-    //         Some((line, col)) => format!(
-    //             "at {}:{}:{}",
-    //             project
-    //                 .options
-    //                 .input
-    //                 .join(module.borrow().path.clone())
-    //                 .with_extension("sol")
-    //                 .to_string_lossy(),
-    //             line,
-    //             col
-    //         ),
-    //         None => format!(
-    //             "in {}...",
-    //             project
-    //                 .options
-    //                 .input
-    //                 .join(module.borrow().path.clone())
-    //                 .with_extension("sol")
-    //                 .to_string_lossy()
-    //         ),
-    //     },
+    //     "Translating statement at {}",
+    //     project.loc_to_file_location_string(module.clone(), &statement.loc()),
     // );
 
     match statement {

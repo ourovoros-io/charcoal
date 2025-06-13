@@ -219,83 +219,20 @@ pub fn translate_address_type_cast_function_call(
                         }
 
                         _ => panic!(
-                            "{}translate cast from {value_type_name} to address: {expression} - {value_type_name:#?}",
-                            match project.loc_to_line_and_column(module.clone(), &argument.loc()) {
-                                Some((line, col)) => format!(
-                                    "{}:{}:{}: ",
-                                    project
-                                        .options
-                                        .input
-                                        .join(module.borrow().path.clone())
-                                        .with_extension("sol")
-                                        .to_string_lossy(),
-                                    line,
-                                    col
-                                ),
-                                None => format!(
-                                    "{}: ",
-                                    project
-                                        .options
-                                        .input
-                                        .join(module.borrow().path.clone())
-                                        .with_extension("sol")
-                                        .to_string_lossy()
-                                ),
-                            },
+                            "{}: TODO: translate cast from {value_type_name} to address: {expression} - {value_type_name:#?}",
+                            project.loc_to_file_location_string(module.clone(), &argument.loc()),
                         ),
                     },
 
                     _ => panic!(
-                        "{}translate cast from {value_type_name} to address: {expression} - {value_type_name:#?}",
-                        match project.loc_to_line_and_column(module.clone(), &argument.loc()) {
-                            Some((line, col)) => format!(
-                                "{}:{}:{}: ",
-                                project
-                                    .options
-                                    .input
-                                    .join(module.borrow().path.clone())
-                                    .with_extension("sol")
-                                    .to_string_lossy(),
-                                line,
-                                col
-                            ),
-                            None => format!(
-                                "{}: ",
-                                project
-                                    .options
-                                    .input
-                                    .join(module.borrow().path.clone())
-                                    .with_extension("sol")
-                                    .to_string_lossy()
-                            ),
-                        },
+                        "{}: TODO: translate cast from {value_type_name} to address: {expression} - {value_type_name:#?}",
+                        project.loc_to_file_location_string(module.clone(), &argument.loc()),
                     ),
                 },
 
                 _ => panic!(
-                    "{}translate cast from {value_type_name} to address: {expression} - {value_type_name:#?}",
-                    match project.loc_to_line_and_column(module.clone(), &argument.loc()) {
-                        Some((line, col)) => format!(
-                            "{}:{}:{}: ",
-                            project
-                                .options
-                                .input
-                                .join(module.borrow().path.clone())
-                                .with_extension("sol")
-                                .to_string_lossy(),
-                            line,
-                            col
-                        ),
-                        None => format!(
-                            "{}: ",
-                            project
-                                .options
-                                .input
-                                .join(module.borrow().path.clone())
-                                .with_extension("sol")
-                                .to_string_lossy()
-                        ),
-                    },
+                    "{}: TODO: translate cast from {value_type_name} to address: {expression} - {value_type_name:#?}",
+                    project.loc_to_file_location_string(module.clone(), &argument.loc()),
                 ),
             }
         }
@@ -773,29 +710,8 @@ pub fn translate_uint_types_cast_function_call(
             ("todo!", _) => Ok(value_expression),
 
             _ => panic!(
-                "{}translate from {value_type_name} to u{bits}: {value_expression:#?}",
-                match project.loc_to_line_and_column(module.clone(), &argument.loc()) {
-                    Some((line, col)) => format!(
-                        "{}:{}:{}: ",
-                        project
-                            .options
-                            .input
-                            .join(module.borrow().path.clone())
-                            .with_extension("sol")
-                            .to_string_lossy(),
-                        line,
-                        col
-                    ),
-                    None => format!(
-                        "{}: ",
-                        project
-                            .options
-                            .input
-                            .join(module.borrow().path.clone())
-                            .with_extension("sol")
-                            .to_string_lossy()
-                    ),
-                },
+                "{}: TODO: translate from {value_type_name} to u{bits}: {value_expression:#?}",
+                project.loc_to_file_location_string(module.clone(), &argument.loc()),
             ),
         },
 
@@ -1134,29 +1050,8 @@ pub fn translate_bytes_type_cast_function_call(
             }
 
             _ => panic!(
-                "{}TODO: translate from {value_type_name} to bytes{byte_count}",
-                match project.loc_to_line_and_column(module.clone(), &function.loc()) {
-                    Some((line, col)) => format!(
-                        "{}:{}:{}: ",
-                        project
-                            .options
-                            .input
-                            .join(module.borrow().path.clone())
-                            .with_extension("sol")
-                            .to_string_lossy(),
-                        line,
-                        col
-                    ),
-                    None => format!(
-                        "{}: ",
-                        project
-                            .options
-                            .input
-                            .join(module.borrow().path.clone())
-                            .with_extension("sol")
-                            .to_string_lossy()
-                    ),
-                },
+                "{}: TODO: translate from {value_type_name} to bytes{byte_count}",
+                project.loc_to_file_location_string(module.clone(), &function.loc()),
             ),
         },
 

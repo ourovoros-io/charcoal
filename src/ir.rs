@@ -881,7 +881,7 @@ impl Module {
             if let Some(struct_definition) = self
                 .structs
                 .iter()
-                .find(|s| s.implementation.as_ref().unwrap().borrow().name == *name)
+                .find(|s| s.signature.to_string() == *name)
             {
                 if let Some(field) = struct_definition
                     .implementation

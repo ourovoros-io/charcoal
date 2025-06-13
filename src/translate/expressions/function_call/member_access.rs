@@ -835,30 +835,9 @@ pub fn translate_identity_member_access_function_call(
         }
     }
 
-    todo!(
-        "{}translate Identity member function call `{member}`: {}",
-        match project.loc_to_line_and_column(module.clone(), &function.loc()) {
-            Some((line, col)) => format!(
-                "{}:{}:{}: ",
-                project
-                    .options
-                    .input
-                    .join(module.borrow().path.clone())
-                    .with_extension("sol")
-                    .to_string_lossy(),
-                line,
-                col
-            ),
-            None => format!(
-                "{}: ",
-                project
-                    .options
-                    .input
-                    .join(module.borrow().path.clone())
-                    .with_extension("sol")
-                    .to_string_lossy()
-            ),
-        },
+    panic!(
+        "{}: TODO: translate Identity member function call `{member}`: {}",
+        project.loc_to_file_location_string(module.clone(), &function.loc()),
         sway::TabbedDisplayer(&container),
     )
 }
