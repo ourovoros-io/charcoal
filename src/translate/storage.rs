@@ -34,7 +34,10 @@ pub fn translate_state_variable(
     // If the state variable is not constant or immutable, it is a storage field
     let storage_namespace = if !is_constant && !is_immutable {
         Some(translate_naming_convention(
-            &module.borrow().name,
+            contract_name
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| module.borrow().name.clone())
+                .as_str(),
             Case::Snake,
         ))
     } else {
@@ -73,9 +76,9 @@ pub fn translate_state_variable(
         generic_parameters: None,
     } = &variable_type_name
     {
-        if project.find_contract(name.as_str()).is_some() {
+        if let Some(contract) = project.find_contract(module.clone(), name.as_str()) {
             // TODO:
-            // for entry in external_definition.uses.iter() {
+            // for entry in contract.borrow().uses.iter() {
             //     if !module.uses.contains(entry) {
             //         module.uses.push(entry.clone());
             //     }

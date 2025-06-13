@@ -152,7 +152,7 @@ pub fn translate_contract_definition(
     }
 
     // Create the abi encoding function for the events enum (if any)
-    let events_enum_name = format!("{}Event", module.borrow().name);
+    let events_enum_name = format!("{}Event", contract_name);
 
     if let Some((events_enum, abi_encode_impl)) = module
         .borrow()
@@ -180,7 +180,7 @@ pub fn translate_contract_definition(
     }
 
     // Create the abi encoding function for the errors enum (if any)
-    let errors_enum_name = format!("{}Error", module.borrow().name);
+    let errors_enum_name = format!("{}Error", contract_name);
 
     if let Some((errors_enum, abi_encode_impl)) = module
         .borrow()
@@ -540,22 +540,8 @@ pub fn translate_using_directive(
                 .collect::<Vec<_>>()
                 .join(".");
 
-            if library_name == module.borrow().name {
-                // Add a self-referential using directive to the current definition
-                module
-                    .borrow_mut()
-                    .using_directives
-                    .push(ir::UsingDirective {
-                        library_name,
-                        for_type,
-                        functions: vec![],
-                    });
-
-                return Ok(());
-            }
-
             // Find the translated library definition
-            let Some(library_definition) = project.find_module_with_contract(&library_name) else {
+            let Some(library_definition) = project.find_module_with_contract(module.clone(), &library_name) else {
                 panic!(
                     "Failed to find translated library: \"{library_name}\"; from {}",
                     project.loc_to_file_location_string(module.clone(), &using_directive.loc),

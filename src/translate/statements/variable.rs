@@ -31,7 +31,7 @@ pub fn translate_variable_definition_statement(
         generic_parameters: None,
     } = &type_name
     {
-        if project.find_contract(&name).is_some() {
+        if project.find_contract(module.clone(), &name).is_some() {
             abi_type_name = Some(type_name.clone());
 
             type_name = sway::TypeName::Identifier {

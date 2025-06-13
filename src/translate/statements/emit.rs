@@ -24,19 +24,12 @@ pub fn translate_emit_statement(
                         translate_naming_convention(&member.name, Case::Pascal);
 
                     // Check if container is contained in an external definition
-                    if let Some(external_definition) = project
-                        .translated_modules
-                        .iter()
-                        .find(|d| d.borrow().name == container_id.name)
-                        .cloned()
+                    if let Some(external_module) = project
+                        .find_module_with_contract(module.clone(), container_id.name.as_str())
                     {
-                        for events_enum in external_definition.borrow().events_enums.iter() {
+                        for events_enum in external_module.borrow().events_enums.iter() {
                             for variant in events_enum.0.borrow().variants.clone() {
                                 if variant.name == event_variant_name {
-                                    if !module.borrow().events_enums.contains(events_enum) {
-                                        module.borrow_mut().events_enums.push(events_enum.clone());
-                                    }
-
                                     return Ok(sway::Statement::from(
                                         sway::Expression::create_function_calls(
                                             None,
@@ -89,18 +82,25 @@ pub fn translate_emit_statement(
                                                                         .unwrap()
                                                                     } else {
                                                                         let mut arguments = arguments
-                                                                .iter()
-                                                                .map(|p| {
-                                                                    translate_expression(
-                                                                        project,
-                                                                        module.clone(),
-                                                                        scope.clone(),
-                                                                        p,
-                                                                    )
-                                                                })
-                                                                .collect::<Result<Vec<_>, _>>()?;
+                                                                                .iter()
+                                                                                .map(|p| {
+                                                                                    translate_expression(
+                                                                                        project,
+                                                                                        module.clone(),
+                                                                                        scope.clone(),
+                                                                                        p,
+                                                                                    )
+                                                                                })
+                                                                                .collect::<Result<Vec<_>, _>>()?;
 
-                                                                        let mut arguments_types = arguments.iter().map(|a| module.borrow_mut().get_expression_type(project, scope.clone(), a).unwrap()).collect::<Vec<_>>();
+                                                                        let mut arguments_types = arguments
+                                                                            .iter()
+                                                                            .map(|a| {
+                                                                                module
+                                                                                    .borrow_mut()
+                                                                                    .get_expression_type(project, scope.clone(), a)
+                                                                                    .unwrap()
+                                                                            }).collect::<Vec<_>>();
 
                                                                         let sway::TypeName::Tuple {
                                                                             ref type_names,
@@ -112,11 +112,16 @@ pub fn translate_emit_statement(
                                                                         };
 
                                                                         let coerced: Vec<sway::Expression> = arguments
-                                                                .iter_mut().zip(arguments_types.iter_mut().zip(type_names))
-                                                                .map(|(expr, (from_type_name, to_type_name))| {
-                                                                    coerce_expression(expr, from_type_name, to_type_name).unwrap()
-                                                                })
-                                                                .collect();
+                                                                            .iter_mut()
+                                                                            .zip(
+                                                                                arguments_types
+                                                                                    .iter_mut()
+                                                                                    .zip(type_names)
+                                                                            )
+                                                                            .map(|(expr, (from_type_name, to_type_name))| {
+                                                                                coerce_expression(expr, from_type_name, to_type_name).unwrap()
+                                                                            })
+                                                                            .collect();
 
                                                                         sway::Expression::Tuple(
                                                                             coerced,

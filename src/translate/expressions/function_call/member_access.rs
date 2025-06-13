@@ -139,7 +139,7 @@ pub fn translate_member_access_function_call(
 
                                             // Check to see if the type is located in an external ABI
                                             if let Some(external_definition) =
-                                                project.find_contract(&name)
+                                                project.find_contract(module.clone(), &name)
                                             {
                                                 if external_definition
                                                     .borrow()
@@ -338,7 +338,7 @@ pub fn translate_function_call_block_member_access(
                     }
 
                     // Check to see if the type is located in an external ABI
-                    if let Some(external_definition) = project.find_contract(&name) {
+                    if let Some(external_definition) = project.find_contract(module.clone(), &name) {
                         if external_definition
                             .borrow()
                             .abi
@@ -541,7 +541,7 @@ pub fn translate_identity_member_access_function_call(
     // // Check using directives for Identity-specific function
     // for using_directive in module.using_directives.iter() {
     //     let Some(external_definition) =
-    //         project.find_module_with_contract(&using_directive.library_name).cloned()
+    //         project.find_module_with_contract(module.clone(), &using_directive.library_name).cloned()
     //     else {
     //         continue;
     //     };
@@ -774,7 +774,7 @@ pub fn translate_identity_member_access_function_call(
     }
 
     // Check to see if the type is located in an external ABI
-    if let Some(external_definition) = project.find_contract(&name) {
+    if let Some(external_definition) = project.find_contract(module.clone(), &name) {
         println!("Found {name} - {:#?}", external_definition);
         // Check lower case names for regular functions
         if external_definition

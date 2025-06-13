@@ -113,7 +113,7 @@ pub fn translate_member_access_expression(
                         // }
                     }
 
-                    if let Some(external_definition) = project.find_contract(&name) {
+                    if let Some(external_definition) = project.find_contract(module.clone(), &name) {
                         if external_definition
                             .borrow()
                             .abi

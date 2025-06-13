@@ -153,7 +153,7 @@ pub fn translate_function_call_expression(
 
             // Check to see if the expression is an ABI cast
             if parameters.len() == 1 {
-                if let Some(_external_definition) = project.find_contract(name) {
+                if let Some(_external_definition) = project.find_contract(module.clone(), name) {
                     match module.borrow_mut().get_expression_type(
                         project,
                         scope.clone(),
@@ -351,7 +351,7 @@ pub fn translate_function_call_expression(
                     }
 
                     // Check if function is contained in an external definition
-                    if let Some(external_module) = project.find_module_with_contract(&name) {
+                    if let Some(external_module) = project.find_module_with_contract(module.clone(), &name) {
                         // Check to see if the expression is a by-value struct constructor
                         let structs = {
                             let module = external_module.borrow();
@@ -462,7 +462,7 @@ pub fn translate_function_call_expression(
                     if let Some(abi_type_name) = abi_type_name.as_ref() {
                         let abi_type_name_string = abi_type_name.to_string();
 
-                        if let Some(contract) = project.find_contract(&abi_type_name_string) {
+                        if let Some(contract) = project.find_contract(module.clone(), &abi_type_name_string) {
                             let abi = contract.borrow().abi.clone();
 
                             if let Some(result) = resolve_abi_function_call(
@@ -644,7 +644,7 @@ pub fn translate_function_call_expression(
 
                             // Look up the definition of the using directive
                             let Some(external_module) =
-                                project.find_module_with_contract(&using_directive.library_name)
+                                project.find_module_with_contract(module.clone(), &using_directive.library_name)
                             else {
                                 continue;
                             };
@@ -817,7 +817,7 @@ pub fn translate_function_call_expression(
                         // let external_scope = if matches!(module.borrow().kind, Some(solidity::ContractTy::Library(_))) && using_directive.library_name == module.borrow().name {
                         //     module.borrow().toplevel_scope.clone()
                         // } else {
-                        //     match project.find_module_with_contract(&using_directive.library_name)
+                        //     match project.find_module_with_contract(module.clone(), &using_directive.library_name)
                         //     .map(|d| d.toplevel_scope.clone()) {
                         //         Some(s) => s,
                         //         None => continue,
@@ -889,7 +889,7 @@ pub fn translate_function_call_expression(
 
                         // TODO
                         // Look up the definition of the using directive
-                        // let Some(external_scope) = project.find_module_with_contract(&using_directive.library_name)
+                        // let Some(external_scope) = project.find_module_with_contract(module.clone(), &using_directive.library_name)
                         //     .map(|d| d.toplevel_scope.clone())
                         // else { continue };
 

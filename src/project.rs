@@ -742,7 +742,11 @@ impl Project {
         parent_module
     }
 
-    pub fn find_contract(&mut self, contract_name: &str) -> Option<Rc<RefCell<ir::Contract>>> {
+    pub fn find_contract(
+        &mut self,
+        module: Rc<RefCell<ir::Module>>,
+        contract_name: &str,
+    ) -> Option<Rc<RefCell<ir::Contract>>> {
         fn check_module(
             module: Rc<RefCell<ir::Module>>,
             contract_name: &str,
@@ -765,6 +769,10 @@ impl Project {
             None
         }
 
+        if let Some(contract) = check_module(module.clone(), contract_name) {
+            return Some(contract.clone());
+        }
+
         for module in self.translated_modules.iter() {
             if let Some(contract) = check_module(module.clone(), contract_name) {
                 return Some(contract.clone());
@@ -776,6 +784,7 @@ impl Project {
 
     pub fn find_module_with_contract(
         &mut self,
+        module: Rc<RefCell<ir::Module>>,
         contract_name: &str,
     ) -> Option<Rc<RefCell<ir::Module>>> {
         fn check_module(
@@ -798,6 +807,10 @@ impl Project {
             }
 
             None
+        }
+
+        if let Some(module) = check_module(module.clone(), contract_name) {
+            return Some(module.clone());
         }
 
         for module in self.translated_modules.iter() {

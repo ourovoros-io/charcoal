@@ -26,11 +26,11 @@ pub fn translate_revert_statement(
         let (error_variant_name, errors_enum_and_impl) = if error_type.identifiers.len() == 2 {
             let external_definition_name = ids_iter.next().unwrap().name.clone();
             let error_variant_name = ids_iter.next().unwrap().name.clone();
+
             let external_definition = project
-                .translated_modules
-                .iter_mut()
-                .find(|d| d.borrow().name == external_definition_name)
+                .find_module_with_contract(module.clone(), external_definition_name.as_str())
                 .unwrap();
+
             let errors_enum_and_impl = external_definition
                 .borrow()
                 .errors_enums
@@ -43,9 +43,11 @@ pub fn translate_revert_statement(
                 })
                 .cloned()
                 .unwrap();
+
             (error_variant_name, errors_enum_and_impl)
         } else {
             let error_variant_name = ids_iter.next().unwrap().name.clone();
+
             let errors_enum_and_impl = module
                 .borrow()
                 .errors_enums
@@ -58,6 +60,7 @@ pub fn translate_revert_statement(
                 })
                 .cloned()
                 .unwrap();
+
             (error_variant_name, errors_enum_and_impl)
         };
 
@@ -264,7 +267,7 @@ pub fn translate_revert_named_arguments(
     path: &Option<solidity::IdentifierPath>,
     named_args: &[solidity::NamedArgument],
 ) -> Result<sway::Statement, Error> {
-    // TODO: Keep track of the paramerter names and order them correctly
+    // TODO: Keep track of the parameter names and order them correctly
     let error_identifier = path
         .as_ref()
         .unwrap()

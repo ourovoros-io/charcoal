@@ -63,7 +63,12 @@ pub fn translate_event_definition(
     contract_name: Option<&str>,
     event_definition: &solidity::EventDefinition,
 ) -> Result<(), Error> {
-    let events_enum_name = format!("{}Event", module.borrow().name);
+    let events_enum_name = format!(
+        "{}Event",
+        contract_name
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| module.borrow().name.clone())
+    );
 
     let scope = Rc::new(RefCell::new(ir::Scope::new(contract_name, None)));
 
@@ -80,7 +85,7 @@ pub fn translate_event_definition(
                 name,
                 generic_parameters,
             } => {
-                if project.find_contract(&name).is_some() {
+                if project.find_contract(module.clone(), &name).is_some() {
                     sway::TypeName::Identifier {
                         name: "Identity".into(),
                         generic_parameters: None,
@@ -113,7 +118,7 @@ pub fn translate_event_definition(
                             name,
                             generic_parameters,
                         } => {
-                            if project.find_contract(&name).is_some() {
+                            if project.find_contract(module.clone(), &name).is_some() {
                                 sway::TypeName::Identifier {
                                     name: "Identity".into(),
                                     generic_parameters: None,
@@ -185,7 +190,13 @@ pub fn translate_error_definition(
     contract_name: Option<&str>,
     error_definition: &solidity::ErrorDefinition,
 ) -> Result<(), Error> {
-    let errors_enum_name = format!("{}Error", module.borrow().name);
+    let errors_enum_name = format!(
+        "{}Error",
+        contract_name
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| module.borrow().name.clone())
+    );
+
     let scope = Rc::new(RefCell::new(ir::Scope::new(contract_name, None)));
 
     let type_name = if error_definition.fields.len() == 1 {
