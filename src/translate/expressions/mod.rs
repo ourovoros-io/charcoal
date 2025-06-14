@@ -1,7 +1,7 @@
 use crate::{error::Error, project::Project, sway, translate::*};
 use num_bigint::BigUint;
 use num_traits::{Num, Zero};
-use solang_parser::{helpers::CodeLocation, pt as solidity};
+use solang_parser::pt as solidity;
 use std::{cell::RefCell, rc::Rc};
 
 mod address_call;
@@ -231,11 +231,7 @@ pub fn evaluate_expression(
                         function_call
                             .parameters
                             .iter()
-                            .map(|p| module.borrow_mut().get_expression_type(
-                                project,
-                                scope.clone(),
-                                p
-                            ))
+                            .map(|p| get_expression_type(project, module.clone(), scope.clone(), p))
                             .collect::<Result<Vec<_>, _>>()
                             .unwrap()
                             .iter()
@@ -362,6 +358,7 @@ pub fn translate_expression(
     scope: Rc<RefCell<ir::Scope>>,
     expression: &solidity::Expression,
 ) -> Result<sway::Expression, Error> {
+    // use solang_parser::pt::CodeLocation;
     // println!(
     //     "Translating expression: {expression}; from {}",
     //     project.loc_to_file_location_string(module.clone(), &expression.loc()),
@@ -686,11 +683,9 @@ pub fn create_value_expression(
     value: Option<&sway::Expression>,
 ) -> sway::Expression {
     if let Some(value) = value {
-        let value_type = module
-            .borrow_mut()
-            .get_expression_type(project, scope.clone(), value)
-            .unwrap();
-        
+        let value_type =
+            get_expression_type(project, module.clone(), scope.clone(), value).unwrap();
+
         return coerce_expression(value, &value_type, type_name).unwrap();
     }
 
@@ -728,10 +723,8 @@ pub fn create_value_expression(
                     )),
                 };
 
-                let value_type = module
-                    .borrow_mut()
-                    .get_expression_type(project, scope.clone(), &value)
-                    .unwrap();
+                let value_type =
+                    get_expression_type(project, module.clone(), scope.clone(), &value).unwrap();
                 coerce_expression(&value, &value_type, type_name).unwrap()
             }
 
@@ -830,7 +823,7 @@ pub fn create_value_expression(
                     };
                     type_name == name
                 }) {
-                    let underlying_type = module.borrow().get_underlying_type(type_name);
+                    let underlying_type = get_underlying_type(module.clone(), type_name);
                     return create_value_expression(
                         project,
                         module,
@@ -858,7 +851,7 @@ pub fn create_value_expression(
                         .items
                         .first()
                     else {
-                        let underlying_type = module.borrow().get_underlying_type(type_name);
+                        let underlying_type = get_underlying_type(module.clone(), type_name);
                         return create_value_expression(
                             project,
                             module.clone(),

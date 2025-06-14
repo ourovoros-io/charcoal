@@ -169,9 +169,7 @@ pub fn translate_member_access_expression(
                            container: &sway::Expression|
      -> Result<Option<sway::Expression>, Error> {
         let container_type_name =
-            module
-                .borrow_mut()
-                .get_expression_type(project, scope.clone(), container)?;
+            get_expression_type(project, module.clone(), scope.clone(), container)?;
         let container_type_name_string = container_type_name.to_string();
 
         // Check if container is a struct
@@ -308,9 +306,7 @@ pub fn translate_member_access_expression(
     }
 
     let container_type_name =
-        module
-            .borrow_mut()
-            .get_expression_type(project, scope.clone(), &container)?;
+        get_expression_type(project, module.clone(), scope.clone(), &container)?;
 
     let container_type_name_string = container_type_name.to_string();
 
@@ -388,7 +384,7 @@ fn translate_builtin_function_call_member_access_expression(
                 false,
             );
 
-            let type_name = module.borrow().get_underlying_type(&type_name);
+            let type_name = get_underlying_type(module.clone(), &type_name);
 
             match &type_name {
                 sway::TypeName::Identifier { name, .. } => {

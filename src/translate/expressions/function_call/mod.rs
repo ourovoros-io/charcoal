@@ -34,7 +34,7 @@ pub fn translate_function_call_expression(
         solidity::Expression::Type(_, ty) => {
             // Type casting
             if arguments.len() != 1 {
-                panic!("Invalid type cast: {expression:#?}");
+                panic!("Invalid type cast expression: {expression}");
             }
 
             match ty {
@@ -96,7 +96,7 @@ pub fn translate_function_call_expression(
                     &arguments[0],
                 ),
 
-                _ => todo!("translate type cast: {} - {expression:#?}", expression),
+                _ => todo!("translate type cast: {}", expression),
             }
         }
 
@@ -125,11 +125,7 @@ pub fn translate_function_call_expression(
 
             let parameter_types = parameters
                 .iter()
-                .map(|p| {
-                    module
-                        .borrow_mut()
-                        .get_expression_type(project, scope.clone(), p)
-                })
+                .map(|p| get_expression_type(project, module.clone(), scope.clone(), p))
                 .collect::<Result<Vec<_>, _>>()?;
 
             // Check to see if the expression is a by-value struct constructor
@@ -154,8 +150,9 @@ pub fn translate_function_call_expression(
             // Check to see if the expression is an ABI cast
             if parameters.len() == 1 {
                 if let Some(_external_definition) = project.find_contract(module.clone(), name) {
-                    match module.borrow_mut().get_expression_type(
+                    match get_expression_type(
                         project,
+                        module.clone(),
                         scope.clone(),
                         &parameters[0],
                     )? {
@@ -222,9 +219,6 @@ pub fn translate_function_call_expression(
 
             // Try to resolve the function call
             if let Some(result) = resolve_function_call(
-                project,
-                module.clone(),
-                scope.clone(),
                 module.clone(),
                 name,
                 named_arguments,
@@ -240,9 +234,6 @@ pub fn translate_function_call_expression(
                 if let Some(found_module) = project.resolve_use(use_item) {
                     // Try to resolve the function call
                     if let Some(result) = resolve_function_call(
-                        project,
-                        module.clone(),
-                        scope.clone(),
                         found_module.clone(),
                         name,
                         named_arguments,
@@ -305,11 +296,7 @@ pub fn translate_function_call_expression(
 
                     let parameter_types = parameters
                         .iter()
-                        .map(|p| {
-                            module
-                                .borrow_mut()
-                                .get_expression_type(project, scope.clone(), p)
-                        })
+                        .map(|p| get_expression_type(project, module.clone(), scope.clone(), p))
                         .collect::<Result<Vec<_>, _>>()?;
 
                     // TODO: check full inheritance hierarchy
@@ -351,7 +338,9 @@ pub fn translate_function_call_expression(
                     }
 
                     // Check if function is contained in an external definition
-                    if let Some(external_module) = project.find_module_with_contract(module.clone(), &name) {
+                    if let Some(external_module) =
+                        project.find_module_with_contract(module.clone(), &name)
+                    {
                         // Check to see if the expression is a by-value struct constructor
                         let structs = {
                             let module = external_module.borrow();
@@ -373,9 +362,6 @@ pub fn translate_function_call_expression(
 
                         // Try to resolve the function call
                         if let Some(result) = resolve_function_call(
-                            project,
-                            module.clone(),
-                            scope.clone(),
                             external_module.clone(),
                             member.name.as_str(),
                             named_arguments,
@@ -421,11 +407,8 @@ pub fn translate_function_call_expression(
                     let container =
                         translate_expression(project, module.clone(), scope.clone(), container)?;
 
-                    let type_name = module.borrow_mut().get_expression_type(
-                        project,
-                        scope.clone(),
-                        &container,
-                    )?;
+                    let type_name =
+                        get_expression_type(project, module.clone(), scope.clone(), &container)?;
 
                     let mut abi_type_name = None;
 
@@ -462,7 +445,9 @@ pub fn translate_function_call_expression(
                     if let Some(abi_type_name) = abi_type_name.as_ref() {
                         let abi_type_name_string = abi_type_name.to_string();
 
-                        if let Some(contract) = project.find_contract(module.clone(), &abi_type_name_string) {
+                        if let Some(contract) =
+                            project.find_contract(module.clone(), &abi_type_name_string)
+                        {
                             let abi = contract.borrow().abi.clone();
 
                             if let Some(result) = resolve_abi_function_call(
@@ -544,9 +529,7 @@ pub fn translate_function_call_expression(
                 translate_expression(project, module.clone(), scope.clone(), container)?;
 
             let mut type_name =
-                module
-                    .borrow_mut()
-                    .get_expression_type(project, scope.clone(), &container)?;
+                get_expression_type(project, module.clone(), scope.clone(), &container)?;
 
             // println!(
             //     "type of {} is {}",
@@ -613,13 +596,8 @@ pub fn translate_function_call_expression(
 
                         let parameter_types = parameters
                             .iter()
-                            .map(|p| {
-                                module
-                                    .borrow_mut()
-                                    .get_expression_type(project, scope.clone(), p)
-                            })
-                            .collect::<Result<Vec<_>, _>>()
-                            .unwrap();
+                            .map(|p| get_expression_type(project, module.clone(), scope.clone(), p))
+                            .collect::<Result<Vec<_>, _>>()?;
 
                         let mut using_parameters = parameters.clone();
                         using_parameters.insert(0, container.clone());
@@ -627,10 +605,12 @@ pub fn translate_function_call_expression(
                         let mut using_parameter_types = parameter_types.clone();
                         using_parameter_types.insert(
                             0,
-                            module
-                                .borrow_mut()
-                                .get_expression_type(project, scope.clone(), &container)
-                                .unwrap(),
+                            get_expression_type(
+                                project,
+                                module.clone(),
+                                scope.clone(),
+                                &container,
+                            )?,
                         );
 
                         // Check if this is a function from a using directive
@@ -643,16 +623,14 @@ pub fn translate_function_call_expression(
                             }
 
                             // Look up the definition of the using directive
-                            let Some(external_module) =
-                                project.find_module_with_contract(module.clone(), &using_directive.library_name)
-                            else {
+                            let Some(external_module) = project.find_module_with_contract(
+                                module.clone(),
+                                &using_directive.library_name,
+                            ) else {
                                 continue;
                             };
 
                             if let Some(result) = resolve_function_call(
-                                project,
-                                module.clone(),
-                                scope.clone(),
                                 external_module.clone(),
                                 member.name.as_str(),
                                 named_arguments,
@@ -766,7 +744,7 @@ pub fn translate_function_call_expression(
                         }
 
                         panic!(
-                            "{}: TODO: translate {name} member function call: {}.{member}({}) - {container:#?}",
+                            "{}: TODO: translate {name} member function call: {}.{member}({})",
                             project.loc_to_file_location_string(module.clone(), &function.loc()),
                             sway::TabbedDisplayer(&container),
                             parameter_types
@@ -786,21 +764,13 @@ pub fn translate_function_call_expression(
 
                     let mut parameter_types = parameters
                         .iter()
-                        .map(|p| {
-                            module
-                                .borrow_mut()
-                                .get_expression_type(project, scope.clone(), p)
-                        })
-                        .collect::<Result<Vec<_>, _>>()
-                        .unwrap();
+                        .map(|p| get_expression_type(project, module.clone(), scope.clone(), p))
+                        .collect::<Result<Vec<_>, _>>()?;
 
                     parameters.insert(0, container.clone());
                     parameter_types.insert(
                         0,
-                        module
-                            .borrow_mut()
-                            .get_expression_type(project, scope.clone(), &container)
-                            .unwrap(),
+                        get_expression_type(project, module.clone(), scope.clone(), &container)?,
                     );
 
                     // Check if this is a function from a using directive
@@ -849,7 +819,7 @@ pub fn translate_function_call_expression(
                 }
 
                 sway::TypeName::Tuple { .. } => todo!(
-                    "translate tuple member function call: {} - {container:#?}",
+                    "translate tuple member function call: {}",
                     sway::TabbedDisplayer(&container)
                 ),
 
@@ -861,21 +831,13 @@ pub fn translate_function_call_expression(
 
                     let mut parameter_types = parameters
                         .iter()
-                        .map(|p| {
-                            module
-                                .borrow_mut()
-                                .get_expression_type(project, scope.clone(), p)
-                        })
-                        .collect::<Result<Vec<_>, _>>()
-                        .unwrap();
+                        .map(|p| get_expression_type(project, module.clone(), scope.clone(), p))
+                        .collect::<Result<Vec<_>, _>>()?;
 
                     parameters.insert(0, container.clone());
                     parameter_types.insert(
                         0,
-                        module
-                            .borrow_mut()
-                            .get_expression_type(project, scope.clone(), &container)
-                            .unwrap(),
+                        get_expression_type(project, module.clone(), scope.clone(), &container)?,
                     );
 
                     // Check if this is a function from a using directive
@@ -921,20 +883,19 @@ pub fn translate_function_call_expression(
                 }
 
                 sway::TypeName::StringArray { .. } => todo!(
-                    "translate string array member function call: {} - {container:#?}",
+                    "translate string array member function call: {}",
                     sway::TabbedDisplayer(&container)
                 ),
 
                 sway::TypeName::Function { .. } => todo!(
-                    "translate fn member function call: {} - {container:#?}",
+                    "translate fn member function call: {}",
                     sway::TabbedDisplayer(&container)
                 ),
             }
         }
 
-        solidity::Expression::FunctionCall(_, function, args) =>
         // timelock.executeTransaction.value(proposal.values[i])
-        {
+        solidity::Expression::FunctionCall(_, function, args) => {
             translate_member_access_function_call(
                 project,
                 module.clone(),
@@ -961,10 +922,10 @@ pub fn translate_function_call_expression(
                 )
             }
 
-            _ => todo!("translate function call block expression: {expression} - {expression:#?}"),
+            _ => todo!("translate function call block expression: {expression}"),
         },
 
-        _ => todo!("translate function call expression: {expression} - {expression:#?}"),
+        _ => todo!("translate function call expression: {expression}"),
     }
 }
 

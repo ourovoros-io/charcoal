@@ -236,9 +236,7 @@ pub fn translate_builtin_function_call(
             }
 
             let parameter_type =
-                module
-                    .borrow_mut()
-                    .get_expression_type(project, scope.clone(), &parameters[0])?;
+                get_expression_type(project, module.clone(), scope.clone(), &parameters[0])?;
 
             parameters[0] = coerce_expression(
                 &parameters[0],

@@ -747,35 +747,23 @@ impl Project {
         module: Rc<RefCell<ir::Module>>,
         contract_name: &str,
     ) -> Option<Rc<RefCell<ir::Contract>>> {
-        fn check_module(
-            module: Rc<RefCell<ir::Module>>,
-            contract_name: &str,
-        ) -> Option<Rc<RefCell<ir::Contract>>> {
-            if let Some(contract) = module
-                .borrow()
-                .contracts
-                .iter()
-                .find(|c| c.borrow().name == contract_name)
-            {
-                return Some(contract.clone());
-            }
-
-            for module in module.borrow().submodules.iter() {
-                if let Some(contract) = check_module(module.clone(), contract_name) {
-                    return Some(contract.clone());
-                }
-            }
-
-            None
-        }
-
-        if let Some(contract) = check_module(module.clone(), contract_name) {
+        // Check to see if the contract was defined in the current file
+        if let Some(contract) = module
+            .borrow()
+            .contracts
+            .iter()
+            .find(|c| c.borrow().name == contract_name)
+        {
             return Some(contract.clone());
         }
 
-        for module in self.translated_modules.iter() {
-            if let Some(contract) = check_module(module.clone(), contract_name) {
-                return Some(contract.clone());
+        // Check all of the module's `use` statements for crate-local imports,
+        // find the module being imported, then check if the contract lives there.
+        for use_item in module.borrow().uses.iter() {
+            if let Some(found_module) = self.resolve_use(use_item) {
+                if let Some(contract) = found_module.borrow().contracts.iter().find(|c| c.borrow().name == contract_name) {
+                    return Some(contract.clone());
+                }
             }
         }
 
@@ -787,35 +775,23 @@ impl Project {
         module: Rc<RefCell<ir::Module>>,
         contract_name: &str,
     ) -> Option<Rc<RefCell<ir::Module>>> {
-        fn check_module(
-            module: Rc<RefCell<ir::Module>>,
-            contract_name: &str,
-        ) -> Option<Rc<RefCell<ir::Module>>> {
-            if module
-                .borrow()
-                .contracts
-                .iter()
-                .any(|c| c.borrow().name == contract_name)
-            {
-                return Some(module.clone());
-            }
-
-            for module in module.borrow().submodules.iter() {
-                if let Some(module) = check_module(module.clone(), contract_name) {
-                    return Some(module.clone());
-                }
-            }
-
-            None
-        }
-
-        if let Some(module) = check_module(module.clone(), contract_name) {
+        // Check to see if the contract was defined in the current file
+        if module
+            .borrow()
+            .contracts
+            .iter()
+            .any(|c| c.borrow().name == contract_name)
+        {
             return Some(module.clone());
         }
 
-        for module in self.translated_modules.iter() {
-            if let Some(module) = check_module(module.clone(), contract_name) {
-                return Some(module.clone());
+        // Check all of the module's `use` statements for crate-local imports,
+        // find the module being imported, then check if the contract lives there.
+        for use_item in module.borrow().uses.iter() {
+            if let Some(found_module) = self.resolve_use(use_item) {
+                if found_module.borrow().contracts.iter().any(|c| c.borrow().name == contract_name) {
+                    return Some(found_module.clone());
+                }
             }
         }
 

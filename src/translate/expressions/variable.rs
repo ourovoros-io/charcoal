@@ -159,8 +159,9 @@ pub fn translate_variable_access_expression(
             if let sway::Expression::FunctionCall(function_call) = &expression {
                 if let sway::Expression::MemberAccess(member_access) = &function_call.function {
                     if member_access.member == "read" && function_call.parameters.is_empty() {
-                        let container_type = module.borrow_mut().get_expression_type(
+                        let container_type = get_expression_type(
                             project,
+                            module.clone(),
                             scope.clone(),
                             &member_access.expression,
                         )?;
@@ -173,9 +174,7 @@ pub fn translate_variable_access_expression(
             }
 
             let type_name =
-                module
-                    .borrow_mut()
-                    .get_expression_type(project, scope.clone(), &expression)?;
+                get_expression_type(project, module.clone(), scope.clone(), &expression)?;
 
             Ok(Some(ir::VariableAccess {
                 variable,
@@ -230,9 +229,12 @@ pub fn translate_variable_access_expression(
                                     }
 
                                     ("StorageVec", Some(_)) => {
-                                        let index_type_name = module
-                                            .borrow_mut()
-                                            .get_expression_type(project, scope.clone(), &index)?;
+                                        let index_type_name = get_expression_type(
+                                            project,
+                                            module.clone(),
+                                            scope.clone(),
+                                            &index,
+                                        )?;
                                         let u64_type = sway::TypeName::Identifier {
                                             name: "u64".to_string(),
                                             generic_parameters: None,
@@ -285,8 +287,9 @@ pub fn translate_variable_access_expression(
                         ("Vec", Some(generic_parameters))
                             if generic_parameters.entries.len() == 1 =>
                         {
-                            let index_type_name = module.borrow_mut().get_expression_type(
+                            let index_type_name = get_expression_type(
                                 project,
+                                module.clone(),
                                 scope.clone(),
                                 &index,
                             )?;
@@ -324,8 +327,9 @@ pub fn translate_variable_access_expression(
             let mut translated_container =
                 translate_expression(project, module.clone(), scope.clone(), container)?;
 
-            let mut container_type_name = module.borrow_mut().get_expression_type(
+            let mut container_type_name = get_expression_type(
                 project,
+                module.clone(),
                 scope.clone(),
                 &translated_container,
             )?;

@@ -28,9 +28,7 @@ pub fn translate_return_statement(
 
     let mut expression = translate_expression(project, module.clone(), scope.clone(), expression)?;
     let mut expression_type =
-        module
-            .borrow_mut()
-            .get_expression_type(project, scope.clone(), &expression)?;
+        get_expression_type(project, module.clone(), scope.clone(), &expression)?;
 
     // HACK: remove `.read()` is underlying expression type is StorageVec or StorageMap
     if let sway::Expression::FunctionCall(f) = &expression {

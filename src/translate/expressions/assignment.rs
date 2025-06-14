@@ -33,9 +33,7 @@ pub fn translate_assignment_expression(
         }
     };
 
-    let rhs_type_name = module
-        .borrow_mut()
-        .get_expression_type(project, scope.clone(), &rhs)?;
+    let rhs_type_name = get_expression_type(project, module.clone(), scope.clone(), &rhs)?;
 
     let Some(ir::VariableAccess {
         variable,
@@ -54,10 +52,7 @@ pub fn translate_assignment_expression(
         }
     }
 
-    let expr_type_name =
-        module
-            .borrow_mut()
-            .get_expression_type(project, scope.clone(), &expression)?;
+    let expr_type_name = get_expression_type(project, module.clone(), scope.clone(), &expression)?;
 
     // HACK: struct field lookup
     if let sway::Expression::MemberAccess(member_access) = &expression {
@@ -72,10 +67,12 @@ pub fn translate_assignment_expression(
         }
 
         if !is_storage_keyword {
-            let expression_type = {
-                let mut module = module.borrow_mut();
-                module.get_expression_type(project, scope.clone(), &member_access.expression)?
-            };
+            let expression_type = get_expression_type(
+                project,
+                module.clone(),
+                scope.clone(),
+                &member_access.expression,
+            )?;
 
             if let sway::TypeName::Identifier { name, .. } = expression_type {
                 if let Some(struct_definition) = module
@@ -212,21 +209,17 @@ pub fn create_assignment_expression(
 
     let type_name = match variable.clone() {
         Some(variable) => variable.borrow().type_name.clone(),
-        None => module
-            .borrow_mut()
-            .get_expression_type(project, scope.clone(), expression)?,
+        None => get_expression_type(project, module.clone(), scope.clone(), expression)?,
     };
 
-    let expr_type_name =
-        module
-            .borrow_mut()
-            .get_expression_type(project, scope.clone(), expression)?;
+    let expr_type_name = get_expression_type(project, module.clone(), scope.clone(), expression)?;
 
     // Check for assignments to fields of struct variables defined in scope
     if !type_name.is_compatible_with(&expr_type_name) {
         if let sway::Expression::MemberAccess(member_access) = expression {
-            let type_name = module.borrow_mut().get_expression_type(
+            let type_name = get_expression_type(
                 project,
+                module.clone(),
                 scope.clone(),
                 &member_access.expression,
             )?;
@@ -325,8 +318,9 @@ pub fn create_assignment_expression(
             ("Vec", Some(generic_parameters)) if generic_parameters.entries.len() == 1 => {
                 match &expression {
                     sway::Expression::ArrayAccess(array_access) => {
-                        let index_type = module.borrow_mut().get_expression_type(
+                        let index_type = get_expression_type(
                             project,
+                            module.clone(),
                             scope.clone(),
                             &array_access.index,
                         )?;
@@ -338,9 +332,7 @@ pub fn create_assignment_expression(
                             coerce_expression(&array_access.index, &index_type, &u64_type).unwrap();
 
                         let rhs_type =
-                            module
-                                .borrow_mut()
-                                .get_expression_type(project, scope.clone(), rhs)?;
+                            get_expression_type(project, module.clone(), scope.clone(), rhs)?;
                         let rhs = coerce_expression(
                             rhs,
                             &rhs_type,
@@ -477,12 +469,12 @@ pub fn create_assignment_expression(
                             sway::Expression::MemberAccess(member_access) => {
                                 match member_access.member.as_str() {
                                     "get" if function_call.parameters.len() == 1 => {
-                                        let container_type =
-                                            module.borrow_mut().get_expression_type(
-                                                project,
-                                                scope.clone(),
-                                                &member_access.expression,
-                                            )?;
+                                        let container_type = get_expression_type(
+                                            project,
+                                            module.clone(),
+                                            scope.clone(),
+                                            &member_access.expression,
+                                        )?;
 
                                         todo!(
                                             "translation {container_type} assignment expression: {}",
@@ -501,13 +493,12 @@ pub fn create_assignment_expression(
                                                             if function_call.parameters.len()
                                                                 == 1 =>
                                                         {
-                                                            let rhs_type = module
-                                                                .borrow_mut()
-                                                                .get_expression_type(
-                                                                    project,
-                                                                    scope.clone(),
-                                                                    rhs,
-                                                                )?;
+                                                            let rhs_type = get_expression_type(
+                                                                project,
+                                                                module.clone(),
+                                                                scope.clone(),
+                                                                rhs,
+                                                            )?;
                                                             let rhs = coerce_expression(
                                                                 rhs,
                                                                 &rhs_type,

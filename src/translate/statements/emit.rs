@@ -66,10 +66,10 @@ pub fn translate_emit_statement(
                                                                                 &arguments[0],
                                                                             )?;
 
-                                                                        let argument_type = module
-                                                                            .borrow_mut()
-                                                                            .get_expression_type(
+                                                                        let argument_type =
+                                                                            get_expression_type(
                                                                                 project,
+                                                                                module.clone(),
                                                                                 scope.clone(),
                                                                                 &argument,
                                                                             )?;
@@ -96,9 +96,7 @@ pub fn translate_emit_statement(
                                                                         let mut arguments_types = arguments
                                                                             .iter()
                                                                             .map(|a| {
-                                                                                module
-                                                                                    .borrow_mut()
-                                                                                    .get_expression_type(project, scope.clone(), a)
+                                                                                get_expression_type(project, module.clone(), scope.clone(), a)
                                                                                     .unwrap()
                                                                             }).collect::<Vec<_>>();
 
@@ -181,12 +179,12 @@ pub fn translate_emit_statement(
                                                 &arguments[0],
                                             )?;
 
-                                            let argument_type =
-                                                module.borrow_mut().get_expression_type(
-                                                    project,
-                                                    scope.clone(),
-                                                    &argument,
-                                                )?;
+                                            let argument_type = get_expression_type(
+                                                project,
+                                                module.clone(),
+                                                scope.clone(),
+                                                &argument,
+                                            )?;
 
                                             coerce_expression(
                                                 &argument,
@@ -210,14 +208,13 @@ pub fn translate_emit_statement(
                                             let mut arguments_types = arguments
                                                 .iter()
                                                 .map(|a| {
-                                                    module
-                                                        .borrow_mut()
-                                                        .get_expression_type(
-                                                            project,
-                                                            scope.clone(),
-                                                            a,
-                                                        )
-                                                        .unwrap()
+                                                    get_expression_type(
+                                                        project,
+                                                        module.clone(),
+                                                        scope.clone(),
+                                                        a,
+                                                    )
+                                                    .unwrap()
                                                 })
                                                 .collect::<Vec<_>>();
 

@@ -58,11 +58,8 @@ pub fn translate_member_access_function_call(
                     let mut container =
                         translate_expression(project, module.clone(), scope.clone(), container)?;
 
-                    let type_name = module.borrow_mut().get_expression_type(
-                        project,
-                        scope.clone(),
-                        &container,
-                    )?;
+                    let type_name =
+                        get_expression_type(project, module.clone(), scope.clone(), &container)?;
 
                     match type_name {
                         sway::TypeName::Undefined => panic!("Undefined type name"),
@@ -218,9 +215,7 @@ pub fn translate_function_call_block_member_access(
 ) -> Result<sway::Expression, Error> {
     let mut container =
         translate_expression(project, module.clone(), scope.clone(), solidity_container)?;
-    let type_name = module
-        .borrow_mut()
-        .get_expression_type(project, scope.clone(), &container)?;
+    let type_name = get_expression_type(project, module.clone(), scope.clone(), &container)?;
 
     let solidity::Statement::Args(_, block_args) = block else {
         panic!("Malformed `address.call` call, expected args block, found: {block:#?}");
@@ -338,7 +333,8 @@ pub fn translate_function_call_block_member_access(
                     }
 
                     // Check to see if the type is located in an external ABI
-                    if let Some(external_definition) = project.find_contract(module.clone(), &name) {
+                    if let Some(external_definition) = project.find_contract(module.clone(), &name)
+                    {
                         if external_definition
                             .borrow()
                             .abi
@@ -424,9 +420,7 @@ pub fn translate_identity_member_access_function_call(
             let argument =
                 translate_expression(project, module.clone(), scope.clone(), &arguments[0])?;
             let argument_type_name =
-                module
-                    .borrow_mut()
-                    .get_expression_type(project, scope.clone(), &argument)?;
+                get_expression_type(project, module.clone(), scope.clone(), &argument)?;
 
             let container_type = sway::TypeName::Identifier {
                 name: "u64".to_string(),
@@ -463,9 +457,7 @@ pub fn translate_identity_member_access_function_call(
             let argument =
                 translate_expression(project, module.clone(), scope.clone(), &arguments[0])?;
             let argument_type_name =
-                module
-                    .borrow_mut()
-                    .get_expression_type(project, scope.clone(), &argument)?;
+                get_expression_type(project, module.clone(), scope.clone(), &argument)?;
 
             let u64_type = sway::TypeName::Identifier {
                 name: "u64".to_string(),
@@ -866,11 +858,8 @@ pub fn translate_storage_vec_member_access_function_call(
     if let sway::Expression::FunctionCall(f) = &expression {
         if let sway::Expression::MemberAccess(m) = &f.function {
             if m.member == "read" && f.parameters.is_empty() {
-                let container_type = module.borrow_mut().get_expression_type(
-                    project,
-                    scope.clone(),
-                    &m.expression,
-                )?;
+                let container_type =
+                    get_expression_type(project, module.clone(), scope.clone(), &m.expression)?;
                 if container_type.is_storage_key() {
                     expression = m.expression.clone();
                 }
@@ -878,9 +867,7 @@ pub fn translate_storage_vec_member_access_function_call(
         }
     }
 
-    let type_name = module
-        .borrow_mut()
-        .get_expression_type(project, scope.clone(), &expression)?;
+    let type_name = get_expression_type(project, module.clone(), scope.clone(), &expression)?;
 
     match member.name.as_str() {
         "push" | "pop" | "remove" => {}
@@ -1295,7 +1282,7 @@ pub fn translate_builtin_abi_member_access_function_call(
                                                     &[(
                                                         "std::codec::encode",
                                                         Some((None, vec![
-                                                            match module.borrow_mut().get_expression_type(project, scope.clone(), &parameter)? {
+                                                            match get_expression_type(project, module.clone(), scope.clone(), &parameter)? {
                                                                 sway::TypeName::Identifier { name, generic_parameters } => {
                                                                     match (name.as_str(), generic_parameters.as_ref()) {
                                                                         ("Identity", None) => {
@@ -1419,11 +1406,7 @@ pub fn translate_super_member_access_function_call(
 
     let parameter_types = parameters
         .iter()
-        .map(|p| {
-            module
-                .borrow_mut()
-                .get_expression_type(project, scope.clone(), p)
-        })
+        .map(|p| get_expression_type(project, module.clone(), scope.clone(), p))
         .collect::<Result<Vec<_>, _>>()?;
 
     // TODO
@@ -1470,17 +1453,10 @@ pub fn translate_this_member_access_function_call(
 
     let parameter_types = parameters
         .iter()
-        .map(|p| {
-            module
-                .borrow_mut()
-                .get_expression_type(project, scope.clone(), p)
-        })
+        .map(|p| get_expression_type(project, module.clone(), scope.clone(), p))
         .collect::<Result<Vec<_>, _>>()?;
 
     if let Some(result) = resolve_function_call(
-        project,
-        module.clone(),
-        scope.clone(),
         module.clone(),
         member,
         named_arguments,

@@ -110,8 +110,9 @@ pub fn translate_revert_statement(
                                     &parameters[0],
                                 )?;
                                 let parameter_expression_type =
-                                    module.borrow_mut().get_expression_type(
+                                    get_expression_type(
                                         project,
+                                        module.clone(),
                                         scope.clone(),
                                         &parameter_expression,
                                     )?;
@@ -138,10 +139,9 @@ pub fn translate_revert_statement(
                                                 param,
                                             )
                                             .unwrap();
-                                            let parameter_expression_type = module
-                                                .borrow_mut()
-                                                .get_expression_type(
+                                            let parameter_expression_type = get_expression_type(
                                                     project,
+                                                    module.clone(),
                                                     scope.clone(),
                                                     &parameter_expression,
                                                 )

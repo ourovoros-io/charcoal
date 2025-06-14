@@ -62,9 +62,7 @@ pub fn translate_array_slice_expression(
 
     let expression =
         translate_expression(project, module.clone(), scope.clone(), array_expression)?;
-    let type_name = module
-        .borrow_mut()
-        .get_expression_type(project, scope.clone(), &expression)?;
+    let type_name = get_expression_type(project, module.clone(), scope.clone(), &expression)?;
 
     let u64_type = sway::TypeName::Identifier {
         name: "u64".into(),
@@ -75,12 +73,9 @@ pub fn translate_array_slice_expression(
         .as_ref()
         .map(|x| translate_expression(project, module.clone(), scope.clone(), x.as_ref()).unwrap());
 
-    let mut from_index_type = from_index.as_ref().map(|x| {
-        module
-            .borrow_mut()
-            .get_expression_type(project, scope.clone(), x)
-            .unwrap()
-    });
+    let mut from_index_type = from_index
+        .as_ref()
+        .map(|x| get_expression_type(project, module.clone(), scope.clone(), x).unwrap());
 
     // Check if from_index needs to be cast to u64
     if let (Some(from_index), Some(from_index_type)) =
@@ -94,12 +89,9 @@ pub fn translate_array_slice_expression(
         .as_ref()
         .map(|x| translate_expression(project, module.clone(), scope.clone(), x.as_ref()).unwrap());
 
-    let mut to_index_type = to_index.as_ref().map(|x| {
-        module
-            .borrow_mut()
-            .get_expression_type(project, scope.clone(), x)
-            .unwrap()
-    });
+    let mut to_index_type = to_index
+        .as_ref()
+        .map(|x| get_expression_type(project, module.clone(), scope.clone(), x).unwrap());
 
     // Check if to_index needs to be cast to u64
     if let (Some(to_index), Some(to_index_type)) = (to_index.as_mut(), to_index_type.as_mut()) {

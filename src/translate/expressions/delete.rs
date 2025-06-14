@@ -19,9 +19,7 @@ pub fn translate_delete_expression(
 
     let type_name = match variable.as_ref() {
         Some(variable) => variable.borrow().type_name.clone(),
-        None => module
-            .borrow_mut()
-            .get_expression_type(project, scope.clone(), &expr)?,
+        None => get_expression_type(project, module.clone(), scope.clone(), &expr)?,
     };
 
     if let solidity::Expression::ArraySubscript(_, expression, index) = expression {

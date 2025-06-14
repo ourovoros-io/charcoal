@@ -54,9 +54,7 @@ pub fn resolve_abi_function_call(
                 let parameter =
                     translate_expression(project, module.clone(), scope.clone(), &arg.expr)?;
                 let parameter_type =
-                    module
-                        .borrow_mut()
-                        .get_expression_type(project, scope.clone(), &parameter)?;
+                    get_expression_type(project, module.clone(), scope.clone(), &parameter)?;
 
                 parameters.push(parameter);
                 parameter_types.push(parameter_type);
@@ -265,84 +263,19 @@ pub fn resolve_abi_function_call(
 
 #[inline]
 pub fn resolve_function_call(
-    project: &mut Project,
     module: Rc<RefCell<ir::Module>>,
-    scope: Rc<RefCell<ir::Scope>>,
-    external_module: Rc<RefCell<ir::Module>>,
     function_name: &str,
     named_arguments: Option<&[solidity::NamedArgument]>,
-    mut parameters: Vec<sway::Expression>,
-    mut parameter_types: Vec<sway::TypeName>,
+    parameters: Vec<sway::Expression>,
+    parameter_types: Vec<sway::TypeName>,
 ) -> Result<Option<sway::Expression>, Error> {
-    if let Some(named_arguments) = named_arguments {
-        let mut named_parameters = vec![];
-
-        for arg in named_arguments {
-            named_parameters.push((
-                translate_naming_convention(&arg.name.name, Case::Snake),
-                translate_expression(project, module.clone(), scope.clone(), &arg.expr)?,
-            ));
-        }
-
-        if let Some(function) = external_module.borrow().functions.iter().find(|f| {
-            let sway::TypeName::Function {
-                old_name,
-                parameters: f_parameters,
-                ..
-            } = &f.signature
-            else {
-                unreachable!()
-            };
-
-            if *old_name != function_name {
-                return false;
-            }
-
-            if f_parameters.entries.len() != named_parameters.len() {
-                return false;
-            }
-
-            f_parameters
-                .entries
-                .iter()
-                .all(|p| named_parameters.iter().any(|(name, _)| p.name == *name))
-        }) {
-            let sway::TypeName::Function {
-                parameters: function_parameters,
-                ..
-            } = &function.signature
-            else {
-                unreachable!()
-            };
-
-            parameters.clear();
-            parameter_types.clear();
-
-            for parameter in function_parameters.entries.iter() {
-                let arg = named_arguments
-                    .iter()
-                    .find(|a| {
-                        let new_name = translate_naming_convention(&a.name.name, Case::Snake);
-                        new_name == parameter.name
-                    })
-                    .unwrap();
-
-                let parameter =
-                    translate_expression(project, module.clone(), scope.clone(), &arg.expr)?;
-                let parameter_type =
-                    module
-                        .borrow_mut()
-                        .get_expression_type(project, scope.clone(), &parameter)?;
-
-                parameters.push(parameter);
-                parameter_types.push(parameter_type);
-            }
-        }
-    }
+    //
+    // TODO: handle named arguments
+    //
 
     let parameters_cell = Rc::new(RefCell::new(parameters));
 
-    if let Some(function) = external_module.borrow().functions.iter().find(|function| {
+    if let Some(function) = module.borrow().functions.iter().find(|function| {
         let sway::TypeName::Function {
             old_name,
             parameters: function_parameters,
@@ -581,11 +514,8 @@ pub fn resolve_struct_constructor(
 
                     let parameter =
                         translate_expression(project, module.clone(), scope.clone(), &arg.expr)?;
-                    let parameter_type = module.borrow_mut().get_expression_type(
-                        project,
-                        scope.clone(),
-                        &parameter,
-                    )?;
+                    let parameter_type =
+                        get_expression_type(project, module.clone(), scope.clone(), &parameter)?;
 
                     parameters.push(parameter);
                     parameter_types.push(parameter_type);

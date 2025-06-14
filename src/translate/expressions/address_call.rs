@@ -45,9 +45,7 @@ pub fn translate_address_call_expression(
         .borrow_mut()
         .generate_unique_variable_name("result_ptr");
 
-    let payload_type = module
-        .borrow_mut()
-        .get_expression_type(project, scope.clone(), payload)?;
+    let payload_type = get_expression_type(project, module.clone(), scope.clone(), payload)?;
 
     Ok(sway::Expression::from(sway::Block {
         statements: vec![

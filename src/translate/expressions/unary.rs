@@ -17,9 +17,7 @@ pub fn translate_binary_expression(
             if member1.name == "code" && member2.name == "length" {
                 let expression = translate_expression(project, module.clone(), scope.clone(), x)?;
                 let type_name =
-                    module
-                        .borrow_mut()
-                        .get_expression_type(project, scope.clone(), &expression)?;
+                    get_expression_type(project, module.clone(), scope.clone(), &expression)?;
 
                 if let sway::TypeName::Identifier {
                     name,
@@ -45,27 +43,19 @@ pub fn translate_binary_expression(
     }
 
     let mut lhs = translate_expression(project, module.clone(), scope.clone(), lhs)?;
-    let mut lhs_type = module
-        .borrow_mut()
-        .get_expression_type(project, scope.clone(), &lhs)?;
+    let mut lhs_type = get_expression_type(project, module.clone(), scope.clone(), &lhs)?;
 
     let mut rhs = translate_expression(project, module.clone(), scope.clone(), rhs)?;
-    let mut rhs_type = module
-        .borrow_mut()
-        .get_expression_type(project, scope.clone(), &rhs)?;
+    let mut rhs_type = get_expression_type(project, module.clone(), scope.clone(), &rhs)?;
 
     if lhs_type.is_storage_key() {
         lhs = sway::Expression::create_function_calls(Some(lhs), &[("read", Some((None, vec![])))]);
-        lhs_type = module
-            .borrow_mut()
-            .get_expression_type(project, scope.clone(), &lhs)?;
+        lhs_type = get_expression_type(project, module.clone(), scope.clone(), &lhs)?;
     }
 
     if rhs_type.is_storage_key() {
         rhs = sway::Expression::create_function_calls(Some(rhs), &[("read", Some((None, vec![])))]);
-        rhs_type = module
-            .borrow_mut()
-            .get_expression_type(project, scope.clone(), &rhs)?;
+        rhs_type = get_expression_type(project, module.clone(), scope.clone(), &rhs)?;
     }
 
     // HACK: de-cast identity abi cast comparisons
@@ -101,10 +91,9 @@ pub fn translate_binary_expression(
                                 }
                             }
                         }
-                        *rhs_type = module
-                            .borrow_mut()
-                            .get_expression_type(project, scope.clone(), rhs)
-                            .unwrap();
+                        *rhs_type =
+                            get_expression_type(project, module.clone(), scope.clone(), rhs)
+                                .unwrap();
                         return true;
                     }
                 }
@@ -138,10 +127,7 @@ pub fn translate_unary_expression(
 
     // NOTE: Sway does not have a negate operator, so we need to make sure to use the correct translation
     if operator == "-" {
-        let type_name =
-            module
-                .borrow_mut()
-                .get_expression_type(project, scope.clone(), &expression)?;
+        let type_name = get_expression_type(project, module.clone(), scope.clone(), &expression)?;
 
         match &type_name {
             sway::TypeName::Identifier {

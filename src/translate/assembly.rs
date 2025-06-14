@@ -834,9 +834,7 @@ pub fn translate_yul_function_call_expression(
             }
 
             let type_name =
-                module
-                    .borrow_mut()
-                    .get_expression_type(project, scope.clone(), &parameters[0])?;
+                get_expression_type(project, module.clone(), scope.clone(), &parameters[0])?;
 
             Ok(sway::Expression::from(sway::BinaryExpression {
                 operator: "==".into(),

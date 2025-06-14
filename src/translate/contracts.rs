@@ -306,8 +306,9 @@ pub fn translate_contract_definition(
                 &[deferred_initialization.name.as_str()],
             );
 
-            let value_type_name = module.borrow_mut().get_expression_type(
+            let value_type_name = get_expression_type(
                 project,
+                module.clone(),
                 scope.clone(),
                 &deferred_initialization.value,
             )?;
@@ -541,7 +542,9 @@ pub fn translate_using_directive(
                 .join(".");
 
             // Find the translated library definition
-            let Some(library_definition) = project.find_module_with_contract(module.clone(), &library_name) else {
+            let Some(library_definition) =
+                project.find_module_with_contract(module.clone(), &library_name)
+            else {
                 panic!(
                     "Failed to find translated library: \"{library_name}\"; from {}",
                     project.loc_to_file_location_string(module.clone(), &using_directive.loc),
