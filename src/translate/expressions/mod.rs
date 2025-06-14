@@ -685,6 +685,15 @@ pub fn create_value_expression(
     type_name: &sway::TypeName,
     value: Option<&sway::Expression>,
 ) -> sway::Expression {
+    if let Some(value) = value {
+        let value_type = module
+            .borrow_mut()
+            .get_expression_type(project, scope.clone(), value)
+            .unwrap();
+        
+        return coerce_expression(value, &value_type, type_name).unwrap();
+    }
+
     match type_name {
         sway::TypeName::Undefined => panic!("Undefined type name"),
 
@@ -692,288 +701,43 @@ pub fn create_value_expression(
             name,
             generic_parameters,
         } => match (name.as_str(), generic_parameters.as_ref()) {
-            ("todo!", None) => match value {
-                Some(value) => value.clone(),
-                None => sway::Expression::create_function_calls(
-                    None,
-                    &[("todo!", Some((None, vec![])))],
-                ),
-            },
-
-            ("bool", None) => match value {
-                None => sway::Expression::Literal(sway::Literal::Bool(false)),
-                Some(sway::Expression::Literal(sway::Literal::Bool(value))) => {
-                    sway::Expression::Literal(sway::Literal::Bool(*value))
-                }
-
-                Some(sway::Expression::UnaryExpression(unary_expression)) => {
-                    match unary_expression.operator.as_str() {
-                        "!" => value.unwrap().clone(),
-                        _ => panic!("Invalid bool value expression: {value:#?}"),
-                    }
-                }
-
-                Some(sway::Expression::BinaryExpression(binary_expression)) => {
-                    match binary_expression.operator.as_str() {
-                        "==" | "!=" | ">" | "<" | ">=" | "<=" | "&&" | "||" => {
-                            value.unwrap().clone()
-                        }
-                        _ => panic!("Invalid bool value expression: {value:#?}"),
-                    }
-                }
-
-                Some(value) => panic!("Invalid bool value expression: {value:#?}"),
-            },
-
-            ("b256", None) => match value {
-                None => sway::Expression::create_function_calls(
-                    None,
-                    &[("b256::zero", Some((None, vec![])))],
-                ),
-
-                Some(value) => {
-                    if matches!(
-                        value,
-                        sway::Expression::Literal(
-                            sway::Literal::DecInt(_, _) | sway::Literal::HexInt(_, _)
-                        )
-                    ) {
-                        return value.clone();
-                    }
-
-                    let value_type_name = module
-                        .borrow_mut()
-                        .get_expression_type(project, scope.clone(), value)
-                        .unwrap();
-
-                    match value_type_name {
-                        sway::TypeName::Identifier {
-                            name,
-                            generic_parameters,
-                        } => match (name.as_str(), generic_parameters.as_ref()) {
-                            ("b256", None) => value.clone(),
-                            _ => panic!("Invalid {name} value expression: {value:#?}"),
-                        },
-
-                        sway::TypeName::StringSlice => match value {
-                            sway::Expression::Literal(sway::Literal::String(s)) => {
-                                if s.len() > 64 {
-                                    panic!("Invalid {name} value expression: {value:#?}");
-                                }
-
-                                let mut s = s.bytes().collect::<Vec<u8>>();
-
-                                while s.len() < 64 {
-                                    s.push(0);
-                                }
-
-                                let s = s.iter().map(|b| format!("{b:02X}")).collect::<String>();
-                                sway::Expression::from(sway::Literal::HexInt(
-                                    BigUint::from_str_radix(&s, 16).unwrap(),
-                                    None,
-                                ))
-                            }
-
-                            _ => panic!(
-                                "Invalid {name} value expression: {value:#?} {value_type_name:#?}"
-                            ),
-                        },
-
-                        sway::TypeName::Array { type_name, length }
-                            if type_name.to_string() == "u8" && length == 32 =>
-                        {
-                            sway::Expression::from(sway::FunctionCall {
-                                function: sway::Expression::create_identifier(
-                                    "b256::from_be_bytes".into(),
-                                ),
-                                generic_parameters: None,
-                                parameters: vec![value.clone()],
-                            })
-                        }
-
-                        _ => panic!(
-                            "Invalid {name} value expression: {value:#?} {value_type_name:#?}"
-                        ),
-                    }
-                }
-            },
-
-            ("I8" | "I16" | "I32" | "I64" | "I128" | "I256", None) => {
-                let mut value = match value.cloned() {
-                    Some(value) => value,
-                    None => match name.as_str() {
-                        "I128" => {
-                            module.borrow_mut().ensure_use_declared("std::u128::*");
-                            sway::Expression::create_function_calls(
-                                None,
-                                &[("U128::zero", Some((None, vec![])))],
-                            )
-                        }
-
-                        _ => sway::Expression::from(sway::Literal::DecInt(
-                            BigUint::zero(),
-                            Some(format!("u{}", name.trim_start_matches('I'))),
-                        )),
-                    },
-                };
-
-                match &value {
-                    sway::Expression::Literal(
-                        sway::Literal::DecInt(_, _) | sway::Literal::HexInt(_, _),
-                    ) => sway::Expression::from(sway::FunctionCall {
-                        function: sway::Expression::create_identifier(
-                            format!("{name}::from_uint").into(),
-                        ),
-                        generic_parameters: None,
-                        parameters: vec![value.clone()],
-                    }),
-
-                    sway::Expression::FunctionCall(function_call) => {
-                        if let Some("todo!") = function_call.function.as_identifier() {
-                            return value.clone();
-                        }
-
-                        let mut value_type_name = module
-                            .borrow_mut()
-                            .get_expression_type(project, scope.clone(), &value)
-                            .unwrap();
-
-                        if value_type_name.is_uint() {
-                            value = coerce_expression(&value, &value_type_name, type_name).unwrap();
-                            value_type_name = type_name.clone();
-                        }
-
-                        if !value_type_name.is_int() {
-                            panic!(
-                                "Invalid {name} value expression: {} ({value_type_name})",
-                                sway::TabbedDisplayer(&value)
-                            )
-                        }
-
-                        value.clone()
-                    }
-
-                    x if matches!(x, sway::Expression::BinaryExpression(_)) => (x).clone(),
-
-                    sway::Expression::PathExpr(path_expr) => {
-                        let Some(name) = path_expr.as_identifier() else {
-                            todo!(
-                                "handle non-identifier path expression: {path_expr} - {path_expr:#?}"
-                            )
-                        };
-
-                        let Some(variable) = scope.borrow().get_variable_from_new_name(name) else {
-                            panic!("error: Variable not found in scope: \"{name}\"");
-                        };
-
-                        if variable.borrow().type_name != *type_name {
-                            panic!("Invalid {name} value expression: {value:#?}");
-                        }
-
-                        sway::Expression::create_identifier(name.into())
-                    }
-
-                    _ => {
-                        let value_type_name = module
-                            .borrow_mut()
-                            .get_expression_type(project, scope.clone(), &value)
-                            .unwrap();
-
-                        if value_type_name != *type_name {
-                            panic!("Invalid {name} value expression: {value:#?}")
-                        }
-
-                        sway::Expression::from(sway::FunctionCall {
-                            function: sway::Expression::create_identifier(
-                                format!("{name}::from_uint").into(),
-                            ),
-                            generic_parameters: None,
-                            parameters: vec![value.clone()],
-                        })
-                    }
-                }
+            ("todo!", None) => {
+                sway::Expression::create_function_calls(None, &[("todo!", Some((None, vec![])))])
             }
 
-            ("u8" | "u16" | "u32" | "u64" | "u256", None) => match value.as_ref() {
-                None => sway::Expression::Literal(sway::Literal::DecInt(BigUint::zero(), None)),
+            ("bool", None) => sway::Expression::Literal(sway::Literal::Bool(false)),
 
-                Some(value)
-                    if matches!(
-                        value,
-                        sway::Expression::Literal(
-                            sway::Literal::DecInt(_, _) | sway::Literal::HexInt(_, _)
+            ("b256", None) => sway::Expression::create_function_calls(
+                None,
+                &[("b256::zero", Some((None, vec![])))],
+            ),
+
+            ("I8" | "I16" | "I32" | "I64" | "I128" | "I256", None) => {
+                let value = match name.as_str() {
+                    "I128" => {
+                        module.borrow_mut().ensure_use_declared("std::u128::*");
+                        sway::Expression::create_function_calls(
+                            None,
+                            &[("U128::zero", Some((None, vec![])))],
                         )
-                    ) =>
-                {
-                    (*value).clone()
-                }
-
-                Some(sway::Expression::FunctionCall(function_call)) => {
-                    match &function_call.function {
-                        sway::Expression::PathExpr(path_expr) => {
-                            let Some(identifier_name) = path_expr.as_identifier() else {
-                                todo!(
-                                    "handle non-identifier path expression: {path_expr} - {path_expr:#?}"
-                                )
-                            };
-
-                            match identifier_name {
-                                "todo!" => value.unwrap().clone(),
-                                s if s == format!("{name}::max") => value.unwrap().clone(),
-                                s if s == format!("{name}::min") => value.unwrap().clone(),
-                                _ => panic!("Invalid {name} value expression: {value:#?}"),
-                            }
-                        }
-
-                        sway::Expression::MemberAccess(member_access) => {
-                            match member_access.member.as_str() {
-                                "pow" => {
-                                    let type_name = module
-                                        .borrow_mut()
-                                        .get_expression_type(
-                                            project,
-                                            scope.clone(),
-                                            &member_access.expression,
-                                        )
-                                        .unwrap();
-
-                                    if !type_name.is_uint() {
-                                        panic!("Invalid {name} value expression: {value:#?}")
-                                    }
-
-                                    value.unwrap().clone()
-                                }
-
-                                "as_u256" => value.unwrap().clone(),
-
-                                _ => panic!("Invalid {name} value expression: {value:#?}"),
-                            }
-                        }
-
-                        _ => panic!("Invalid {name} value expression: {value:#?}"),
-                    }
-                }
-
-                Some(x) if matches!(x, sway::Expression::BinaryExpression(_)) => (*x).clone(),
-
-                Some(sway::Expression::PathExpr(path_expr)) => {
-                    let Some(name) = path_expr.as_identifier() else {
-                        todo!("handle non-identifier path expression: {path_expr} - {path_expr:#?}")
-                    };
-
-                    let Some(variable) = scope.borrow().get_variable_from_new_name(name) else {
-                        panic!("error: Variable not found in scope: \"{name}\"");
-                    };
-
-                    if variable.borrow().type_name != *type_name {
-                        panic!("Invalid {name} value expression: {value:#?}");
                     }
 
-                    sway::Expression::create_identifier(name.into())
-                }
+                    _ => sway::Expression::from(sway::Literal::DecInt(
+                        BigUint::zero(),
+                        Some(format!("u{}", name.trim_start_matches('I'))),
+                    )),
+                };
 
-                Some(value) => panic!("Invalid {name} value expression: {value:#?}"),
-            },
+                let value_type = module
+                    .borrow_mut()
+                    .get_expression_type(project, scope.clone(), &value)
+                    .unwrap();
+                coerce_expression(&value, &value_type, type_name).unwrap()
+            }
+
+            ("u8" | "u16" | "u32" | "u64" | "u256", None) => {
+                sway::Expression::Literal(sway::Literal::DecInt(BigUint::zero(), None))
+            }
 
             ("raw_ptr", None) => {
                 // Ensure `std::alloc::alloc_bytes` is imported
@@ -1003,69 +767,50 @@ pub fn create_value_expression(
                 })
             }
 
-            ("Identity", None) => match value {
-                None => sway::Expression::from(sway::FunctionCall {
-                    function: sway::Expression::create_identifier("Identity::Address".into()),
+            ("Identity", None) => sway::Expression::from(sway::FunctionCall {
+                function: sway::Expression::create_identifier("Identity::Address".into()),
+                generic_parameters: None,
+                parameters: vec![sway::Expression::from(sway::FunctionCall {
+                    function: sway::Expression::create_identifier("Address::from".into()),
                     generic_parameters: None,
-                    parameters: vec![sway::Expression::from(sway::FunctionCall {
-                        function: sway::Expression::create_identifier("Address::from".into()),
-                        generic_parameters: None,
-                        parameters: vec![sway::Expression::create_function_calls(
-                            None,
-                            &[("b256::zero", Some((None, vec![])))],
-                        )],
-                    })],
-                }),
-
-                Some(value) => value.clone(),
-            },
+                    parameters: vec![sway::Expression::create_function_calls(
+                        None,
+                        &[("b256::zero", Some((None, vec![])))],
+                    )],
+                })],
+            }),
 
             ("Option", Some(generic_parameters)) if generic_parameters.entries.len() == 1 => {
-                match value {
-                    Some(value) => value.clone(),
-                    None => sway::Expression::create_identifier("None".into()),
-                }
+                sway::Expression::create_identifier("None".into())
             }
 
             ("StorageKey", Some(generic_parameters)) if generic_parameters.entries.len() == 1 => {
                 sway::Expression::create_todo(Some("create storage key".into()))
             }
 
-            ("StorageMap", Some(_)) => match value {
-                None => sway::Expression::from(sway::Constructor {
-                    type_name: sway::TypeName::Identifier {
-                        name: "StorageMap".into(),
-                        generic_parameters: None,
-                    },
-                    fields: vec![],
-                }),
+            ("StorageMap", Some(_)) => sway::Expression::from(sway::Constructor {
+                type_name: sway::TypeName::Identifier {
+                    name: "StorageMap".into(),
+                    generic_parameters: None,
+                },
+                fields: vec![],
+            }),
 
-                Some(value) => panic!("Invalid StorageMap value expression: {value:#?}"),
-            },
+            ("StorageString", None) => sway::Expression::from(sway::Constructor {
+                type_name: sway::TypeName::Identifier {
+                    name: "StorageString".into(),
+                    generic_parameters: None,
+                },
+                fields: vec![],
+            }),
 
-            ("StorageString", None) => match value {
-                None => sway::Expression::from(sway::Constructor {
-                    type_name: sway::TypeName::Identifier {
-                        name: "StorageString".into(),
-                        generic_parameters: None,
-                    },
-                    fields: vec![],
-                }),
-
-                Some(value) => panic!("Invalid StorageString value expression: {value:#?}"),
-            },
-
-            ("StorageVec", Some(_)) => match value {
-                None => sway::Expression::from(sway::Constructor {
-                    type_name: sway::TypeName::Identifier {
-                        name: "StorageVec".into(),
-                        generic_parameters: None,
-                    },
-                    fields: vec![],
-                }),
-
-                Some(value) => panic!("Invalid StorageVec value expression: {value:#?}"),
-            },
+            ("StorageVec", Some(_)) => sway::Expression::from(sway::Constructor {
+                type_name: sway::TypeName::Identifier {
+                    name: "StorageVec".into(),
+                    generic_parameters: None,
+                },
+                fields: vec![],
+            }),
 
             ("Vec", Some(_)) => sway::Expression::from(sway::FunctionCall {
                 function: sway::Expression::create_identifier("Vec::new".into()),
@@ -1091,7 +836,7 @@ pub fn create_value_expression(
                         module,
                         scope.clone(),
                         &underlying_type,
-                        value,
+                        None,
                     );
                 }
                 // Check to see if the type is a translated enum
@@ -1119,7 +864,7 @@ pub fn create_value_expression(
                             module.clone(),
                             scope.clone(),
                             &underlying_type,
-                            value,
+                            None,
                         );
                     };
 
@@ -1153,7 +898,7 @@ pub fn create_value_expression(
                                     module.clone(),
                                     scope.clone(),
                                     &f.type_name,
-                                    value,
+                                    None,
                                 ),
                             })
                             .collect(),
@@ -1164,213 +909,35 @@ pub fn create_value_expression(
             }
         },
 
-        sway::TypeName::Array { type_name, length } => match value {
-            None => sway::Expression::Array(sway::Array {
-                elements: (0..*length)
-                    .map(|_| {
-                        create_value_expression(
-                            project,
-                            module.clone(),
-                            scope.clone(),
-                            type_name,
-                            None,
-                        )
-                    })
-                    .collect(),
-            }),
-
-            Some(sway::Expression::Array(value)) => {
-                if value.elements.len() != *length {
-                    panic!(
-                        "Invalid array value expression, expected {} elements, found {}: {value:#?}",
-                        *length,
-                        value.elements.len()
-                    );
-                }
-
-                sway::Expression::Array(value.clone())
-            }
-
-            Some(sway::Expression::Literal(sway::Literal::String(s))) => {
-                if s.len() != *length {
-                    panic!(
-                        "Invalid array value string, expected {} characters, found {}: \"{s}\"",
-                        *length,
-                        s.len()
-                    );
-                }
-
-                sway::Expression::Array(sway::Array {
-                    elements: s
-                        .chars()
-                        .map(|c| {
-                            sway::Expression::Literal(sway::Literal::HexInt(
-                                BigUint::from(c as u8),
-                                None,
-                            ))
-                        })
-                        .collect(),
+        sway::TypeName::Array { type_name, length } => sway::Expression::Array(sway::Array {
+            elements: (0..*length)
+                .map(|_| {
+                    create_value_expression(project, module.clone(), scope.clone(), type_name, None)
                 })
-            }
+                .collect(),
+        }),
 
-            Some(value) => match type_name.as_ref() {
-                sway::TypeName::Identifier {
-                    name,
-                    generic_parameters,
-                } => match (name.as_str(), generic_parameters.as_ref()) {
-                    ("u8", None) => match value {
-                        sway::Expression::Literal(
-                            sway::Literal::DecInt(value, _) | sway::Literal::HexInt(value, _),
-                        ) => sway::Expression::from(sway::Array {
-                            elements: value
-                                .to_bytes_be()
-                                .iter()
-                                .map(|b| {
-                                    sway::Expression::from(sway::Literal::HexInt((*b).into(), None))
-                                })
-                                .collect(),
-                        }),
+        sway::TypeName::Tuple { type_names } => sway::Expression::Tuple(
+            type_names
+                .iter()
+                .map(|type_name| {
+                    create_value_expression(project, module.clone(), scope.clone(), type_name, None)
+                })
+                .collect(),
+        ),
 
-                        _ => sway::Expression::create_todo(Some(format!(
-                            "{}",
-                            sway::TabbedDisplayer(value)
-                        ))),
-                    },
+        sway::TypeName::StringSlice => sway::Expression::from(sway::Literal::String(String::new())),
 
-                    _ => panic!("Invalid {type_name} array value expression: {value:#?}"),
-                },
+        sway::TypeName::StringArray { length } => sway::Expression::from(sway::FunctionCall {
+            function: sway::Expression::create_identifier("__to_str_array".into()),
+            generic_parameters: None,
+            parameters: vec![sway::Expression::Literal(sway::Literal::String(
+                (0..*length).map(|_| " ").collect(),
+            ))],
+        }),
 
-                _ => panic!("Invalid {type_name} array value expression: {value:#?}"),
-            },
-        },
-
-        sway::TypeName::Tuple { type_names } => match value {
-            None => sway::Expression::Tuple(
-                type_names
-                    .iter()
-                    .map(|type_name| {
-                        create_value_expression(
-                            project,
-                            module.clone(),
-                            scope.clone(),
-                            type_name,
-                            None,
-                        )
-                    })
-                    .collect(),
-            ),
-
-            Some(sway::Expression::Tuple(value)) if value.len() == type_names.len() => {
-                sway::Expression::Tuple(value.clone())
-            }
-
-            Some(value) => panic!("Invalid tuple value expression: {value:#?}"),
-        },
-
-        sway::TypeName::StringSlice => match value {
-            None => sway::Expression::from(sway::Literal::String(String::new())),
-            Some(sway::Expression::Literal(sway::Literal::String(value))) => {
-                sway::Expression::from(sway::Literal::String(value.clone()))
-            }
-            Some(value) => panic!("Invalid string slice value expression: {value:#?}"),
-        },
-
-        sway::TypeName::StringArray { length } => match value {
-            None => sway::Expression::from(sway::FunctionCall {
-                function: sway::Expression::create_identifier("__to_str_array".into()),
-                generic_parameters: None,
-                parameters: vec![sway::Expression::Literal(sway::Literal::String(
-                    (0..*length).map(|_| " ").collect(),
-                ))],
-            }),
-
-            Some(sway::Expression::Literal(sway::Literal::String(value))) => {
-                if value.len() > *length {
-                    panic!(
-                        "Invalid string value expression, string is {} characters long, expected {}: {value}",
-                        value.len(),
-                        *length
-                    );
-                }
-
-                let mut value = value.clone();
-
-                while value.len() < *length {
-                    value.push(' ');
-                }
-
-                sway::Expression::create_function_calls(
-                    None,
-                    &[(
-                        "__to_str_array",
-                        Some((
-                            None,
-                            vec![sway::Expression::Literal(sway::Literal::String(value))],
-                        )),
-                    )],
-                )
-            }
-
-            Some(sway::Expression::FunctionCall(f)) => {
-                let Some(id) = f.function.as_identifier() else {
-                    panic!(
-                        "Invalid string value expression, expected `__to_str_array` function call, found: {value:#?}"
-                    );
-                };
-
-                if id != "__to_str_array" {
-                    panic!(
-                        "Invalid string value expression, expected `__to_str_array` function call, found: {value:#?}"
-                    );
-                }
-
-                if f.parameters.len() != 1 {
-                    panic!(
-                        "Invalid string value expression, invalid parameters supplied to `__to_str_array` function call, found: {value:#?}"
-                    );
-                }
-
-                let sway::Expression::Literal(sway::Literal::String(value)) = &f.parameters[0]
-                else {
-                    panic!(
-                        "Invalid string value expression, expected string literal to be supplied to `__to_str_array` function call, found: {value:#?}"
-                    );
-                };
-
-                if value.len() > *length {
-                    panic!(
-                        "Invalid string value expression, string is {} characters long, expected {}: {value}",
-                        value.len(),
-                        *length
-                    );
-                }
-
-                let mut value = value.clone();
-
-                while value.len() < *length {
-                    value.push(' ');
-                }
-
-                sway::Expression::create_function_calls(
-                    None,
-                    &[(
-                        "__to_str_array",
-                        Some((
-                            None,
-                            vec![sway::Expression::Literal(sway::Literal::String(value))],
-                        )),
-                    )],
-                )
-            }
-
-            Some(value) => panic!("Invalid string array value expression: {value:#?}"),
-        },
-
-        sway::TypeName::Function { .. } => match value {
-            Some(value) => {
-                sway::Expression::create_todo(Some(sway::TabbedDisplayer(value).to_string()))
-            }
-            None => sway::Expression::create_todo(Some(type_name.to_string())),
-        },
+        sway::TypeName::Function { .. } => {
+            sway::Expression::create_todo(Some(type_name.to_string()))
+        }
     }
 }

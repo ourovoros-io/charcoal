@@ -775,7 +775,6 @@ pub fn translate_identity_member_access_function_call(
 
     // Check to see if the type is located in an external ABI
     if let Some(external_definition) = project.find_contract(module.clone(), &name) {
-        println!("Found {name} - {:#?}", external_definition);
         // Check lower case names for regular functions
         if external_definition
             .borrow()

@@ -1075,11 +1075,6 @@ impl Project {
     }
 
     fn generate_forc_project(&mut self) -> Result<(), Error> {
-        let mut lib_module = sway::Module {
-            kind: sway::ModuleKind::Library,
-            items: vec![],
-        };
-
         let mut modules: Vec<(PathBuf, sway::Module)> = vec![];
         let mut dependencies = vec![];
 
@@ -1124,38 +1119,19 @@ impl Project {
             }
         }
 
+        let mut lib_module = sway::Module {
+            kind: sway::ModuleKind::Library,
+            items: vec![],
+        };
+
         for module in self.translated_modules.iter() {
-            if module
-                .borrow()
-                .path
-                .file_stem()
-                .map(|p| matches!(p.to_str().unwrap(), "lib" | "src" | "main"))
-                .unwrap_or(false)
-            {
-                lib_module.items.extend(
-                    module
-                        .borrow()
-                        .uses
-                        .iter()
-                        .map(|u| sway::ModuleItem::Use(u.clone())),
-                );
+            lib_module.items.push(sway::ModuleItem::Submodule(sway::Submodule {
+                is_public: true,
+                name: module.borrow().name.clone(),
+            }));
 
-                dependencies.extend(module.borrow().dependencies.clone());
-
-                for submodule in module.borrow().submodules.iter() {
-                    process_submodules(&mut dependencies, &mut modules, submodule.clone());
-                }
-
-                continue;
-            }
-
-            lib_module
-                .items
-                .push(sway::ModuleItem::Submodule(sway::Submodule {
-                    is_public: true,
-                    name: module.borrow().name.clone(),
-                }));
-
+            dependencies.extend(module.borrow().dependencies.clone());
+            
             process_submodules(&mut dependencies, &mut modules, module.clone());
         }
 

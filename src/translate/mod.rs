@@ -129,6 +129,39 @@ pub fn coerce_expression(
         }
     }
 
+    // Check for uint to bytes coersions
+    if let Some(to_byte_count) = to_type_name.u8_array_length() {
+        if let Some(from_bits) = from_type_name.uint_bits() {
+            let from_byte_count = from_bits / 8;
+            let to_bits = to_byte_count * 8;
+
+            if from_byte_count == to_byte_count {
+                return Some(sway::Expression::create_function_calls(
+                    Some(expression),
+                    &[("to_be_bytes", Some((None, vec![])))],
+                ));
+            } else if from_byte_count < to_byte_count {
+                return Some(sway::Expression::create_function_calls(
+                    Some(expression),
+                    &[
+                        (format!("as_u{to_bits}").as_str(), Some((None, vec![]))),
+                        ("to_be_bytes", Some((None, vec![]))),
+                    ],
+                ));
+            } else if from_byte_count > to_byte_count {
+                return Some(sway::Expression::create_function_calls(
+                    Some(expression),
+                    &[
+                        (format!("try_as_u{to_bits}").as_str(), Some((None, vec![]))),
+                        ("unwrap", Some((None, vec![]))),
+                        ("to_be_bytes", Some((None, vec![]))),
+                    ],
+                ));
+            }
+        }
+    }
+
+    // Check for all other coersions
     match (from_type_name, to_type_name) {
         (sway::TypeName::Undefined, sway::TypeName::Undefined) => {}
 
