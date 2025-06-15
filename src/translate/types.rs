@@ -645,7 +645,7 @@ pub fn translate_type_name(
                 };
 
                 // Check to see if container is referring to a contract name
-                if let Some(module) = project.find_module_with_contract(module.clone(), &name) {
+                if let Some((module, _)) = project.find_module_with_contract(module.clone(), &name) {
                     check_definition(module.clone());
                 }
 

@@ -761,7 +761,12 @@ impl Project {
         // find the module being imported, then check if the contract lives there.
         for use_item in module.borrow().uses.iter() {
             if let Some(found_module) = self.resolve_use(use_item) {
-                if let Some(contract) = found_module.borrow().contracts.iter().find(|c| c.borrow().name == contract_name) {
+                if let Some(contract) = found_module
+                    .borrow()
+                    .contracts
+                    .iter()
+                    .find(|c| c.borrow().name == contract_name)
+                {
                     return Some(contract.clone());
                 }
             }
@@ -774,23 +779,28 @@ impl Project {
         &mut self,
         module: Rc<RefCell<ir::Module>>,
         contract_name: &str,
-    ) -> Option<Rc<RefCell<ir::Module>>> {
+    ) -> Option<(Rc<RefCell<ir::Module>>, Rc<RefCell<ir::Contract>>)> {
         // Check to see if the contract was defined in the current file
-        if module
+        if let Some(contract) = module
             .borrow()
             .contracts
             .iter()
-            .any(|c| c.borrow().name == contract_name)
+            .find(|c| c.borrow().name == contract_name)
         {
-            return Some(module.clone());
+            return Some((module.clone(), contract.clone()));
         }
 
         // Check all of the module's `use` statements for crate-local imports,
         // find the module being imported, then check if the contract lives there.
         for use_item in module.borrow().uses.iter() {
             if let Some(found_module) = self.resolve_use(use_item) {
-                if found_module.borrow().contracts.iter().any(|c| c.borrow().name == contract_name) {
-                    return Some(found_module.clone());
+                if let Some(contract) = found_module
+                    .borrow()
+                    .contracts
+                    .iter()
+                    .find(|c| c.borrow().name == contract_name)
+                {
+                    return Some((found_module.clone(), contract.clone()));
                 }
             }
         }
@@ -1101,13 +1111,15 @@ impl Project {
         };
 
         for module in self.translated_modules.iter() {
-            lib_module.items.push(sway::ModuleItem::Submodule(sway::Submodule {
-                is_public: true,
-                name: module.borrow().name.clone(),
-            }));
+            lib_module
+                .items
+                .push(sway::ModuleItem::Submodule(sway::Submodule {
+                    is_public: true,
+                    name: module.borrow().name.clone(),
+                }));
 
             dependencies.extend(module.borrow().dependencies.clone());
-            
+
             process_submodules(&mut dependencies, &mut modules, module.clone());
         }
 

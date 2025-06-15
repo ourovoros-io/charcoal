@@ -1174,67 +1174,84 @@ fn get_member_access_type(
             assert!(parts.len() == 2);
 
             let contract_name = scope.borrow().get_contract_name().unwrap();
+            let storage_namespace_name = parts[1];
 
-            let contract = module
-                .borrow()
-                .contracts
-                .iter()
-                .find(|c| c.borrow().name == contract_name)
-                .cloned()
-                .unwrap();
-            let contract = contract.borrow();
+            fn check_contract(
+                project: &mut Project,
+                module: Rc<RefCell<ir::Module>>,
+                contract: Rc<RefCell<ir::Contract>>,
+                storage_namespace_name: &str,
+                storage_field_name: &str,
+            ) -> Result<Option<sway::TypeName>, Error> {
+                let contract_storage_namespace_name = contract.borrow().name.to_case(Case::Snake);
 
-            let Some(namespace) = contract
-                .storage
-                .as_ref()
-                .map(|s| {
-                    s.borrow()
-                        .namespaces
-                        .iter()
-                        .find(|n| n.borrow().name == parts[1])
-                        .cloned()
-                })
-                .flatten()
-            else {
-                panic!(
-                    "Failed to find storage namespace {}. Available namespaces : {}",
-                    parts[1],
-                    contract
-                        .storage
-                        .as_ref()
-                        .map(|s| s
+                if storage_namespace_name == contract_storage_namespace_name {
+                    if let Some(storage) = contract.borrow().storage.as_ref() {
+                        if let Some(storage_namespace) = storage
                             .borrow()
                             .namespaces
                             .iter()
-                            .map(|n| n.borrow().name.clone())
-                            .collect::<Vec<_>>()
-                            .join(", "))
-                        .unwrap_or("<none>".into())
-                );
-            };
+                            .find(|n| n.borrow().name == contract_storage_namespace_name)
+                        {
+                            if let Some(field) = storage_namespace
+                                .borrow()
+                                .fields
+                                .iter()
+                                .find(|f| f.name == storage_field_name)
+                            {
+                                return Ok(Some(field.type_name.clone()));
+                            }
+                        }
+                    }
+                }
 
-            let Some(storage_field) = namespace
-                .borrow()
-                .fields
-                .iter()
-                .find(|f| f.name == member_access.member)
-                .cloned()
-            else {
-                panic!(
-                    "Failed to find storage variable in scope: `{}`",
-                    member_access.member
-                )
-            };
+                let inherits = contract.borrow().abi.inherits.clone();
 
-            return Ok(sway::TypeName::Identifier {
-                name: "StorageKey".into(),
-                generic_parameters: Some(sway::GenericParameterList {
-                    entries: vec![sway::GenericParameter {
-                        type_name: storage_field.type_name.clone(),
-                        implements: None,
-                    }],
-                }),
-            });
+                for inherited_contract_name in inherits {
+                    let inherited_contract = project
+                        .find_contract(module.clone(), inherited_contract_name.to_string().as_str())
+                        .unwrap();
+
+                    if let Some(result) = check_contract(
+                        project,
+                        module.clone(),
+                        inherited_contract.clone(),
+                        storage_namespace_name,
+                        storage_field_name,
+                    )? {
+                        return Ok(Some(result));
+                    }
+                }
+
+                Ok(None)
+            }
+
+            let contract = project
+                .find_contract(module.clone(), contract_name.as_str())
+                .unwrap();
+
+            if let Some(type_name) = check_contract(
+                project,
+                module.clone(),
+                contract.clone(),
+                storage_namespace_name,
+                member_access.member.as_str(),
+            )? {
+                return Ok(sway::TypeName::Identifier {
+                    name: "StorageKey".into(),
+                    generic_parameters: Some(sway::GenericParameterList {
+                        entries: vec![sway::GenericParameter {
+                            type_name,
+                            implements: None,
+                        }],
+                    }),
+                });
+            }
+
+            panic!(
+                "Failed to find storage variable in scope: `{}`",
+                sway::TabbedDisplayer(member_access),
+            )
         }
     }
 
@@ -2974,8 +2991,50 @@ fn get_member_access_function_call_type(
             }
 
             ("String", None) => match member_access.member.as_str() {
-                "len" => Ok(sway::TypeName::Identifier {
+                "as_bytes" => Ok(sway::TypeName::Identifier {
+                    name: "Bytes".into(),
+                    generic_parameters: None,
+                }),
+
+                "capacity" => Ok(sway::TypeName::Identifier {
                     name: "u64".into(),
+                    generic_parameters: None,
+                }),
+
+                "clear" => Ok(sway::TypeName::Tuple { type_names: vec![] }),
+
+                "from_ascii" => Ok(sway::TypeName::Identifier {
+                    name: "String".into(),
+                    generic_parameters: None,
+                }),
+
+                "from_ascii_str" => Ok(sway::TypeName::Identifier {
+                    name: "String".into(),
+                    generic_parameters: None,
+                }),
+
+                "is_empty" => Ok(sway::TypeName::Identifier {
+                    name: "bool".into(),
+                    generic_parameters: None,
+                }),
+
+                "new" => Ok(sway::TypeName::Identifier {
+                    name: "String".into(),
+                    generic_parameters: None,
+                }),
+
+                "with_capacity" => Ok(sway::TypeName::Identifier {
+                    name: "String".into(),
+                    generic_parameters: None,
+                }),
+
+                "ptr" => Ok(sway::TypeName::Identifier {
+                    name: "raw_ptr".into(),
+                    generic_parameters: None,
+                }),
+
+                "as_str" => Ok(sway::TypeName::Identifier {
+                    name: "str".into(),
                     generic_parameters: None,
                 }),
 

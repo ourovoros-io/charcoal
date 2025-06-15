@@ -339,7 +339,7 @@ pub fn translate_function_call_expression(
                     }
 
                     // Check if function is contained in an external definition
-                    if let Some(external_module) =
+                    if let Some((external_module, _)) =
                         project.find_module_with_contract(module.clone(), &name)
                     {
                         // Check to see if the expression is a by-value struct constructor
@@ -626,7 +626,7 @@ pub fn translate_function_call_expression(
                         }
 
                         // Look up the definition of the using directive
-                        let Some(external_module) = project.find_module_with_contract(
+                        let Some((external_module, _)) = project.find_module_with_contract(
                             module.clone(),
                             &using_directive.library_name,
                         ) else {

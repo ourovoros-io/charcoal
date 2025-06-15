@@ -91,18 +91,24 @@ pub fn translate_post_operator_expression(
     )?);
 
     let Some(ir::VariableAccess {
-        variable: Some(variable),
+        variable,
         expression,
     }) = translate_variable_access_expression(project, module.clone(), scope.clone(), x)?
     else {
         panic!("Variable not found: {}", x);
     };
 
-    let mut variable = variable.borrow_mut();
+    if let Some(variable) = variable.as_ref() {
+        variable.borrow_mut().read_count += 1;
+    }
 
-    variable.read_count += 1;
-
-    let variable_name = format!("_{}", variable.new_name);
+    let variable_name = scope.borrow_mut().generate_unique_variable_name(
+        match variable {
+            Some(variable) => variable.borrow().new_name.clone(),
+            None => "x".into(),
+        }
+        .as_str(),
+    );
 
     Ok(sway::Expression::from(sway::Block {
         statements: vec![

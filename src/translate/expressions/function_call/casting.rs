@@ -1081,7 +1081,27 @@ pub fn translate_dynamic_bytes_type_cast_function_call(
     scope: Rc<RefCell<ir::Scope>>,
     argument: &solidity::Expression,
 ) -> Result<sway::Expression, Error> {
-    let value_expression = translate_expression(project, module.clone(), scope.clone(), argument)?;
+    let mut value_expression =
+        translate_expression(project, module.clone(), scope.clone(), argument)?;
+
+    // HACK: remove `.read()` if present
+    if let sway::Expression::FunctionCall(function_call) = &value_expression {
+        if let sway::Expression::MemberAccess(member_access) = &function_call.function {
+            if member_access.member == "read" && function_call.parameters.is_empty() {
+                let container_type = get_expression_type(
+                    project,
+                    module.clone(),
+                    scope.clone(),
+                    &member_access.expression,
+                )?;
+
+                if container_type.is_storage_key() {
+                    value_expression = member_access.expression.clone();
+                }
+            }
+        }
+    }
+
     let value_type_name =
         get_expression_type(project, module.clone(), scope.clone(), &value_expression)?;
 
@@ -1096,6 +1116,32 @@ pub fn translate_dynamic_bytes_type_cast_function_call(
                 Some(value_expression),
                 &[("as_bytes", Some((None, vec![])))],
             )),
+
+            ("StorageKey", Some(generic_parameters)) if generic_parameters.entries.len() == 1 => {
+                match &generic_parameters.entries[0].type_name {
+                    sway::TypeName::Identifier {
+                        name,
+                        generic_parameters,
+                    } => match (name.as_str(), generic_parameters.as_ref()) {
+                        ("StorageString", None) => {
+                            return Ok(sway::Expression::create_function_calls(
+                                Some(value_expression),
+                                &[
+                                    ("read_slice", Some((None, vec![]))),
+                                    ("unwrap", Some((None, vec![]))),
+                                    ("as_bytes", Some((None, vec![]))),
+                                ],
+                            ));
+                        }
+
+                        _ => {}
+                    },
+
+                    _ => {}
+                }
+
+                todo!("translate from {value_type_name} to bytes")
+            }
 
             _ => todo!("translate from {value_type_name} to bytes"),
         },

@@ -68,6 +68,7 @@ pub fn translate_variable_access_expression(
 
     match solidity_expression {
         solidity::Expression::Variable(solidity::Identifier { name, .. }) => {
+            // Check to see if the variable refers to a local variable or parameter defined in scope
             if let Some(variable) = scope.borrow().get_variable_from_old_name(name) {
                 let variable_name = variable.borrow().new_name.clone();
 
@@ -75,6 +76,78 @@ pub fn translate_variable_access_expression(
                     variable: Some(variable),
                     expression: sway::Expression::create_identifier(variable_name),
                 }));
+            }
+
+            // Check to see if the variable refers to a storage field
+            if let Some(contract_name) = scope.borrow().get_contract_name() {
+                fn check_contract(
+                    project: &mut Project,
+                    module: Rc<RefCell<ir::Module>>,
+                    contract: Rc<RefCell<ir::Contract>>,
+                    storage_field_name: &str,
+                ) -> Result<Option<ir::VariableAccess>, Error> {
+                    let storage_namespace_name = contract.borrow().name.to_case(Case::Snake);
+                    
+                    if let Some(storage) = contract.borrow().storage.as_ref() {
+                        if let Some(storage_namespace) = storage
+                            .borrow()
+                            .namespaces
+                            .iter()
+                            .find(|n| n.borrow().name == storage_namespace_name)
+                        {
+                            if let Some(field) = storage_namespace
+                                .borrow()
+                                .fields
+                                .iter()
+                                .find(|f| f.old_name == storage_field_name)
+                            {
+                                return Ok(Some(ir::VariableAccess {
+                                    variable: None,
+                                    expression: sway::Expression::create_function_calls(
+                                        None,
+                                        &[
+                                            (
+                                                format!(
+                                                    "storage::{}",
+                                                    storage_namespace.borrow().name
+                                                )
+                                                .as_str(),
+                                                None,
+                                            ),
+                                            (field.name.as_str(), None),
+                                            ("read", Some((None, vec![]))),
+                                        ],
+                                    ),
+                                }));
+                            }
+                        }
+                    }
+
+                    let inherits = contract.borrow().abi.inherits.clone();
+
+                    for inherited_contract_name in inherits {
+                        let inherited_contract = project
+                            .find_contract(
+                                module.clone(),
+                                inherited_contract_name.to_string().as_str(),
+                            )
+                            .unwrap();
+
+                        if let Some(result) = check_contract(project, module.clone(), inherited_contract.clone(), storage_field_name)? {
+                            return Ok(Some(result));
+                        }
+                    }
+
+                    Ok(None)
+                }
+
+                let contract = project
+                    .find_contract(module.clone(), contract_name.as_str())
+                    .unwrap();
+
+                if let Some(result) = check_contract(project, module.clone(), contract.clone(), name.as_str())? {
+                    return Ok(Some(result));
+                }
             }
 
             let mut module = module.borrow_mut();
@@ -104,6 +177,25 @@ pub fn translate_variable_access_expression(
                 }
             }
 
+            // Check to see if the variable refers to a constant
+            if let Some(constant) = module.constants.iter().find(|c| c.old_name == *name) {
+                return Ok(Some(ir::VariableAccess {
+                    variable: None,
+                    expression: sway::Expression::create_identifier(constant.name.clone()),
+                }));
+            }
+
+            // Check to see if the variable refers to a configurable
+            if let Some(configurable) = module.configurable.as_ref() {
+                if let Some(field) = configurable.fields.iter().find(|f| f.old_name == *name) {
+                    return Ok(Some(ir::VariableAccess {
+                        variable: None,
+                        expression: sway::Expression::create_identifier(field.name.clone()),
+                    }));
+                }
+            }
+
+            // Check to see if the variable refers to a function
             if let Some(function) = module.functions.iter().find(|f| {
                 let sway::TypeName::Function { old_name, .. } = &f.signature else {
                     unreachable!()
@@ -119,20 +211,6 @@ pub fn translate_variable_access_expression(
                         new_name.clone()
                     }),
                 }));
-            }
-
-            if let Some(constant) = module.constants.iter().find(|c| c.old_name == *name) {
-                return Ok(Some(ir::VariableAccess {
-                    variable: None,
-                    expression: sway::Expression::create_identifier(constant.name.clone()),
-                }));
-            } else if let Some(configurable) = module.configurable.as_ref() {
-                if let Some(field) = configurable.fields.iter().find(|f| f.old_name == *name) {
-                    return Ok(Some(ir::VariableAccess {
-                        variable: None,
-                        expression: sway::Expression::create_identifier(field.name.clone()),
-                    }));
-                }
             }
 
             return Ok(None);

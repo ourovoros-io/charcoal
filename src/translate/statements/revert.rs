@@ -27,7 +27,7 @@ pub fn translate_revert_statement(
             let external_definition_name = ids_iter.next().unwrap().name.clone();
             let error_variant_name = ids_iter.next().unwrap().name.clone();
 
-            let external_definition = project
+            let (external_definition, _) = project
                 .find_module_with_contract(module.clone(), external_definition_name.as_str())
                 .unwrap();
 

@@ -24,7 +24,7 @@ pub fn translate_emit_statement(
                         translate_naming_convention(&member.name, Case::Pascal);
 
                     // Check if container is contained in an external definition
-                    if let Some(external_module) = project
+                    if let Some((external_module, _)) = project
                         .find_module_with_contract(module.clone(), container_id.name.as_str())
                     {
                         for events_enum in external_module.borrow().events_enums.iter() {
