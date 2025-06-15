@@ -262,33 +262,38 @@ pub fn translate_function_call_expression(
         }
 
         solidity::Expression::MemberAccess(_, container, member) => {
-            match container.as_ref() {
-                solidity::Expression::Type(_, ty) => {
-                    if let Some(result) = translate_builtin_type_member_access_function_call(
-                        project,
-                        module.clone(),
-                        scope.clone(),
-                        ty,
-                        member.name.as_str(),
-                        arguments,
-                    )? {
-                        return Ok(result);
-                    }
+            // Check for built-in type member access function calls
+            if let solidity::Expression::Type(_, ty) = container.as_ref() {
+                if let Some(result) = translate_builtin_type_member_access_function_call(
+                    project,
+                    module.clone(),
+                    scope.clone(),
+                    ty,
+                    member.name.as_str(),
+                    arguments,
+                    named_arguments,
+                )? {
+                    return Ok(result);
                 }
+            }
 
+            // Check for built-in variable member access function calls
+            if let solidity::Expression::Variable(identifier) = container.as_ref() {
+                if let Some(value) = translate_builtin_variable_member_access_function_call(
+                    project,
+                    module.clone(),
+                    scope.clone(),
+                    identifier.name.as_str(),
+                    member.name.as_str(),
+                    arguments,
+                    named_arguments,
+                )? {
+                    return Ok(value);
+                }
+            }
+
+            match container.as_ref() {
                 solidity::Expression::Variable(solidity::Identifier { name, .. }) => {
-                    if let Some(value) = translate_builtin_variable_member_access_function_call(
-                        project,
-                        module.clone(),
-                        scope.clone(),
-                        name.as_str(),
-                        member.name.as_str(),
-                        arguments,
-                        named_arguments,
-                    )? {
-                        return Ok(value);
-                    }
-
                     let parameters = arguments
                         .iter()
                         .map(|a| translate_expression(project, module.clone(), scope.clone(), a))
@@ -321,18 +326,14 @@ pub fn translate_function_call_expression(
                     //     }
                     // }
 
-                    // Check to see if container is a user-defined type name
-                    if module.borrow().type_definitions.iter().any(|t| {
-                        let sway::TypeName::Identifier {
-                            name: type_name,
-                            generic_parameters: None,
-                        } = &t.implementation.as_ref().unwrap().name
-                        else {
-                            return false;
-                        };
-                        type_name == name
-                    }) {
-                        if let "wrap" | "unwrap" = member.name.as_str() {
+                    // Check for user-defined type value wrapping
+                    if let "wrap" | "unwrap" = member.name.as_str() {
+                        if let Some(SymbolData::TypeDefinition(_)) = resolve_symbol(
+                            project,
+                            module.clone(),
+                            scope.clone(),
+                            Symbol::TypeDefinition(name.clone()),
+                        ) {
                             return Ok(parameters[0].clone());
                         }
                     }
@@ -552,209 +553,127 @@ pub fn translate_function_call_expression(
                 sway::TypeName::Identifier {
                     name,
                     generic_parameters,
-                } => match (name.as_str(), generic_parameters.as_ref()) {
-                    ("Identity", None) => translate_identity_member_access_function_call(
-                        project,
-                        module.clone(),
-                        scope.clone(),
-                        expression,
-                        arguments,
-                        container,
-                        member,
-                        solidity_container,
-                        name.to_string(),
-                        function,
-                    ),
-
-                    ("StorageVec", Some(_)) => translate_storage_vec_member_access_function_call(
-                        project,
-                        module.clone(),
-                        scope.clone(),
-                        arguments,
-                        member,
-                        solidity_container,
-                        &container,
-                    ),
-
-                    ("Vec", Some(_)) => translate_vec_member_access_function_call(
-                        project,
-                        module.clone(),
-                        scope.clone(),
-                        arguments,
-                        member,
-                        solidity_container,
-                        &container,
-                    ),
-
-                    _ => {
-                        let mut parameters = arguments
-                            .iter()
-                            .map(|a| {
-                                translate_expression(project, module.clone(), scope.clone(), a)
-                            })
-                            .collect::<Result<Vec<_>, _>>()?;
-
-                        let parameter_types = parameters
-                            .iter()
-                            .map(|p| get_expression_type(project, module.clone(), scope.clone(), p))
-                            .collect::<Result<Vec<_>, _>>()?;
-
-                        let mut using_parameters = parameters.clone();
-                        using_parameters.insert(0, container.clone());
-
-                        let mut using_parameter_types = parameter_types.clone();
-                        using_parameter_types.insert(
-                            0,
-                            get_expression_type(
+                } => {
+                    match (name.as_str(), generic_parameters.as_ref()) {
+                        ("Identity", None) => {
+                            return translate_identity_member_access_function_call(
                                 project,
                                 module.clone(),
                                 scope.clone(),
-                                &container,
-                            )?,
-                        );
+                                expression,
+                                arguments,
+                                container,
+                                member,
+                                solidity_container,
+                                name.to_string(),
+                                function,
+                            );
+                        }
 
-                        // Check if this is a function from a using directive
-                        for using_directive in module.borrow().using_directives.clone() {
-                            // Make sure the type names match
-                            if let Some(for_type) = using_directive.for_type.as_ref() {
-                                if *for_type != type_name {
-                                    continue;
-                                }
-                            }
-
-                            // Look up the definition of the using directive
-                            let Some(external_module) = project.find_module_with_contract(
+                        ("StorageVec", Some(_)) => {
+                            return translate_storage_vec_member_access_function_call(
+                                project,
                                 module.clone(),
-                                &using_directive.library_name,
-                            ) else {
-                                continue;
-                            };
-
-                            if let Some(result) = resolve_function_call(
-                                external_module.clone(),
-                                member.name.as_str(),
-                                named_arguments,
-                                using_parameters.clone(),
-                                using_parameter_types.clone(),
-                            )? {
-                                return Ok(result);
-                            }
+                                scope.clone(),
+                                arguments,
+                                member,
+                                solidity_container,
+                                &container,
+                            );
                         }
 
-                        // Check if this is a function from an ABI
-                        let mut check_abi =
-                            |abi: &sway::Abi| -> Result<Option<sway::Expression>, Error> {
-                                if abi.name != *name {
-                                    return Ok(None);
-                                }
-
-                                // TODO: fix this...
-                                if named_arguments.is_some() {
-                                    return Ok(None);
-                                }
-
-                                'function_lookup: for function in abi.functions.iter() {
-                                    // Ensure the function's old name matches the function call we're translating
-                                    if function.old_name != member.name {
-                                        continue 'function_lookup;
-                                    }
-
-                                    // Ensure the supplied function call args match the function's parameters
-                                    if parameters.len() != function.parameters.entries.len() {
-                                        continue 'function_lookup;
-                                    }
-
-                                    'value_type_check: for (i, value_type_name) in
-                                        parameter_types.iter().enumerate()
-                                    {
-                                        let Some(parameter_type_name) =
-                                            function.parameters.entries[i].type_name.as_ref()
-                                        else {
-                                            continue;
-                                        };
-
-                                        //
-                                        // If `parameter_type_name` is `Identity`, but `container` is an abi cast expression,
-                                        // then we need to de-cast it, so `container` turns into the 2nd parameter of the abi cast,
-                                        // and `value_type_name` turns into `Identity`.
-                                        //
-
-                                        if let sway::TypeName::Identifier {
-                                            name: parameter_type_name,
-                                            generic_parameters: None,
-                                        } = parameter_type_name
-                                        {
-                                            if parameter_type_name == "Identity" {
-                                                if let sway::Expression::FunctionCall(
-                                                    function_call,
-                                                ) = parameters[i].clone()
-                                                {
-                                                    if let Some(function_name) =
-                                                        function_call.function.as_identifier()
-                                                    {
-                                                        if function_name == "abi" {
-                                                            parameters[i] =
-                                                                function_call.parameters[1].clone();
-                                                            continue 'value_type_check;
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-
-                                        // HACK: [u8; 32] -> b256
-                                        if let Some(32) = value_type_name.u8_array_length() {
-                                            if parameter_type_name.is_b256() {
-                                                parameters[i] =
-                                                    sway::Expression::create_function_calls(
-                                                        None,
-                                                        &[(
-                                                            "b256::from_be_bytes",
-                                                            Some((
-                                                                None,
-                                                                vec![parameters[i].clone()],
-                                                            )),
-                                                        )],
-                                                    );
-                                                continue 'value_type_check;
-                                            }
-                                        }
-
-                                        if !value_type_name.is_compatible_with(parameter_type_name)
-                                        {
-                                            continue 'function_lookup;
-                                        }
-                                    }
-
-                                    return Ok(Some(sway::Expression::create_function_calls(
-                                        Some(container.clone()),
-                                        &[(function.name.as_str(), Some((None, vec![])))],
-                                    )));
-                                }
-
-                                Ok(None)
-                            };
-
-                        for contract in module.borrow().contracts.clone() {
-                            let abi = contract.borrow().abi.clone();
-
-                            if let Some(result) = check_abi(&abi)? {
-                                return Ok(result);
-                            }
+                        ("Vec", Some(_)) => {
+                            return translate_vec_member_access_function_call(
+                                project,
+                                module.clone(),
+                                scope.clone(),
+                                arguments,
+                                member,
+                                solidity_container,
+                                &container,
+                            );
                         }
 
-                        panic!(
-                            "{}: TODO: translate {name} member function call: {}.{member}({})",
-                            project.loc_to_file_location_string(module.clone(), &function.loc()),
-                            sway::TabbedDisplayer(&container),
-                            parameter_types
-                                .iter()
-                                .map(|t| t.to_string())
-                                .collect::<Vec<_>>()
-                                .join(", "),
-                        )
+                        _ => {}
                     }
-                },
+
+                    let parameters = arguments
+                        .iter()
+                        .map(|a| translate_expression(project, module.clone(), scope.clone(), a))
+                        .collect::<Result<Vec<_>, _>>()?;
+
+                    let parameter_types = parameters
+                        .iter()
+                        .map(|p| get_expression_type(project, module.clone(), scope.clone(), p))
+                        .collect::<Result<Vec<_>, _>>()?;
+
+                    // Check if this is a function from a using directive
+                    let mut using_parameters = parameters.clone();
+                    using_parameters.insert(0, container.clone());
+
+                    let mut using_parameter_types = parameter_types.clone();
+                    using_parameter_types.insert(
+                        0,
+                        get_expression_type(project, module.clone(), scope.clone(), &container)?,
+                    );
+
+                    for using_directive in module.borrow().using_directives.clone() {
+                        // Make sure the type names match
+                        if let Some(for_type) = using_directive.for_type.as_ref() {
+                            if *for_type != type_name {
+                                continue;
+                            }
+                        }
+
+                        // Look up the definition of the using directive
+                        let Some(external_module) = project.find_module_with_contract(
+                            module.clone(),
+                            &using_directive.library_name,
+                        ) else {
+                            continue;
+                        };
+
+                        if let Some(result) = resolve_function_call(
+                            external_module.clone(),
+                            member.name.as_str(),
+                            named_arguments,
+                            using_parameters.clone(),
+                            using_parameter_types.clone(),
+                        )? {
+                            return Ok(result);
+                        }
+                    }
+
+                    // Check if this is a function from an ABI
+                    for contract in module.borrow().contracts.clone() {
+                        let abi = contract.borrow().abi.clone();
+
+                        if let Some(result) = resolve_abi_function_call(
+                            project,
+                            module.clone(),
+                            scope.clone(),
+                            &abi,
+                            &container,
+                            member.name.as_str(),
+                            named_arguments,
+                            parameters.clone(),
+                            parameter_types.clone(),
+                        )? {
+                            return Ok(result);
+                        }
+                    }
+
+                    panic!(
+                        "{}: TODO: translate {name} member function call: {}.{member}({})",
+                        project.loc_to_file_location_string(module.clone(), &function.loc()),
+                        sway::TabbedDisplayer(&container),
+                        parameter_types
+                            .iter()
+                            .map(|t| t.to_string())
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                    )
+                }
 
                 sway::TypeName::Array { .. } => {
                     let mut parameters = arguments
@@ -894,7 +813,6 @@ pub fn translate_function_call_expression(
             }
         }
 
-        // timelock.executeTransaction.value(proposal.values[i])
         solidity::Expression::FunctionCall(_, function, args) => {
             translate_member_access_function_call(
                 project,
@@ -907,7 +825,6 @@ pub fn translate_function_call_expression(
             )
         }
 
-        // timelock.executeTransaction{value : proposal.values[i]}
         solidity::Expression::FunctionCallBlock(_, function, block) => match function.as_ref() {
             solidity::Expression::MemberAccess(_, container, member) => {
                 translate_function_call_block_member_access(
@@ -954,7 +871,12 @@ fn translate_builtin_type_member_access_function_call(
     ty: &solidity::Type,
     member: &str,
     arguments: &[solidity::Expression],
+    named_arguments: Option<&[solidity::NamedArgument]>,
 ) -> Result<Option<sway::Expression>, Error> {
+    //
+    // TODO: Check named_arguments
+    //
+
     match ty {
         solidity::Type::String => match member {
             "concat" => {

@@ -582,49 +582,49 @@ pub fn match_bits(bits: usize, signed: bool) -> Option<usize> {
     match bits {
         0..=8 => {
             if bits != 8 {
-                eprintln!(
-                    "WARNING: unsupported {name} integer type `{ty}{bits}`, using `{ident}8`..."
-                );
+                // eprintln!(
+                //     "WARNING: unsupported {name} integer type `{ty}{bits}`, using `{ident}8`..."
+                // );
             }
             Some(8)
         }
         9..=16 => {
             if bits != 16 {
-                eprintln!(
-                    "WARNING: unsupported {name} integer type `{ty}{bits}`, using `{ident}16`..."
-                );
+                // eprintln!(
+                //     "WARNING: unsupported {name} integer type `{ty}{bits}`, using `{ident}16`..."
+                // );
             }
             Some(16)
         }
         17..=32 => {
             if bits != 32 {
-                eprintln!(
-                    "WARNING: unsupported {name} integer type `{ty}{bits}`, using `{ident}32`..."
-                );
+                // eprintln!(
+                //     "WARNING: unsupported {name} integer type `{ty}{bits}`, using `{ident}32`..."
+                // );
             }
             Some(32)
         }
         33..=64 => {
             if bits != 64 {
-                eprintln!(
-                    "WARNING: unsupported {name} integer type `{ty}{bits}`, using `{ident}64`..."
-                );
+                // eprintln!(
+                //     "WARNING: unsupported {name} integer type `{ty}{bits}`, using `{ident}64`..."
+                // );
             }
             Some(64)
         }
         65..=128 => {
             if bits != 128 {
-                eprintln!(
-                    "WARNING: unsupported {name} integer type `{ty}{bits}`, using `{ident}128`..."
-                );
+                // eprintln!(
+                //     "WARNING: unsupported {name} integer type `{ty}{bits}`, using `{ident}128`..."
+                // );
             }
             Some(128)
         }
         129..=256 => {
             if bits != 256 {
-                eprintln!(
-                    "WARNING: unsupported {name} integer type `{ty}{bits}`, using `{ident}256`..."
-                );
+                // eprintln!(
+                //     "WARNING: unsupported {name} integer type `{ty}{bits}`, using `{ident}256`..."
+                // );
             }
             Some(256)
         }

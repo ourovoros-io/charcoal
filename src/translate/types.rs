@@ -3,6 +3,34 @@ use solang_parser::{helpers::CodeLocation, pt as solidity};
 use std::{cell::RefCell, rc::Rc};
 
 #[inline]
+pub fn translate_type_definition(
+    project: &mut Project,
+    module: Rc<RefCell<ir::Module>>,
+    contract_name: Option<&str>,
+    type_definition: &solidity::TypeDefinition,
+) -> Result<sway::TypeDefinition, Error> {
+    let scope = Rc::new(RefCell::new(ir::Scope::new(contract_name, None)));
+
+    let underlying_type = translate_type_name(
+        project,
+        module.clone(),
+        scope,
+        &type_definition.ty,
+        false,
+        false,
+    );
+
+    Ok(sway::TypeDefinition {
+        is_public: true,
+        name: sway::TypeName::Identifier {
+            name: type_definition.name.name.clone(),
+            generic_parameters: None,
+        },
+        underlying_type: Some(underlying_type),
+    })
+}
+
+#[inline]
 pub fn translate_return_type_name(
     project: &mut Project,
     module: Rc<RefCell<ir::Module>>,
@@ -93,7 +121,11 @@ pub fn translate_type_name(
                         0..=8 => {
                             if *bits != 8 {
                                 eprintln!(
-                                    "WARNING: unsupported signed integer type `int{bits}`, using `I8`..."
+                                    "{}: WARNING: unsupported signed integer type `int{bits}`, using `I8`...",
+                                    project.loc_to_file_location_string(
+                                        module.clone(),
+                                        &type_name.loc()
+                                    ),
                                 );
                             }
                             module
@@ -104,7 +136,11 @@ pub fn translate_type_name(
                         9..=16 => {
                             if *bits != 16 {
                                 eprintln!(
-                                    "WARNING: unsupported signed integer type `int{bits}`, using `I16`..."
+                                    "{}: WARNING: unsupported signed integer type `int{bits}`, using `I16`...",
+                                    project.loc_to_file_location_string(
+                                        module.clone(),
+                                        &type_name.loc()
+                                    ),
                                 );
                             }
                             module
@@ -115,7 +151,11 @@ pub fn translate_type_name(
                         17..=32 => {
                             if *bits != 32 {
                                 eprintln!(
-                                    "WARNING: unsupported signed integer type `int{bits}`, using `I32`..."
+                                    "{}: WARNING: unsupported signed integer type `int{bits}`, using `I32`...",
+                                    project.loc_to_file_location_string(
+                                        module.clone(),
+                                        &type_name.loc()
+                                    ),
                                 );
                             }
                             module
@@ -126,7 +166,11 @@ pub fn translate_type_name(
                         33..=64 => {
                             if *bits != 64 {
                                 eprintln!(
-                                    "WARNING: unsupported signed integer type `int{bits}`, using `I64`..."
+                                    "{}: WARNING: unsupported signed integer type `int{bits}`, using `I64`...",
+                                    project.loc_to_file_location_string(
+                                        module.clone(),
+                                        &type_name.loc()
+                                    ),
                                 );
                             }
                             module
@@ -137,7 +181,11 @@ pub fn translate_type_name(
                         65..=128 => {
                             if *bits != 128 {
                                 eprintln!(
-                                    "WARNING: unsupported signed integer type `int{bits}`, using `I128`..."
+                                    "{}: WARNING: unsupported signed integer type `int{bits}`, using `I128`...",
+                                    project.loc_to_file_location_string(
+                                        module.clone(),
+                                        &type_name.loc()
+                                    ),
                                 );
                             }
                             module
@@ -148,7 +196,11 @@ pub fn translate_type_name(
                         129..=256 => {
                             if *bits != 256 {
                                 eprintln!(
-                                    "WARNING: unsupported signed integer type `int{bits}`, using `I256`..."
+                                    "{}: WARNING: unsupported signed integer type `int{bits}`, using `I256`...",
+                                    project.loc_to_file_location_string(
+                                        module.clone(),
+                                        &type_name.loc()
+                                    ),
                                 );
                             }
                             module
@@ -167,7 +219,9 @@ pub fn translate_type_name(
                     0..=8 => {
                         if *bits != 8 {
                             eprintln!(
-                                "WARNING: unsupported unsigned integer type `uint{bits}`, using `u8`..."
+                                "{}: WARNING: unsupported unsigned integer type `uint{bits}`, using `u8`...",
+                                project
+                                    .loc_to_file_location_string(module.clone(), &type_name.loc()),
                             );
                         }
                         "u8".into()
@@ -175,7 +229,9 @@ pub fn translate_type_name(
                     9..=16 => {
                         if *bits != 16 {
                             eprintln!(
-                                "WARNING: unsupported unsigned integer type `uint{bits}`, using `u16`..."
+                                "{}: WARNING: unsupported unsigned integer type `uint{bits}`, using `u16`...",
+                                project
+                                    .loc_to_file_location_string(module.clone(), &type_name.loc()),
                             );
                         }
                         "u16".into()
@@ -183,7 +239,9 @@ pub fn translate_type_name(
                     17..=32 => {
                         if *bits != 32 {
                             eprintln!(
-                                "WARNING: unsupported unsigned integer type `uint{bits}`, using `u32`..."
+                                "{}: WARNING: unsupported unsigned integer type `uint{bits}`, using `u32`...",
+                                project
+                                    .loc_to_file_location_string(module.clone(), &type_name.loc()),
                             );
                         }
                         "u32".into()
@@ -191,7 +249,9 @@ pub fn translate_type_name(
                     33..=64 => {
                         if *bits != 64 {
                             eprintln!(
-                                "WARNING: unsupported unsigned integer type `uint{bits}`, using `u64`..."
+                                "{}: WARNING: unsupported unsigned integer type `uint{bits}`, using `u64`...",
+                                project
+                                    .loc_to_file_location_string(module.clone(), &type_name.loc()),
                             );
                         }
                         "u64".into()
@@ -199,7 +259,9 @@ pub fn translate_type_name(
                     65..=256 => {
                         if *bits != 256 {
                             eprintln!(
-                                "WARNING: unsupported unsigned integer type `uint{bits}`, using `u256`..."
+                                "{}: WARNING: unsupported unsigned integer type `uint{bits}`, using `u256`...",
+                                project
+                                    .loc_to_file_location_string(module.clone(), &type_name.loc()),
                             );
                         }
                         "u256".into()

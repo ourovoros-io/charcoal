@@ -144,17 +144,15 @@ pub fn translate_emit_statement(
                 _ => todo!(),
             };
 
-            if let Some(event_variant) = resolve_symbol(
+            if let Some(SymbolData::Event {
+                type_name: event_type_name,
+                variant: event_variant,
+            }) = resolve_symbol(
                 project,
                 module.clone(),
+                scope.clone(),
                 Symbol::Event(event_variant_name.clone()),
             ) {
-                let Some((event_enum_name, event_variant)) =
-                    event_variant.downcast_ref::<(String, sway::EnumVariant)>()
-                else {
-                    panic!("Invalid enum variant")
-                };
-
                 return Ok(sway::Statement::from(sway::Expression::from(
                     sway::FunctionCall {
                         function: sway::Expression::create_identifier("log".into()),
@@ -162,13 +160,13 @@ pub fn translate_emit_statement(
                         parameters: vec![if arguments.is_empty() {
                             sway::Expression::create_identifier(format!(
                                 "{}::{}",
-                                event_enum_name, event_variant_name,
+                                event_type_name, event_variant_name,
                             ))
                         } else {
                             sway::Expression::create_function_calls(
                                 None,
                                 &[(
-                                    format!("{}::{}", event_enum_name, event_variant_name).as_str(),
+                                    format!("{}::{}", event_type_name, event_variant_name).as_str(),
                                     Some((
                                         None,
                                         vec![if arguments.len() == 1 {

@@ -14,8 +14,8 @@ mod import_directives;
 mod statements;
 mod storage;
 mod structs;
-mod type_definitions;
-mod type_names;
+mod symbols;
+mod types;
 pub use assembly::*;
 pub use contracts::*;
 pub use enums::*;
@@ -25,8 +25,8 @@ pub use import_directives::*;
 pub use statements::*;
 pub use storage::*;
 pub use structs::*;
-pub use type_definitions::*;
-pub use type_names::*;
+pub use symbols::*;
+pub use types::*;
 
 #[inline]
 pub fn translate_naming_convention(name: &str, case: Case) -> String {
@@ -56,7 +56,7 @@ pub fn translate_naming_convention(name: &str, case: Case) -> String {
     }
 }
 
-/// Coerces a argument type to a parameter type
+/// Coerces an expression from one type to another
 pub fn coerce_expression(
     expression: &sway::Expression,
     from_type_name: &sway::TypeName,
@@ -785,60 +785,6 @@ pub fn coerce_expression(
     }
 
     Some(expression)
-}
-
-pub enum Symbol {
-    TypeDefinition(String),
-    Event(String),
-    Enum(String),
-    Error(String),
-    Struct(String),
-    Function(String),
-    Abi(String),
-}
-
-pub fn resolve_symbol(
-    project: &mut Project,
-    module: Rc<RefCell<ir::Module>>,
-    symbol: Symbol,
-) -> Option<Box<dyn std::any::Any>> {
-    match &symbol {
-        Symbol::TypeDefinition(_) => todo!(),
-
-        Symbol::Event(name) => {
-            if let Some(event_enum) = module
-                .borrow()
-                .events_enums
-                .iter()
-                .find(|e| e.0.borrow().variants.iter().any(|v| v.name == *name))
-            {
-                let variant = event_enum
-                    .0
-                    .borrow()
-                    .variants
-                    .iter()
-                    .find(|v| v.name == *name)
-                    .cloned()
-                    .unwrap();
-
-                return Some(Box::new((event_enum.0.borrow().name.clone(), variant)));
-            }
-        }
-
-        Symbol::Enum(_) => todo!(),
-        Symbol::Error(_) => todo!(),
-        Symbol::Struct(_) => todo!(),
-        Symbol::Function(_) => todo!(),
-        Symbol::Abi(_) => todo!(),
-    }
-
-    for use_expr in module.borrow().uses.iter() {
-        if let Some(imported_module) = project.resolve_use(use_expr) {
-            return resolve_symbol(project, imported_module.clone(), symbol);
-        }
-    }
-
-    None
 }
 
 /// Gets the base underlying type of the supplied type name
