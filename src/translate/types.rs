@@ -570,83 +570,47 @@ pub fn translate_type_name(
 
         solidity::Expression::MemberAccess(_, container, member) => match container.as_ref() {
             solidity::Expression::Variable(solidity::Identifier { name, .. }) => {
-                let mut result = None;
-                let mut translated_enum = None;
-                let mut translated_struct = None;
-                let mut translated_type = None;
+                if let Some((external_module, external_contract)) =
+                    project.find_module_with_contract(module.clone(), name.as_str())
+                {
+                    // Check if type refers to a type definition
+                    if let Some(SymbolData::TypeDefinition(type_definition)) = resolve_symbol(
+                        project,
+                        external_module.clone(),
+                        scope.clone(),
+                        Symbol::TypeDefinition(member.name.clone()),
+                    ) {
+                        return type_definition.name.clone();
+                    }
 
-                let mut check_definition = |module: Rc<RefCell<ir::Module>>| {
-                    // Check to see if member is an enum
-                    if let Some(external_enum) = module.borrow().enums.iter().find(|e| {
-                        let sway::TypeName::Identifier {
-                            name,
-                            generic_parameters: None,
-                        } = &e.implementation.as_ref().unwrap().type_definition.name
-                        else {
-                            panic!(
-                                "Expected Identifier type name, found {:#?}",
-                                e.implementation.as_ref().unwrap().type_definition.name
-                            );
+                    // Check if type refers to an enum definition
+                    if let Some(SymbolData::Enum(enum_definition)) = resolve_symbol(
+                        project,
+                        external_module.clone(),
+                        scope.clone(),
+                        Symbol::Enum(member.name.clone()),
+                    ) {
+                        return enum_definition.type_definition.name.clone();
+                    }
+
+                    // Check if type refers to a struct definition
+                    if let Some(SymbolData::Struct(struct_definition)) = resolve_symbol(
+                        project,
+                        external_module.clone(),
+                        scope.clone(),
+                        Symbol::Struct(member.name.clone()),
+                    ) {
+                        return sway::TypeName::Identifier {
+                            name: struct_definition.borrow().name.clone(),
+                            generic_parameters: struct_definition.borrow().generic_parameters.clone(),
                         };
-
-                        *name == member.name
-                    }) {
-                        translated_enum =
-                            Some(external_enum.implementation.as_ref().unwrap().clone());
-
-                        result = Some(
-                            external_enum
-                                .implementation
-                                .as_ref()
-                                .unwrap()
-                                .type_definition
-                                .name
-                                .clone(),
-                        );
                     }
-                    // Check to see if member is a struct
-                    else if let Some(external_struct) = module
-                        .borrow()
-                        .structs
-                        .iter()
-                        .find(|s| s.signature.to_string() == member.name)
-                    {
-                        translated_struct =
-                            Some(external_struct.implementation.as_ref().unwrap().clone());
 
-                        result = Some(sway::TypeName::Identifier {
-                            name: external_struct
-                                .implementation
-                                .as_ref()
-                                .unwrap()
-                                .borrow()
-                                .name
-                                .clone(),
-                            generic_parameters: None,
-                        });
-                    }
-                    // Check to see if member is a user-defined type
-                    else if let Some(external_type) =
-                        module.borrow().type_definitions.iter().find(|t| {
-                            match &t.implementation.as_ref().unwrap().name {
-                                sway::TypeName::Identifier {
-                                    name,
-                                    generic_parameters: None,
-                                } => *name == member.name,
-                                _ => false,
-                            }
-                        })
-                    {
-                        translated_type =
-                            Some(external_type.implementation.as_ref().unwrap().clone());
-
-                        result = Some(external_type.implementation.as_ref().unwrap().name.clone());
-                    }
-                };
-
-                // Check to see if container is referring to a contract name
-                if let Some((module, _)) = project.find_module_with_contract(module.clone(), &name) {
-                    check_definition(module.clone());
+                    todo!(
+                        "found contract `{}` in module `{}`",
+                        external_contract.borrow().name,
+                        external_module.borrow().path.to_string_lossy()
+                    )
                 }
 
                 todo!(
