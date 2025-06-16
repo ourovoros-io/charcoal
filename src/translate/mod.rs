@@ -151,7 +151,7 @@ pub fn coerce_expression(
     // Check for byte array coersions
     if let Some(to_byte_count) = to_type_name.u8_array_length() {
         let mut from_bits = 0;
-        
+
         if let Some(bits) = from_type_name.uint_bits() {
             from_bits = bits;
         } else if from_type_name.is_b256() {
@@ -318,6 +318,79 @@ pub fn coerce_expression(
                 // From `StorageKey<T>` to `T`
                 if let Some(storage_key_type) = from_type_name.storage_key_type() {
                     if !storage_key_type.is_compatible_with(to_type_name) {
+                        if let (Some(lhs_bits), Some(rhs_bits)) =
+                            (storage_key_type.uint_bits(), to_type_name.uint_bits())
+                        {
+                            match &expression {
+                                sway::Expression::Literal(sway::Literal::DecInt(i, suffix)) => {
+                                    if suffix.is_none() {
+                                        return Some(sway::Expression::Literal(
+                                            sway::Literal::DecInt(
+                                                i.clone(),
+                                                Some(format!(
+                                                    "{}{}",
+                                                    rhs_name.chars().nth(0).unwrap(),
+                                                    rhs_bits
+                                                )),
+                                            ),
+                                        ));
+                                    }
+
+                                    if lhs_bits > rhs_bits {
+                                        // x.as_u256()
+                                        // u64::try_from(x).unwrap()
+                                        return Some(sway::Expression::create_function_calls(
+                                            None,
+                                            &[
+                                                (
+                                                    format!("{to_type_name}::try_from").as_str(),
+                                                    Some((None, vec![expression.clone()])),
+                                                ),
+                                                ("unwrap", Some((None, vec![]))),
+                                            ],
+                                        ));
+                                    }
+
+                                    if lhs_bits < rhs_bits {
+                                        return Some(sway::Expression::create_function_calls(
+                                            Some(expression.clone()),
+                                            &[(
+                                                format!("as_{to_type_name}").as_str(),
+                                                Some((None, vec![])),
+                                            )],
+                                        ));
+                                    }
+                                }
+
+                                _ => {
+                                    if lhs_bits > rhs_bits {
+                                        // x.as_u256()
+                                        // u64::try_from(x).unwrap()
+                                        return Some(sway::Expression::create_function_calls(
+                                            None,
+                                            &[
+                                                (
+                                                    format!("{to_type_name}::try_from").as_str(),
+                                                    Some((None, vec![expression.clone()])),
+                                                ),
+                                                ("unwrap", Some((None, vec![]))),
+                                            ],
+                                        ));
+                                    }
+
+                                    if lhs_bits < rhs_bits {
+                                        return Some(sway::Expression::create_function_calls(
+                                            Some(expression.clone()),
+                                            &[(
+                                                format!("as_{to_type_name}").as_str(),
+                                                Some((None, vec![])),
+                                            )],
+                                        ));
+                                    }
+                                }
+                            }
+                        }
+
                         return None;
                     }
 
