@@ -78,36 +78,62 @@ pub fn coerce_expression(
     // then we need to de-cast it, so `expression` turns into the 2nd parameter of the abi cast,
     // and `from_type_name` turns into `Identity`.
     //
-    if let (
-        _,
-        sway::TypeName::Identifier {
-            name,
-            generic_parameters,
-        },
-    ) = (from_type_name, to_type_name)
-    {
-        match (name.as_str(), generic_parameters.as_ref()) {
-            ("Identity", None) => match &expression {
-                sway::Expression::FunctionCall(f) => {
-                    if let Some(ident) = f.function.as_identifier() {
-                        if ident == "abi" && f.parameters.len() == 2 {
-                            let rhs = f.parameters[1].clone();
-                            if let sway::Expression::FunctionCall(f) = &rhs {
-                                if let sway::Expression::MemberAccess(e) = &f.function {
-                                    if e.member == "into" {
-                                        if let sway::Expression::FunctionCall(f) = &e.expression {
-                                            if let sway::Expression::MemberAccess(e) = &f.function {
-                                                if e.member == "unwrap" {
-                                                    if let sway::Expression::FunctionCall(f) =
-                                                        &e.expression
-                                                    {
-                                                        if let sway::Expression::MemberAccess(e) =
-                                                            &f.function
-                                                        {
-                                                            if e.member == "as_contract_id" {
-                                                                return Some(e.expression.clone());
-                                                            }
-                                                        }
+    if to_type_name.is_identity() {
+        let mut comment = None;
+
+        if let sway::Expression::Commented(c, e) = &expression {
+            comment = Some(c.clone());
+            expression = e.as_ref().clone();
+        }
+
+        if let sway::Expression::FunctionCall(f) = &expression {
+            if let Some(ident) = f.function.as_identifier() {
+                if ident == "abi" && f.parameters.len() == 2 {
+                    let rhs = f.parameters[1].clone();
+
+                    // Check for `ContractId::from`
+                    if let sway::Expression::FunctionCall(f) = &rhs {
+                        if let Some("ContractId::from") = f.function.as_identifier() {
+                            return Some(sway::Expression::create_function_calls(
+                                None,
+                                &[(
+                                    "Identity::ContractId",
+                                    Some((
+                                        None,
+                                        vec![if let Some(comment) = comment {
+                                            sway::Expression::Commented(comment, Box::new(rhs))
+                                        } else {
+                                            rhs
+                                        }],
+                                    )),
+                                )],
+                            ));
+                        }
+                    }
+
+                    // Check for `x.as_contract_id().unwrap().into()`
+                    if let sway::Expression::FunctionCall(f) = &rhs {
+                        if let sway::Expression::MemberAccess(e) = &f.function {
+                            if e.member == "into" {
+                                if let sway::Expression::FunctionCall(f) = &e.expression {
+                                    if let sway::Expression::MemberAccess(e) = &f.function {
+                                        if e.member == "unwrap" {
+                                            if let sway::Expression::FunctionCall(f) = &e.expression
+                                            {
+                                                if let sway::Expression::MemberAccess(e) =
+                                                    &f.function
+                                                {
+                                                    if e.member == "as_contract_id" {
+                                                        return Some(
+                                                            if let Some(comment) = comment {
+                                                                sway::Expression::Commented(
+                                                                    comment,
+                                                                    Box::new(e.expression.clone()),
+                                                                )
+                                                            } else {
+                                                                e.expression.clone()
+                                                            },
+                                                        );
                                                     }
                                                 }
                                             }
@@ -118,11 +144,7 @@ pub fn coerce_expression(
                         }
                     }
                 }
-
-                _ => {}
-            },
-
-            _ => {}
+            }
         }
     }
 

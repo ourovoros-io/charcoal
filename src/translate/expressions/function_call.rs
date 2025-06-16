@@ -127,6 +127,31 @@ fn translate_type_function_call(
         panic!("Invalid type cast expression: {expression}");
     }
 
+    // Check for `address(this)`
+    if let solidity::Expression::Type(
+        _,
+        solidity::Type::Address | solidity::Type::AddressPayable | solidity::Type::Payable,
+    ) = expression
+    {
+        if let solidity::Expression::Variable(ident) = &arguments[0] {
+            if ident.name == "this" {
+                return Ok(sway::Expression::create_function_calls(
+                    None,
+                    &[(
+                        "Identity::ContractId",
+                        Some((
+                            None,
+                            vec![sway::Expression::create_function_calls(
+                                None,
+                                &[("ContractId::this", Some((None, vec![])))],
+                            )],
+                        )),
+                    )],
+                ));
+            }
+        }
+    }
+
     let from_expression =
         translate_expression(project, module.clone(), scope.clone(), &arguments[0])?;
 

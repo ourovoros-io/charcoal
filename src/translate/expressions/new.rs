@@ -72,7 +72,7 @@ pub fn translate_new_expression(
     match expr.as_ref() {
         solidity::Expression::Variable(solidity::Identifier { name, .. }) => {
             if project.find_contract(module.clone(), &name).is_some() {
-                // new Contract(...) => /*unsupported: new Contract(...); using:*/ abi(Contract, Identity::ContractId(ContractId::from(ZERO_B256)))
+                // new Contract(...) => /*unsupported: new Contract(...); using:*/ abi(Contract, ContractId::from(b256::zero()))
 
                 return Ok(sway::Expression::Commented(
                     format!("unsupported: new {expression}; using:"),
@@ -83,19 +83,13 @@ pub fn translate_new_expression(
                             sway::Expression::create_identifier(name.clone()),
                             sway::Expression::from(sway::FunctionCall {
                                 function: sway::Expression::create_identifier(
-                                    "Identity::ContractId".into(),
+                                    "ContractId::from".into(),
                                 ),
                                 generic_parameters: None,
-                                parameters: vec![sway::Expression::from(sway::FunctionCall {
-                                    function: sway::Expression::create_identifier(
-                                        "ContractId::from".into(),
-                                    ),
-                                    generic_parameters: None,
-                                    parameters: vec![sway::Expression::create_function_calls(
-                                        None,
-                                        &[("b256::zero", Some((None, vec![])))],
-                                    )],
-                                })],
+                                parameters: vec![sway::Expression::create_function_calls(
+                                    None,
+                                    &[("b256::zero", Some((None, vec![])))],
+                                )],
                             }),
                         ],
                     })),
