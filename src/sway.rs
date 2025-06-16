@@ -779,6 +779,18 @@ impl TypeName {
     }
 
     #[inline]
+    pub fn is_bytes(&self) -> bool {
+        match self {
+            TypeName::Identifier {
+                name,
+                generic_parameters: None,
+            } => name == "Bytes",
+
+            _ => false,
+        }
+    }
+
+    #[inline]
     pub fn is_storage_map(&self) -> bool {
         self.storage_map_type().is_some()
     }

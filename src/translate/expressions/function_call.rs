@@ -152,8 +152,22 @@ fn translate_type_function_call(
         }
     }
 
-    let from_expression =
+    let mut from_expression =
         translate_expression(project, module.clone(), scope.clone(), &arguments[0])?;
+
+    // HACK: remove `.read()` if present
+    if let sway::Expression::FunctionCall(f) = &from_expression {
+        if let sway::Expression::MemberAccess(m) = &f.function {
+            if m.member == "read" && f.parameters.is_empty() {
+                let container_type =
+                    get_expression_type(project, module.clone(), scope.clone(), &m.expression)?;
+
+                if container_type.is_storage_key() {
+                    from_expression = m.expression.clone();
+                }
+            }
+        }
+    }
 
     let from_type_name =
         get_expression_type(project, module.clone(), scope.clone(), &from_expression)?;

@@ -148,9 +148,18 @@ pub fn coerce_expression(
         }
     }
 
-    // Check for uint to bytes coersions
+    // Check for byte array coersions
     if let Some(to_byte_count) = to_type_name.u8_array_length() {
-        if let Some(from_bits) = from_type_name.uint_bits() {
+        let mut from_bits = 0;
+        
+        if let Some(bits) = from_type_name.uint_bits() {
+            from_bits = bits;
+        } else if from_type_name.is_b256() {
+            from_bits = 32;
+        }
+
+        // Check for uint to byte array coersions
+        if from_bits != 0 {
             let from_byte_count = from_bits / 8;
             let to_bits = to_byte_count * 8;
 
@@ -168,6 +177,18 @@ pub fn coerce_expression(
                     ],
                 ));
             } else if from_byte_count > to_byte_count {
+                if to_byte_count == 1 {
+                    return Some(sway::Expression::Array(sway::Array {
+                        elements: vec![sway::Expression::create_function_calls(
+                            Some(expression),
+                            &[
+                                (format!("try_as_u{to_bits}").as_str(), Some((None, vec![]))),
+                                ("unwrap", Some((None, vec![]))),
+                            ],
+                        )],
+                    }));
+                }
+
                 return Some(sway::Expression::create_function_calls(
                     Some(expression),
                     &[
@@ -177,6 +198,105 @@ pub fn coerce_expression(
                     ],
                 ));
             }
+        }
+
+        // Check for `Identity` to `[u8; N]` coersions
+        if from_type_name.is_identity() && to_byte_count <= 32 {
+            return Some(sway::Expression::from(sway::Block {
+                statements: vec![sway::Statement::from(sway::Let {
+                    pattern: sway::LetPattern::Identifier(sway::LetIdentifier {
+                        is_mutable: false,
+                        name: "x".into(),
+                    }),
+                    type_name: None,
+                    value: sway::Expression::from(sway::Match {
+                        expression,
+                        branches: vec![
+                            sway::MatchBranch {
+                                pattern: sway::Expression::create_function_calls(
+                                    None,
+                                    &[(
+                                        "Identity::Address",
+                                        Some((
+                                            None,
+                                            vec![sway::Expression::create_identifier("x".into())],
+                                        )),
+                                    )],
+                                ),
+                                value: sway::Expression::create_function_calls(
+                                    None,
+                                    &[(
+                                        "Bytes::from",
+                                        Some((
+                                            None,
+                                            vec![sway::Expression::create_identifier("x".into())],
+                                        )),
+                                    )],
+                                ),
+                            },
+                            sway::MatchBranch {
+                                pattern: sway::Expression::create_function_calls(
+                                    None,
+                                    &[(
+                                        "Identity::ContractId",
+                                        Some((
+                                            None,
+                                            vec![sway::Expression::create_identifier("x".into())],
+                                        )),
+                                    )],
+                                ),
+                                value: sway::Expression::create_function_calls(
+                                    None,
+                                    &[(
+                                        "Bytes::from",
+                                        Some((
+                                            None,
+                                            vec![sway::Expression::create_identifier("x".into())],
+                                        )),
+                                    )],
+                                ),
+                            },
+                        ],
+                    }),
+                })],
+                final_expr: Some(sway::Expression::from(sway::Array {
+                    elements: (0..to_byte_count)
+                        .map(|i| {
+                            sway::Expression::create_function_calls(
+                                None,
+                                &[
+                                    ("x", None),
+                                    (
+                                        "get",
+                                        Some((
+                                            None,
+                                            vec![sway::Expression::from(sway::Literal::DecInt(
+                                                i.into(),
+                                                None,
+                                            ))],
+                                        )),
+                                    ),
+                                    ("unwrap", Some((None, vec![]))),
+                                ],
+                            )
+                        })
+                        .collect(),
+                })),
+            }));
+        }
+    }
+
+    // Check for `StorageKey<StorageString>` to `Bytes` coersions
+    if let Some(storage_key_type) = from_type_name.storage_key_type() {
+        if storage_key_type.is_storage_string() && to_type_name.is_bytes() {
+            return Some(sway::Expression::create_function_calls(
+                Some(expression),
+                &[
+                    ("read_slice", Some((None, vec![]))),
+                    ("unwrap", Some((None, vec![]))),
+                    ("as_bytes", Some((None, vec![]))),
+                ],
+            ));
         }
     }
 
@@ -565,6 +685,18 @@ pub fn coerce_expression(
                             )],
                         )),
                     )],
+                ));
+            }
+
+            // From uint to Bytes
+            if (from_type_name.is_uint() || from_type_name.is_b256()) && rhs_name == "Bytes" {
+                if lhs_name == "u8" {
+                    todo!()
+                }
+
+                return Some(sway::Expression::create_function_calls(
+                    Some(expression),
+                    &[("to_be_bytes", Some((None, vec![])))],
                 ));
             }
         }
@@ -1378,10 +1510,55 @@ fn get_match_type(
     match_expr: &sway::Match,
 ) -> Result<sway::TypeName, Error> {
     if let Some(branch) = match_expr.branches.first() {
-        get_expression_type(project, module.clone(), scope.clone(), &branch.value)
-    } else {
-        Ok(sway::TypeName::Tuple { type_names: vec![] })
+        let branch_scope = Rc::new(RefCell::new(ir::Scope::new(None, Some(scope.clone()))));
+
+        // Add branch pattern destructured variables to branch-specific scope
+        match &branch.pattern {
+            sway::Expression::FunctionCall(f) => match &f.function {
+                sway::Expression::PathExpr(path_expr) => match path_expr.to_string().as_str() {
+                    "Identity::Address" if f.parameters.len() == 1 => {
+                        if let Some(ident) = f.parameters[0].as_identifier() {
+                            branch_scope.borrow_mut().add_variable(Rc::new(RefCell::new(
+                                ir::Variable {
+                                    new_name: ident.into(),
+                                    type_name: sway::TypeName::Identifier {
+                                        name: "Address".into(),
+                                        generic_parameters: None,
+                                    },
+                                    ..Default::default()
+                                },
+                            )));
+                        }
+                    }
+
+                    "Identity::ContractId" if f.parameters.len() == 1 => {
+                        if let Some(ident) = f.parameters[0].as_identifier() {
+                            branch_scope.borrow_mut().add_variable(Rc::new(RefCell::new(
+                                ir::Variable {
+                                    new_name: ident.into(),
+                                    type_name: sway::TypeName::Identifier {
+                                        name: "ContractId".into(),
+                                        generic_parameters: None,
+                                    },
+                                    ..Default::default()
+                                },
+                            )));
+                        }
+                    }
+
+                    _ => {}
+                },
+
+                _ => {}
+            },
+
+            _ => {}
+        }
+
+        return get_expression_type(project, module.clone(), branch_scope, &branch.value);
     }
+
+    Ok(sway::TypeName::Tuple { type_names: vec![] })
 }
 
 #[inline(always)]
@@ -3202,6 +3379,45 @@ fn get_member_access_function_call_type(
                     length: 8,
                 }),
 
+                "try_as_u8" => Ok(sway::TypeName::Identifier {
+                    name: "Option".into(),
+                    generic_parameters: Some(sway::GenericParameterList {
+                        entries: vec![sway::GenericParameter {
+                            type_name: sway::TypeName::Identifier {
+                                name: "u8".into(),
+                                generic_parameters: None,
+                            },
+                            implements: None,
+                        }],
+                    }),
+                }),
+
+                "try_as_u16" => Ok(sway::TypeName::Identifier {
+                    name: "Option".into(),
+                    generic_parameters: Some(sway::GenericParameterList {
+                        entries: vec![sway::GenericParameter {
+                            type_name: sway::TypeName::Identifier {
+                                name: "u16".into(),
+                                generic_parameters: None,
+                            },
+                            implements: None,
+                        }],
+                    }),
+                }),
+
+                "try_as_u32" => Ok(sway::TypeName::Identifier {
+                    name: "Option".into(),
+                    generic_parameters: Some(sway::GenericParameterList {
+                        entries: vec![sway::GenericParameter {
+                            type_name: sway::TypeName::Identifier {
+                                name: "u32".into(),
+                                generic_parameters: None,
+                            },
+                            implements: None,
+                        }],
+                    }),
+                }),
+
                 "wrapping_neg" => {
                     module.borrow_mut().ensure_dependency_declared(
                         "sway_libs = { git = \"https://github.com/FuelLabs/sway-libs\", tag = \"v0.25.2\" }"
@@ -3322,6 +3538,11 @@ fn get_member_access_function_call_type(
         },
 
         sway::TypeName::StringSlice => match member_access.member.as_str() {
+            "as_ptr" => Ok(sway::TypeName::Identifier {
+                name: "raw_ptr".into(),
+                generic_parameters: None,
+            }),
+
             "len" => Ok(sway::TypeName::Identifier {
                 name: "u64".into(),
                 generic_parameters: None,

@@ -88,7 +88,14 @@ pub fn translate_type_name(
                 generic_parameters: None,
             },
 
-            solidity::Type::Payable => todo!("payable types (used for casting)"),
+            solidity::Type::Payable => {
+                println!("WARNING: encountered payable cast, translating as Identity");
+             
+                sway::TypeName::Identifier {
+                    name: "Identity".into(),
+                    generic_parameters: None,
+                }
+            }
 
             solidity::Type::Bool => sway::TypeName::Identifier {
                 name: "bool".into(),
