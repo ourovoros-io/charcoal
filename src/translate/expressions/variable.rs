@@ -87,7 +87,7 @@ pub fn translate_variable_access_expression(
                     storage_field_name: &str,
                 ) -> Result<Option<ir::VariableAccess>, Error> {
                     let storage_namespace_name = contract.borrow().name.to_case(Case::Snake);
-                    
+
                     if let Some(storage) = contract.borrow().storage.as_ref() {
                         if let Some(storage_namespace) = storage
                             .borrow()
@@ -133,7 +133,12 @@ pub fn translate_variable_access_expression(
                             )
                             .unwrap();
 
-                        if let Some(result) = check_contract(project, module.clone(), inherited_contract.clone(), storage_field_name)? {
+                        if let Some(result) = check_contract(
+                            project,
+                            module.clone(),
+                            inherited_contract.clone(),
+                            storage_field_name,
+                        )? {
                             return Ok(Some(result));
                         }
                     }
@@ -145,7 +150,9 @@ pub fn translate_variable_access_expression(
                     .find_contract(module.clone(), contract_name.as_str())
                     .unwrap();
 
-                if let Some(result) = check_contract(project, module.clone(), contract.clone(), name.as_str())? {
+                if let Some(result) =
+                    check_contract(project, module.clone(), contract.clone(), name.as_str())?
+                {
                     return Ok(Some(result));
                 }
             }

@@ -612,20 +612,255 @@ pub fn translate_modifier_definition(
     Ok(())
 }
 
+pub fn translate_abi_function(
+    project: &mut Project,
+    module: Rc<RefCell<ir::Module>>,
+    contract_name: &str,
+    function_definition: &solidity::FunctionDefinition,
+) -> Option<sway::Function> {
+    // Collect information about the function from its type
+    let is_constructor = matches!(function_definition.ty, solidity::FunctionTy::Constructor);
+    let is_fallback = matches!(function_definition.ty, solidity::FunctionTy::Fallback);
+    let is_receive = matches!(function_definition.ty, solidity::FunctionTy::Receive);
+
+    // Collect information about the function from its attributes
+    let mut is_public = function_definition.attributes.iter().any(|x| {
+        matches!(
+            x,
+            solidity::FunctionAttribute::Visibility(
+                solidity::Visibility::External(_) | solidity::Visibility::Public(_)
+            )
+        )
+    });
+    let is_constant = function_definition.attributes.iter().any(|x| {
+        matches!(
+            x,
+            solidity::FunctionAttribute::Mutability(solidity::Mutability::Constant(_))
+        )
+    });
+    let is_pure = function_definition.attributes.iter().any(|x| {
+        matches!(
+            x,
+            solidity::FunctionAttribute::Mutability(solidity::Mutability::Pure(_))
+        )
+    });
+    let is_view = function_definition.attributes.iter().any(|x| {
+        matches!(
+            x,
+            solidity::FunctionAttribute::Mutability(solidity::Mutability::View(_))
+        )
+    });
+    let is_payable = function_definition.attributes.iter().any(|x| {
+        matches!(
+            x,
+            solidity::FunctionAttribute::Mutability(solidity::Mutability::Payable(_))
+        )
+    });
+
+    let _is_virtual = function_definition
+        .attributes
+        .iter()
+        .any(|x| matches!(x, solidity::FunctionAttribute::Virtual(_)));
+
+    let is_override = function_definition
+        .attributes
+        .iter()
+        .any(|x| matches!(x, solidity::FunctionAttribute::Override(_, _)));
+
+    // If the function is a constructor, we consider it public and add an initializer requirement
+    if is_constructor {
+        is_public = true;
+    }
+
+    let new_name_2 = if is_constructor {
+        "constructor".to_string()
+    } else if is_fallback {
+        "fallback".to_string()
+    } else if is_receive {
+        "receive".to_string()
+    } else {
+        translate_function_name(project, module.clone(), function_definition)
+    };
+
+    let (old_name, mut new_name) = if matches!(
+        function_definition.ty,
+        solidity::FunctionTy::Function | solidity::FunctionTy::Modifier
+    ) {
+        let old_name = function_definition.name.as_ref().unwrap().name.clone();
+        (old_name, new_name_2.clone())
+    } else {
+        (String::new(), new_name_2.clone())
+    };
+
+    new_name = format!("{}_{}", contract_name.to_case(Case::Snake), new_name);
+
+    // Create the scope for the body of the toplevel function
+    let scope = Rc::new(RefCell::new(ir::Scope::new(Some(contract_name), None)));
+
+    // Translate the functions parameters
+    let mut parameters = sway::ParameterList::default();
+    let mut parameter_names = 'a'..='z';
+
+    for (_, parameter) in function_definition.params.iter() {
+        let old_name = parameter
+            .as_ref()
+            .unwrap()
+            .name
+            .as_ref()
+            .map(|n| n.name.clone())
+            .unwrap_or(parameter_names.next().unwrap().to_string());
+
+        let new_name = translate_naming_convention(old_name.as_str(), Case::Snake);
+
+        let mut type_name = translate_type_name(
+            project,
+            module.clone(),
+            scope.clone(),
+            &parameter.as_ref().unwrap().ty,
+            false,
+            true,
+        );
+
+        // Check if the parameter's type is an ABI and make it an Identity
+        if let sway::TypeName::Identifier {
+            name,
+            generic_parameters: None,
+        } = &type_name
+        {
+            if project.find_contract(module.clone(), &name).is_some() {
+                type_name = sway::TypeName::Identifier {
+                    name: "Identity".into(),
+                    generic_parameters: None,
+                };
+            }
+        }
+
+        parameters.entries.push(sway::Parameter {
+            is_ref: false,
+            is_mut: false,
+            name: new_name,
+            type_name: Some(type_name),
+        });
+    }
+
+    // Create the function declaration
+    let mut sway_function = sway::Function {
+        attributes: if is_constant || is_pure {
+            None
+        } else {
+            let mut attributes = vec![];
+
+            attributes.push(sway::Attribute {
+                name: "storage".into(),
+                parameters: Some(if is_view {
+                    vec!["read".into()]
+                } else {
+                    vec!["read".into(), "write".into()]
+                }),
+            });
+
+            if is_payable && !is_fallback {
+                attributes.push(sway::Attribute {
+                    name: "payable".into(),
+                    parameters: None,
+                });
+            }
+
+            if is_fallback {
+                attributes.push(sway::Attribute {
+                    name: "fallback".into(),
+                    parameters: None,
+                });
+            }
+
+            Some(sway::AttributeList { attributes })
+        },
+
+        is_public: false,
+        old_name: old_name.clone(),
+        name: new_name.clone(),
+        generic_parameters: None,
+
+        parameters,
+
+        return_type: if function_definition.returns.is_empty() {
+            None
+        } else {
+            Some(if function_definition.returns.len() == 1 {
+                let type_name = translate_type_name(
+                    project,
+                    module.clone(),
+                    scope.clone(),
+                    &function_definition.returns[0].1.as_ref().unwrap().ty,
+                    false,
+                    true,
+                );
+                translate_return_type_name(project, module.clone(), &type_name)
+            } else {
+                sway::TypeName::Tuple {
+                    type_names: function_definition
+                        .returns
+                        .iter()
+                        .map(|(_, p)| {
+                            let type_name = translate_type_name(
+                                project,
+                                module.clone(),
+                                scope.clone(),
+                                &p.as_ref().unwrap().ty,
+                                false,
+                                true,
+                            );
+                            translate_return_type_name(project, module.clone(), &type_name)
+                        })
+                        .collect(),
+                }
+            })
+        },
+
+        body: None,
+    };
+
+    let mut abi_fn = None;
+
+    if is_public {
+        sway_function.name = new_name_2.clone();
+
+        let mut abi_function = sway_function.clone();
+        let mut use_string = false;
+
+        if !is_fallback {
+            for p in abi_function.parameters.entries.iter_mut() {
+                if p.type_name == Some(sway::TypeName::StringSlice) {
+                    use_string = true;
+                    p.type_name = Some(sway::TypeName::Identifier {
+                        name: "String".into(),
+                        generic_parameters: None,
+                    });
+                }
+            }
+
+            abi_fn = Some(abi_function);
+        }
+
+        if use_string {
+            module
+                .borrow_mut()
+                .ensure_use_declared("std::string::String");
+        }
+
+        sway_function.name.clone_from(&new_name)
+    }
+
+    abi_fn
+}
+
 #[inline]
 pub fn translate_function_definition(
     project: &mut Project,
     module: Rc<RefCell<ir::Module>>,
     contract_name: Option<&str>,
     function_definition: &solidity::FunctionDefinition,
-) -> Result<
-    (
-        sway::Function,
-        Option<sway::Function>,
-        Option<sway::ImplItem>,
-    ),
-    Error,
-> {
+) -> Result<(sway::Function, Option<sway::ImplItem>), Error> {
     assert!(!matches!(
         function_definition.ty,
         solidity::FunctionTy::Modifier
@@ -846,34 +1081,7 @@ pub fn translate_function_definition(
         body: None,
     };
 
-    let mut abi_fn = None;
-
     if is_public {
-        sway_function.name = new_name_2.clone();
-
-        let mut abi_function = sway_function.clone();
-        let mut use_string = false;
-
-        if !is_fallback {
-            for p in abi_function.parameters.entries.iter_mut() {
-                if p.type_name == Some(sway::TypeName::StringSlice) {
-                    use_string = true;
-                    p.type_name = Some(sway::TypeName::Identifier {
-                        name: "String".into(),
-                        generic_parameters: None,
-                    });
-                }
-            }
-
-            abi_fn = Some(abi_function);
-        }
-
-        if use_string {
-            module
-                .borrow_mut()
-                .ensure_use_declared("std::string::String");
-        }
-
         sway_function.name.clone_from(&new_name)
     }
 
@@ -884,7 +1092,7 @@ pub fn translate_function_definition(
             sway_function.name = new_name_2;
         }
 
-        return Ok((sway_function, None, None));
+        return Ok((sway_function, None));
     };
 
     // Add the function parameters to the scope
@@ -1018,7 +1226,7 @@ pub fn translate_function_definition(
                 .as_str(),
             Case::Snake,
         );
-        
+
         let constructor_called_variable_name = format!("{prefix}_constructor_called");
 
         let storage_namespace = module
@@ -1351,9 +1559,9 @@ pub fn translate_function_definition(
         impl_item = Some(sway::ImplItem::Function(sway_function.clone()));
     }
 
-    if abi_fn.is_none() && toplevel_function.body.is_none() {
-        toplevel_function.name = new_name_2;
-    }
+    // if abi_fn.is_none() && toplevel_function.body.is_none() {
+    //     toplevel_function.name = new_name_2;
+    // }
 
-    Ok((toplevel_function, abi_fn, impl_item))
+    Ok((toplevel_function, impl_item))
 }

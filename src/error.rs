@@ -15,6 +15,7 @@ pub enum Error {
     LineNotFound(PathBuf, usize),
     SolangDiagnostics(PathBuf, Vec<(usize, usize)>, Vec<Diagnostic>),
     IneffectualStatement(PathBuf, String),
+    UnknownFramework,
 }
 
 impl std::fmt::Display for Error {
@@ -23,11 +24,9 @@ impl std::fmt::Display for Error {
             Error::Wrapped(e) => {
                 write!(f, "{e}")
             }
-
             Error::MissingContractFile => {
                 write!(f, "error: Contract file not specified")
             }
-
             Error::LineNotFound(path, offset) => {
                 write!(
                     f,
@@ -35,7 +34,6 @@ impl std::fmt::Display for Error {
                     path.to_string_lossy()
                 )
             }
-
             Error::SolangDiagnostics(path, line_ranges, diagnostics) => {
                 let loc_offset_to_line = |offset: usize| -> usize {
                     for (i, line_range) in line_ranges.iter().enumerate() {
@@ -65,7 +63,6 @@ impl std::fmt::Display for Error {
 
                 Ok(())
             }
-
             Error::IneffectualStatement(path, statement) => {
                 write!(
                     f,
@@ -73,6 +70,9 @@ impl std::fmt::Display for Error {
                     path.to_string_lossy(),
                     statement
                 )
+            }
+            Error::UnknownFramework => {
+                write!(f, "Could not detect a supported Solidity project kind.")
             }
         }
     }

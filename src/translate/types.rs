@@ -90,7 +90,7 @@ pub fn translate_type_name(
 
             solidity::Type::Payable => {
                 println!("WARNING: encountered payable cast, translating as Identity");
-             
+
                 sway::TypeName::Identifier {
                     name: "Identity".into(),
                     generic_parameters: None,
@@ -609,7 +609,10 @@ pub fn translate_type_name(
                     ) {
                         return sway::TypeName::Identifier {
                             name: struct_definition.borrow().name.clone(),
-                            generic_parameters: struct_definition.borrow().generic_parameters.clone(),
+                            generic_parameters: struct_definition
+                                .borrow()
+                                .generic_parameters
+                                .clone(),
                         };
                     }
 
