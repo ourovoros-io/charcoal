@@ -143,6 +143,133 @@ pub fn translate_assignment_expression(
                         name: lhs_name,
                         generic_parameters,
                     },
+                    sway::TypeName::Array {
+                        type_name: rhs_element_type_name,
+                        length: rhs_length,
+                    },
+                ) => match (lhs_name.as_str(), generic_parameters.as_ref()) {
+                    ("StorageVec", Some(generic_parameters))
+                        if generic_parameters.entries.len() == 1 =>
+                    {
+                        // {
+                        //     let array = rhs;
+                        //     let mut v = Vec::new();
+                        //     let mut i = 0;
+                        //     while i < length {
+                        //         v.push(a[i]);
+                        //         i += 1;
+                        //     }
+                        //     lhs.store_vec(v);
+                        // }
+
+                        let array_var_name = scope.borrow_mut().generate_unique_variable_name("a");
+                        let vec_var_name = scope.borrow_mut().generate_unique_variable_name("v");
+                        let i_var_name = scope.borrow_mut().generate_unique_variable_name("i");
+
+                        return Ok(sway::Expression::from(sway::Block {
+                            statements: vec![
+                                // let a = rhs;
+                                sway::Statement::from(sway::Let {
+                                    pattern: sway::LetPattern::from(sway::LetIdentifier {
+                                        is_mutable: false,
+                                        name: array_var_name.clone(),
+                                    }),
+                                    type_name: None,
+                                    value: rhs.clone(),
+                                }),
+                                // let mut v = Vec::new();
+                                sway::Statement::from(sway::Let {
+                                    pattern: sway::LetPattern::from(sway::LetIdentifier {
+                                        is_mutable: true,
+                                        name: vec_var_name.clone(),
+                                    }),
+                                    type_name: None,
+                                    value: sway::Expression::create_function_calls(
+                                        None,
+                                        &[("Vec::new", Some((None, vec![])))],
+                                    ),
+                                }),
+                                // let mut i = 0;
+                                sway::Statement::from(sway::Let {
+                                    pattern: sway::LetPattern::from(sway::LetIdentifier {
+                                        is_mutable: true,
+                                        name: i_var_name.clone(),
+                                    }),
+                                    type_name: None,
+                                    value: sway::Expression::from(sway::Literal::DecInt(
+                                        BigUint::zero(),
+                                        None,
+                                    )),
+                                }),
+                                // while i < length {
+                                //     v.push(a[i]);
+                                //     i += 1;
+                                // }
+                                sway::Statement::from(sway::Expression::from(sway::While {
+                                    condition: sway::Expression::from(sway::BinaryExpression {
+                                        operator: "<".into(),
+                                        lhs: sway::Expression::create_identifier(i_var_name.clone()),
+                                        rhs: sway::Expression::from(sway::Literal::DecInt(
+                                            rhs_length.clone().into(),
+                                            None,
+                                        )),
+                                    }),
+                                    body: sway::Block {
+                                        statements: vec![
+                                            // v.push(a[i]);
+                                            sway::Statement::from(
+                                                sway::Expression::create_function_calls(
+                                                    None,
+                                                    &[
+                                                        (vec_var_name.as_str(), None),
+                                                        ("push", Some((None, vec![
+                                                            coerce_expression(
+                                                                &sway::Expression::from(sway::ArrayAccess {
+                                                                    expression: sway::Expression::create_identifier(array_var_name.clone()),
+                                                                    index: sway::Expression::create_identifier(i_var_name.clone()),
+                                                                }),
+                                                                rhs_element_type_name,
+                                                                &generic_parameters.entries[0].type_name,
+                                                            ).unwrap()
+                                                        ]))),
+                                                    ],
+                                                ),
+                                            ),
+                                            // i += 1;
+                                            sway::Statement::from(sway::Expression::from(sway::BinaryExpression {
+                                                operator: "+=".into(),
+                                                lhs: sway::Expression::create_identifier(i_var_name.clone()),
+                                                rhs: sway::Expression::from(sway::Literal::DecInt(
+                                                    BigUint::one(),
+                                                    None,
+                                                )),
+                                            })),
+                                        ],
+                                        final_expr: None,
+                                    },
+                                })),
+                                // lhs.store_vec(v);
+                                sway::Statement::from(sway::Expression::create_function_calls(
+                                    Some(expression.clone()),
+                                    &[
+                                        ("store_vec", Some((None, vec![
+                                            sway::Expression::create_identifier(vec_var_name.clone()),
+                                        ]))),
+                                    ],
+                                )),
+                            ],
+                            final_expr: None,
+                        }));
+                    }
+
+                    _ => coerce_expression(&rhs, &rhs_type_name, &storage_key_type).unwrap(),
+                },
+
+                (
+                    sway::TypeName::Identifier {
+                        name: lhs_name,
+                        generic_parameters,
+                    },
                     sway::TypeName::StringSlice,
                 ) => match (lhs_name.as_str(), generic_parameters.as_ref()) {
                     ("StorageString", None) => {
@@ -324,15 +451,18 @@ pub fn create_assignment_expression(
                             scope.clone(),
                             &array_access.index,
                         )?;
+
                         let u64_type = sway::TypeName::Identifier {
                             name: "u64".into(),
                             generic_parameters: None,
                         };
+
                         let index =
                             coerce_expression(&array_access.index, &index_type, &u64_type).unwrap();
 
                         let rhs_type =
                             get_expression_type(project, module.clone(), scope.clone(), rhs)?;
+
                         let rhs = coerce_expression(
                             rhs,
                             &rhs_type,
@@ -493,17 +623,22 @@ pub fn create_assignment_expression(
                                                             if function_call.parameters.len()
                                                                 == 1 =>
                                                         {
+                                                            let lhs_type = get_expression_type(
+                                                                project,
+                                                                module.clone(),
+                                                                scope.clone(),
+                                                                &expression,
+                                                            )?;
+
                                                             let rhs_type = get_expression_type(
                                                                 project,
                                                                 module.clone(),
                                                                 scope.clone(),
                                                                 rhs,
                                                             )?;
+
                                                             let rhs = coerce_expression(
-                                                                rhs,
-                                                                &rhs_type,
-                                                                &generic_parameters.entries[0]
-                                                                    .type_name,
+                                                                rhs, &rhs_type, &lhs_type,
                                                             )
                                                             .unwrap();
 

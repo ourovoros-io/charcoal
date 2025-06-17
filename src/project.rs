@@ -962,25 +962,44 @@ impl Project {
         let contracts_index = module.borrow().contracts.len();
 
         for (functions_index, contract_definition) in contract_definitions.iter_mut() {
+            // println!(
+            //     "Preparing to translate contract `{}` at {}",
+            //     contract_definition
+            //         .name
+            //         .as_ref()
+            //         .map(|x| x.name.as_str())
+            //         .unwrap(),
+            //     self.loc_to_file_location_string(module.clone(), &contract_definition.loc),
+            // );
+
             *functions_index = Some(module.borrow().functions.len());
 
             let contract_name = contract_definition.name.as_ref().unwrap().name.as_str();
+            let mut inherits = vec![];
+
+            for base in contract_definition.base.iter() {
+                if base.args.as_ref().is_some() {
+                    //
+                    // TODO:
+                    // set up a base constructor call
+                    //
+                    
+                    print!("WARNING: Unused contract base constructor args: `{base}`; ");
+                    println!("This is for inherits and base constructor calls.")
+                }
+
+                assert!(base.name.identifiers.len() == 1);
+
+                inherits.push(sway::TypeName::Identifier {
+                    name: base.name.identifiers[0].name.clone(),
+                    generic_parameters: None,
+                });
+            }
+
             let contract = Rc::new(RefCell::new(ir::Contract::new(
                 contract_name,
                 contract_definition.ty.clone(),
-                contract_definition
-                    .base
-                    .iter()
-                    .map(|b| {
-                        assert!(b.args.is_none());
-                        assert!(b.name.identifiers.len() == 1);
-                        sway::TypeName::Identifier {
-                            name: b.name.identifiers[0].name.clone(),
-                            generic_parameters: None,
-                        }
-                    })
-                    .collect::<Vec<_>>()
-                    .as_slice(),
+                inherits.as_slice(),
             )));
 
             let mut type_definitions = vec![];

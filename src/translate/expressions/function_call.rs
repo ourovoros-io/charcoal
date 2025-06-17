@@ -361,6 +361,24 @@ fn translate_variable_function_call(
         }
     }
 
+    // for f in module
+    //     .borrow()
+    //     .functions
+    //     .iter()
+    //     .map(|f| f.signature.clone())
+    // {
+    //     let sway::TypeName::Function {
+    //         old_name, new_name, ..
+    //     } = &f
+    //     else {
+    //         unreachable!()
+    //     };
+    //     println!("----------------------------------------------");
+    //     println!("old name: {old_name}");
+    //     println!("new name: {new_name}");
+    //     println!("type: {f}");
+    // }
+
     panic!(
         "{}: ERROR: Failed to find function `{name}({})` in scope: {name}({})",
         project.loc_to_file_location_string(module.clone(), &expression.loc()),

@@ -10,7 +10,11 @@ pub fn translate_contract_definition(
     contract: Rc<RefCell<ir::Contract>>,
     functions_index: usize,
 ) -> Result<(), Error> {
-    // println!("Translating contract `{}`", contract_definition.name.as_ref().map(|x| x.name.as_str()).unwrap());
+    // println!(
+    //     "Translating contract `{}` at {}",
+    //     contract_definition.name.as_ref().map(|x| x.name.as_str()).unwrap(),
+    //     project.loc_to_file_location_string(module.clone(), &contract_definition.loc),
+    // );
 
     // Collect each contract part into separate collections
     let mut using_directives = vec![];

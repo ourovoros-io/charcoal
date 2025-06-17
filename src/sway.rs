@@ -797,28 +797,78 @@ impl TypeName {
 
     /// Checks to see if the type name is compatible with another type name
     pub fn is_compatible_with(&self, other: &TypeName) -> bool {
-        match self {
-            TypeName::Array {
-                type_name: lhs_type_name,
-                length: lhs_length,
-            } => match other {
-                TypeName::Array {
-                    type_name: rhs_type_name,
-                    length: rhs_length,
-                } => {
-                    if !lhs_type_name.is_compatible_with(rhs_type_name) {
+        // Check generic parameter compatibility
+        if let (
+            TypeName::Identifier {
+                name: lhs_name,
+                generic_parameters: Some(lhs_generic_parameters),
+            },
+            TypeName::Identifier {
+                name: rhs_name,
+                generic_parameters: Some(rhs_generic_parameters),
+            },
+        ) = (self, other)
+        {
+            if lhs_name == rhs_name
+                && lhs_generic_parameters.entries.len() == rhs_generic_parameters.entries.len()
+            {
+                for (lhs_generic_parameter, rhs_generic_parameter) in lhs_generic_parameters
+                    .entries
+                    .iter()
+                    .zip(rhs_generic_parameters.entries.iter())
+                {
+                    if !lhs_generic_parameter
+                        .type_name
+                        .is_compatible_with(&rhs_generic_parameter.type_name)
+                    {
                         return false;
-                    }
-
-                    if *lhs_length == *rhs_length {
-                        return true;
                     }
                 }
 
-                _ => {}
-            },
+                return true;
+            }
+        }
 
-            _ => {}
+        // Check array type compatibility
+        if let (
+            TypeName::Array {
+                type_name: lhs_type_name,
+                length: lhs_length,
+            },
+            TypeName::Array {
+                type_name: rhs_type_name,
+                length: rhs_length,
+            },
+        ) = (self, other)
+        {
+            if !lhs_type_name.is_compatible_with(rhs_type_name) {
+                return false;
+            }
+
+            if *lhs_length == *rhs_length {
+                return true;
+            }
+        }
+
+        // HACK: Don't check `_` value types
+        if let TypeName::Identifier {
+            name,
+            generic_parameters: None,
+        } = self
+        {
+            if name == "_" {
+                return true;
+            }
+        }
+
+        if let TypeName::Identifier {
+            name,
+            generic_parameters: None,
+        } = other
+        {
+            if name == "_" {
+                return true;
+            }
         }
 
         // HACK: Don't check todo! value types
@@ -2350,7 +2400,7 @@ impl Expression {
 
             None
         }
-    
+
         check_expression(self, &f)
     }
 }
