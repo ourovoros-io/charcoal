@@ -22,6 +22,11 @@ pub fn translate_variable_expression(
 
     // Check for built-in variables
     match variable.name.as_str() {
+        "_" => {
+            // Modifier body insertion variable
+            return Ok(sway::Expression::create_identifier("_".into()));
+        }
+
         "now" => {
             // now => std::block::timestamp().as_u256()
             return Ok(sway::Expression::create_function_calls(
@@ -474,10 +479,43 @@ pub fn translate_variable_access_expression(
         }
 
         solidity::Expression::FunctionCall(_, function, arguments) => {
-            let arguments = arguments
+            let parameters = arguments
                 .iter()
                 .map(|a| translate_expression(project, module.clone(), scope.clone(), a))
                 .collect::<Result<Vec<_>, _>>()?;
+
+            let parameter_types = parameters
+                .iter()
+                .map(|p| get_expression_type(project, module.clone(), scope.clone(), p))
+                .collect::<Result<Vec<_>, _>>()?;
+
+            // Check for explicit contract function calls
+            if let solidity::Expression::MemberAccess(_, container, member) = function.as_ref() {
+                if let solidity::Expression::Variable(container) = container.as_ref() {
+                    if let Some(external_contract) =
+                        project.find_contract(module.clone(), container.name.as_str())
+                    {
+                        let abi = external_contract.borrow().abi.clone();
+
+                        if let Some(result) = resolve_abi_function_call(
+                            project,
+                            module.clone(),
+                            scope.clone(),
+                            &abi,
+                            None,
+                            member.name.as_str(),
+                            None,
+                            parameters.clone(),
+                            parameter_types.clone(),
+                        )? {
+                            return Ok(Some(ir::VariableAccess {
+                                variable: None,
+                                expression: result,
+                            }));
+                        }
+                    }
+                }
+            }
 
             match translate_variable_access_expression(
                 project,
@@ -493,7 +531,7 @@ pub fn translate_variable_access_expression(
                     expression: sway::Expression::from(sway::FunctionCall {
                         function: expression,
                         generic_parameters: None,
-                        parameters: arguments,
+                        parameters,
                     }),
                 })),
 

@@ -357,79 +357,90 @@ pub fn translate_modifier_definition(
     let mut has_storage_write = &mut has_pre_storage_write;
 
     for statement in statements.iter() {
+        // Translate the statement
+        let sway_statement =
+            translate_statement(project, module.clone(), current_scope.clone(), statement)?;
+
         // If we encounter the underscore statement, every following statement goes into the modifier's post_body block.
-        if let solidity::Statement::Expression(
-            _,
-            solidity::Expression::Variable(solidity::Identifier { name, .. }),
-        ) = statement
+        if sway_statement
+            .filter_map(|s| {
+                let sway::Statement::Expression(expression) = s else {
+                    return None;
+                };
+                if let Some("_") = expression.as_identifier() {
+                    return Some(expression.clone());
+                }
+                None
+            })
+            .is_some()
         {
-            if name == "_" {
-                modifier.has_underscore = true;
+            //
+            // TODO:
+            // We need to recursively check if the expression contains a `_` path expression anywhere.
+            // This probably means we need to make a filter function under the sway::Expression impl.
+            //
 
-                if let Some(block) = current_body.as_mut() {
-                    //
-                    // TODO: check if any storage fields were read from or written to
-                    //
+            modifier.has_underscore = true;
 
-                    let mut scope = Some(current_scope.clone());
+            if let Some(block) = current_body.as_mut() {
+                //
+                // TODO: check if any storage fields were read from or written to
+                //
 
-                    while let Some(current_scope) = scope.clone() {
-                        // for variable in current_scope.borrow_mut().variables.iter() {
-                        //     //
-                        //     // TODO: check if variable is a storage key that was read from or written to
-                        //     //
+                let mut scope = Some(current_scope.clone());
 
-                        //     if *has_storage_read && *has_storage_write {
-                        //         break;
-                        //     }
-                        // }
+                while let Some(current_scope) = scope.clone() {
+                    // for variable in current_scope.borrow_mut().variables.iter() {
+                    //     //
+                    //     // TODO: check if variable is a storage key that was read from or written to
+                    //     //
 
-                        if *has_storage_read && *has_storage_write {
-                            break;
-                        }
+                    //     if *has_storage_read && *has_storage_write {
+                    //         break;
+                    //     }
+                    // }
 
-                        scope.clone_from(&current_scope.borrow().get_parent())
+                    if *has_storage_read && *has_storage_write {
+                        break;
                     }
 
-                    finalize_block_translation(project, current_scope.clone(), block)?;
+                    scope.clone_from(&current_scope.borrow().get_parent())
                 }
 
-                current_body = &mut modifier.post_body;
-
-                let mut new_scope = ir::Scope::new(
-                    scope
-                        .borrow()
-                        .get_contract_name()
-                        .as_ref()
-                        .map(|s| s.as_str()),
-                    scope.borrow().get_parent(),
-                );
-
-                for v in scope.borrow().get_variables() {
-                    let mut v = v.borrow().clone();
-                    v.statement_index = None;
-                    new_scope.add_variable(Rc::new(RefCell::new(v)));
-                }
-
-                current_scope = Rc::new(RefCell::new(new_scope));
-
-                has_storage_read = &mut has_post_storage_read;
-                has_storage_write = &mut has_post_storage_write;
-
-                continue;
+                finalize_block_translation(project, current_scope.clone(), block)?;
             }
+
+            current_body = &mut modifier.post_body;
+
+            let mut new_scope = ir::Scope::new(
+                scope
+                    .borrow()
+                    .get_contract_name()
+                    .as_ref()
+                    .map(|s| s.as_str()),
+                scope.borrow().get_parent(),
+            );
+
+            for v in scope.borrow().get_variables() {
+                let mut v = v.borrow().clone();
+                v.statement_index = None;
+                new_scope.add_variable(Rc::new(RefCell::new(v)));
+            }
+
+            current_scope = Rc::new(RefCell::new(new_scope));
+
+            has_storage_read = &mut has_post_storage_read;
+            has_storage_write = &mut has_post_storage_write;
+
+            continue;
         }
 
-        // Create the current body block if it hasn't already been.
+        // Create the current body block if it hasn't already been
         if current_body.is_none() {
             *current_body = Some(sway::Block::default());
         }
 
         let block = current_body.as_mut().unwrap();
-
-        // Translate the statement
-        let sway_statement =
-            translate_statement(project, module.clone(), current_scope.clone(), statement)?;
 
         // Store the index of the sway statement
         let statement_index = block.statements.len();

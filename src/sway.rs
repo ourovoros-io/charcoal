@@ -1224,13 +1224,6 @@ impl TabbedDisplay for Abi {
     }
 }
 
-impl Abi {
-    /// Atempts to find a function using a custom function
-    #[inline]
-    pub fn find_function<F: Copy + FnMut(&&Function) -> bool>(&self, f: F) -> Option<&Function> {
-        self.functions.iter().find(f)
-    }
-}
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1610,6 +1603,74 @@ pub enum Statement {
     Let(Let),
     Expression(Expression),
     Commented(String, Option<Box<Statement>>), // TODO: finish
+}
+
+impl Statement {
+    /// Applies a lamba to a statement and its child statements.
+    pub fn filter_map<T, F>(&self, f: F) -> Option<T>
+    where
+        F: Clone + Fn(&&Statement) -> Option<T>,
+    {
+        if let Some(result) = f(&self) {
+            return Some(result);
+        }
+
+        let check_expression = |expression: &&_| -> Option<_> {
+            match expression {
+                Expression::Block(block) => {
+                    for statement in block.statements.iter() {
+                        if let Some(result) = statement.filter_map(f.clone()) {
+                            return Some(result);
+                        }
+                    }
+                }
+
+                Expression::If(if_expr) => {
+                    for statement in if_expr.then_body.statements.iter() {
+                        if let Some(result) = statement.filter_map(f.clone()) {
+                            return Some(result);
+                        }
+                    }
+                }
+
+                Expression::While(while_expr) => {
+                    for statement in while_expr.body.statements.iter() {
+                        if let Some(result) = statement.filter_map(f.clone()) {
+                            return Some(result);
+                        }
+                    }
+                }
+
+                _ => {}
+            }
+
+            None
+        };
+
+        match self {
+            Statement::Let(let_expr) => {
+                if let Some(result) = let_expr.value.filter_map(check_expression) {
+                    return Some(result);
+                }
+            }
+
+            Statement::Expression(expression) => {
+                if let Some(result) = expression.filter_map(check_expression) {
+                    return Some(result);
+                }
+            }
+
+            Statement::Commented(_, statement) => {
+                if let Some(statement) = statement.as_ref() {
+                    if let Some(result) = statement.filter_map(f.clone()) {
+                        return Some(result);
+                    }
+                }
+            }
+        }
+
+        None
+    }
 }
 
 impl TabbedDisplay for Statement {
@@ -2055,6 +2116,242 @@ impl Expression {
         }
 
         result.unwrap()
+    }
+
+    /// Applies a lambda to an expression and all of its child expressions.
+    pub fn filter_map<T, F>(&self, f: F) -> Option<T>
+    where
+        F: Clone + Fn(&&Expression) -> Option<T>,
+    {
+        fn check_statement<T>(
+            statement: &Statement,
+            f: &impl Fn(&&Expression) -> Option<T>,
+        ) -> Option<T> {
+            match statement {
+                Statement::Let(let_expr) => {
+                    if let Some(result) = check_expression(&let_expr.value, f) {
+                        return Some(result);
+                    }
+                }
+
+                Statement::Expression(expression) => {
+                    if let Some(result) = check_expression(&expression, f) {
+                        return Some(result);
+                    }
+                }
+
+                Statement::Commented(_, statement) => {
+                    if let Some(statement) = statement.as_ref() {
+                        if let Some(result) = check_statement(statement, f) {
+                            return Some(result);
+                        }
+                    }
+                }
+            }
+
+            None
+        }
+
+        fn check_expression<T>(
+            expression: &Expression,
+            f: &impl Fn(&&Expression) -> Option<T>,
+        ) -> Option<T> {
+            if let Some(result) = f(&expression) {
+                return Some(result);
+            }
+
+            match expression {
+                Expression::FunctionCall(function_call) => {
+                    if let Some(result) = check_expression(&function_call.function, f) {
+                        return Some(result);
+                    }
+
+                    for parameter in function_call.parameters.iter() {
+                        if let Some(result) = check_expression(&parameter, f) {
+                            return Some(result);
+                        }
+                    }
+                }
+
+                Expression::FunctionCallBlock(function_call) => {
+                    if let Some(result) = check_expression(&function_call.function, f) {
+                        return Some(result);
+                    }
+
+                    for field in function_call.fields.iter() {
+                        if let Some(result) = check_expression(&field.value, f) {
+                            return Some(result);
+                        }
+                    }
+
+                    for parameter in function_call.parameters.iter() {
+                        if let Some(result) = check_expression(&parameter, f) {
+                            return Some(result);
+                        }
+                    }
+                }
+
+                Expression::Block(block) => {
+                    for statement in block.statements.iter() {
+                        if let Some(result) = check_statement(statement, f) {
+                            return Some(result);
+                        }
+                    }
+
+                    if let Some(final_expr) = block.final_expr.as_ref() {
+                        if let Some(result) = check_expression(&final_expr, f) {
+                            return Some(result);
+                        }
+                    }
+                }
+
+                Expression::Return(expression) => {
+                    if let Some(expression) = expression.as_ref() {
+                        if let Some(result) = check_expression(&expression.as_ref(), f) {
+                            return Some(result);
+                        }
+                    }
+                }
+
+                Expression::Array(array) => {
+                    for element in array.elements.iter() {
+                        if let Some(result) = check_expression(&element, f) {
+                            return Some(result);
+                        }
+                    }
+                }
+
+                Expression::ArrayAccess(array_access) => {
+                    if let Some(result) = check_expression(&array_access.expression, f) {
+                        return Some(result);
+                    }
+
+                    if let Some(result) = check_expression(&array_access.index, f) {
+                        return Some(result);
+                    }
+                }
+
+                Expression::MemberAccess(member_access) => {
+                    if let Some(result) = check_expression(&member_access.expression, f) {
+                        return Some(result);
+                    }
+                }
+
+                Expression::Tuple(expressions) => {
+                    for expression in expressions.iter() {
+                        if let Some(result) = check_expression(&expression, f) {
+                            return Some(result);
+                        }
+                    }
+                }
+
+                Expression::If(if_expr) => {
+                    let mut next_if_expr = Some(if_expr.as_ref().clone());
+
+                    while let Some(if_expr) = next_if_expr.take() {
+                        if let Some(condition) = if_expr.condition.as_ref() {
+                            if let Some(result) = check_expression(&condition, f) {
+                                return Some(result);
+                            }
+                        }
+
+                        for statement in if_expr.then_body.statements.iter() {
+                            if let Some(result) = check_statement(statement, f) {
+                                return Some(result);
+                            }
+                        }
+
+                        if let Some(final_expr) = if_expr.then_body.final_expr.as_ref() {
+                            if let Some(result) = check_expression(&final_expr, f) {
+                                return Some(result);
+                            }
+                        }
+
+                        next_if_expr = if_expr.else_if.as_ref().map(|x| x.as_ref().clone());
+                    }
+                }
+
+                Expression::Match(match_expr) => {
+                    if let Some(result) = check_expression(&match_expr.expression, f) {
+                        return Some(result);
+                    }
+
+                    for match_branch in match_expr.branches.iter() {
+                        if let Some(result) = check_expression(&match_branch.pattern, f) {
+                            return Some(result);
+                        }
+
+                        if let Some(result) = check_expression(&match_branch.value, f) {
+                            return Some(result);
+                        }
+                    }
+                }
+
+                Expression::While(while_expr) => {
+                    if let Some(result) = check_expression(&while_expr.condition, f) {
+                        return Some(result);
+                    }
+
+                    for statement in while_expr.body.statements.iter() {
+                        if let Some(result) = check_statement(statement, f) {
+                            return Some(result);
+                        }
+                    }
+
+                    if let Some(final_expr) = while_expr.body.final_expr.as_ref() {
+                        if let Some(result) = check_expression(&final_expr, f) {
+                            return Some(result);
+                        }
+                    }
+                }
+
+                Expression::UnaryExpression(unary_expression) => {
+                    if let Some(result) = check_expression(&unary_expression.expression, f) {
+                        return Some(result);
+                    }
+                }
+
+                Expression::BinaryExpression(binary_expression) => {
+                    if let Some(result) = check_expression(&binary_expression.lhs, f) {
+                        return Some(result);
+                    }
+
+                    if let Some(result) = check_expression(&binary_expression.rhs, f) {
+                        return Some(result);
+                    }
+                }
+
+                Expression::Constructor(constructor) => {
+                    for field in constructor.fields.iter() {
+                        if let Some(result) = check_expression(&field.value, f) {
+                            return Some(result);
+                        }
+                    }
+                }
+
+                Expression::AsmBlock(asm_block) => {
+                    for register in asm_block.registers.iter() {
+                        if let Some(value) = register.value.as_ref() {
+                            if let Some(result) = check_expression(&value, f) {
+                                return Some(result);
+                            }
+                        }
+                    }
+                }
+
+                Expression::Commented(_, expression) => {
+                    if let Some(result) = check_expression(&expression.as_ref(), f) {
+                        return Some(result);
+                    }
+                }
+
+                _ => {}
+            }
+
+            None
+        }
+    
+        check_expression(self, &f)
     }
 }
 

@@ -1,5 +1,5 @@
 use crate::{error::Error, project::Project, translate::*};
-use solang_parser::{helpers::CodeLocation, pt as solidity};
+use solang_parser::pt as solidity;
 use std::{cell::RefCell, rc::Rc};
 
 mod arguments;
@@ -34,6 +34,7 @@ pub fn translate_statement(
     scope: Rc<RefCell<ir::Scope>>,
     statement: &solidity::Statement,
 ) -> Result<sway::Statement, Error> {
+    // use solang_parser::pt::CodeLocation;
     // println!(
     //     "Translating statement at {}",
     //     project.loc_to_file_location_string(module.clone(), &statement.loc()),

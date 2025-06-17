@@ -148,12 +148,12 @@ pub fn translate_expression_statement(
             )?));
         }
 
-        solidity::Expression::Variable(variable) => {
-            return Err(Error::IneffectualStatement(
-                module.borrow().path.clone(),
-                variable.to_string(),
-            ));
-        }
+        // solidity::Expression::Variable(variable) => {
+        //     return Err(Error::IneffectualStatement(
+        //         module.borrow().path.clone(),
+        //         variable.to_string(),
+        //     ));
+        // }
 
         _ => {}
     }
