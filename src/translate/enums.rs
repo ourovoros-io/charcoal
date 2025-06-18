@@ -78,8 +78,7 @@ pub fn translate_event_definition(
             module.clone(),
             scope.clone(),
             &event_definition.fields[0].ty,
-            false,
-            false,
+            None,
         ) {
             sway::TypeName::Identifier {
                 name,
@@ -111,8 +110,7 @@ pub fn translate_event_definition(
                         module.clone(),
                         scope.clone(),
                         &f.ty,
-                        false,
-                        false,
+                        None,
                     ) {
                         sway::TypeName::Identifier {
                             name,
@@ -205,8 +203,7 @@ pub fn translate_error_definition(
             module.clone(),
             scope.clone(),
             &error_definition.fields[0].ty,
-            false,
-            false,
+            None,
         )
     } else {
         sway::TypeName::Tuple {
@@ -214,7 +211,7 @@ pub fn translate_error_definition(
                 .fields
                 .iter()
                 .map(|f| {
-                    translate_type_name(project, module.clone(), scope.clone(), &f.ty, false, false)
+                    translate_type_name(project, module.clone(), scope.clone(), &f.ty, None)
                 })
                 .collect(),
         }

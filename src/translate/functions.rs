@@ -89,8 +89,13 @@ pub fn translate_function_declaration(
 
         let old_name = parameter_identifier.name.clone();
         let new_name = translate_naming_convention(old_name.as_str(), Case::Snake);
-        let type_name =
-            translate_type_name(project, module.clone(), scope.clone(), &p.ty, false, true);
+        let type_name = translate_type_name(
+            project,
+            module.clone(),
+            scope.clone(),
+            &p.ty,
+            p.storage.as_ref(),
+        );
 
         scope
             .borrow_mut()
@@ -159,9 +164,9 @@ pub fn translate_function_declaration(
     let mut parameters = sway::ParameterList::default();
 
     for (_, parameter) in function_definition.params.iter() {
+        let parameter = parameter.as_ref().unwrap();
+
         let old_name = parameter
-            .as_ref()
-            .unwrap()
             .name
             .as_ref()
             .map_or("_".into(), |n| n.name.clone());
@@ -172,9 +177,8 @@ pub fn translate_function_declaration(
             project,
             module.clone(),
             scope.clone(),
-            &parameter.as_ref().unwrap().ty,
-            false,
-            true,
+            &parameter.ty,
+            parameter.storage.as_ref(),
         );
 
         // Check if the parameter's type is an ABI
@@ -231,8 +235,12 @@ pub fn translate_function_declaration(
                         module.clone(),
                         scope.clone(),
                         &function_definition.returns[0].1.as_ref().unwrap().ty,
-                        false,
-                        true,
+                        function_definition.returns[0]
+                            .1
+                            .as_ref()
+                            .unwrap()
+                            .storage
+                            .as_ref(),
                     );
                     translate_return_type_name(project, module.clone(), &type_name)
                 } else {
@@ -246,8 +254,7 @@ pub fn translate_function_declaration(
                                     module.clone(),
                                     scope.clone(),
                                     &p.as_ref().unwrap().ty,
-                                    false,
-                                    true,
+                                    p.as_ref().map(|p| p.storage.as_ref()).flatten(),
                                 );
                                 translate_return_type_name(project, module.clone(), &type_name)
                             })
@@ -316,8 +323,7 @@ pub fn translate_modifier_definition(
             module.clone(),
             scope.clone(),
             &p.as_ref().unwrap().ty,
-            false,
-            true,
+            p.as_ref().map(|p| p.storage.as_ref()).flatten(),
         );
 
         modifier.parameters.entries.push(sway::Parameter {
@@ -477,11 +483,11 @@ pub fn translate_modifier_definition(
             let mut parameters = vec![];
 
             if has_storage_read {
-                parameters.push("read".to_string());
+                parameters.push("read".into());
             }
 
             if has_storage_write {
-                parameters.push("write".to_string());
+                parameters.push("write".into());
             }
 
             if parameters.is_empty() {
@@ -728,8 +734,7 @@ pub fn translate_abi_function(
             module.clone(),
             scope.clone(),
             &parameter.as_ref().unwrap().ty,
-            false,
-            true,
+            parameter.as_ref().map(|p| p.storage.as_ref()).flatten(),
         );
 
         // Check if the parameter's type is an ABI and make it an Identity
@@ -803,8 +808,12 @@ pub fn translate_abi_function(
                     module.clone(),
                     scope.clone(),
                     &function_definition.returns[0].1.as_ref().unwrap().ty,
-                    false,
-                    true,
+                    function_definition.returns[0]
+                        .1
+                        .as_ref()
+                        .unwrap()
+                        .storage
+                        .as_ref(),
                 );
                 translate_return_type_name(project, module.clone(), &type_name)
             } else {
@@ -818,8 +827,7 @@ pub fn translate_abi_function(
                                 module.clone(),
                                 scope.clone(),
                                 &p.as_ref().unwrap().ty,
-                                false,
-                                true,
+                                p.as_ref().map(|p| p.storage.as_ref()).flatten(),
                             );
                             translate_return_type_name(project, module.clone(), &type_name)
                         })
@@ -854,9 +862,7 @@ pub fn translate_abi_function(
         }
 
         if use_string {
-            module
-                .borrow_mut()
-                .ensure_use_declared("std::string::String");
+            module.borrow_mut().ensure_use_declared("std::string::*");
         }
 
         sway_function.name.clone_from(&new_name)
@@ -989,8 +995,7 @@ pub fn translate_function_definition(
             module.clone(),
             scope.clone(),
             &parameter.as_ref().unwrap().ty,
-            false,
-            true,
+            parameter.as_ref().map(|p| p.storage.as_ref()).flatten(),
         );
 
         // Check if the parameter's type is an ABI and make it an Identity
@@ -1064,8 +1069,11 @@ pub fn translate_function_definition(
                     module.clone(),
                     scope.clone(),
                     &function_definition.returns[0].1.as_ref().unwrap().ty,
-                    false,
-                    true,
+                    function_definition.returns[0]
+                        .1
+                        .as_ref()
+                        .map(|r| r.storage.as_ref())
+                        .flatten(),
                 );
                 translate_return_type_name(project, module.clone(), &type_name)
             } else {
@@ -1079,8 +1087,7 @@ pub fn translate_function_definition(
                                 module.clone(),
                                 scope.clone(),
                                 &p.as_ref().unwrap().ty,
-                                false,
-                                true,
+                                p.as_ref().map(|p| p.storage.as_ref()).flatten(),
                             );
                             translate_return_type_name(project, module.clone(), &type_name)
                         })
@@ -1122,8 +1129,7 @@ pub fn translate_function_definition(
             module.clone(),
             scope.clone(),
             &p.as_ref().unwrap().ty,
-            false,
-            true,
+            p.as_ref().map(|p| p.storage.as_ref()).flatten(),
         );
         let mut abi_type_name = None;
 
@@ -1184,8 +1190,7 @@ pub fn translate_function_definition(
             module.clone(),
             scope.clone(),
             &return_parameter.ty,
-            false,
-            true,
+            return_parameter.storage.as_ref(),
         );
 
         let mut abi_type_name = None;
@@ -1523,9 +1528,7 @@ pub fn translate_function_definition(
 
         for p in sway_function.parameters.entries.iter_mut() {
             if p.type_name == Some(sway::TypeName::StringSlice) {
-                module
-                    .borrow_mut()
-                    .ensure_use_declared("std::string::String");
+                module.borrow_mut().ensure_use_declared("std::string::*");
                 p.type_name = Some(sway::TypeName::Identifier {
                     name: "String".into(),
                     generic_parameters: None,

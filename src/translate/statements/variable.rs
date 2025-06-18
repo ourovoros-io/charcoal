@@ -20,8 +20,7 @@ pub fn translate_variable_definition_statement(
         module.clone(),
         scope.clone(),
         &variable_declaration.ty,
-        false,
-        false,
+        variable_declaration.storage.as_ref(),
     );
     let mut abi_type_name = None;
 
@@ -49,7 +48,7 @@ pub fn translate_variable_definition_statement(
         };
 
         let new_type_name =
-            translate_type_name(project, module.clone(), scope.clone(), ty, false, false);
+            translate_type_name(project, module.clone(), scope.clone(), ty, None);
 
         if type_name != new_type_name {
             panic!(
@@ -176,13 +175,22 @@ pub fn translate_variable_definition_statement(
         let value_type = get_expression_type(project, module.clone(), scope.clone(), &value)?;
         coerce_expression(&value, &value_type, &type_name).unwrap()
     } else if let Some(x) = initializer.as_ref() {
-        let x = translate_pre_or_post_operator_value_expression(
-            project,
-            module.clone(),
-            scope.clone(),
-            x,
-        )?;
+        let mut x = translate_expression(project, module.clone(), scope.clone(), &x)?;
+
+        if let sway::Expression::FunctionCall(f) = &x {
+            if let sway::Expression::MemberAccess(m) = &f.function {
+                if m.member == "read" && f.parameters.is_empty() {
+                    let container_type = get_expression_type(project, module.clone(), scope.clone(), &m.expression)?;
+
+                    if container_type.is_storage_key() {
+                        x = m.expression.clone();
+                    }
+                }
+            }
+        }
+
         let value_type = get_expression_type(project, module.clone(), scope.clone(), &x)?;
+
         coerce_expression(&x, &value_type, &type_name).unwrap()
     } else {
         create_value_expression(project, module.clone(), scope.clone(), &type_name, None)

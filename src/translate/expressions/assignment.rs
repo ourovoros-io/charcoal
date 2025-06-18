@@ -45,9 +45,13 @@ pub fn translate_assignment_expression(
 
     // HACK: remove `.read()` if present
     if let sway::Expression::FunctionCall(f) = &expression {
-        if let sway::Expression::MemberAccess(expr) = &f.function {
-            if expr.member == "read" && f.parameters.is_empty() {
-                expression = expr.expression.clone();
+        if let sway::Expression::MemberAccess(m) = &f.function {
+            if m.member == "read" && f.parameters.is_empty() {
+                let container_type = get_expression_type(project, module.clone(), scope.clone(), &m.expression)?;
+
+                if container_type.is_storage_key() {
+                    expression = m.expression.clone();
+                }
             }
         }
     }
@@ -104,8 +108,18 @@ pub fn translate_assignment_expression(
                 generic_parameters,
             } => match (name.as_str(), generic_parameters.as_ref()) {
                 ("StorageString", None) => match &rhs_type_name {
+                    sway::TypeName::Identifier {
+                        name,
+                        generic_parameters,
+                    } => match (name.as_str(), generic_parameters.as_ref()) {
+                        ("String", None) => "write_slice",
+
+                        _ => todo!("write {rhs_type_name} to StorageString"),
+                    },
+
                     sway::TypeName::StringSlice => "write_slice",
-                    _ => todo!(),
+
+                    _ => todo!("write {rhs_type_name} to StorageString"),
                 },
 
                 ("StorageMap", Some(_)) => {
@@ -281,6 +295,24 @@ pub fn translate_assignment_expression(
                             &[("String::from_ascii_str", Some((None, vec![rhs.clone()])))],
                         )
                     }
+
+                    _ => coerce_expression(&rhs, &rhs_type_name, &storage_key_type).unwrap(),
+                },
+
+                (
+                    sway::TypeName::Identifier {
+                        name: lhs_name,
+                        generic_parameters: lhs_generic_parameters,
+                    },
+                    sway::TypeName::Identifier {
+                        name: rhs_name,
+                        generic_parameters: rhs_generic_parameters,
+                    },
+                ) => match (
+                    (lhs_name.as_str(), lhs_generic_parameters.as_ref()),
+                    (rhs_name.as_str(), rhs_generic_parameters.as_ref()),
+                ) {
+                    (("StorageString", None), ("String", None)) => rhs,
 
                     _ => coerce_expression(&rhs, &rhs_type_name, &storage_key_type).unwrap(),
                 },

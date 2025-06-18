@@ -177,8 +177,7 @@ fn translate_type_function_call(
         module.clone(),
         scope.clone(),
         expression,
-        false,
-        false,
+        None,
     );
 
     Ok(coerce_expression(&from_expression, &from_type_name, &to_type_name).unwrap())
@@ -2419,8 +2418,7 @@ fn translate_builtin_abi_member_access_function_call(
                             module.clone(),
                             scope.clone(),
                             &p.as_ref().unwrap().ty,
-                            false,
-                            false,
+                            p.as_ref().map(|p| p.storage.as_ref()).flatten(),
                         )
                     })
                     .collect::<Vec<_>>(),
@@ -2433,8 +2431,7 @@ fn translate_builtin_abi_member_access_function_call(
                         module.clone(),
                         scope.clone(),
                         expression,
-                        false,
-                        false,
+                        None,
                     )]
                 }
 

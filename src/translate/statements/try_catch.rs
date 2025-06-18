@@ -77,8 +77,7 @@ pub fn translate_try_catch_statement(
                             module.clone(),
                             scope.clone(),
                             &params[0].1.as_ref().unwrap().ty,
-                            false,
-                            false,
+                            params[0].1.as_ref().unwrap().storage.as_ref(),
                         );
                         store_let_identifier(id, &type_name);
                     }
@@ -92,8 +91,7 @@ pub fn translate_try_catch_statement(
                                     module.clone(),
                                     scope.clone(),
                                     &p.as_ref().unwrap().ty,
-                                    false,
-                                    false,
+                                    p.as_ref().unwrap().storage.as_ref(),
                                 )
                             })
                             .collect::<Vec<_>>();

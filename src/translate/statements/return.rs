@@ -27,28 +27,20 @@ pub fn translate_return_statement(
     // };
 
     let mut expression = translate_expression(project, module.clone(), scope.clone(), expression)?;
-    let mut expression_type =
-        get_expression_type(project, module.clone(), scope.clone(), &expression)?;
 
-    // HACK: remove `.read()` is underlying expression type is StorageVec or StorageMap
+    // HACK: remove `.read()` if present
     if let sway::Expression::FunctionCall(f) = &expression {
         if let sway::Expression::MemberAccess(m) = &f.function {
             if m.member == "read" && f.parameters.is_empty() {
-                if expression_type.is_storage_map() || expression_type.is_storage_vec() {
+                let container_type = get_expression_type(project, module.clone(), scope.clone(), &m.expression)?;
+
+                if container_type.is_storage_key() {
                     expression = m.expression.clone();
-                    expression_type = sway::TypeName::Identifier {
-                        name: "StorageKey".to_string(),
-                        generic_parameters: Some(sway::GenericParameterList {
-                            entries: vec![sway::GenericParameter {
-                                type_name: expression_type,
-                                implements: None,
-                            }],
-                        }),
-                    }
                 }
             }
         }
     }
+    
     // TODO
     // if return_type.is_none() {
     //     return Ok(sway::Statement::from(expression));

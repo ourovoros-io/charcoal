@@ -58,8 +58,7 @@ pub fn translate_expression_statement(
                             module.clone(),
                             scope.clone(),
                             &p.ty,
-                            false,
-                            false,
+                            p.storage.as_ref(),
                         ),
                         ..Default::default()
                     })));
@@ -99,8 +98,7 @@ pub fn translate_expression_statement(
                                         module.clone(),
                                         scope.clone(),
                                         &p.ty,
-                                        false,
-                                        false,
+                                        p.storage.as_ref(),
                                     )
                                 } else {
                                     sway::TypeName::Identifier {

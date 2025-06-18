@@ -59,14 +59,26 @@ pub fn translate_state_variable(
     };
 
     // Translate the variable's type name
+    let storage_location = if is_storage {
+        Some(solidity::StorageLocation::Storage(Default::default()))
+    } else {
+        None
+    };
+
     let mut variable_type_name = translate_type_name(
         project,
         module.clone(),
         value_scope.clone(),
         &variable_definition.ty,
-        is_storage,
-        false,
+        storage_location.as_ref(),
     );
+
+    // Storage fields should not be wrapped in a `StorageKey<T>`
+    if is_storage {
+        if let Some(storage_key_type) = variable_type_name.storage_key_type() {
+            variable_type_name = storage_key_type;
+        }
+    }
 
     // Check if the variable's type is an ABI
     let mut abi_type_name = None;

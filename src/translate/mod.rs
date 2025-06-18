@@ -2835,13 +2835,13 @@ fn get_member_access_function_call_type(
                     generic_parameters: None,
                 }),
 
-                _ => Err(Error::Wrapped(Box::new(std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
-                    format!(
-                        "get type of function call member_access: {}",
+                _ => {
+                    todo!(
+                        "get type of `{container_type}::{}` function call member_access: {}",
+                        member_access.member,
                         sway::TabbedDisplayer(member_access)
-                    ),
-                )))),
+                    )
+                },
             },
 
             ("Option", Some(generic_parameters)) if generic_parameters.entries.len() == 1 => {

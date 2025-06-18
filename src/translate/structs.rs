@@ -23,8 +23,7 @@ pub fn translate_struct_definition(
             module.clone(),
             scope.clone(),
             &field.ty,
-            false,
-            false,
+            field.storage.as_ref(),
         );
 
         if let sway::TypeName::Identifier {

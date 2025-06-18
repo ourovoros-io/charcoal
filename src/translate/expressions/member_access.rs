@@ -380,8 +380,7 @@ fn translate_builtin_function_call_member_access_expression(
                 module.clone(),
                 scope.clone(),
                 &parameters[0],
-                false,
-                false,
+                None,
             );
 
             let type_name = get_underlying_type(module.clone(), &type_name);

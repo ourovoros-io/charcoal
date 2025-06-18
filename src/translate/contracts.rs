@@ -418,7 +418,7 @@ pub fn translate_using_directive(
     let for_type = using_directive
         .ty
         .as_ref()
-        .map(|t| translate_type_name(project, module.clone(), scope.clone(), t, false, false))
+        .map(|t| translate_type_name(project, module.clone(), scope.clone(), t, None))
         .map_or(Ok(None), |t| Ok(Some(t)))?;
 
     match &using_directive.list {

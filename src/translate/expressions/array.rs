@@ -32,7 +32,7 @@ pub fn translate_array_subscript_expression(
 
     let Some(ir::VariableAccess {
         variable,
-        expression,
+        mut expression,
     }) = translate_variable_access_expression(project, module.clone(), scope.clone(), expression)?
     else {
         panic!(
@@ -40,6 +40,15 @@ pub fn translate_array_subscript_expression(
             expression
         )
     };
+
+    let type_name = get_expression_type(project, module.clone(), scope.clone(), &expression)?;
+
+    if type_name.is_storage_key() {
+        expression = sway::Expression::create_function_calls(
+            Some(expression),
+            &[("read", Some((None, vec![])))],
+        );
+    }
 
     if let Some(variable) = variable.clone() {
         variable.borrow_mut().read_count += 1;
