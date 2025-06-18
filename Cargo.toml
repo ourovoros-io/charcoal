@@ -1,6 +1,6 @@
 [package]
 name = "charcoal-v2"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 
 [dependencies]
@@ -12,7 +12,7 @@ num-traits = "0.2.19"
 serde_yaml = "0.9.33"
 sha3 = "0.10.8"
 solang-parser = "0.3.4"
-toml = "0.8.20"
+toml = "0.8.23"
 
 [dev-dependencies]
 colorize = "0.1.0"
