@@ -105,8 +105,22 @@ pub fn translate_delete_expression(
         None => get_expression_type(project, module.clone(), scope.clone(), &expression)?,
     };
 
-    todo!(
-        "delete from {type_name} expression: {}",
-        sway::TabbedDisplayer(&expression)
+    // todo!(
+    //     "{}: delete from {type_name} expression: {}",
+    //     project.loc_to_file_location_string(module.clone(), &solidity_expression.loc()),
+    //     sway::TabbedDisplayer(&expression)
+    // )
+
+    let value = create_value_expression(project, module.clone(), scope.clone(), &type_name, None);
+    
+    create_assignment_expression(
+        project,
+        module.clone(),
+        scope.clone(),
+        "=",
+        &expression,
+        variable,
+        &value,
+        &type_name,
     )
 }

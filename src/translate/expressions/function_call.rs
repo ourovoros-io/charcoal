@@ -1098,6 +1098,7 @@ fn translate_member_access_function_call(
                         scope.clone(),
                         expression,
                         arguments,
+                        named_arguments,
                         container,
                         member,
                         solidity_container,
@@ -1712,6 +1713,7 @@ fn translate_identity_member_access_function_call(
     scope: Rc<RefCell<ir::Scope>>,
     expression: &solidity::Expression,
     arguments: &[solidity::Expression],
+    named_arguments: Option<&[solidity::NamedArgument]>,
     mut container: sway::Expression,
     member: &solidity::Identifier,
     solidity_container: &solidity::Expression,
@@ -2081,64 +2083,32 @@ fn translate_identity_member_access_function_call(
         }
     }
 
+    let parameters = arguments
+        .iter()
+        .map(|a| translate_expression(project, module.clone(), scope.clone(), a))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let parameter_types = parameters
+        .iter()
+        .map(|p| get_expression_type(project, module.clone(), scope.clone(), p))
+        .collect::<Result<Vec<_>, _>>()?;
+
     // Check to see if the type is located in an external ABI
-    if let Some(external_definition) = project.find_contract(module.clone(), &name) {
-        // Check lower case names for regular functions
-        if external_definition
-            .borrow()
-            .abi
-            .functions
-            .iter()
-            .any(|f| f.name == new_name_lower)
-        {
-            //
-            // TODO: Ensure a use statement for the ABI is added to the current module
-            //
+    if let Some(contract) = project.find_contract(module.clone(), &name) {
+        let abi = contract.borrow().abi.clone();
 
-            return Ok(sway::Expression::create_function_calls(
-                Some(container.clone()),
-                &[(
-                    new_name_lower.as_str(),
-                    Some((
-                        None,
-                        arguments
-                            .iter()
-                            .map(|a| {
-                                translate_expression(project, module.clone(), scope.clone(), a)
-                            })
-                            .collect::<Result<Vec<_>, _>>()?,
-                    )),
-                )],
-            ));
-        }
-
-        // Check upper case names for constant getter functions
-        if external_definition
-            .borrow()
-            .abi
-            .functions
-            .iter()
-            .any(|f| f.name == new_name_upper)
-        {
-            //
-            // TODO: Ensure a use statement for the ABI is added to the current module
-            //
-
-            return Ok(sway::Expression::create_function_calls(
-                Some(container.clone()),
-                &[(
-                    new_name_upper.as_str(),
-                    Some((
-                        None,
-                        arguments
-                            .iter()
-                            .map(|a| {
-                                translate_expression(project, module.clone(), scope.clone(), a)
-                            })
-                            .collect::<Result<Vec<_>, _>>()?,
-                    )),
-                )],
-            ));
+        if let Some(result) = resolve_abi_function_call(
+            project,
+            module.clone(),
+            scope.clone(),
+            &abi,
+            Some(&container),
+            &member.name,
+            named_arguments,
+            parameters,
+            parameter_types,
+        )? {
+            return Ok(result);
         }
     }
 

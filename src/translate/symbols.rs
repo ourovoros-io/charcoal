@@ -140,7 +140,6 @@ pub fn resolve_symbol(
     None
 }
 
-#[inline]
 pub fn resolve_abi_function_call(
     project: &mut Project,
     module: Rc<RefCell<ir::Module>>,
@@ -258,12 +257,9 @@ pub fn resolve_abi_function_call(
                     continue;
                 };
 
-                //
                 // If `parameter_type_name` is `Identity`, but `container` is an abi cast expression,
                 // then we need to de-cast it, so `container` turns into the 2nd parameter of the abi cast,
                 // and `value_type_name` turns into `Identity`.
-                //
-
                 if let sway::TypeName::Identifier {
                     name: parameter_type_name,
                     generic_parameters: None,
@@ -402,6 +398,29 @@ pub fn resolve_abi_function_call(
     }
 
     let Some(function) = function else {
+        // If we didn't find a function, check inherited functions
+        for inherit in abi.inherits.iter() {
+            if let Some(contract) =
+                project.find_contract(module.clone(), inherit.to_string().as_str())
+            {
+                let abi = contract.borrow().abi.clone();
+
+                if let Some(result) = resolve_abi_function_call(
+                    project,
+                    module.clone(),
+                    scope.clone(),
+                    &abi,
+                    contract_id,
+                    function_name,
+                    named_arguments,
+                    parameters_cell.borrow().clone(),
+                    parameter_types.clone(),
+                )? {
+                    return Ok(Some(result));
+                }
+            }
+        }
+
         return Ok(None);
     };
 
