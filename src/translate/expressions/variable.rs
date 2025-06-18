@@ -83,6 +83,29 @@ pub fn translate_variable_access_expression(
                 }));
             }
 
+            // Check to see if the variable refers to a constant
+            if let Some(constant) = module
+                .borrow()
+                .constants
+                .iter()
+                .find(|c| c.old_name == *name)
+            {
+                return Ok(Some(ir::VariableAccess {
+                    variable: None,
+                    expression: sway::Expression::create_identifier(constant.name.clone()),
+                }));
+            }
+
+            // Check to see if the variable refers to a configurable
+            if let Some(configurable) = module.borrow().configurable.as_ref() {
+                if let Some(field) = configurable.fields.iter().find(|f| f.old_name == *name) {
+                    return Ok(Some(ir::VariableAccess {
+                        variable: None,
+                        expression: sway::Expression::create_identifier(field.name.clone()),
+                    }));
+                }
+            }
+
             // Check to see if the variable refers to a storage field
             if let Some(contract_name) = scope.borrow().get_contract_name() {
                 fn check_contract(
@@ -162,58 +185,8 @@ pub fn translate_variable_access_expression(
                 }
             }
 
-            if let Some(contract_name) = scope.borrow().get_contract_name() {
-                if let Some(contract) = project.find_contract(module.clone(), &contract_name) {
-                    let mut module = module.borrow_mut();
-                    if let Some(storage_namespace) = module.get_storage_namespace(scope.clone()) {
-                        if let Some(field) = storage_namespace
-                            .borrow()
-                            .fields
-                            .iter()
-                            .find(|f| f.old_name == *name)
-                        {
-                            return Ok(Some(ir::VariableAccess {
-                                variable: None,
-                                expression: sway::Expression::create_function_calls(
-                                    None,
-                                    &[
-                                        (
-                                            format!("storage::{}", storage_namespace.borrow().name)
-                                                .as_str(),
-                                            None,
-                                        ),
-                                        (field.name.as_str(), None),
-                                        ("read", Some((None, vec![]))),
-                                    ],
-                                ),
-                            }));
-                        }
-                    }
-                }
-            }
-
-            let module = module.borrow_mut();
-
-            // Check to see if the variable refers to a constant
-            if let Some(constant) = module.constants.iter().find(|c| c.old_name == *name) {
-                return Ok(Some(ir::VariableAccess {
-                    variable: None,
-                    expression: sway::Expression::create_identifier(constant.name.clone()),
-                }));
-            }
-
-            // Check to see if the variable refers to a configurable
-            if let Some(configurable) = module.configurable.as_ref() {
-                if let Some(field) = configurable.fields.iter().find(|f| f.old_name == *name) {
-                    return Ok(Some(ir::VariableAccess {
-                        variable: None,
-                        expression: sway::Expression::create_identifier(field.name.clone()),
-                    }));
-                }
-            }
-
             // Check to see if the variable refers to a function
-            if let Some(function) = module.functions.iter().find(|f| {
+            if let Some(function) = module.borrow().functions.iter().find(|f| {
                 let sway::TypeName::Function { old_name, .. } = &f.signature else {
                     unreachable!()
                 };

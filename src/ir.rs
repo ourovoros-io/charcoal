@@ -250,7 +250,7 @@ pub struct Module {
     pub configurable: Option<sway::Configurable>,
     pub modifiers: Vec<Modifier>,
     pub functions: Vec<Item<sway::Function>>,
-    pub contracts: Vec<Rc<RefCell<Contract>>>,
+    pub contracts: Vec<Item<Rc<RefCell<Contract>>>>,
     pub impls: Vec<sway::Impl>,
 
     pub function_name_counts: HashMap<String, usize>,
@@ -319,11 +319,14 @@ impl Module {
     #[inline]
     pub fn get_storage(&mut self, scope: Rc<RefCell<Scope>>) -> Rc<RefCell<sway::Storage>> {
         let contract_name = scope.borrow().get_contract_name().unwrap();
-        let contract = self
+        
+        let contract_item = self
             .contracts
             .iter()
-            .find(|c| c.borrow().name == contract_name)
+            .find(|c| c.signature.to_string() == contract_name)
             .unwrap();
+
+        let contract = contract_item.implementation.clone().unwrap();
 
         if contract.borrow().storage.is_none() {
             contract.borrow_mut().storage = Some(Rc::new(RefCell::new(sway::Storage::default())));
@@ -482,10 +485,11 @@ impl From<Module> for sway::Module {
 
         let mut module_storage: Option<Rc<RefCell<sway::Storage>>> = None;
 
-        for x in module.contracts.iter() {
-            let x = x.borrow();
+        for contract_item in module.contracts.iter() {
+            let contract = contract_item.implementation.clone().unwrap();
+            let contract = contract.borrow();
 
-            let Some(storage) = x.storage.as_ref() else {
+            let Some(storage) = contract.storage.as_ref() else {
                 continue;
             };
 
@@ -551,11 +555,12 @@ impl From<Module> for sway::Module {
             items.push(sway::ModuleItem::Function(x.implementation.unwrap()));
         }
 
-        for x in module.contracts {
-            let x = x.borrow();
+        for contract_item in module.contracts {
+            let contract = contract_item.implementation.clone().unwrap();
+            let contract = contract.borrow();
 
-            items.push(sway::ModuleItem::Abi(x.abi.clone()));
-            items.push(sway::ModuleItem::Impl(x.abi_impl.clone()));
+            items.push(sway::ModuleItem::Abi(contract.abi.clone()));
+            items.push(sway::ModuleItem::Impl(contract.abi_impl.clone()));
         }
 
         for x in module.impls {

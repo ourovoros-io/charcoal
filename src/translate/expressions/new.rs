@@ -71,7 +71,7 @@ pub fn translate_new_expression(
 
     match expr.as_ref() {
         solidity::Expression::Variable(solidity::Identifier { name, .. }) => {
-            if project.find_contract(module.clone(), &name).is_some() {
+            if project.is_contract_declared(module.clone(), &name) {
                 // new Contract(...) => /*unsupported: new Contract(...); using:*/ abi(Contract, ContractId::from(b256::zero()))
 
                 return Ok(sway::Expression::Commented(

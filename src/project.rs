@@ -722,6 +722,35 @@ impl Project {
         parent_module
     }
 
+    pub fn is_contract_declared(&mut self, module: Rc<RefCell<ir::Module>>, contract_name: &str) -> bool {
+        // Check to see if the contract was declared in the current file
+        if module
+            .borrow()
+            .contracts
+            .iter()
+            .any(|c| c.signature.to_string() == contract_name)
+        {
+            return true
+        }
+
+        // Check all of the module's `use` statements for crate-local imports,
+        // find the module being imported, then check if the contract lives there.
+        for use_item in module.borrow().uses.iter() {
+            if let Some(found_module) = self.resolve_use(use_item) {
+                if found_module
+                    .borrow()
+                    .contracts
+                    .iter()
+                    .any(|c| c.signature.to_string() == contract_name)
+                {
+                    return true;
+                }
+            }
+        }
+
+        false
+    }
+
     pub fn find_contract(
         &mut self,
         module: Rc<RefCell<ir::Module>>,
@@ -732,9 +761,9 @@ impl Project {
             .borrow()
             .contracts
             .iter()
-            .find(|c| c.borrow().name == contract_name)
+            .find(|c| c.signature.to_string() == contract_name)
         {
-            return Some(contract.clone());
+            return contract.implementation.clone();
         }
 
         // Check all of the module's `use` statements for crate-local imports,
@@ -745,9 +774,9 @@ impl Project {
                     .borrow()
                     .contracts
                     .iter()
-                    .find(|c| c.borrow().name == contract_name)
+                    .find(|c| c.signature.to_string() == contract_name)
                 {
-                    return Some(contract.clone());
+                    return contract.implementation.clone();
                 }
             }
         }
@@ -765,9 +794,9 @@ impl Project {
             .borrow()
             .contracts
             .iter()
-            .find(|c| c.borrow().name == contract_name)
+            .find(|c| c.signature.to_string() == contract_name)
         {
-            return Some((module.clone(), contract.clone()));
+            return Some((module.clone(), contract.implementation.clone().unwrap()));
         }
 
         // Check all of the module's `use` statements for crate-local imports,
@@ -778,9 +807,12 @@ impl Project {
                     .borrow()
                     .contracts
                     .iter()
-                    .find(|c| c.borrow().name == contract_name)
+                    .find(|c| c.signature.to_string() == contract_name)
                 {
-                    return Some((found_module.clone(), contract.clone()));
+                    return Some((
+                        found_module.clone(),
+                        contract.implementation.clone().unwrap(),
+                    ));
                 }
             }
         }
@@ -961,17 +993,30 @@ impl Project {
         // Collect the contract signatures ahead of time
         let contracts_index = module.borrow().contracts.len();
 
-        for (functions_index, contract_definition) in contract_definitions.iter_mut() {
-            // println!(
-            //     "Preparing to translate contract `{}` at {}",
-            //     contract_definition
-            //         .name
-            //         .as_ref()
-            //         .map(|x| x.name.as_str())
-            //         .unwrap(),
-            //     self.loc_to_file_location_string(module.clone(), &contract_definition.loc),
-            // );
+        for (_, contract_definition) in contract_definitions.iter() {
+            let contract_name = contract_definition.name.as_ref().unwrap().name.as_str();
 
+            module.borrow_mut().contracts.push(ir::Item {
+                signature: sway::TypeName::Identifier {
+                    name: contract_name.into(),
+                    generic_parameters: None,
+                },
+                implementation: None,
+            });
+        }
+
+        // Translate toplevel variable definitions
+        for variable_definition in variable_definitions {
+            let (deferred_initializations, mapping_names) =
+                translate_state_variable(self, module.clone(), None, &variable_definition)?;
+            assert!(deferred_initializations.is_empty());
+            assert!(mapping_names.is_empty());
+        }
+
+        // Collect the contract's toplevel item signatures ahead of time
+        for (i, (functions_index, contract_definition)) in
+            contract_definitions.iter_mut().enumerate()
+        {
             *functions_index = Some(module.borrow().functions.len());
 
             let contract_name = contract_definition.name.as_ref().unwrap().name.as_str();
@@ -1006,6 +1051,7 @@ impl Project {
             let mut enum_definitions = vec![];
             let mut struct_definitions = vec![];
             let mut function_definitions = vec![];
+            let mut variable_definitions = vec![];
 
             for part in contract_definition.parts.iter() {
                 match part {
@@ -1023,6 +1069,26 @@ impl Project {
 
                     solidity::ContractPart::FunctionDefinition(function_definition) => {
                         function_definitions.push(function_definition.clone());
+                    }
+
+                    solidity::ContractPart::VariableDefinition(variable_definition) => {
+                        let is_constant = variable_definition
+                            .attrs
+                            .iter()
+                            .any(|x| matches!(x, solidity::VariableAttribute::Constant(_)));
+
+                        let is_immutable = variable_definition
+                            .attrs
+                            .iter()
+                            .any(|x| matches!(x, solidity::VariableAttribute::Immutable(_)));
+
+                        let is_configurable = is_immutable && !is_constant;
+
+                        // Only translate constant and configurable variables ahead of time.
+                        // Regular state variables are translated later.
+                        if is_constant || is_configurable {
+                            variable_definitions.push(variable_definition);
+                        }
                     }
 
                     _ => {}
@@ -1066,6 +1132,18 @@ impl Project {
                     },
                     implementation: None,
                 });
+            }
+
+            // Translate contract constants and immutables
+            for variable_definition in variable_definitions {
+                let (deferred_initializations, mapping_names) = translate_state_variable(
+                    self,
+                    module.clone(),
+                    Some(contract_name),
+                    variable_definition,
+                )?;
+                assert!(deferred_initializations.is_empty());
+                assert!(mapping_names.is_empty());
             }
 
             // Translate contract type definitions
@@ -1124,7 +1202,8 @@ impl Project {
                 }
             }
 
-            module.borrow_mut().contracts.push(contract);
+            module.borrow_mut().contracts[contracts_index + i].implementation =
+                Some(contract.clone());
         }
 
         for (i, type_definition) in type_definitions.into_iter().enumerate() {
@@ -1153,13 +1232,6 @@ impl Project {
             translate_error_definition(self, module.clone(), None, &error_definition)?;
         }
 
-        for variable_definition in variable_definitions {
-            let (deferred_initializations, mapping_names) =
-                translate_state_variable(self, module.clone(), None, &variable_definition)?;
-            assert!(deferred_initializations.is_empty());
-            assert!(mapping_names.is_empty());
-        }
-
         for (i, function_definition) in function_definitions.into_iter().enumerate() {
             if matches!(function_definition.ty, solidity::FunctionTy::Modifier) {
                 continue;
@@ -1183,7 +1255,7 @@ impl Project {
                 self,
                 module.clone(),
                 &contract_definition,
-                contract,
+                contract.implementation.clone().unwrap(),
                 functions_index,
             )?;
         }

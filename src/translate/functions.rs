@@ -136,10 +136,7 @@ pub fn translate_function_declaration(
             .unwrap_or_else(|| Ok(vec![]))?;
 
         // Check to see if base is a constructor call
-        if project
-            .find_contract(module.clone(), old_name.as_str())
-            .is_some()
-        {
+        if project.is_contract_declared(module.clone(), old_name.as_str()) {
             let prefix = translate_naming_convention(old_name.as_str(), Case::Snake);
             let name = format!("{prefix}_constructor");
 
@@ -187,7 +184,7 @@ pub fn translate_function_declaration(
             generic_parameters: None,
         } = &type_name
         {
-            if project.find_contract(module.clone(), &name).is_some() {
+            if project.is_contract_declared(module.clone(), &name) {
                 type_name = sway::TypeName::Identifier {
                     name: "Identity".into(),
                     generic_parameters: None,
@@ -749,7 +746,7 @@ pub fn translate_abi_function(
             generic_parameters: None,
         } = &type_name
         {
-            if project.find_contract(module.clone(), &name).is_some() {
+            if project.is_contract_declared(module.clone(), &name) {
                 type_name = sway::TypeName::Identifier {
                     name: "Identity".into(),
                     generic_parameters: None,
@@ -1010,7 +1007,7 @@ pub fn translate_function_definition(
             generic_parameters: None,
         } = &type_name
         {
-            if project.find_contract(module.clone(), &name).is_some() {
+            if project.is_contract_declared(module.clone(), &name) {
                 type_name = sway::TypeName::Identifier {
                     name: "Identity".into(),
                     generic_parameters: None,
@@ -1145,7 +1142,7 @@ pub fn translate_function_definition(
             generic_parameters: None,
         } = &type_name
         {
-            if let Some(contract) = project.find_contract(module.clone(), &name) {
+            if project.is_contract_declared(module.clone(), &name) {
                 // TODO:
                 // for entry in contract.uses.iter() {
                 //     if !module.uses.contains(entry) {
@@ -1207,7 +1204,7 @@ pub fn translate_function_definition(
             generic_parameters: None,
         } = &type_name
         {
-            if project.find_contract(module.clone(), &name).is_some() {
+            if project.is_contract_declared(module.clone(), &name) {
                 abi_type_name = Some(type_name.clone());
 
                 type_name = sway::TypeName::Identifier {

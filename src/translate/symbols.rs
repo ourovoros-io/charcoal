@@ -146,13 +146,13 @@ pub fn resolve_abi_function_call(
     module: Rc<RefCell<ir::Module>>,
     scope: Rc<RefCell<ir::Scope>>,
     abi: &sway::Abi,
-    identity_expression: Option<&sway::Expression>,
+    contract_id: Option<&sway::Expression>,
     function_name: &str,
     named_arguments: Option<&[solidity::NamedArgument]>,
     mut parameters: Vec<sway::Expression>,
     mut parameter_types: Vec<sway::TypeName>,
 ) -> Result<Option<sway::Expression>, Error> {
-    let functions = match identity_expression {
+    let functions = match contract_id {
         Some(_) => abi.functions.clone(),
         None => module
             .borrow()
@@ -401,30 +401,39 @@ pub fn resolve_abi_function_call(
 
     let parameters = parameters_cell.borrow().clone();
 
-    match identity_expression {
-        Some(identity_expression) => Ok(Some(sway::Expression::create_function_calls(
-            None,
-            &[
-                (
-                    "abi",
-                    Some((
-                        None,
-                        vec![
-                            sway::Expression::create_identifier(abi.name.clone()),
-                            sway::Expression::create_function_calls(
-                                Some(identity_expression.clone()),
-                                &[
-                                    ("as_contract_id", Some((None, vec![]))),
-                                    ("unwrap", Some((None, vec![]))),
-                                    ("into", Some((None, vec![]))),
-                                ],
-                            ),
-                        ],
-                    )),
-                ),
-                (function.name.as_str(), Some((None, parameters))),
-            ],
-        ))),
+    match contract_id.cloned() {
+        Some(mut contract_id) => {
+            let type_name =
+                get_expression_type(project, module.clone(), scope.clone(), &contract_id)?;
+
+            if type_name.is_identity() {
+                contract_id = sway::Expression::create_function_calls(
+                    None,
+                    &[(
+                        "abi",
+                        Some((
+                            None,
+                            vec![
+                                sway::Expression::create_identifier(abi.name.clone()),
+                                sway::Expression::create_function_calls(
+                                    Some(contract_id.clone()),
+                                    &[
+                                        ("as_contract_id", Some((None, vec![]))),
+                                        ("unwrap", Some((None, vec![]))),
+                                        ("into", Some((None, vec![]))),
+                                    ],
+                                ),
+                            ],
+                        )),
+                    )],
+                );
+            }
+
+            Ok(Some(sway::Expression::create_function_calls(
+                Some(contract_id),
+                &[(function.name.as_str(), Some((None, parameters)))],
+            )))
+        }
 
         None => Ok(Some(sway::Expression::create_function_calls(
             None,

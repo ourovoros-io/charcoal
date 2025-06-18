@@ -241,7 +241,7 @@ fn translate_variable_function_call(
 
     // Check to see if the expression is an ABI cast
     if parameters.len() == 1 {
-        if let Some(_external_definition) = project.find_contract(module.clone(), name) {
+        if project.is_contract_declared(module.clone(), name) {
             match get_expression_type(project, module.clone(), scope.clone(), &parameters[0])? {
                 sway::TypeName::Identifier {
                     name: type_name,
@@ -927,38 +927,6 @@ fn translate_member_access_function_call(
                 }
             }
 
-            // TODO: is this still necessary?
-            // Check if function is contained in the current contract (self-referential: This.func())
-            // if name == module.borrow().name {
-            //     // Check to see if the expression is a by-value struct constructor
-            //     if let Some(result) = resolve_struct_constructor(
-            //         project,
-            //         module.clone(),
-            //         scope.clone(),
-            //         module.borrow().structs.clone().as_slice(),
-            //         member.name.as_str(),
-            //         named_arguments,
-            //         parameters.clone(),
-            //         parameter_types.clone(),
-            //     )? {
-            //         return Ok(result);
-            //     }
-            //
-            //     // Try to resolve the function call
-            //     if let Some(result) = resolve_function_call(
-            //         project,
-            //         module.clone(),
-            //         scope.clone(),
-            //         module.clone(),
-            //         member.name.as_str(),
-            //         named_arguments,
-            //         parameters.clone(),
-            //         parameter_types.clone(),
-            //     )? {
-            //         return Ok(result);
-            //     }
-            // }
-
             let container =
                 translate_expression(project, module.clone(), scope.clone(), container)?;
 
@@ -975,9 +943,21 @@ fn translate_member_access_function_call(
                 abi_type_name = variable.borrow().abi_type_name.clone();
             }
 
-            //
-            // TODO: Check to see if the container is a constant or configurable
-            //
+            // Check to see if the container is a constant
+            if abi_type_name.is_none() {
+                if let Some(constant) = module.borrow().constants.iter().find(|c| c.old_name == *name) {
+                    abi_type_name = constant.abi_type_name.clone();
+                }
+            }
+
+            // Check to see if the container is a configurable
+            if abi_type_name.is_none() {
+                if let Some(configurable) = module.borrow().configurable.as_ref() {
+                    if let Some(field) = configurable.fields.iter().find(|f| f.old_name == *name) {
+                        abi_type_name = field.abi_type_name.clone();
+                    }
+                }
+            }
 
             // Check to see if the container is a storage field
             if abi_type_name.is_none() {
@@ -1075,7 +1055,6 @@ fn translate_member_access_function_call(
     let solidity_container = container;
 
     let mut container = translate_expression(project, module.clone(), scope.clone(), container)?;
-
     let mut type_name = get_expression_type(project, module.clone(), scope.clone(), &container)?;
 
     // println!(
@@ -1188,17 +1167,16 @@ fn translate_member_access_function_call(
                 }
             }
 
-            // Check if this is a function from an ABI
-            for contract in module.borrow().contracts.clone() {
+            if let Some(contract) = project.find_contract(module.clone(), &name) {
                 let abi = contract.borrow().abi.clone();
-
+                
                 if let Some(result) = resolve_abi_function_call(
                     project,
                     module.clone(),
                     scope.clone(),
                     &abi,
                     Some(&container),
-                    member.name.as_str(),
+                    &member.name,
                     named_arguments,
                     parameters.clone(),
                     parameter_types.clone(),

@@ -37,6 +37,9 @@ pub fn translate_state_variable(
         .iter()
         .any(|x| matches!(x, solidity::VariableAttribute::Immutable(_)));
 
+    // If the state variable is immutable and not a constant, it is a configurable field
+    let is_configurable = is_immutable && !is_constant;
+
     // If the state variable is not constant or immutable, it is a storage field
     let storage_namespace = if !is_constant && !is_immutable {
         Some(translate_naming_convention(
@@ -51,9 +54,6 @@ pub fn translate_state_variable(
     };
 
     let is_storage = storage_namespace.is_some();
-
-    // If the state variable is immutable and not a constant, it is a configurable field
-    let is_configurable = is_immutable && !is_constant;
 
     // Translate the variable's naming convention
     let old_name = variable_definition.name.as_ref().unwrap().name.clone();
@@ -109,7 +109,7 @@ pub fn translate_state_variable(
         generic_parameters: None,
     } = &variable_type_name
     {
-        if let Some(contract) = project.find_contract(module.clone(), name.as_str()) {
+        if project.is_contract_declared(module.clone(), name.as_str()) {
             // TODO:
             // for entry in contract.borrow().uses.iter() {
             //     if !module.uses.contains(entry) {

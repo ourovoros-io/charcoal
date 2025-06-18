@@ -48,7 +48,7 @@ pub fn translate_return_type_name(
                 generic_parameters: None,
             } = &type_name
             {
-                if project.find_contract(module.clone(), &name).is_some() {
+                if project.is_contract_declared(module.clone(), &name) {
                     return sway::TypeName::Identifier {
                         name: "Identity".into(),
                         generic_parameters: None,
@@ -476,7 +476,7 @@ pub fn translate_type_name(
                 }
             }
             // Check if type is an ABI
-            else if project.find_contract(module.clone(), name).is_some() {
+            else if project.is_contract_declared(module.clone(), name) {
                 sway::TypeName::Identifier {
                     name: name.clone(),
                     generic_parameters: None,
@@ -520,6 +520,7 @@ pub fn translate_type_name(
                         Ok(sway::Expression::Literal(
                             sway::Literal::DecInt(length, _) | sway::Literal::HexInt(length, _),
                         )) => length.try_into().unwrap(),
+                        
                         Ok(_) => panic!("Invalid array length expression: {length:#?}"),
                         Err(e) => panic!("Failed to translate array length expression: {e}"),
                     }
