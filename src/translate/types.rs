@@ -516,11 +516,43 @@ pub fn translate_type_name(
                         Some(scope.clone()),
                     )));
 
-                    match translate_expression(project, module, scope.clone(), length.as_ref()) {
+                    match translate_expression(
+                        project,
+                        module.clone(),
+                        scope.clone(),
+                        length.as_ref(),
+                    ) {
                         Ok(sway::Expression::Literal(
                             sway::Literal::DecInt(length, _) | sway::Literal::HexInt(length, _),
                         )) => length.try_into().unwrap(),
-                        
+
+                        Ok(sway::Expression::PathExpr(path_expr)) => {
+                            // Check to see if the expression is a constant
+                            if let Some(ident) = path_expr.as_identifier() {
+                                if let Some(constant) =
+                                    module.borrow().constants.iter().find(|c| c.name == ident)
+                                {
+                                    if let Some(sway::Expression::Literal(
+                                        sway::Literal::DecInt(value, _)
+                                        | sway::Literal::HexInt(value, _),
+                                    )) = constant.value.as_ref()
+                                    {
+                                        println!(
+                                            "WARNING: Constants as array lengths are unsupported. Using `{}` instead of `{}`.",
+                                            value, ident
+                                        );
+                                        value.clone().try_into().unwrap()
+                                    } else {
+                                        panic!("Invalid array length expression: {length:#?}")
+                                    }
+                                } else {
+                                    panic!("Invalid array length expression: {length:#?}")
+                                }
+                            } else {
+                                panic!("Invalid array length expression: {length:#?}")
+                            }
+                        }
+
                         Ok(_) => panic!("Invalid array length expression: {length:#?}"),
                         Err(e) => panic!("Failed to translate array length expression: {e}"),
                     }

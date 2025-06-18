@@ -817,53 +817,8 @@ pub fn coerce_expression(
                 length: rhs_len,
             },
         ) => {
-            if lhs_len != rhs_len || !lhs_type_name.is_compatible_with(rhs_type_name) {
-                if lhs_len == rhs_len {
-                    match (lhs_type_name.as_ref(), rhs_type_name.as_ref()) {
-                        (
-                            sway::TypeName::StringSlice,
-                            sway::TypeName::Identifier {
-                                name,
-                                generic_parameters,
-                            },
-                        ) => match (name.as_str(), generic_parameters.as_ref()) {
-                            ("String", None) => {
-                                return Some(sway::Expression::from(sway::Array {
-                                    elements: (0..*lhs_len)
-                                        .map(|i| {
-                                            sway::Expression::create_function_calls(
-                                                None,
-                                                &[(
-                                                    "String::from_ascii_str",
-                                                    Some((
-                                                        None,
-                                                        vec![sway::Expression::from(
-                                                            sway::ArrayAccess {
-                                                                expression: expression.clone(),
-                                                                index: sway::Expression::from(
-                                                                    sway::Literal::DecInt(
-                                                                        i.into(),
-                                                                        None,
-                                                                    ),
-                                                                ),
-                                                            },
-                                                        )],
-                                                    )),
-                                                )],
-                                            )
-                                        })
-                                        .collect(),
-                                }));
-                            }
-
-                            _ => {}
-                        },
-
-                        _ => {}
-                    }
-                }
-
-                todo!("Handle conversion from {from_type_name} to {to_type_name}")
+            if lhs_len != rhs_len {
+                return None;
             }
 
             match expression {
