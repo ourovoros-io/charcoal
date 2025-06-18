@@ -172,13 +172,8 @@ fn translate_type_function_call(
     let from_type_name =
         get_expression_type(project, module.clone(), scope.clone(), &from_expression)?;
 
-    let to_type_name = translate_type_name(
-        project,
-        module.clone(),
-        scope.clone(),
-        expression,
-        None,
-    );
+    let to_type_name =
+        translate_type_name(project, module.clone(), scope.clone(), expression, None);
 
     Ok(coerce_expression(&from_expression, &from_type_name, &to_type_name).unwrap())
 }
@@ -280,14 +275,12 @@ fn translate_variable_function_call(
                         ));
                     }
 
-                    ("u256" | "b256", None) => {
-                        // Thing(x) => abi(Thing, Identity::from(ContractId::from(x)))
-
+                    ("ContractId", None) => {
                         //
-                        // TODO Ensure a use statement for the ABI is added to the current module
+                        // TODO: Ensure a use statement for the ABI is added to the current module
                         //
 
-                        // abi(T, Identity::from(ContractId::from(x)))
+                        // abi(T, x.into())
                         return Ok(sway::Expression::create_function_calls(
                             None,
                             &[(
@@ -297,28 +290,39 @@ fn translate_variable_function_call(
                                     vec![
                                         sway::Expression::create_identifier(name.into()),
                                         sway::Expression::create_function_calls(
-                                            None,
-                                            &[(
-                                                "Identity::from",
-                                                Some((
-                                                    None,
-                                                    vec![
-                                                        // ContractId::from(x)
-                                                        sway::Expression::create_function_calls(
-                                                            None,
-                                                            &[(
-                                                                "ContractId::from",
-                                                                Some((
-                                                                    None,
-                                                                    vec![parameters[0].clone()],
-                                                                )),
-                                                            )],
-                                                        ),
-                                                    ],
-                                                )),
-                                            )],
+                                            Some(parameters[0].clone()),
+                                            &[("into", Some((None, vec![])))],
                                         ),
                                     ],
+                                )),
+                            )],
+                        ));
+                    }
+
+                    ("u256" | "b256", None) => {
+                        // Thing(x) => abi(Thing, Identity::from(ContractId::from(x)))
+
+                        //
+                        // TODO Ensure a use statement for the ABI is added to the current module
+                        //
+
+                        let mut value = parameters[0].clone();
+
+                        if type_name == "u256" {
+                            value = sway::Expression::create_function_calls(
+                                Some(value),
+                                &[("into", Some((None, vec![])))],
+                            )
+                        }
+
+                        // abi(T, Identity::from(ContractId::from(x)))
+                        return Ok(sway::Expression::create_function_calls(
+                            None,
+                            &[(
+                                "abi",
+                                Some((
+                                    None,
+                                    vec![sway::Expression::create_identifier(name.into()), value],
                                 )),
                             )],
                         ));
@@ -1397,7 +1401,8 @@ fn translate_function_call_function_call(
                         scope.clone(),
                         container,
                     )?
-                    .map(|v| v.variable);
+                    .map(|v| v.variable)
+                    .flatten();
 
                     let mut container =
                         translate_expression(project, module.clone(), scope.clone(), container)?;
@@ -1447,13 +1452,6 @@ fn translate_function_call_function_call(
 
                                             // Check if expression is a variable that had an ABI type
                                             if let Some(variable) = variable.as_ref() {
-                                                if variable.is_none() {
-                                                    panic!(
-                                                        "Variable not found: {}",
-                                                        sway::TabbedDisplayer(&expression)
-                                                    );
-                                                }
-                                                let variable = variable.as_ref().unwrap();
                                                 let variable = variable.borrow();
 
                                                 if let Some(abi_type_name) =
@@ -1464,17 +1462,36 @@ fn translate_function_call_function_call(
                                                     // Turn the expression into an ABI cast:
                                                     // abi(T, x.as_contract_id().unwrap().into())
                                                     container = sway::Expression::create_function_calls(None, &[
-                                                ("abi", Some((None, vec![
-                                                    sway::Expression::create_identifier(abi_type_name.clone()),
-                                                    sway::Expression::create_function_calls(Some(container), &[
-                                                        ("as_contract_id", Some((None, vec![]))),
-                                                        ("unwrap", Some((None, vec![]))),
-                                                        ("into", Some((None, vec![]))),
-                                                    ]),
-                                                ]))),
-                                            ]);
+                                                        ("abi", Some((None, vec![
+                                                            sway::Expression::create_identifier(abi_type_name.clone()),
+                                                            sway::Expression::create_function_calls(Some(container), &[
+                                                                ("as_contract_id", Some((None, vec![]))),
+                                                                ("unwrap", Some((None, vec![]))),
+                                                                ("into", Some((None, vec![]))),
+                                                            ]),
+                                                        ]))),
+                                                    ]);
 
                                                     name = abi_type_name.to_string();
+                                                }
+                                            } else {
+                                                let mut module = module.borrow_mut();
+
+                                                let storage_namespace = module
+                                                    .get_storage_namespace(scope.clone())
+                                                    .unwrap();
+
+                                                if let Some(storage_field) = storage_namespace
+                                                    .borrow()
+                                                    .fields
+                                                    .iter()
+                                                    .find(|f| f.old_name == *name)
+                                                {
+                                                    if let Some(abi_type_name) =
+                                                        &storage_field.abi_type_name
+                                                    {
+                                                        name = abi_type_name.to_string();
+                                                    }
                                                 }
                                             }
 
@@ -1521,7 +1538,7 @@ fn translate_function_call_function_call(
                                             }
 
                                             todo!(
-                                                "translate Identity member function call block `{member}` : {} - {container:#?}",
+                                                "translate Identity member function call block `{member}` : {}",
                                                 sway::TabbedDisplayer(&container)
                                             )
                                         }
@@ -1529,7 +1546,7 @@ fn translate_function_call_function_call(
                                 }
 
                                 _ => todo!(
-                                    "translate {name} member function call block: {} - {container:#?}",
+                                    "translate {name} member function call block: {}",
                                     sway::TabbedDisplayer(&container)
                                 ),
                             }
@@ -1593,158 +1610,108 @@ fn translate_function_call_block_member_access_function_call(
         }
     }
 
-    match type_name {
-        sway::TypeName::Undefined => panic!("Undefined type name"),
+    let sway::TypeName::Identifier { name, .. } = type_name else {
+        todo!()
+    };
 
-        sway::TypeName::Identifier { name, .. } => match name.as_str() {
-            "Identity" => match member.name.as_str() {
-                "call" => {
-                    if arguments.len() != 1 {
-                        panic!(
-                            "Malformed `address.call` call, expected 1 argument, found {}",
-                            arguments.len()
-                        );
-                    }
-
-                    let payload = translate_expression(
-                        project,
-                        module.clone(),
-                        scope.clone(),
-                        &arguments[0],
-                    )?;
-
-                    translate_address_call_expression(
-                        project,
-                        module.clone(),
-                        scope.clone(),
-                        &payload,
-                        coins,
-                        None,
-                        gas,
-                    )
+    match name.as_str() {
+        "Identity" => match member.name.as_str() {
+            "call" => {
+                if arguments.len() != 1 {
+                    panic!(
+                        "Malformed `address.call` call, expected 1 argument, found {}",
+                        arguments.len()
+                    );
                 }
 
-                _ => {
-                    let mut name = name.clone();
-                    let external_function_new_name =
-                        translate_naming_convention(member.name.as_str(), Case::Snake);
+                let payload =
+                    translate_expression(project, module.clone(), scope.clone(), &arguments[0])?;
 
-                    let variable = translate_variable_access_expression(
-                        project,
-                        module.clone(),
-                        scope.clone(),
-                        solidity_container,
-                    )?
-                    .map(|v| v.variable);
+                return translate_address_call_expression(
+                    project,
+                    module.clone(),
+                    scope.clone(),
+                    &payload,
+                    coins,
+                    None,
+                    gas,
+                );
+            }
 
-                    // Check if expression is a variable that had an ABI type
-                    if let Some(variable) = variable.as_ref() {
-                        if variable.is_none() {
-                            panic!("Variable not found: {}", sway::TabbedDisplayer(&expression));
-                        }
-                        let variable = variable.as_ref().unwrap();
-                        let variable = variable.borrow();
-
-                        if let Some(abi_type_name) = variable.abi_type_name.as_ref() {
-                            let abi_type_name = abi_type_name.to_string();
-
-                            // Turn the expression into an ABI cast:
-                            // abi(T, x.as_contract_id().unwrap().into())
-                            container = sway::Expression::create_function_calls(
-                                None,
-                                &[(
-                                    "abi",
-                                    Some((
-                                        None,
-                                        vec![
-                                            sway::Expression::create_identifier(
-                                                abi_type_name.clone(),
-                                            ),
-                                            sway::Expression::create_function_calls(
-                                                Some(container),
-                                                &[
-                                                    ("as_contract_id", Some((None, vec![]))),
-                                                    ("unwrap", Some((None, vec![]))),
-                                                    ("into", Some((None, vec![]))),
-                                                ],
-                                            ),
-                                        ],
-                                    )),
-                                )],
-                            );
-
-                            name = abi_type_name.to_string();
-                        }
-                    }
-
-                    // Check to see if the type is located in an external ABI
-                    if let Some(external_definition) = project.find_contract(module.clone(), &name)
-                    {
-                        if external_definition
-                            .borrow()
-                            .abi
-                            .functions
-                            .iter()
-                            .any(|f| f.name == external_function_new_name)
-                        {
-                            //
-                            // TODO: Ensure a use statement for the ABI is added to the current module
-                            //
-
-                            let mut fields = vec![];
-
-                            if let Some(coins) = coins {
-                                fields.push(sway::ConstructorField {
-                                    name: "coins".into(),
-                                    value: coins,
-                                });
-                            }
-
-                            if let Some(gas) = gas {
-                                fields.push(sway::ConstructorField {
-                                    name: "gas".into(),
-                                    value: gas,
-                                });
-                            }
-
-                            return Ok(sway::Expression::from(sway::FunctionCallBlock {
-                                function: sway::Expression::create_member_access(
-                                    container,
-                                    &[external_function_new_name.as_str()],
-                                ),
-                                generic_parameters: None,
-                                fields,
-                                parameters: arguments
-                                    .iter()
-                                    .map(|a| {
-                                        translate_expression(
-                                            project,
-                                            module.clone(),
-                                            scope.clone(),
-                                            a,
-                                        )
-                                    })
-                                    .collect::<Result<Vec<_>, _>>()?,
-                            }));
-                        }
-                    }
-
-                    todo!(
-                        "translate Identity member function call block `{member}{}`: {} - {container:#?}",
-                        block.to_string(),
-                        sway::TabbedDisplayer(&container)
-                    )
-                }
-            },
-
-            _ => todo!(
-                "translate {name} member function call block: {} - {container:#?}",
-                sway::TabbedDisplayer(&container)
-            ),
+            _ => {}
         },
 
-        _ => todo!(),
+        _ => {}
     }
+
+    let mut name = name.clone();
+
+    let variable = translate_variable_access_expression(
+        project,
+        module.clone(),
+        scope.clone(),
+        solidity_container,
+    )?
+    .map(|v| v.variable)
+    .flatten();
+
+    // Check if expression is a variable that had an ABI type
+    if let Some(variable) = variable.as_ref() {
+        let variable = variable.borrow();
+
+        if let Some(abi_type_name) = variable.abi_type_name.as_ref() {
+            name = abi_type_name.to_string();
+        }
+    } else {
+        let mut module = module.borrow_mut();
+
+        let storage_namespace = module.get_storage_namespace(scope.clone()).unwrap();
+
+        if let Some(storage_field) = storage_namespace
+            .borrow()
+            .fields
+            .iter()
+            .find(|f| f.old_name == *name)
+        {
+            if let Some(abi_type_name) = &storage_field.abi_type_name {
+                name = abi_type_name.to_string();
+            }
+        }
+    }
+
+    // Check to see if the type is a contract ABI
+    if let Some(external_definition) = project.find_contract(module.clone(), &name) {
+        let abi = external_definition.borrow().abi.clone();
+        let parameters = arguments
+            .iter()
+            .map(|a| translate_expression(project, module.clone(), scope.clone(), a))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let parameter_types = parameters
+            .iter()
+            .map(|p| get_expression_type(project, module.clone(), scope.clone(), p))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        if let Some(result) = resolve_abi_function_call(
+            project,
+            module.clone(),
+            scope.clone(),
+            &abi,
+            Some(&container),
+            &member.name,
+            None,
+            parameters,
+            parameter_types,
+        )? {
+            return Ok(result);
+        }
+    }
+
+    todo!(
+        "translate Identity member function call block `{member}{}`: {}",
+        block.to_string(),
+        sway::TabbedDisplayer(&container)
+    )
 }
 
 #[inline(always)]
@@ -1978,6 +1945,7 @@ fn translate_identity_member_access_function_call(
             sway::Expression::PathExpr(p) => {
                 if let sway::PathExprRoot::Identifier(ident) = &p.root {
                     if p.segments.is_empty() {
+                        let mut name_found = false;
                         if let Some(configurable) = module.borrow().configurable.as_ref() {
                             for field in configurable.fields.iter() {
                                 if field.name == *ident {
@@ -2013,7 +1981,19 @@ fn translate_identity_member_access_function_call(
                                         );
 
                                         name = abi_type_name;
+                                        name_found = true;
                                     }
+                                }
+                            }
+                        }
+
+                        if !name_found {
+                            if let Some(constant) =
+                                module.borrow().constants.iter().find(|c| c.name == *ident)
+                            {
+                                if let Some(abi_type_name) = constant.abi_type_name.as_ref() {
+                                    name = abi_type_name.to_string();
+                                    // name_found = true;
                                 }
                             }
                         }
@@ -2219,7 +2199,7 @@ fn translate_storage_vec_member_access_function_call(
         "push" | "pop" | "remove" => {}
 
         _ => todo!(
-            "translate StorageVec member function call `{member}`: {} - {container:#?}",
+            "translate StorageVec member function call `{member}`: {}",
             sway::TabbedDisplayer(container)
         ),
     }
@@ -2263,7 +2243,7 @@ fn translate_storage_vec_member_access_function_call(
     }
 
     todo!(
-        "translate StorageVec member function call `{member}`: {} - {container:#?}",
+        "translate StorageVec member function call `{member}`: {}",
         sway::TabbedDisplayer(container)
     )
 }
@@ -2374,7 +2354,7 @@ fn translate_vec_member_access_function_call(
         }
 
         _ => todo!(
-            "translate Vec member function call `{member}`: {} - {container:#?}",
+            "translate Vec member function call `{member}`: {}",
             sway::TabbedDisplayer(container)
         ),
     }

@@ -43,6 +43,7 @@ pub fn translate_enum_definition(
                     Case::Constant,
                 ),
                 type_name: type_definition.name.clone(),
+                abi_type_name: None,
                 value: Some(sway::Expression::from(sway::Literal::DecInt(
                     BigUint::from(i),
                     None,
@@ -105,13 +106,7 @@ pub fn translate_event_definition(
                 .fields
                 .iter()
                 .map(|f| {
-                    match translate_type_name(
-                        project,
-                        module.clone(),
-                        scope.clone(),
-                        &f.ty,
-                        None,
-                    ) {
+                    match translate_type_name(project, module.clone(), scope.clone(), &f.ty, None) {
                         sway::TypeName::Identifier {
                             name,
                             generic_parameters,
@@ -210,9 +205,7 @@ pub fn translate_error_definition(
             type_names: error_definition
                 .fields
                 .iter()
-                .map(|f| {
-                    translate_type_name(project, module.clone(), scope.clone(), &f.ty, None)
-                })
+                .map(|f| translate_type_name(project, module.clone(), scope.clone(), &f.ty, None))
                 .collect(),
         }
     };

@@ -1051,6 +1051,7 @@ pub struct Constant {
     pub old_name: String,
     pub name: String,
     pub type_name: TypeName,
+    pub abi_type_name: Option<TypeName>,
     pub value: Option<Expression>,
 }
 

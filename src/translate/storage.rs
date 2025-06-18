@@ -9,6 +9,12 @@ pub fn translate_state_variable(
     contract_name: Option<&str>,
     variable_definition: &solidity::VariableDefinition,
 ) -> Result<(Vec<ir::DeferredInitialization>, Vec<(String, Vec<String>)>), Error> {
+    // println!(
+    //     "Translating state variable {} at: {}",
+    //     variable_definition,
+    //     project.loc_to_file_location_string(module.clone(), &variable_definition.loc)
+    // );
+
     let value_scope = Rc::new(RefCell::new(ir::Scope::new(contract_name, None)));
 
     // Collect information about the variable from its attributes
@@ -52,11 +58,26 @@ pub fn translate_state_variable(
     // Translate the variable's naming convention
     let old_name = variable_definition.name.as_ref().unwrap().name.clone();
 
-    let new_name = if is_constant || is_immutable {
+    let mut new_name = if is_constant || is_immutable {
         translate_naming_convention(old_name.as_str(), Case::Constant)
     } else {
         translate_naming_convention(old_name.as_str(), Case::Snake)
     };
+
+    if is_constant {
+        let mut module = module.borrow_mut();
+        // Increase the constant name count
+        let count = module
+            .constant_name_counts
+            .entry(new_name.clone())
+            .or_insert(0);
+        *count += 1;
+
+        // Append the constant name count to the end of the constant name if there is more than 1
+        if *count > 1 {
+            new_name = format!("{new_name}_{}", *count);
+        }
+    }
 
     // Translate the variable's type name
     let storage_location = if is_storage {
@@ -384,6 +405,7 @@ pub fn translate_state_variable(
             old_name,
             name: new_name.clone(),
             type_name: variable_type_name.clone(),
+            abi_type_name,
             value: Some(value),
         });
     }

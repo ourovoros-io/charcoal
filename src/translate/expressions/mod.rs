@@ -68,37 +68,27 @@ pub fn evaluate_expression(
                 todo!("evaluate non-identifier path expression: {path_expr} - {path_expr:#?}")
             };
 
+            if let Some(constant) = module
+                .borrow()
+                .constants
+                .iter()
+                .find(|c| c.name == identifier)
+            {
+                assert!(type_name.is_compatible_with(&constant.type_name));
+                return constant.value.as_ref().unwrap().clone();
+            }
+
+            if let Some(configurable) = module.borrow().configurable.as_ref() {
+                if let Some(field) = configurable.fields.iter().find(|f| f.name == identifier) {
+                    assert!(type_name.is_compatible_with(&field.type_name));
+                    return field.value.clone();
+                }
+            }
+
             let variable = scope
                 .borrow()
                 .find_variable(|v| v.borrow().new_name == *identifier)
                 .unwrap();
-
-            // TODO
-            // if variable.borrow().is_constant {
-            //     if let Some(constant) = module
-            //         .borrow()
-            //         .constants
-            //         .iter()
-            //         .find(|c| c.name == variable.borrow().new_name)
-            //     {
-            //         assert!(type_name.is_compatible_with(&constant.type_name));
-            //         return constant.value.as_ref().unwrap().clone();
-            //     }
-            // }
-
-            // TODO
-            // if variable.borrow().is_configurable {
-            //     if let Some(configurable) = module.borrow().configurable.as_ref() {
-            //         if let Some(field) = configurable
-            //             .fields
-            //             .iter()
-            //             .find(|f| f.name == variable.borrow().new_name)
-            //         {
-            //             assert!(type_name.is_compatible_with(&field.type_name));
-            //             return field.value.clone();
-            //         }
-            //     }
-            // }
 
             todo!("evaluate path expression: {expression:#?} - {variable:#?}")
         }
@@ -806,6 +796,11 @@ pub fn create_value_expression(
                 },
                 fields: vec![],
             }),
+
+            ("String", None) => sway::Expression::create_function_calls(
+                None,
+                &[("String::new", Some((None, vec![])))],
+            ),
 
             ("Vec", Some(_)) => sway::Expression::from(sway::FunctionCall {
                 function: sway::Expression::create_identifier("Vec::new".into()),

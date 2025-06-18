@@ -983,7 +983,7 @@ impl Project {
                     // TODO:
                     // set up a base constructor call
                     //
-                    
+
                     print!("WARNING: Unused contract base constructor args: `{base}`; ");
                     println!("This is for inherits and base constructor calls.")
                 }

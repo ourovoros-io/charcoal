@@ -165,6 +165,19 @@ impl Test {
         };
 
         if self.options.input.exists() {
+            println!("Repository exists...updating");
+
+            let output = Command::new("git")
+                .arg("pull")
+                .current_dir(repo_dir)
+                .output()
+                .expect("Failed to execute git clone command");
+
+            if !output.status.success() {
+                println!("Failed to update the repository");
+                return false;
+            }
+
             return true;
         }
 

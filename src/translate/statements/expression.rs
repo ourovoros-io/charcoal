@@ -152,7 +152,6 @@ pub fn translate_expression_statement(
         //         variable.to_string(),
         //     ));
         // }
-
         _ => {}
     }
 

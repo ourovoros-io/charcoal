@@ -148,7 +148,7 @@ pub fn coerce_expression(
         }
     }
 
-    // Check for byte array coersions
+    // Check for byte array coercions
     if let Some(to_byte_count) = to_type_name.u8_array_length() {
         let mut from_bits = 0;
 
@@ -286,7 +286,7 @@ pub fn coerce_expression(
         }
     }
 
-    // Check for `StorageKey<StorageString>` to `Bytes` coersions
+    // Check for `StorageKey<StorageString>` to `Bytes` coercions
     if let Some(storage_key_type) = from_type_name.storage_key_type() {
         if storage_key_type.is_storage_string() && to_type_name.is_bytes() {
             return Some(sway::Expression::create_function_calls(
@@ -300,7 +300,20 @@ pub fn coerce_expression(
         }
     }
 
-    // Check for all other coersions
+    // Check for `T` to `StorageKey<T>` coercion
+    if let Some(storage_key_type) = to_type_name.storage_key_type() {
+        if storage_key_type.is_compatible_with(from_type_name) {
+            if let sway::Expression::FunctionCall(f) = &expression {
+                if let sway::Expression::MemberAccess(m) = &f.function {
+                    if m.member == "read" && f.parameters.len() == 0 {
+                        return Some(m.expression.clone());
+                    }
+                }
+            }
+        }
+    }
+
+    // Check for all other coercions
     match (from_type_name, to_type_name) {
         (sway::TypeName::Undefined, sway::TypeName::Undefined) => {}
 
@@ -761,6 +774,18 @@ pub fn coerce_expression(
                 ));
             }
 
+            // From abi cast to Identity
+            if rhs_name == "Identity" {
+                if let sway::Expression::FunctionCall(f) = &expression {
+                    if let Some("abi") = f.function.as_identifier() {
+                        return Some(
+                            coerce_expression(&f.parameters[1], &b256_type_name, to_type_name)
+                                .unwrap(),
+                        );
+                    }
+                }
+            }
+
             // From uint to Bytes
             if (from_type_name.is_uint() || from_type_name.is_b256()) && rhs_name == "Bytes" {
                 if lhs_name == "u8" {
@@ -770,6 +795,14 @@ pub fn coerce_expression(
                 return Some(sway::Expression::create_function_calls(
                     Some(expression),
                     &[("to_be_bytes", Some((None, vec![])))],
+                ));
+            }
+
+            // From String to Bytes
+            if from_type_name.is_string() && rhs_name == "Bytes" {
+                return Some(sway::Expression::create_function_calls(
+                    Some(expression),
+                    &[("as_bytes", Some((None, vec![])))],
                 ));
             }
         }
@@ -785,6 +818,51 @@ pub fn coerce_expression(
             },
         ) => {
             if lhs_len != rhs_len || !lhs_type_name.is_compatible_with(rhs_type_name) {
+                if lhs_len == rhs_len {
+                    match (lhs_type_name.as_ref(), rhs_type_name.as_ref()) {
+                        (
+                            sway::TypeName::StringSlice,
+                            sway::TypeName::Identifier {
+                                name,
+                                generic_parameters,
+                            },
+                        ) => match (name.as_str(), generic_parameters.as_ref()) {
+                            ("String", None) => {
+                                return Some(sway::Expression::from(sway::Array {
+                                    elements: (0..*lhs_len)
+                                        .map(|i| {
+                                            sway::Expression::create_function_calls(
+                                                None,
+                                                &[(
+                                                    "String::from_ascii_str",
+                                                    Some((
+                                                        None,
+                                                        vec![sway::Expression::from(
+                                                            sway::ArrayAccess {
+                                                                expression: expression.clone(),
+                                                                index: sway::Expression::from(
+                                                                    sway::Literal::DecInt(
+                                                                        i.into(),
+                                                                        None,
+                                                                    ),
+                                                                ),
+                                                            },
+                                                        )],
+                                                    )),
+                                                )],
+                                            )
+                                        })
+                                        .collect(),
+                                }));
+                            }
+
+                            _ => {}
+                        },
+
+                        _ => {}
+                    }
+                }
+
                 todo!("Handle conversion from {from_type_name} to {to_type_name}")
             }
 
@@ -1000,6 +1078,23 @@ pub fn coerce_expression(
 
                 _ => {}
             },
+
+            _ => {}
+        },
+
+        (
+            sway::TypeName::Identifier {
+                name,
+                generic_parameters,
+            },
+            sway::TypeName::StringSlice,
+        ) => match (name.as_str(), generic_parameters.as_ref()) {
+            ("String", None) => {
+                return Some(sway::Expression::create_function_calls(
+                    Some(expression),
+                    &[("as_str", Some((None, vec![])))],
+                ));
+            }
 
             _ => {}
         },
@@ -2841,7 +2936,7 @@ fn get_member_access_function_call_type(
                         member_access.member,
                         sway::TabbedDisplayer(member_access)
                     )
-                },
+                }
             },
 
             ("Option", Some(generic_parameters)) if generic_parameters.entries.len() == 1 => {

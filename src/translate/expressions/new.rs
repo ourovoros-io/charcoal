@@ -76,23 +76,28 @@ pub fn translate_new_expression(
 
                 return Ok(sway::Expression::Commented(
                     format!("unsupported: new {expression}; using:"),
-                    Box::new(sway::Expression::from(sway::FunctionCall {
-                        function: sway::Expression::create_identifier("abi".into()),
-                        generic_parameters: None,
-                        parameters: vec![
-                            sway::Expression::create_identifier(name.clone()),
-                            sway::Expression::from(sway::FunctionCall {
-                                function: sway::Expression::create_identifier(
-                                    "ContractId::from".into(),
-                                ),
-                                generic_parameters: None,
-                                parameters: vec![sway::Expression::create_function_calls(
-                                    None,
-                                    &[("b256::zero", Some((None, vec![])))],
-                                )],
-                            }),
-                        ],
-                    })),
+                    Box::new(sway::Expression::create_function_calls(
+                        None,
+                        &[(
+                            "abi",
+                            Some((
+                                None,
+                                vec![
+                                    sway::Expression::create_identifier(name.clone()),
+                                    sway::Expression::from(sway::FunctionCall {
+                                        function: sway::Expression::create_identifier(
+                                            "ContractId::from".into(),
+                                        ),
+                                        generic_parameters: None,
+                                        parameters: vec![sway::Expression::create_function_calls(
+                                            None,
+                                            &[("b256::zero", Some((None, vec![])))],
+                                        )],
+                                    }),
+                                ],
+                            )),
+                        )],
+                    )),
                 ));
             }
         }

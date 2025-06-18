@@ -236,7 +236,6 @@ pub fn resolve_abi_function_call(
         function = functions.iter().find(|function| {
             let function_parameters = &function.parameters;
             let mut parameters = parameters_cell.borrow_mut();
-
             // Ensure the function's old name matches the function call we're translating
             if function.old_name != function_name {
                 return false;

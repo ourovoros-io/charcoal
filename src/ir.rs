@@ -1,4 +1,4 @@
-use crate::{error::Error, project::Project, sway, translate::*};
+use crate::{sway, translate::*};
 use convert_case::Case;
 use solang_parser::pt as solidity;
 use std::{cell::RefCell, collections::HashMap, path::PathBuf, rc::Rc};
@@ -257,6 +257,8 @@ pub struct Module {
     pub function_names: HashMap<String, String>,
     pub function_constructor_calls: HashMap<String, Vec<sway::FunctionCall>>,
     pub function_modifiers: HashMap<String, Vec<sway::FunctionCall>>,
+
+    pub constant_name_counts: HashMap<String, usize>,
 }
 
 impl Module {

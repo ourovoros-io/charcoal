@@ -635,6 +635,12 @@ pub fn translate_abi_function(
     contract_name: &str,
     function_definition: &solidity::FunctionDefinition,
 ) -> Option<sway::Function> {
+    // println!(
+    //     "Translating abi function: {:#?} - {}",
+    //     function_definition.name,
+    //     project.loc_to_file_location_string(module.clone(), &function_definition.loc)
+    // );
+
     // Collect information about the function from its type
     let is_constructor = matches!(function_definition.ty, solidity::FunctionTy::Constructor);
     let is_fallback = matches!(function_definition.ty, solidity::FunctionTy::Fallback);

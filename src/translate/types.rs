@@ -11,13 +11,8 @@ pub fn translate_type_definition(
 ) -> Result<sway::TypeDefinition, Error> {
     let scope = Rc::new(RefCell::new(ir::Scope::new(contract_name, None)));
 
-    let underlying_type = translate_type_name(
-        project,
-        module.clone(),
-        scope,
-        &type_definition.ty,
-        None,
-    );
+    let underlying_type =
+        translate_type_name(project, module.clone(), scope, &type_definition.ty, None);
 
     Ok(sway::TypeDefinition {
         is_public: true,
@@ -103,7 +98,8 @@ pub fn translate_type_name(
             solidity::Type::String => {
                 match storage_location {
                     Some(storage_location) => match storage_location {
-                        solidity::StorageLocation::Memory(_) => {
+                        solidity::StorageLocation::Memory(_)
+                        | solidity::StorageLocation::Calldata(_) => {
                             // Ensure `std::string::*` is imported
                             module.borrow_mut().ensure_use_declared("std::string::*");
 
@@ -124,8 +120,6 @@ pub fn translate_type_name(
                                 generic_parameters: None,
                             }
                         }
-
-                        solidity::StorageLocation::Calldata(_) => todo!(),
                     },
 
                     None => sway::TypeName::StringSlice,
@@ -573,7 +567,8 @@ pub fn translate_type_name(
                                             type_name,
                                             Some(storage_location),
                                         );
-                                        if let Some(storage_key_type) = type_name.storage_key_type() {
+                                        if let Some(storage_key_type) = type_name.storage_key_type()
+                                        {
                                             type_name = storage_key_type;
                                         }
                                         type_name
@@ -704,12 +699,10 @@ pub fn translate_type_name(
                 type_name = sway::TypeName::Identifier {
                     name: "StorageKey".into(),
                     generic_parameters: Some(sway::GenericParameterList {
-                        entries: vec![
-                            sway::GenericParameter {
-                                type_name,
-                                implements: None,
-                            },
-                        ],
+                        entries: vec![sway::GenericParameter {
+                            type_name,
+                            implements: None,
+                        }],
                     }),
                 };
             }

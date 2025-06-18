@@ -47,8 +47,7 @@ pub fn translate_variable_definition_statement(
             panic!("Unexpected new expression: {new_expression} - {new_expression:#?}",);
         };
 
-        let new_type_name =
-            translate_type_name(project, module.clone(), scope.clone(), ty, None);
+        let new_type_name = translate_type_name(project, module.clone(), scope.clone(), ty, None);
 
         if type_name != new_type_name {
             panic!(
@@ -180,7 +179,8 @@ pub fn translate_variable_definition_statement(
         if let sway::Expression::FunctionCall(f) = &x {
             if let sway::Expression::MemberAccess(m) = &f.function {
                 if m.member == "read" && f.parameters.is_empty() {
-                    let container_type = get_expression_type(project, module.clone(), scope.clone(), &m.expression)?;
+                    let container_type =
+                        get_expression_type(project, module.clone(), scope.clone(), &m.expression)?;
 
                     if container_type.is_storage_key() {
                         x = m.expression.clone();

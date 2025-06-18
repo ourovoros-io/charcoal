@@ -47,7 +47,8 @@ pub fn translate_assignment_expression(
     if let sway::Expression::FunctionCall(f) = &expression {
         if let sway::Expression::MemberAccess(m) = &f.function {
             if m.member == "read" && f.parameters.is_empty() {
-                let container_type = get_expression_type(project, module.clone(), scope.clone(), &m.expression)?;
+                let container_type =
+                    get_expression_type(project, module.clone(), scope.clone(), &m.expression)?;
 
                 if container_type.is_storage_key() {
                     expression = m.expression.clone();

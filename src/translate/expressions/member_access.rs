@@ -375,13 +375,8 @@ fn translate_builtin_function_call_member_access_expression(
                 );
             }
 
-            let type_name = translate_type_name(
-                project,
-                module.clone(),
-                scope.clone(),
-                &parameters[0],
-                None,
-            );
+            let type_name =
+                translate_type_name(project, module.clone(), scope.clone(), &parameters[0], None);
 
             let type_name = get_underlying_type(module.clone(), &type_name);
 
