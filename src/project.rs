@@ -9,10 +9,8 @@ use std::{
 };
 
 /// Represents the type of project as [Framework] default is [Framework::Unknown]
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub enum Framework {
-    #[default]
-    Unknown,
     Foundry {
         src_path: Option<PathBuf>,
         remappings: HashMap<String, String>,
@@ -104,11 +102,10 @@ impl Framework {
             return Ok(Framework::Hardhat);
         }
 
-        Ok(Framework::Unknown)
+        Err(Error::UnknownFramework)
     }
 }
 
-#[derive(Default)]
 pub struct Project {
     pub options: Args,
     pub contracts_path: PathBuf,
@@ -127,7 +124,10 @@ impl Project {
             options,
             contracts_path,
             framework,
-            ..Default::default()
+            queue: vec![],
+            line_ranges: HashMap::new(),
+            solidity_source_units: HashMap::new(),
+            translated_modules: vec![],
         };
 
         result.queue = result.create_usage_queue()?;
@@ -191,15 +191,6 @@ impl Project {
                 } else {
                     Ok(self.options.input.join(filename))
                 }
-            }
-
-            // If we find that the project type is unknown we return the filename as is
-            Framework::Unknown => {
-                println!("Charcoal was unable to detect the project type.");
-                println!(
-                    "Please make sure you are targeting the root folder of the project (do not target the contracts folder itself)."
-                );
-                Ok(PathBuf::from(filename))
             }
         }
     }
@@ -367,23 +358,12 @@ impl Project {
                 // Clean the import path and remove quotes
                 let mut import_path = import_path.to_str().unwrap().replace('\"', "");
 
-                if let Framework::Unknown = self.framework {
-                    // Join the import path with the source unit path
-                    import_path = source_unit_path
-                        .parent()
-                        .unwrap()
-                        .join(import_path)
-                        .to_str()
-                        .unwrap()
-                        .to_string();
-                } else {
-                    // If we have detected a framework we need to resolve the path based on the remappings if found
-                    import_path = self
-                        .resolve_import_path(source_unit_path.parent().unwrap(), &import_path)?
-                        .to_str()
-                        .unwrap()
-                        .to_string();
-                }
+                // If we have detected a framework we need to resolve the path based on the remappings if found
+                import_path = self
+                    .resolve_import_path(source_unit_path.parent().unwrap(), &import_path)?
+                    .to_str()
+                    .unwrap()
+                    .to_string();
 
                 // Normalize the import path
                 let import_path = wrapped_err!(std::fs::canonicalize(import_path))?;
@@ -848,7 +828,7 @@ impl Project {
         let mut error_definitions = vec![];
         let mut function_definitions = vec![];
         let mut variable_definitions = vec![];
-        let mut contract_definitions = vec![];
+        let mut contract_definitions: Vec<(Option<usize>, solidity::ContractDefinition)> = vec![];
 
         for source_unit_part in source_unit.0.iter() {
             match source_unit_part {
@@ -861,7 +841,7 @@ impl Project {
                 }
 
                 solidity::SourceUnitPart::ContractDefinition(contract_definition) => {
-                    contract_definitions.push(contract_definition.clone());
+                    contract_definitions.push((None, *contract_definition.clone()));
                 }
 
                 solidity::SourceUnitPart::EnumDefinition(enum_definition) => {
@@ -981,27 +961,170 @@ impl Project {
         // Collect the contract signatures ahead of time
         let contracts_index = module.borrow().contracts.len();
 
-        for contract_definition in contract_definitions.iter() {
-            module
-                .borrow_mut()
-                .contracts
-                .push(Rc::new(RefCell::new(ir::Contract::new(
-                    contract_definition.name.as_ref().unwrap().name.as_str(),
-                    contract_definition.ty.clone(),
-                    contract_definition
-                        .base
-                        .iter()
-                        .map(|b| {
-                            assert!(b.args.is_none());
-                            assert!(b.name.identifiers.len() == 1);
-                            sway::TypeName::Identifier {
-                                name: b.name.identifiers[0].name.clone(),
-                                generic_parameters: None,
-                            }
-                        })
-                        .collect::<Vec<_>>()
-                        .as_slice(),
-                ))));
+        for (functions_index, contract_definition) in contract_definitions.iter_mut() {
+            // println!(
+            //     "Preparing to translate contract `{}` at {}",
+            //     contract_definition
+            //         .name
+            //         .as_ref()
+            //         .map(|x| x.name.as_str())
+            //         .unwrap(),
+            //     self.loc_to_file_location_string(module.clone(), &contract_definition.loc),
+            // );
+
+            *functions_index = Some(module.borrow().functions.len());
+
+            let contract_name = contract_definition.name.as_ref().unwrap().name.as_str();
+            let mut inherits = vec![];
+
+            for base in contract_definition.base.iter() {
+                if base.args.as_ref().is_some() {
+                    //
+                    // TODO:
+                    // set up a base constructor call
+                    //
+                    
+                    print!("WARNING: Unused contract base constructor args: `{base}`; ");
+                    println!("This is for inherits and base constructor calls.")
+                }
+
+                assert!(base.name.identifiers.len() == 1);
+
+                inherits.push(sway::TypeName::Identifier {
+                    name: base.name.identifiers[0].name.clone(),
+                    generic_parameters: None,
+                });
+            }
+
+            let contract = Rc::new(RefCell::new(ir::Contract::new(
+                contract_name,
+                contract_definition.ty.clone(),
+                inherits.as_slice(),
+            )));
+
+            let mut type_definitions = vec![];
+            let mut enum_definitions = vec![];
+            let mut struct_definitions = vec![];
+            let mut function_definitions = vec![];
+
+            for part in contract_definition.parts.iter() {
+                match part {
+                    solidity::ContractPart::TypeDefinition(type_definition) => {
+                        type_definitions.push(type_definition.clone());
+                    }
+
+                    solidity::ContractPart::StructDefinition(struct_definition) => {
+                        struct_definitions.push(struct_definition.clone())
+                    }
+
+                    solidity::ContractPart::EnumDefinition(enum_definition) => {
+                        enum_definitions.push(enum_definition.clone())
+                    }
+
+                    solidity::ContractPart::FunctionDefinition(function_definition) => {
+                        function_definitions.push(function_definition.clone());
+                    }
+
+                    _ => {}
+                }
+            }
+
+            // Collect the signatures of the contract type definitions
+            let type_definitions_index = module.borrow().type_definitions.len();
+
+            for type_definition in type_definitions.iter() {
+                module.borrow_mut().type_definitions.push(ir::Item {
+                    signature: sway::TypeName::Identifier {
+                        name: type_definition.name.name.clone(),
+                        generic_parameters: None,
+                    },
+                    implementation: None,
+                });
+            }
+
+            // Collect the signatures of the contract enum definitions
+            let enums_index = module.borrow().enums.len();
+
+            for enum_definition in enum_definitions.iter() {
+                module.borrow_mut().enums.push(ir::Item {
+                    signature: sway::TypeName::Identifier {
+                        name: enum_definition.name.as_ref().unwrap().name.clone(),
+                        generic_parameters: None,
+                    },
+                    implementation: None,
+                });
+            }
+
+            // Collect the signatures of the contract struct definitions
+            let structs_index = module.borrow().structs.len();
+
+            for struct_definition in struct_definitions.iter() {
+                module.borrow_mut().structs.push(ir::Item {
+                    signature: sway::TypeName::Identifier {
+                        name: struct_definition.name.as_ref().unwrap().name.clone(),
+                        generic_parameters: None,
+                    },
+                    implementation: None,
+                });
+            }
+
+            // Translate contract type definitions
+            for (i, type_definition) in type_definitions.into_iter().enumerate() {
+                module.borrow_mut().type_definitions[type_definitions_index + i].implementation =
+                    Some(translate_type_definition(
+                        self,
+                        module.clone(),
+                        Some(&contract_name),
+                        type_definition.as_ref(),
+                    )?);
+            }
+
+            // Translate contract enum definitions
+            for (i, enum_definition) in enum_definitions.into_iter().enumerate() {
+                module.borrow_mut().enums[enums_index + i].implementation = Some(
+                    translate_enum_definition(self, module.clone(), &enum_definition)?,
+                );
+            }
+
+            // Translate contract struct definitions
+            for (i, struct_definition) in struct_definitions.into_iter().enumerate() {
+                module.borrow_mut().structs[structs_index + i].implementation =
+                    Some(translate_struct_definition(
+                        self,
+                        module.clone(),
+                        Some(&contract_name),
+                        struct_definition.as_ref(),
+                    )?);
+            }
+
+            // Translate abi functions
+            for function_definition in function_definitions {
+                if let Some(abi_fn) = translate_abi_function(
+                    self,
+                    module.clone(),
+                    contract_name,
+                    &function_definition,
+                ) {
+                    contract.borrow_mut().abi.functions.push(abi_fn);
+                }
+
+                if !matches!(function_definition.ty, solidity::FunctionTy::Modifier) {
+                    let signature = translate_function_declaration(
+                        self,
+                        module.clone(),
+                        Some(&contract_name),
+                        &function_definition,
+                    )?
+                    .type_name;
+
+                    module.borrow_mut().functions.push(ir::Item {
+                        signature,
+                        implementation: None,
+                    });
+                }
+            }
+
+            module.borrow_mut().contracts.push(contract);
         }
 
         for (i, type_definition) in type_definitions.into_iter().enumerate() {
@@ -1042,19 +1165,27 @@ impl Project {
                 continue;
             }
 
-            let (function, abi_function, impl_item) =
+            let (function, impl_item) =
                 translate_function_definition(self, module.clone(), None, &function_definition)?;
 
-            assert!(abi_function.is_none());
             assert!(impl_item.is_none());
 
             module.borrow_mut().functions[functions_index + i].implementation = Some(function);
         }
 
-        for (i, contract_definition) in contract_definitions.into_iter().enumerate() {
+        for (i, (functions_index, contract_definition)) in
+            contract_definitions.into_iter().enumerate()
+        {
             let contract = module.borrow().contracts[contracts_index + i].clone();
+            let functions_index = functions_index.unwrap();
 
-            translate_contract_definition(self, module.clone(), &contract_definition, contract)?;
+            translate_contract_definition(
+                self,
+                module.clone(),
+                &contract_definition,
+                contract,
+                functions_index,
+            )?;
         }
 
         Ok(())

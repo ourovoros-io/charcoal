@@ -357,79 +357,90 @@ pub fn translate_modifier_definition(
     let mut has_storage_write = &mut has_pre_storage_write;
 
     for statement in statements.iter() {
+        // Translate the statement
+        let sway_statement =
+            translate_statement(project, module.clone(), current_scope.clone(), statement)?;
+
         // If we encounter the underscore statement, every following statement goes into the modifier's post_body block.
-        if let solidity::Statement::Expression(
-            _,
-            solidity::Expression::Variable(solidity::Identifier { name, .. }),
-        ) = statement
+        if sway_statement
+            .filter_map(|s| {
+                let sway::Statement::Expression(expression) = s else {
+                    return None;
+                };
+                if let Some("_") = expression.as_identifier() {
+                    return Some(expression.clone());
+                }
+                None
+            })
+            .is_some()
         {
-            if name == "_" {
-                modifier.has_underscore = true;
+            //
+            // TODO:
+            // We need to recursively check if the expression contains a `_` path expression anywhere.
+            // This probably means we need to make a filter function under the sway::Expression impl.
+            //
 
-                if let Some(block) = current_body.as_mut() {
-                    //
-                    // TODO: check if any storage fields were read from or written to
-                    //
+            modifier.has_underscore = true;
 
-                    let mut scope = Some(current_scope.clone());
+            if let Some(block) = current_body.as_mut() {
+                //
+                // TODO: check if any storage fields were read from or written to
+                //
 
-                    while let Some(current_scope) = scope.clone() {
-                        // for variable in current_scope.borrow_mut().variables.iter() {
-                        //     //
-                        //     // TODO: check if variable is a storage key that was read from or written to
-                        //     //
+                let mut scope = Some(current_scope.clone());
 
-                        //     if *has_storage_read && *has_storage_write {
-                        //         break;
-                        //     }
-                        // }
+                while let Some(current_scope) = scope.clone() {
+                    // for variable in current_scope.borrow_mut().variables.iter() {
+                    //     //
+                    //     // TODO: check if variable is a storage key that was read from or written to
+                    //     //
 
-                        if *has_storage_read && *has_storage_write {
-                            break;
-                        }
+                    //     if *has_storage_read && *has_storage_write {
+                    //         break;
+                    //     }
+                    // }
 
-                        scope.clone_from(&current_scope.borrow().get_parent())
+                    if *has_storage_read && *has_storage_write {
+                        break;
                     }
 
-                    finalize_block_translation(project, current_scope.clone(), block)?;
+                    scope.clone_from(&current_scope.borrow().get_parent())
                 }
 
-                current_body = &mut modifier.post_body;
-
-                let mut new_scope = ir::Scope::new(
-                    scope
-                        .borrow()
-                        .get_contract_name()
-                        .as_ref()
-                        .map(|s| s.as_str()),
-                    scope.borrow().get_parent(),
-                );
-
-                for v in scope.borrow().get_variables() {
-                    let mut v = v.borrow().clone();
-                    v.statement_index = None;
-                    new_scope.add_variable(Rc::new(RefCell::new(v)));
-                }
-
-                current_scope = Rc::new(RefCell::new(new_scope));
-
-                has_storage_read = &mut has_post_storage_read;
-                has_storage_write = &mut has_post_storage_write;
-
-                continue;
+                finalize_block_translation(project, current_scope.clone(), block)?;
             }
+
+            current_body = &mut modifier.post_body;
+
+            let mut new_scope = ir::Scope::new(
+                scope
+                    .borrow()
+                    .get_contract_name()
+                    .as_ref()
+                    .map(|s| s.as_str()),
+                scope.borrow().get_parent(),
+            );
+
+            for v in scope.borrow().get_variables() {
+                let mut v = v.borrow().clone();
+                v.statement_index = None;
+                new_scope.add_variable(Rc::new(RefCell::new(v)));
+            }
+
+            current_scope = Rc::new(RefCell::new(new_scope));
+
+            has_storage_read = &mut has_post_storage_read;
+            has_storage_write = &mut has_post_storage_write;
+
+            continue;
         }
 
-        // Create the current body block if it hasn't already been.
+        // Create the current body block if it hasn't already been
         if current_body.is_none() {
             *current_body = Some(sway::Block::default());
         }
 
         let block = current_body.as_mut().unwrap();
-
-        // Translate the statement
-        let sway_statement =
-            translate_statement(project, module.clone(), current_scope.clone(), statement)?;
 
         // Store the index of the sway statement
         let statement_index = block.statements.len();
@@ -612,20 +623,255 @@ pub fn translate_modifier_definition(
     Ok(())
 }
 
+pub fn translate_abi_function(
+    project: &mut Project,
+    module: Rc<RefCell<ir::Module>>,
+    contract_name: &str,
+    function_definition: &solidity::FunctionDefinition,
+) -> Option<sway::Function> {
+    // Collect information about the function from its type
+    let is_constructor = matches!(function_definition.ty, solidity::FunctionTy::Constructor);
+    let is_fallback = matches!(function_definition.ty, solidity::FunctionTy::Fallback);
+    let is_receive = matches!(function_definition.ty, solidity::FunctionTy::Receive);
+
+    // Collect information about the function from its attributes
+    let mut is_public = function_definition.attributes.iter().any(|x| {
+        matches!(
+            x,
+            solidity::FunctionAttribute::Visibility(
+                solidity::Visibility::External(_) | solidity::Visibility::Public(_)
+            )
+        )
+    });
+    let is_constant = function_definition.attributes.iter().any(|x| {
+        matches!(
+            x,
+            solidity::FunctionAttribute::Mutability(solidity::Mutability::Constant(_))
+        )
+    });
+    let is_pure = function_definition.attributes.iter().any(|x| {
+        matches!(
+            x,
+            solidity::FunctionAttribute::Mutability(solidity::Mutability::Pure(_))
+        )
+    });
+    let is_view = function_definition.attributes.iter().any(|x| {
+        matches!(
+            x,
+            solidity::FunctionAttribute::Mutability(solidity::Mutability::View(_))
+        )
+    });
+    let is_payable = function_definition.attributes.iter().any(|x| {
+        matches!(
+            x,
+            solidity::FunctionAttribute::Mutability(solidity::Mutability::Payable(_))
+        )
+    });
+
+    let _is_virtual = function_definition
+        .attributes
+        .iter()
+        .any(|x| matches!(x, solidity::FunctionAttribute::Virtual(_)));
+
+    let is_override = function_definition
+        .attributes
+        .iter()
+        .any(|x| matches!(x, solidity::FunctionAttribute::Override(_, _)));
+
+    // If the function is a constructor, we consider it public and add an initializer requirement
+    if is_constructor {
+        is_public = true;
+    }
+
+    let new_name_2 = if is_constructor {
+        "constructor".to_string()
+    } else if is_fallback {
+        "fallback".to_string()
+    } else if is_receive {
+        "receive".to_string()
+    } else {
+        translate_function_name(project, module.clone(), function_definition)
+    };
+
+    let (old_name, mut new_name) = if matches!(
+        function_definition.ty,
+        solidity::FunctionTy::Function | solidity::FunctionTy::Modifier
+    ) {
+        let old_name = function_definition.name.as_ref().unwrap().name.clone();
+        (old_name, new_name_2.clone())
+    } else {
+        (String::new(), new_name_2.clone())
+    };
+
+    new_name = format!("{}_{}", contract_name.to_case(Case::Snake), new_name);
+
+    // Create the scope for the body of the toplevel function
+    let scope = Rc::new(RefCell::new(ir::Scope::new(Some(contract_name), None)));
+
+    // Translate the functions parameters
+    let mut parameters = sway::ParameterList::default();
+    let mut parameter_names = 'a'..='z';
+
+    for (_, parameter) in function_definition.params.iter() {
+        let old_name = parameter
+            .as_ref()
+            .unwrap()
+            .name
+            .as_ref()
+            .map(|n| n.name.clone())
+            .unwrap_or(parameter_names.next().unwrap().to_string());
+
+        let new_name = translate_naming_convention(old_name.as_str(), Case::Snake);
+
+        let mut type_name = translate_type_name(
+            project,
+            module.clone(),
+            scope.clone(),
+            &parameter.as_ref().unwrap().ty,
+            false,
+            true,
+        );
+
+        // Check if the parameter's type is an ABI and make it an Identity
+        if let sway::TypeName::Identifier {
+            name,
+            generic_parameters: None,
+        } = &type_name
+        {
+            if project.find_contract(module.clone(), &name).is_some() {
+                type_name = sway::TypeName::Identifier {
+                    name: "Identity".into(),
+                    generic_parameters: None,
+                };
+            }
+        }
+
+        parameters.entries.push(sway::Parameter {
+            is_ref: false,
+            is_mut: false,
+            name: new_name,
+            type_name: Some(type_name),
+        });
+    }
+
+    // Create the function declaration
+    let mut sway_function = sway::Function {
+        attributes: if is_constant || is_pure {
+            None
+        } else {
+            let mut attributes = vec![];
+
+            attributes.push(sway::Attribute {
+                name: "storage".into(),
+                parameters: Some(if is_view {
+                    vec!["read".into()]
+                } else {
+                    vec!["read".into(), "write".into()]
+                }),
+            });
+
+            if is_payable && !is_fallback {
+                attributes.push(sway::Attribute {
+                    name: "payable".into(),
+                    parameters: None,
+                });
+            }
+
+            if is_fallback {
+                attributes.push(sway::Attribute {
+                    name: "fallback".into(),
+                    parameters: None,
+                });
+            }
+
+            Some(sway::AttributeList { attributes })
+        },
+
+        is_public: false,
+        old_name: old_name.clone(),
+        name: new_name.clone(),
+        generic_parameters: None,
+
+        parameters,
+
+        return_type: if function_definition.returns.is_empty() {
+            None
+        } else {
+            Some(if function_definition.returns.len() == 1 {
+                let type_name = translate_type_name(
+                    project,
+                    module.clone(),
+                    scope.clone(),
+                    &function_definition.returns[0].1.as_ref().unwrap().ty,
+                    false,
+                    true,
+                );
+                translate_return_type_name(project, module.clone(), &type_name)
+            } else {
+                sway::TypeName::Tuple {
+                    type_names: function_definition
+                        .returns
+                        .iter()
+                        .map(|(_, p)| {
+                            let type_name = translate_type_name(
+                                project,
+                                module.clone(),
+                                scope.clone(),
+                                &p.as_ref().unwrap().ty,
+                                false,
+                                true,
+                            );
+                            translate_return_type_name(project, module.clone(), &type_name)
+                        })
+                        .collect(),
+                }
+            })
+        },
+
+        body: None,
+    };
+
+    let mut abi_fn = None;
+
+    if is_public {
+        sway_function.name = new_name_2.clone();
+
+        let mut abi_function = sway_function.clone();
+        let mut use_string = false;
+
+        if !is_fallback {
+            for p in abi_function.parameters.entries.iter_mut() {
+                if p.type_name == Some(sway::TypeName::StringSlice) {
+                    use_string = true;
+                    p.type_name = Some(sway::TypeName::Identifier {
+                        name: "String".into(),
+                        generic_parameters: None,
+                    });
+                }
+            }
+
+            abi_fn = Some(abi_function);
+        }
+
+        if use_string {
+            module
+                .borrow_mut()
+                .ensure_use_declared("std::string::String");
+        }
+
+        sway_function.name.clone_from(&new_name)
+    }
+
+    abi_fn
+}
+
 #[inline]
 pub fn translate_function_definition(
     project: &mut Project,
     module: Rc<RefCell<ir::Module>>,
     contract_name: Option<&str>,
     function_definition: &solidity::FunctionDefinition,
-) -> Result<
-    (
-        sway::Function,
-        Option<sway::Function>,
-        Option<sway::ImplItem>,
-    ),
-    Error,
-> {
+) -> Result<(sway::Function, Option<sway::ImplItem>), Error> {
     assert!(!matches!(
         function_definition.ty,
         solidity::FunctionTy::Modifier
@@ -846,34 +1092,7 @@ pub fn translate_function_definition(
         body: None,
     };
 
-    let mut abi_fn = None;
-
     if is_public {
-        sway_function.name = new_name_2.clone();
-
-        let mut abi_function = sway_function.clone();
-        let mut use_string = false;
-
-        if !is_fallback {
-            for p in abi_function.parameters.entries.iter_mut() {
-                if p.type_name == Some(sway::TypeName::StringSlice) {
-                    use_string = true;
-                    p.type_name = Some(sway::TypeName::Identifier {
-                        name: "String".into(),
-                        generic_parameters: None,
-                    });
-                }
-            }
-
-            abi_fn = Some(abi_function);
-        }
-
-        if use_string {
-            module
-                .borrow_mut()
-                .ensure_use_declared("std::string::String");
-        }
-
         sway_function.name.clone_from(&new_name)
     }
 
@@ -884,7 +1103,7 @@ pub fn translate_function_definition(
             sway_function.name = new_name_2;
         }
 
-        return Ok((sway_function, None, None));
+        return Ok((sway_function, None));
     };
 
     // Add the function parameters to the scope
@@ -1018,7 +1237,7 @@ pub fn translate_function_definition(
                 .as_str(),
             Case::Snake,
         );
-        
+
         let constructor_called_variable_name = format!("{prefix}_constructor_called");
 
         let storage_namespace = module
@@ -1351,9 +1570,9 @@ pub fn translate_function_definition(
         impl_item = Some(sway::ImplItem::Function(sway_function.clone()));
     }
 
-    if abi_fn.is_none() && toplevel_function.body.is_none() {
-        toplevel_function.name = new_name_2;
-    }
+    // if abi_fn.is_none() && toplevel_function.body.is_none() {
+    //     toplevel_function.name = new_name_2;
+    // }
 
-    Ok((toplevel_function, abi_fn, impl_item))
+    Ok((toplevel_function, impl_item))
 }

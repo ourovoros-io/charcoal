@@ -146,12 +146,43 @@ pub fn resolve_abi_function_call(
     module: Rc<RefCell<ir::Module>>,
     scope: Rc<RefCell<ir::Scope>>,
     abi: &sway::Abi,
-    container: &sway::Expression,
+    identity_expression: Option<&sway::Expression>,
     function_name: &str,
     named_arguments: Option<&[solidity::NamedArgument]>,
     mut parameters: Vec<sway::Expression>,
     mut parameter_types: Vec<sway::TypeName>,
 ) -> Result<Option<sway::Expression>, Error> {
+    let functions = match identity_expression {
+        Some(_) => abi.functions.clone(),
+        None => module
+            .borrow()
+            .functions
+            .iter()
+            .map(|f| {
+                let sway::TypeName::Function {
+                    old_name,
+                    new_name,
+                    generic_parameters,
+                    parameters,
+                    return_type,
+                } = &f.signature
+                else {
+                    unreachable!()
+                };
+                sway::Function {
+                    attributes: None,
+                    is_public: false,
+                    old_name: old_name.clone(),
+                    name: new_name.clone(),
+                    generic_parameters: generic_parameters.clone(),
+                    parameters: parameters.clone(),
+                    return_type: return_type.as_ref().map(|x| x.as_ref().clone()),
+                    body: None,
+                }
+            })
+            .collect(),
+    };
+
     let mut function = None;
 
     if let Some(named_arguments) = named_arguments {
@@ -164,7 +195,7 @@ pub fn resolve_abi_function_call(
             ));
         }
 
-        if let Some(abi_function) = abi.find_function(|f| {
+        if let Some(abi_function) = functions.iter().find(|f| {
             f.old_name != function_name
                 && f.parameters.entries.len() != named_parameters.len()
                 && f.parameters
@@ -202,7 +233,7 @@ pub fn resolve_abi_function_call(
     let parameters_cell = Rc::new(RefCell::new(parameters));
 
     if function.is_none() {
-        function = abi.find_function(|function| {
+        function = functions.iter().find(|function| {
             let function_parameters = &function.parameters;
             let mut parameters = parameters_cell.borrow_mut();
 
@@ -371,29 +402,36 @@ pub fn resolve_abi_function_call(
 
     let parameters = parameters_cell.borrow().clone();
 
-    Ok(Some(sway::Expression::create_function_calls(
-        Some(sway::Expression::create_function_calls(
+    match identity_expression {
+        Some(identity_expression) => Ok(Some(sway::Expression::create_function_calls(
             None,
-            &[(
-                "abi",
-                Some((
-                    None,
-                    vec![
-                        sway::Expression::create_identifier(abi.name.clone()),
-                        sway::Expression::create_function_calls(
-                            Some(container.clone()),
-                            &[
-                                ("as_contract_id", Some((None, vec![]))),
-                                ("unwrap", Some((None, vec![]))),
-                                ("into", Some((None, vec![]))),
-                            ],
-                        ),
-                    ],
-                )),
-            )],
-        )),
-        &[(function.name.as_str(), Some((None, parameters)))],
-    )))
+            &[
+                (
+                    "abi",
+                    Some((
+                        None,
+                        vec![
+                            sway::Expression::create_identifier(abi.name.clone()),
+                            sway::Expression::create_function_calls(
+                                Some(identity_expression.clone()),
+                                &[
+                                    ("as_contract_id", Some((None, vec![]))),
+                                    ("unwrap", Some((None, vec![]))),
+                                    ("into", Some((None, vec![]))),
+                                ],
+                            ),
+                        ],
+                    )),
+                ),
+                (function.name.as_str(), Some((None, parameters))),
+            ],
+        ))),
+
+        None => Ok(Some(sway::Expression::create_function_calls(
+            None,
+            &[(function.name.as_str(), Some((None, parameters)))],
+        ))),
+    }
 }
 
 #[inline]

@@ -109,13 +109,12 @@ pub fn translate_revert_statement(
                                     scope.clone(),
                                     &parameters[0],
                                 )?;
-                                let parameter_expression_type =
-                                    get_expression_type(
-                                        project,
-                                        module.clone(),
-                                        scope.clone(),
-                                        &parameter_expression,
-                                    )?;
+                                let parameter_expression_type = get_expression_type(
+                                    project,
+                                    module.clone(),
+                                    scope.clone(),
+                                    &parameter_expression,
+                                )?;
                                 coerce_expression(
                                     &parameter_expression,
                                     &parameter_expression_type,
@@ -140,12 +139,12 @@ pub fn translate_revert_statement(
                                             )
                                             .unwrap();
                                             let parameter_expression_type = get_expression_type(
-                                                    project,
-                                                    module.clone(),
-                                                    scope.clone(),
-                                                    &parameter_expression,
-                                                )
-                                                .unwrap();
+                                                project,
+                                                module.clone(),
+                                                scope.clone(),
+                                                &parameter_expression,
+                                            )
+                                            .unwrap();
                                             coerce_expression(
                                                 &parameter_expression,
                                                 &parameter_expression_type,

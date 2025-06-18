@@ -262,6 +262,8 @@ pub fn evaluate_expression(
                 ) => match member_access.member.as_str() {
                     "as_u256" if function_call.parameters.is_empty() => expression.clone(),
 
+                    "as_b256" if function_call.parameters.is_empty() => expression.clone(),
+
                     "wrapping_neg" if function_call.parameters.is_empty() => {
                         //
                         // TODO: This won't compile currently...

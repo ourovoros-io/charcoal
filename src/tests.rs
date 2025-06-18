@@ -190,8 +190,6 @@ impl Test {
         let mut result = true;
 
         match framework {
-            Framework::Unknown => {}
-
             Framework::Foundry { .. } => {
                 // Run `forge install`
                 let output = Command::new("forge")

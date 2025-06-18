@@ -22,6 +22,11 @@ pub fn translate_variable_expression(
 
     // Check for built-in variables
     match variable.name.as_str() {
+        "_" => {
+            // Modifier body insertion variable
+            return Ok(sway::Expression::create_identifier("_".into()));
+        }
+
         "now" => {
             // now => std::block::timestamp().as_u256()
             return Ok(sway::Expression::create_function_calls(
@@ -87,7 +92,7 @@ pub fn translate_variable_access_expression(
                     storage_field_name: &str,
                 ) -> Result<Option<ir::VariableAccess>, Error> {
                     let storage_namespace_name = contract.borrow().name.to_case(Case::Snake);
-                    
+
                     if let Some(storage) = contract.borrow().storage.as_ref() {
                         if let Some(storage_namespace) = storage
                             .borrow()
@@ -133,7 +138,12 @@ pub fn translate_variable_access_expression(
                             )
                             .unwrap();
 
-                        if let Some(result) = check_contract(project, module.clone(), inherited_contract.clone(), storage_field_name)? {
+                        if let Some(result) = check_contract(
+                            project,
+                            module.clone(),
+                            inherited_contract.clone(),
+                            storage_field_name,
+                        )? {
                             return Ok(Some(result));
                         }
                     }
@@ -145,7 +155,9 @@ pub fn translate_variable_access_expression(
                     .find_contract(module.clone(), contract_name.as_str())
                     .unwrap();
 
-                if let Some(result) = check_contract(project, module.clone(), contract.clone(), name.as_str())? {
+                if let Some(result) =
+                    check_contract(project, module.clone(), contract.clone(), name.as_str())?
+                {
                     return Ok(Some(result));
                 }
             }
@@ -467,10 +479,43 @@ pub fn translate_variable_access_expression(
         }
 
         solidity::Expression::FunctionCall(_, function, arguments) => {
-            let arguments = arguments
+            let parameters = arguments
                 .iter()
                 .map(|a| translate_expression(project, module.clone(), scope.clone(), a))
                 .collect::<Result<Vec<_>, _>>()?;
+
+            let parameter_types = parameters
+                .iter()
+                .map(|p| get_expression_type(project, module.clone(), scope.clone(), p))
+                .collect::<Result<Vec<_>, _>>()?;
+
+            // Check for explicit contract function calls
+            if let solidity::Expression::MemberAccess(_, container, member) = function.as_ref() {
+                if let solidity::Expression::Variable(container) = container.as_ref() {
+                    if let Some(external_contract) =
+                        project.find_contract(module.clone(), container.name.as_str())
+                    {
+                        let abi = external_contract.borrow().abi.clone();
+
+                        if let Some(result) = resolve_abi_function_call(
+                            project,
+                            module.clone(),
+                            scope.clone(),
+                            &abi,
+                            None,
+                            member.name.as_str(),
+                            None,
+                            parameters.clone(),
+                            parameter_types.clone(),
+                        )? {
+                            return Ok(Some(ir::VariableAccess {
+                                variable: None,
+                                expression: result,
+                            }));
+                        }
+                    }
+                }
+            }
 
             match translate_variable_access_expression(
                 project,
@@ -486,7 +531,7 @@ pub fn translate_variable_access_expression(
                     expression: sway::Expression::from(sway::FunctionCall {
                         function: expression,
                         generic_parameters: None,
-                        parameters: arguments,
+                        parameters,
                     }),
                 })),
 
