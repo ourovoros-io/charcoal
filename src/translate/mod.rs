@@ -547,104 +547,98 @@ pub fn coerce_expression(
             }
 
             // From uint to int
-            if from_type_name.is_uint() && !to_type_name.is_uint() {
-                if to_type_name.is_int() {
-                    let lhs_bits: usize = lhs_name
-                        .trim_start_matches('u')
-                        .trim_start_matches('U')
-                        .trim_start_matches('I')
-                        .parse()
-                        .unwrap();
+            if from_type_name.is_uint() && to_type_name.is_int() {
+                let lhs_bits: usize = lhs_name
+                    .trim_start_matches('u')
+                    .trim_start_matches('U')
+                    .trim_start_matches('I')
+                    .parse()
+                    .unwrap();
 
-                    let rhs_bits: usize = rhs_name
-                        .trim_start_matches('u')
-                        .trim_start_matches('U')
-                        .trim_start_matches('I')
-                        .parse()
-                        .unwrap();
+                let rhs_bits: usize = rhs_name
+                    .trim_start_matches('u')
+                    .trim_start_matches('U')
+                    .trim_start_matches('I')
+                    .parse()
+                    .unwrap();
 
-                    if lhs_bits > rhs_bits {
-                        expression = sway::Expression::create_function_calls(
-                            None,
-                            &[
-                                (
-                                    format!("u{rhs_bits}::try_from").as_str(),
-                                    Some((None, vec![expression.clone()])),
-                                ),
-                                ("unwrap", Some((None, vec![]))),
-                            ],
-                        );
-                    } else if lhs_bits < rhs_bits {
-                        expression = sway::Expression::create_function_calls(
-                            Some(expression.clone()),
-                            &[(format!("as_u{rhs_bits}").as_str(), Some((None, vec![])))],
-                        );
-                    }
-
-                    return Some(sway::Expression::create_function_calls(
+                if lhs_bits > rhs_bits {
+                    expression = sway::Expression::create_function_calls(
                         None,
-                        &[(
-                            format!("I{rhs_bits}::from_uint").as_str(),
-                            Some((None, vec![expression.clone()])),
-                        )],
-                    ));
+                        &[
+                            (
+                                format!("u{rhs_bits}::try_from").as_str(),
+                                Some((None, vec![expression.clone()])),
+                            ),
+                            ("unwrap", Some((None, vec![]))),
+                        ],
+                    );
+                } else if lhs_bits < rhs_bits {
+                    expression = sway::Expression::create_function_calls(
+                        Some(expression.clone()),
+                        &[(format!("as_u{rhs_bits}").as_str(), Some((None, vec![])))],
+                    );
                 }
+
+                return Some(sway::Expression::create_function_calls(
+                    None,
+                    &[(
+                        format!("I{rhs_bits}::from_uint").as_str(),
+                        Some((None, vec![expression.clone()])),
+                    )],
+                ));
             }
 
             // From int to uint
-            if from_type_name.is_int() && !to_type_name.is_int() {
-                if to_type_name.is_uint() {
-                    let lhs_bits: usize = lhs_name
-                        .trim_start_matches('u')
-                        .trim_start_matches('U')
-                        .trim_start_matches('I')
-                        .parse()
-                        .unwrap();
+            if from_type_name.is_int() && to_type_name.is_uint() {
+                let lhs_bits: usize = lhs_name
+                    .trim_start_matches('u')
+                    .trim_start_matches('U')
+                    .trim_start_matches('I')
+                    .parse()
+                    .unwrap();
 
-                    let rhs_bits: usize = rhs_name
-                        .trim_start_matches('u')
-                        .trim_start_matches('U')
-                        .trim_start_matches('I')
-                        .parse()
-                        .unwrap();
+                let rhs_bits: usize = rhs_name
+                    .trim_start_matches('u')
+                    .trim_start_matches('U')
+                    .trim_start_matches('I')
+                    .parse()
+                    .unwrap();
 
-                    if lhs_bits > rhs_bits {
-                        expression = sway::Expression::create_function_calls(
-                            None,
-                            &[
-                                (
-                                    format!("u{rhs_bits}::try_from").as_str(),
-                                    Some((
-                                        None,
-                                        vec![sway::Expression::from(sway::MemberAccess {
-                                            expression: expression.clone(),
-                                            member: "underlying".to_string(),
-                                        })],
-                                    )),
-                                ),
-                                ("unwrap", Some((None, vec![]))),
-                            ],
-                        );
-                    } else if lhs_bits < rhs_bits {
-                        expression = sway::Expression::create_function_calls(
-                            Some(expression.clone()),
-                            &[
-                                ("underlying", None),
-                                (format!("as_u{rhs_bits}").as_str(), Some((None, vec![]))),
-                            ],
-                        );
-                    }
-
+                if lhs_bits > rhs_bits {
                     expression = sway::Expression::create_function_calls(
                         None,
-                        &[(
-                            format!("I{rhs_bits}::from_uint").as_str(),
-                            Some((None, vec![expression.clone()])),
-                        )],
+                        &[
+                            (
+                                format!("u{rhs_bits}::try_from").as_str(),
+                                Some((
+                                    None,
+                                    vec![sway::Expression::from(sway::MemberAccess {
+                                        expression: expression.clone(),
+                                        member: "underlying".to_string(),
+                                    })],
+                                )),
+                            ),
+                            ("unwrap", Some((None, vec![]))),
+                        ],
                     );
-                } else {
-                    return None;
+                } else if lhs_bits < rhs_bits {
+                    expression = sway::Expression::create_function_calls(
+                        Some(expression.clone()),
+                        &[
+                            ("underlying", None),
+                            (format!("as_u{rhs_bits}").as_str(), Some((None, vec![]))),
+                        ],
+                    );
                 }
+
+                return Some(sway::Expression::create_function_calls(
+                    None,
+                    &[(
+                        format!("I{rhs_bits}::from_uint").as_str(),
+                        Some((None, vec![expression.clone()])),
+                    )],
+                ));
             }
 
             // From uint/int of different bit lengths
@@ -734,7 +728,7 @@ pub fn coerce_expression(
             };
 
             // From uint to b256
-            if from_type_name.is_uint() && rhs_name == "b256" {
+            if from_type_name.is_uint() && to_type_name.is_b256() {
                 expression =
                     coerce_expression(&expression, from_type_name, &u256_type_name).unwrap();
 
@@ -745,7 +739,7 @@ pub fn coerce_expression(
             }
 
             // From b256 to u256
-            if from_type_name.is_b256() && rhs_name == "u256" {
+            if from_type_name.is_b256() && to_type_name.is_u256() {
                 return Some(sway::Expression::create_function_calls(
                     Some(expression),
                     &[("as_u256", Some((None, vec![])))],

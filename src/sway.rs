@@ -602,6 +602,16 @@ impl TypeName {
         }
     }
 
+    pub fn is_u256(&self) -> bool {
+        match self {
+            TypeName::Identifier {
+                name,
+                generic_parameters: None,
+            } => name == "u256",
+            _ => false,
+        }
+    }
+
     /// Checks if the type name is `Identity`
     pub fn is_identity(&self) -> bool {
         match self {

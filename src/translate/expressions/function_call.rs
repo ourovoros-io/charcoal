@@ -338,7 +338,9 @@ fn translate_variable_function_call(
 
     // Try to resolve the function call
     if let Some(result) = resolve_function_call(
+        project,
         module.clone(),
+        scope.clone(),
         name,
         named_arguments,
         parameters.clone(),
@@ -353,7 +355,9 @@ fn translate_variable_function_call(
         if let Some(found_module) = project.resolve_use(use_item) {
             // Try to resolve the function call
             if let Some(result) = resolve_function_call(
+                project,
                 found_module.clone(),
+                scope.clone(),
                 name,
                 named_arguments,
                 parameters.clone(),
@@ -917,7 +921,9 @@ fn translate_member_access_function_call(
 
                 // Try to resolve the function call
                 if let Some(result) = resolve_function_call(
+                    project,
                     external_module.clone(),
+                    scope.clone(),
                     member.name.as_str(),
                     named_arguments,
                     parameters.clone(),
@@ -945,7 +951,12 @@ fn translate_member_access_function_call(
 
             // Check to see if the container is a constant
             if abi_type_name.is_none() {
-                if let Some(constant) = module.borrow().constants.iter().find(|c| c.old_name == *name) {
+                if let Some(constant) = module
+                    .borrow()
+                    .constants
+                    .iter()
+                    .find(|c| c.old_name == *name)
+                {
                     abi_type_name = constant.abi_type_name.clone();
                 }
             }
@@ -1157,7 +1168,9 @@ fn translate_member_access_function_call(
                 };
 
                 if let Some(result) = resolve_function_call(
+                    project,
                     external_module.clone(),
+                    scope.clone(),
                     member.name.as_str(),
                     named_arguments,
                     using_parameters.clone(),
@@ -1169,7 +1182,7 @@ fn translate_member_access_function_call(
 
             if let Some(contract) = project.find_contract(module.clone(), &name) {
                 let abi = contract.borrow().abi.clone();
-                
+
                 if let Some(result) = resolve_abi_function_call(
                     project,
                     module.clone(),
@@ -2381,9 +2394,7 @@ fn translate_builtin_abi_member_access_function_call(
                     })
                     .collect::<Vec<_>>(),
 
-                solidity::Expression::Parenthesis(_, expression)
-                    if matches!(expression.as_ref(), solidity::Expression::Type(_, _)) =>
-                {
+                solidity::Expression::Parenthesis(_, expression) => {
                     vec![translate_type_name(
                         project,
                         module.clone(),
@@ -2763,7 +2774,9 @@ fn translate_this_member_access_function_call(
         .collect::<Result<Vec<_>, _>>()?;
 
     if let Some(result) = resolve_function_call(
+        project,
         module.clone(),
+        scope.clone(),
         member,
         named_arguments,
         parameters,
