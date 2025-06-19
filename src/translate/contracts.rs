@@ -142,14 +142,30 @@ pub fn translate_contract_definition(
     let mut mapping_names = vec![];
 
     for variable_definition in variable_definitions {
-        let (d, m) = translate_state_variable(
+        let (d, m, f) = translate_state_variable(
             project,
             module.clone(),
             Some(&contract_name),
             &variable_definition,
         )?;
+
         deferred_initializations.extend(d);
         mapping_names.extend(m);
+
+        if let Some((abi_fn, toplevel_fn, impl_fn)) = f {
+            contract.borrow_mut().abi.functions.push(abi_fn);
+
+            module.borrow_mut().functions.push(ir::Item {
+                signature: toplevel_fn.get_type_name(),
+                implementation: Some(toplevel_fn),
+            });
+
+            contract
+                .borrow_mut()
+                .abi_impl
+                .items
+                .push(sway::ImplItem::Function(impl_fn));
+        }
     }
 
     // Translate each function

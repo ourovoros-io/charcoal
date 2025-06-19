@@ -1474,6 +1474,27 @@ pub struct Function {
     pub body: Option<Block>,
 }
 
+impl Function {
+    pub fn get_type_name(&self) -> TypeName {
+        let Function {
+            old_name,
+            name,
+            generic_parameters,
+            parameters,
+            return_type,
+            ..
+        } = self;
+
+        TypeName::Function {
+            old_name: old_name.clone(),
+            new_name: name.clone(),
+            generic_parameters: generic_parameters.clone(),
+            parameters: parameters.clone(),
+            return_type: return_type.clone().map(Box::new),
+        }
+    }
+}
+
 impl TabbedDisplay for Function {
     fn tabbed_fmt(&self, depth: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if let Some(attributes) = self.attributes.as_ref() {

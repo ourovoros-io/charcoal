@@ -1105,6 +1105,43 @@ pub fn get_underlying_type(
     type_name.clone()
 }
 
+#[inline]
+pub fn get_return_type_name(
+    project: &mut Project,
+    module: Rc<RefCell<ir::Module>>,
+    type_name: &sway::TypeName,
+) -> sway::TypeName {
+    match type_name {
+        sway::TypeName::StringSlice => {
+            // Ensure `std::string::*` is imported
+            module.borrow_mut().ensure_use_declared("std::string::*");
+
+            sway::TypeName::Identifier {
+                name: "String".into(),
+                generic_parameters: None,
+            }
+        }
+
+        _ => {
+            // Check if the parameter's type is an ABI and make it an Identity
+            if let sway::TypeName::Identifier {
+                name,
+                generic_parameters: None,
+            } = &type_name
+            {
+                if project.is_contract_declared(module.clone(), &name) {
+                    return sway::TypeName::Identifier {
+                        name: "Identity".into(),
+                        generic_parameters: None,
+                    };
+                }
+            }
+
+            type_name.clone()
+        }
+    }
+}
+
 /// Attempts to get the type of the supplied expression.
 pub fn get_expression_type(
     project: &mut Project,
@@ -1947,6 +1984,30 @@ fn get_path_expr_function_call_type(
             return Ok(Some(sway::TypeName::Identifier {
                 name: "raw_ptr".into(),
                 generic_parameters: None,
+            }));
+        }
+
+        "std::block::block_header_hash" => {
+            return Ok(Some(sway::TypeName::Identifier {
+                name: "Result".into(),
+                generic_parameters: Some(sway::GenericParameterList {
+                    entries: vec![
+                        sway::GenericParameter {
+                            type_name: sway::TypeName::Identifier {
+                                name: "b256".into(),
+                                generic_parameters: None,
+                            },
+                            implements: None,
+                        },
+                        sway::GenericParameter {
+                            type_name: sway::TypeName::Identifier {
+                                name: "BlockHashError".into(),
+                                generic_parameters: None,
+                            },
+                            implements: None,
+                        },
+                    ],
+                }),
             }));
         }
 
@@ -2872,6 +2933,8 @@ fn get_member_access_function_call_type(
             ("Result", Some(generic_parameters)) if generic_parameters.entries.len() == 2 => {
                 match member_access.member.as_str() {
                     "unwrap" => Ok(generic_parameters.entries[0].type_name.clone()),
+
+                    "unwrap_or" => Ok(generic_parameters.entries[0].type_name.clone()),
 
                     _ => todo!(
                         "get type of function call expression: {}",

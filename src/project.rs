@@ -1201,10 +1201,11 @@ impl Project {
 
         // Translate toplevel variable definitions
         for variable_definition in variable_definitions {
-            let (deferred_initializations, mapping_names) =
+            let (deferred_initializations, mapping_names, functions) =
                 translate_state_variable(self, module.clone(), None, &variable_definition)?;
             assert!(deferred_initializations.is_empty());
             assert!(mapping_names.is_empty());
+            assert!(functions.is_none());
         }
 
         // Collect the contract's toplevel item signatures ahead of time
@@ -1330,14 +1331,26 @@ impl Project {
 
             // Translate contract constants and immutables
             for variable_definition in variable_definitions {
-                let (deferred_initializations, mapping_names) = translate_state_variable(
+                let (deferred_initializations, mapping_names, functions) = translate_state_variable(
                     self,
                     module.clone(),
                     Some(contract_name),
                     variable_definition,
                 )?;
+                
                 assert!(deferred_initializations.is_empty());
                 assert!(mapping_names.is_empty());
+                
+                if let Some((abi_fn, toplevel_fn, impl_fn)) = functions {
+                    contract.borrow_mut().abi.functions.push(abi_fn);
+                    
+                    module.borrow_mut().functions.push(ir::Item {
+                        signature: toplevel_fn.get_type_name(),
+                        implementation: Some(toplevel_fn),
+                    });
+
+                    contract.borrow_mut().abi_impl.items.push(sway::ImplItem::Function(impl_fn));
+                }
             }
 
             // Translate contract type definitions

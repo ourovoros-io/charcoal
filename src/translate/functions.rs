@@ -128,48 +128,23 @@ impl Into<Option<sway::AttributeList>> for FunctionAttributes {
     }
 }
 
-/// Returns (old_name, new_name, new_name_2)
-fn translate_function_name(
+#[inline]
+/// Returns (old_name, toplevel_fn_name, abi_fn_name)
+pub fn translate_function_name(
     _project: &mut Project,
     module: Rc<RefCell<ir::Module>>,
     contract_name: Option<&str>,
-    function_attributes: &FunctionAttributes,
-    function_definition: &solidity::FunctionDefinition,
+    function_name: Option<&str>,
+    function_ty: &solidity::FunctionTy,
 ) -> (String, String, String) {
-    let new_name_2 = if function_attributes.is_constructor {
-        "constructor".to_string()
-    } else if function_attributes.is_fallback {
-        "fallback".to_string()
-    } else if function_attributes.is_receive {
-        "receive".to_string()
-    } else {
-        // Generate the function signature
-        let mut signature = function_definition
-            .name
-            .as_ref()
-            .map(|i| i.name.clone())
-            .unwrap_or_default();
-
-        signature.push('(');
-
-        for (i, (_, parameter)) in function_definition.params.iter().enumerate() {
-            signature = format!(
-                "{signature}{}{}",
-                if i > 0 { "," } else { "" },
-                parameter.as_ref().unwrap().ty,
-            );
-        }
-
-        signature.push(')');
-
-        // Add the translated function name to the function names mapping if we haven't already
-        if !module.borrow().function_names.contains_key(&signature) {
-            let old_name = function_definition
-                .name
-                .as_ref()
-                .map(|i| i.name.clone())
-                .unwrap_or_default();
-
+    let abi_fn_name = match function_ty {
+        solidity::FunctionTy::Constructor => "constructor".to_string(),
+        solidity::FunctionTy::Fallback => "fallback".to_string(),
+        solidity::FunctionTy::Receive => "receive".to_string(),
+        
+        solidity::FunctionTy::Function
+        | solidity::FunctionTy::Modifier => {
+            let old_name = function_name.map(|s| s.to_string()).unwrap();
             let mut new_name = translate_naming_convention(old_name.as_str(), Case::Snake);
 
             // Increase the function name count
@@ -187,34 +162,28 @@ fn translate_function_name(
                 new_name = format!("{new_name}_{}", *count);
             }
 
-            module.function_names.insert(signature.clone(), new_name);
+            new_name
         }
-
-        module
-            .borrow()
-            .function_names
-            .get(&signature)
-            .unwrap()
-            .clone()
     };
 
-    let (old_name, mut new_name) = if matches!(
-        function_definition.ty,
+    let (old_name, mut toplevel_fn_name) = if matches!(
+        function_ty,
         solidity::FunctionTy::Function | solidity::FunctionTy::Modifier
     ) {
-        let old_name = function_definition.name.as_ref().unwrap().name.clone();
-        (old_name, new_name_2.clone())
+        let old_name = function_name.map(|s| s.to_string()).unwrap();
+        (old_name, abi_fn_name.clone())
     } else {
-        (String::new(), new_name_2.clone())
+        (String::new(), abi_fn_name.clone())
     };
 
     if let Some(contract_name) = contract_name.as_ref() {
-        new_name = format!("{}_{}", contract_name.to_case(Case::Snake), new_name);
+        toplevel_fn_name = format!("{}_{}", contract_name.to_case(Case::Snake), toplevel_fn_name);
     }
 
-    (old_name, new_name, new_name_2)
+    (old_name, toplevel_fn_name, abi_fn_name)
 }
 
+#[inline]
 fn translate_function_parameters(
     project: &mut Project,
     module: Rc<RefCell<ir::Module>>,
@@ -271,7 +240,8 @@ fn translate_function_parameters(
     parameters
 }
 
-fn translate_return_type_name(
+#[inline]
+pub fn translate_return_type_name(
     project: &mut Project,
     module: Rc<RefCell<ir::Module>>,
     scope: Rc<RefCell<ir::Scope>>,
@@ -280,41 +250,6 @@ fn translate_return_type_name(
     if function_definition.returns.is_empty() {
         return None;
     }
-
-    let get_return_type_name = |project: &mut Project,
-                                module: Rc<RefCell<ir::Module>>,
-                                type_name: &sway::TypeName|
-     -> sway::TypeName {
-        match type_name {
-            sway::TypeName::StringSlice => {
-                // Ensure `std::string::*` is imported
-                module.borrow_mut().ensure_use_declared("std::string::*");
-
-                sway::TypeName::Identifier {
-                    name: "String".into(),
-                    generic_parameters: None,
-                }
-            }
-
-            _ => {
-                // Check if the parameter's type is an ABI and make it an Identity
-                if let sway::TypeName::Identifier {
-                    name,
-                    generic_parameters: None,
-                } = &type_name
-                {
-                    if project.is_contract_declared(module.clone(), &name) {
-                        return sway::TypeName::Identifier {
-                            name: "Identity".into(),
-                            generic_parameters: None,
-                        };
-                    }
-                }
-
-                type_name.clone()
-            }
-        }
-    };
 
     if function_definition.returns.len() == 1 {
         let type_name = translate_type_name(
@@ -364,8 +299,8 @@ pub fn translate_function_declaration(
         project,
         module.clone(),
         contract_name,
-        &function_attributes,
-        function_definition,
+        function_definition.name.as_ref().map(|n| n.name.as_str()),
+        &function_definition.ty,
     );
 
     let parameters =
@@ -476,6 +411,7 @@ pub fn translate_function_declaration(
     Ok(translated_function)
 }
 
+#[inline]
 pub fn translate_abi_function(
     project: &mut Project,
     module: Rc<RefCell<ir::Module>>,
@@ -494,8 +430,8 @@ pub fn translate_abi_function(
         project,
         module.clone(),
         Some(contract_name),
-        &function_attributes,
-        function_definition,
+        function_definition.name.as_ref().map(|n| n.name.as_str()),
+        &function_definition.ty,
     );
 
     let parameters = translate_function_parameters(
@@ -588,8 +524,8 @@ pub fn translate_function_definition(
         project,
         module.clone(),
         contract_name,
-        &function_attributes,
-        function_definition,
+        function_definition.name.as_ref().map(|n| n.name.as_str()),
+        &function_definition.ty,
     );
 
     let parameters =
