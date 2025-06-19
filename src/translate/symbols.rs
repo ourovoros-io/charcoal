@@ -266,73 +266,57 @@ pub fn resolve_abi_function_call(
                 // If `parameter_type_name` is `Identity`, but `container` is an abi cast expression,
                 // then we need to de-cast it, so `container` turns into the 2nd parameter of the abi cast,
                 // and `value_type_name` turns into `Identity`.
-                if let sway::TypeName::Identifier {
-                    name: parameter_type_name,
-                    generic_parameters: None,
-                } = parameter_type_name
-                {
-                    match parameter_type_name.as_str() {
-                        "Bytes" => match value_type_name {
-                            sway::TypeName::StringSlice => {
-                                // Bytes::from(raw_slice::from_parts::<u8>(s.as_ptr(), s.len()))
-                                parameters[i] = sway::Expression::create_function_calls(
-                                    None,
-                                    &[(
-                                        "Bytes::from",
-                                        Some((
-                                            None,
-                                            vec![sway::Expression::create_function_calls(
-                                                None,
-                                                &[(
-                                                    "raw_slice::from_parts",
-                                                    Some((
-                                                        Some(sway::GenericParameterList {
-                                                            entries: vec![sway::GenericParameter {
-                                                                type_name:
-                                                                    sway::TypeName::Identifier {
-                                                                        name: "u8".into(),
-                                                                        generic_parameters: None,
-                                                                    },
-                                                                implements: None,
-                                                            }],
-                                                        }),
-                                                        vec![
-                                                            sway::Expression::create_function_calls(
-                                                                Some(parameters[i].clone()),
-                                                                &[("as_ptr", Some((None, vec![])))],
-                                                            ),
-                                                            sway::Expression::create_function_calls(
-                                                                Some(parameters[i].clone()),
-                                                                &[("len", Some((None, vec![])))],
-                                                            ),
-                                                        ],
-                                                    )),
-                                                )],
-                                            )],
-                                        )),
-                                    )],
-                                );
+                if parameter_type_name.is_identity() {
+                    if let sway::Expression::FunctionCall(function_call) = parameters[i].clone() {
+                        if let Some(function_name) = function_call.function.as_identifier() {
+                            if function_name == "abi" {
+                                parameters[i] = function_call.parameters[1].clone();
                                 continue;
                             }
-                            _ => {}
-                        },
-
-                        "Identity" => {
-                            if let sway::Expression::FunctionCall(function_call) =
-                                parameters[i].clone()
-                            {
-                                if let Some(function_name) = function_call.function.as_identifier()
-                                {
-                                    if function_name == "abi" {
-                                        parameters[i] = function_call.parameters[1].clone();
-                                        continue;
-                                    }
-                                }
-                            }
                         }
-
-                        _ => {}
                     }
+                }
+
+                // HACK: str -> Bytes (is this still necessary?)
+                // Bytes::from(raw_slice::from_parts::<u8>(s.as_ptr(), s.len()))
+                if parameter_type_name.is_bytes() && value_type_name.is_string_slice() {
+                    parameters[i] = sway::Expression::create_function_calls(
+                        None,
+                        &[(
+                            "Bytes::from",
+                            Some((
+                                None,
+                                vec![sway::Expression::create_function_calls(
+                                    None,
+                                    &[(
+                                        "raw_slice::from_parts",
+                                        Some((
+                                            Some(sway::GenericParameterList {
+                                                entries: vec![sway::GenericParameter {
+                                                    type_name: sway::TypeName::Identifier {
+                                                        name: "u8".into(),
+                                                        generic_parameters: None,
+                                                    },
+                                                    implements: None,
+                                                }],
+                                            }),
+                                            vec![
+                                                sway::Expression::create_function_calls(
+                                                    Some(parameters[i].clone()),
+                                                    &[("as_ptr", Some((None, vec![])))],
+                                                ),
+                                                sway::Expression::create_function_calls(
+                                                    Some(parameters[i].clone()),
+                                                    &[("len", Some((None, vec![])))],
+                                                ),
+                                            ],
+                                        )),
+                                    )],
+                                )],
+                            )),
+                        )],
+                    );
+                    continue;
                 }
 
                 // HACK: StorageKey<*> -> *
@@ -588,73 +572,57 @@ pub fn resolve_function_call(
                 // If `parameter_type_name` is `Identity`, but `container` is an abi cast expression,
                 // then we need to de-cast it, so `container` turns into the 2nd parameter of the abi cast,
                 // and `value_type_name` turns into `Identity`.
-                if let sway::TypeName::Identifier {
-                    name: parameter_type_name,
-                    generic_parameters: None,
-                } = &parameter_type_name
-                {
-                    match parameter_type_name.as_str() {
-                        "Bytes" => match value_type_name {
-                            sway::TypeName::StringSlice => {
-                                // Bytes::from(raw_slice::from_parts::<u8>(s.as_ptr(), s.len()))
-                                parameters[i] = sway::Expression::create_function_calls(
-                                    None,
-                                    &[(
-                                        "Bytes::from",
-                                        Some((
-                                            None,
-                                            vec![sway::Expression::create_function_calls(
-                                                None,
-                                                &[(
-                                                    "raw_slice::from_parts",
-                                                    Some((
-                                                        Some(sway::GenericParameterList {
-                                                            entries: vec![sway::GenericParameter {
-                                                                type_name:
-                                                                    sway::TypeName::Identifier {
-                                                                        name: "u8".into(),
-                                                                        generic_parameters: None,
-                                                                    },
-                                                                implements: None,
-                                                            }],
-                                                        }),
-                                                        vec![
-                                                            sway::Expression::create_function_calls(
-                                                                Some(parameters[i].clone()),
-                                                                &[("as_ptr", Some((None, vec![])))],
-                                                            ),
-                                                            sway::Expression::create_function_calls(
-                                                                Some(parameters[i].clone()),
-                                                                &[("len", Some((None, vec![])))],
-                                                            ),
-                                                        ],
-                                                    )),
-                                                )],
-                                            )],
-                                        )),
-                                    )],
-                                );
+                if parameter_type_name.is_identity() {
+                    if let sway::Expression::FunctionCall(function_call) = parameters[i].clone() {
+                        if let Some(function_name) = function_call.function.as_identifier() {
+                            if function_name == "abi" {
+                                parameters[i] = function_call.parameters[1].clone();
                                 continue;
                             }
-                            _ => {}
-                        },
-
-                        "Identity" => {
-                            if let sway::Expression::FunctionCall(function_call) =
-                                parameters[i].clone()
-                            {
-                                if let Some(function_name) = function_call.function.as_identifier()
-                                {
-                                    if function_name == "abi" {
-                                        parameters[i] = function_call.parameters[1].clone();
-                                        continue;
-                                    }
-                                }
-                            }
                         }
-
-                        _ => {}
                     }
+                }
+
+                // HACK: str -> Bytes (is this still necessary?)
+                // Bytes::from(raw_slice::from_parts::<u8>(s.as_ptr(), s.len()))
+                if parameter_type_name.is_bytes() && value_type_name.is_string_slice() {
+                    parameters[i] = sway::Expression::create_function_calls(
+                        None,
+                        &[(
+                            "Bytes::from",
+                            Some((
+                                None,
+                                vec![sway::Expression::create_function_calls(
+                                    None,
+                                    &[(
+                                        "raw_slice::from_parts",
+                                        Some((
+                                            Some(sway::GenericParameterList {
+                                                entries: vec![sway::GenericParameter {
+                                                    type_name: sway::TypeName::Identifier {
+                                                        name: "u8".into(),
+                                                        generic_parameters: None,
+                                                    },
+                                                    implements: None,
+                                                }],
+                                            }),
+                                            vec![
+                                                sway::Expression::create_function_calls(
+                                                    Some(parameters[i].clone()),
+                                                    &[("as_ptr", Some((None, vec![])))],
+                                                ),
+                                                sway::Expression::create_function_calls(
+                                                    Some(parameters[i].clone()),
+                                                    &[("len", Some((None, vec![])))],
+                                                ),
+                                            ],
+                                        )),
+                                    )],
+                                )],
+                            )),
+                        )],
+                    );
+                    continue;
                 }
 
                 // HACK: StorageKey<*> -> *

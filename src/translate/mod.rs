@@ -160,6 +160,29 @@ pub fn coerce_expression(
                             }
                         }
                     }
+
+                    // Check for `x.into()` if `x` is a number literal
+                    if let sway::Expression::FunctionCall(f) = &rhs {
+                        if let sway::Expression::MemberAccess(m) = &f.function {
+                            if m.member == "into" && f.parameters.is_empty() {
+                                if let sway::Expression::Literal(
+                                    sway::Literal::DecInt(_, _) | sway::Literal::HexInt(_, _),
+                                ) = &m.expression
+                                {
+                                    return Some(
+                                        if let Some(comment) = comment {
+                                            sway::Expression::Commented(
+                                                comment,
+                                                Box::new(m.expression.clone()),
+                                            )
+                                        } else {
+                                            m.expression.clone()
+                                        },
+                                    );
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }

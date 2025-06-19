@@ -19,22 +19,16 @@ pub fn translate_binary_expression(
                 let type_name =
                     get_expression_type(project, module.clone(), scope.clone(), &expression)?;
 
-                if let sway::TypeName::Identifier {
-                    name,
-                    generic_parameters: None,
-                } = type_name
-                {
-                    if name == "Identity" {
-                        if let solidity::Expression::NumberLiteral(_, value, _, _) = rhs {
-                            if value == "0" {
-                                return Ok(sway::Expression::create_function_calls(
-                                    Some(expression),
-                                    &[
-                                        ("as_contract_id", Some((None, vec![]))),
-                                        ("is_none", Some((None, vec![]))),
-                                    ],
-                                ));
-                            }
+                if type_name.is_identity() {
+                    if let solidity::Expression::NumberLiteral(_, value, _, _) = rhs {
+                        if value == "0" {
+                            return Ok(sway::Expression::create_function_calls(
+                                Some(expression),
+                                &[
+                                    ("as_contract_id", Some((None, vec![]))),
+                                    ("is_none", Some((None, vec![]))),
+                                ],
+                            ));
                         }
                     }
                 }

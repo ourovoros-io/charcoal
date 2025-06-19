@@ -516,6 +516,7 @@ impl Display for TypeName {
 
 impl TypeName {
     /// Checks if the type name is an unsigned integer type
+    #[inline(always)]
     pub fn is_uint(&self) -> bool {
         match self {
             TypeName::Identifier {
@@ -532,6 +533,7 @@ impl TypeName {
         }
     }
 
+    #[inline(always)]
     pub fn uint_bits(&self) -> Option<usize> {
         match self {
             TypeName::Identifier {
@@ -553,6 +555,7 @@ impl TypeName {
     }
 
     /// Checks if the type name is a signed integer type
+    #[inline(always)]
     pub fn is_int(&self) -> bool {
         match self {
             TypeName::Identifier {
@@ -569,6 +572,7 @@ impl TypeName {
         }
     }
 
+    #[inline(always)]
     pub fn int_bits(&self) -> Option<usize> {
         match self {
             TypeName::Identifier {
@@ -586,6 +590,7 @@ impl TypeName {
         }
     }
 
+    #[inline(always)]
     pub fn is_b256(&self) -> bool {
         match self {
             TypeName::Identifier {
@@ -596,6 +601,7 @@ impl TypeName {
         }
     }
 
+    #[inline(always)]
     pub fn is_u64(&self) -> bool {
         match self {
             TypeName::Identifier {
@@ -606,6 +612,7 @@ impl TypeName {
         }
     }
 
+    #[inline(always)]
     pub fn is_u256(&self) -> bool {
         match self {
             TypeName::Identifier {
@@ -617,6 +624,7 @@ impl TypeName {
     }
 
     /// Checks if the type name is `Identity`
+    #[inline(always)]
     pub fn is_identity(&self) -> bool {
         match self {
             TypeName::Identifier {
@@ -631,6 +639,7 @@ impl TypeName {
     }
 
     /// Checks if the type name is `ContractId`
+    #[inline(always)]
     pub fn is_contract_id(&self) -> bool {
         match self {
             TypeName::Identifier {
@@ -642,6 +651,7 @@ impl TypeName {
     }
 
     /// Checks if the type name is `Address`
+    #[inline(always)]
     pub fn is_address(&self) -> bool {
         match self {
             TypeName::Identifier {
@@ -652,10 +662,12 @@ impl TypeName {
         }
     }
 
+    #[inline(always)]
     pub fn is_string_slice(&self) -> bool {
         matches!(self, TypeName::StringSlice)
     }
 
+    #[inline(always)]
     pub fn is_string(&self) -> bool {
         match self {
             TypeName::Identifier {
@@ -668,6 +680,7 @@ impl TypeName {
         }
     }
 
+    #[inline(always)]
     pub fn u8_array_length(&self) -> Option<usize> {
         match self {
             TypeName::Array { type_name, length } => match type_name.as_ref() {
@@ -682,6 +695,7 @@ impl TypeName {
         }
     }
 
+    #[inline(always)]
     pub fn array_info(&self) -> Option<(TypeName, usize)> {
         match self {
             TypeName::Array { type_name, length } => Some((type_name.as_ref().clone(), *length)),
@@ -689,16 +703,17 @@ impl TypeName {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn is_array(&self) -> bool {
         self.array_info().is_some()
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn is_u8_array(&self) -> bool {
         self.u8_array_length().is_some()
     }
 
+    #[inline(always)]
     pub fn option_type(&self) -> Option<TypeName> {
         match self {
             TypeName::Identifier {
@@ -716,11 +731,12 @@ impl TypeName {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn is_option(&self) -> bool {
         self.option_type().is_some()
     }
 
+    #[inline(always)]
     pub fn storage_key_type(&self) -> Option<TypeName> {
         match self {
             TypeName::Identifier {
@@ -738,11 +754,12 @@ impl TypeName {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn is_storage_key(&self) -> bool {
         self.storage_key_type().is_some()
     }
 
+    #[inline(always)]
     pub fn storage_map_type(&self) -> Option<(TypeName, TypeName)> {
         match self {
             TypeName::Identifier {
@@ -763,11 +780,12 @@ impl TypeName {
         }
     }
 
-    #[inline]
-    pub fn is_storage_vec(&self) -> bool {
-        self.storage_vec_type().is_some()
+    #[inline(always)]
+    pub fn is_storage_map(&self) -> bool {
+        self.storage_map_type().is_some()
     }
 
+    #[inline(always)]
     pub fn storage_vec_type(&self) -> Option<TypeName> {
         match self {
             TypeName::Identifier {
@@ -785,6 +803,12 @@ impl TypeName {
         }
     }
 
+    #[inline(always)]
+    pub fn is_storage_vec(&self) -> bool {
+        self.storage_vec_type().is_some()
+    }
+
+    #[inline(always)]
     pub fn is_storage_string(&self) -> bool {
         match self {
             TypeName::Identifier {
@@ -795,11 +819,7 @@ impl TypeName {
         }
     }
 
-    #[inline]
-    pub fn is_vec(&self) -> bool {
-        self.vec_type().is_some()
-    }
-
+    #[inline(always)]
     pub fn vec_type(&self) -> Option<TypeName> {
         match self {
             TypeName::Identifier {
@@ -817,7 +837,12 @@ impl TypeName {
         }
     }
 
-    #[inline]
+    #[inline(always)]
+    pub fn is_vec(&self) -> bool {
+        self.vec_type().is_some()
+    }
+
+    #[inline(always)]
     pub fn is_bytes(&self) -> bool {
         match self {
             TypeName::Identifier {
@@ -829,13 +854,26 @@ impl TypeName {
         }
     }
 
-    #[inline]
-    pub fn is_storage_map(&self) -> bool {
-        self.storage_map_type().is_some()
+    #[inline(always)]
+    pub fn abi_type(&self) -> Option<TypeName> {
+        match self {
+            TypeName::Abi { type_name } => Some(type_name.as_ref().clone()),
+            _ => None,
+        }
+    }
+
+    #[inline(always)]
+    pub fn is_abi_type(&self) -> bool {
+        self.abi_type().is_some()
     }
 
     /// Checks to see if the type name is compatible with another type name
     pub fn is_compatible_with(&self, other: &TypeName) -> bool {
+        // Check for abi and Identity types
+        if self.is_identity() && other.is_identity() {
+            return true;
+        }
+
         // Check generic parameter compatibility
         if let (
             TypeName::Identifier {
