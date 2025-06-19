@@ -24,43 +24,6 @@ pub fn translate_type_definition(
     })
 }
 
-#[inline]
-pub fn translate_return_type_name(
-    project: &mut Project,
-    module: Rc<RefCell<ir::Module>>,
-    type_name: &sway::TypeName,
-) -> sway::TypeName {
-    match type_name {
-        sway::TypeName::StringSlice => {
-            // Ensure `std::string::*` is imported
-            module.borrow_mut().ensure_use_declared("std::string::*");
-
-            sway::TypeName::Identifier {
-                name: "String".into(),
-                generic_parameters: None,
-            }
-        }
-
-        _ => {
-            // Check if the parameter's type is an ABI and make it an Identity
-            if let sway::TypeName::Identifier {
-                name,
-                generic_parameters: None,
-            } = &type_name
-            {
-                if project.is_contract_declared(module.clone(), &name) {
-                    return sway::TypeName::Identifier {
-                        name: "Identity".into(),
-                        generic_parameters: None,
-                    };
-                }
-            }
-
-            type_name.clone()
-        }
-    }
-}
-
 pub fn translate_type_name(
     project: &mut Project,
     module: Rc<RefCell<ir::Module>>,
