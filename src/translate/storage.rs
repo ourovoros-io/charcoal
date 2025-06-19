@@ -206,18 +206,9 @@ pub fn translate_state_variable(
 
                 // HACK: Add to mapping names for toplevel structs in storage that contain storage mappings
                 if generic_parameters.is_none() {
-                    let struct_defintion = {
-                        let module = module.borrow();
-                        module
-                            .structs
-                            .iter()
-                            .find(|s| s.signature.to_string() == name)
-                            .cloned()
-                    };
+                    let struct_defintion = project.find_struct(module.clone(), name);
 
                     if let Some(struct_definition) = &struct_defintion {
-                        let struct_definition = struct_definition.implementation.as_ref().unwrap();
-
                         for field in struct_definition.borrow().fields.iter() {
                             let Some(option_type) = field.type_name.option_type() else {
                                 continue;

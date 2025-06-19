@@ -389,50 +389,21 @@ pub fn translate_type_name(
 
         solidity::Expression::Variable(solidity::Identifier { name, .. }) => {
             // Check if type is a type definition
-            if module.borrow().type_definitions.iter().any(|t| {
-                let sway::TypeName::Identifier {
-                    name: type_name,
-                    generic_parameters: None,
-                } = &t.signature
-                else {
-                    return false;
-                };
-                type_name == name
-            }) {
+            if project.is_type_definition_declared(module.clone(), name) {
                 sway::TypeName::Identifier {
                     name: name.clone(),
                     generic_parameters: None,
                 }
             }
             // Check if type is a struct
-            else if module.borrow().structs.iter().any(|n| {
-                let sway::TypeName::Identifier {
-                    name: struct_name,
-                    generic_parameters: None,
-                } = &n.signature
-                else {
-                    return false;
-                };
-
-                struct_name == name
-            }) {
+            else if project.is_struct_declared(module.clone(), name) {
                 sway::TypeName::Identifier {
                     name: name.clone(),
                     generic_parameters: None,
                 }
             }
             // Check if type is an enum
-            else if module.borrow().enums.iter().any(|t| {
-                let sway::TypeName::Identifier {
-                    name: type_name,
-                    generic_parameters: None,
-                } = &t.signature
-                else {
-                    return false;
-                };
-
-                type_name == name
-            }) {
+            else if project.is_enum_declared(module.clone(), name) {
                 sway::TypeName::Identifier {
                     name: name.clone(),
                     generic_parameters: None,

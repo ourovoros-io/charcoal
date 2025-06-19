@@ -257,7 +257,7 @@ pub fn translate_error_definition(
 
 #[inline]
 pub fn generate_enum_abi_encode_function(
-    _project: &mut Project,
+    project: &mut Project,
     module: Rc<RefCell<ir::Module>>,
     sway_enum: Rc<RefCell<sway::Enum>>,
     abi_encode_impl: Rc<RefCell<sway::Impl>>,
@@ -397,24 +397,24 @@ pub fn generate_enum_abi_encode_function(
             sway::TypeName::Undefined => panic!("Undefined type name"),
 
             sway::TypeName::Identifier { .. } => {
-                let type_name = get_underlying_type(module.clone(), &variant.type_name);
+                let type_name = get_underlying_type(project, module.clone(), &variant.type_name);
                 add_encode_statement_to_block(&parameter_names[0], &type_name);
             }
 
             sway::TypeName::Tuple { type_names } => {
                 for (name, type_name) in parameter_names.iter().zip(type_names) {
-                    let type_name = get_underlying_type(module.clone(), type_name);
+                    let type_name = get_underlying_type(project, module.clone(), type_name);
                     add_encode_statement_to_block(name.as_str(), &type_name);
                 }
             }
 
             sway::TypeName::StringSlice => {
-                let type_name = get_underlying_type(module.clone(), &variant.type_name);
+                let type_name = get_underlying_type(project, module.clone(), &variant.type_name);
                 add_encode_statement_to_block(&parameter_names[0], &type_name);
             }
 
             sway::TypeName::Array { type_name, .. } => {
-                let type_name = get_underlying_type(module.clone(), type_name.as_ref());
+                let type_name = get_underlying_type(project, module.clone(), type_name.as_ref());
                 add_encode_statement_to_block(&parameter_names[0], &type_name);
             }
 

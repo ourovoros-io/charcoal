@@ -33,28 +33,14 @@ pub fn resolve_symbol(
 ) -> Option<SymbolData> {
     match &symbol {
         Symbol::TypeDefinition(name) => {
-            if let Some(type_definition) = module
-                .borrow()
-                .type_definitions
-                .iter()
-                .find(|t| t.signature.to_string() == *name)
-            {
-                if let Some(implementation) = type_definition.implementation.as_ref() {
-                    return Some(SymbolData::TypeDefinition(implementation.clone()));
-                }
+            if let Some(type_definition) = project.find_type_definition(module.clone(), name) {
+                return Some(SymbolData::TypeDefinition(type_definition));
             }
         }
 
         Symbol::Enum(name) => {
-            if let Some(enum_definition) = module
-                .borrow()
-                .enums
-                .iter()
-                .find(|e| e.signature.to_string() == *name)
-            {
-                return Some(SymbolData::Enum(
-                    enum_definition.implementation.clone().unwrap(),
-                ));
+            if let Some(enum_definition) = project.find_enum(module.clone(), name) {
+                return Some(SymbolData::Enum(enum_definition));
             }
         }
 
@@ -111,15 +97,8 @@ pub fn resolve_symbol(
         }
 
         Symbol::Struct(name) => {
-            if let Some(struct_definition) = module
-                .borrow()
-                .structs
-                .iter()
-                .find(|s| s.signature.to_string() == *name)
-            {
-                return Some(SymbolData::Struct(
-                    struct_definition.implementation.clone().unwrap(),
-                ));
+            if let Some(struct_definition) = project.find_struct(module.clone(), name) {
+                return Some(SymbolData::Struct(struct_definition.clone()));
             }
         }
     }

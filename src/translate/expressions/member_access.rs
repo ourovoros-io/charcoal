@@ -40,21 +40,11 @@ pub fn translate_member_access_expression(
             }
 
             // Check to see if the variable is an enum
-            if let Some(translated_enum) = module.borrow().enums.iter().find(|e| {
-                match &e.implementation.as_ref().unwrap().type_definition.name {
-                    sway::TypeName::Identifier {
-                        name: enum_name, ..
-                    } => enum_name == name,
-                    _ => false,
-                }
-            }) {
+            if let Some(translated_enum) = project.find_enum(module.clone(), name) {
                 let new_name = translate_naming_convention(member.name.as_str(), Case::Constant);
 
                 // Check to see if member is part of translated enum
                 if let Some(sway::ImplItem::Constant(c)) = translated_enum
-                    .implementation
-                    .as_ref()
-                    .unwrap()
                     .variants_impl
                     .items
                     .iter()
@@ -134,13 +124,7 @@ pub fn translate_member_access_expression(
                 // // Check to see if container is an external definition
                 // if let Some(external_definition) = project.translated_definitions.iter().find(|d| d.name == *name) {
                 //     // Check to see if member is an enum
-                //     if let Some(external_enum) = external_definition.enums.iter().find(|e| {
-                //         let sway::TypeName::Identifier { name, generic_parameters: None } = &e.type_definition.name else {
-                //             panic!("Expected Identifier type name, found {:#?}", e.type_definition.name);
-                //         };
-                //
-                //         *name == member1.name
-                //     }) {
+                //     if let Some(external_enum) = project.find_enum(module.clone(), &member1.name) {
                 //         let sway::TypeName::Identifier { name: enum_name, generic_parameters: None } = &external_enum.type_definition.name else {
                 //             panic!("Expected Identifier type name, found {:#?}", external_enum.type_definition.name);
                 //         };
@@ -173,15 +157,12 @@ pub fn translate_member_access_expression(
         let container_type_name_string = container_type_name.to_string();
 
         // Check if container is a struct
-        if let Some(struct_definition) = module.borrow().structs.iter().find(|s| {
-            s.implementation.as_ref().unwrap().borrow().name == container_type_name_string
-        }) {
+        if let Some(struct_definition) =
+            project.find_struct(module.clone(), &container_type_name_string)
+        {
             let field_name = translate_naming_convention(member.name.as_str(), Case::Snake);
 
             if struct_definition
-                .implementation
-                .as_ref()
-                .unwrap()
                 .borrow()
                 .fields
                 .iter()
@@ -378,7 +359,7 @@ fn translate_builtin_function_call_member_access_expression(
             let type_name =
                 translate_type_name(project, module.clone(), scope.clone(), &parameters[0], None);
 
-            let type_name = get_underlying_type(module.clone(), &type_name);
+            let type_name = get_underlying_type(project, module.clone(), &type_name);
 
             match &type_name {
                 sway::TypeName::Identifier { name, .. } => {

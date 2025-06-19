@@ -810,17 +810,8 @@ pub fn create_value_expression(
 
             (name, _) => {
                 // Check to see if the type is a type definition
-                if module.borrow().type_definitions.iter().any(|s| {
-                    let sway::TypeName::Identifier {
-                        name: type_name,
-                        generic_parameters: None,
-                    } = &s.implementation.as_ref().unwrap().name
-                    else {
-                        return false;
-                    };
-                    type_name == name
-                }) {
-                    let underlying_type = get_underlying_type(module.clone(), type_name);
+                if project.is_type_definition_declared(module.clone(), name) {
+                    let underlying_type = get_underlying_type(project, module.clone(), type_name);
                     return create_value_expression(
                         project,
                         module,
@@ -830,25 +821,11 @@ pub fn create_value_expression(
                     );
                 }
                 // Check to see if the type is a translated enum
-                else if let Some(translated_enum) = module.borrow().enums.iter().find(|s| {
-                    let sway::TypeName::Identifier {
-                        name: enum_name,
-                        generic_parameters: None,
-                    } = &s.implementation.as_ref().unwrap().type_definition.name
+                else if let Some(translated_enum) = project.find_enum(module.clone(), name) {
+                    let Some(sway::ImplItem::Constant(value)) =
+                        translated_enum.variants_impl.items.first()
                     else {
-                        return false;
-                    };
-                    enum_name == name
-                }) {
-                    let Some(sway::ImplItem::Constant(value)) = translated_enum
-                        .implementation
-                        .as_ref()
-                        .unwrap()
-                        .variants_impl
-                        .items
-                        .first()
-                    else {
-                        let underlying_type = get_underlying_type(module.clone(), type_name);
+                        let underlying_type = get_underlying_type(project, module.clone(), type_name);
                         return create_value_expression(
                             project,
                             module.clone(),
@@ -864,14 +841,7 @@ pub fn create_value_expression(
                     ));
                 }
                 // Check to see if the type is a struct definition
-                else if let Some(struct_definition) = module
-                    .borrow()
-                    .structs
-                    .iter()
-                    .find(|s| s.signature.to_string() == *name)
-                    .map(|s| s.implementation.as_ref().unwrap())
-                    .cloned()
-                {
+                else if let Some(struct_definition) = project.find_struct(module.clone(), name) {
                     return sway::Expression::from(sway::Constructor {
                         type_name: sway::TypeName::Identifier {
                             name: name.to_string(),

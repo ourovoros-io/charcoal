@@ -722,7 +722,11 @@ impl Project {
         parent_module
     }
 
-    pub fn is_contract_declared(&mut self, module: Rc<RefCell<ir::Module>>, contract_name: &str) -> bool {
+    pub fn is_contract_declared(
+        &mut self,
+        module: Rc<RefCell<ir::Module>>,
+        contract_name: &str,
+    ) -> bool {
         // Check to see if the contract was declared in the current file
         if module
             .borrow()
@@ -730,7 +734,7 @@ impl Project {
             .iter()
             .any(|c| c.signature.to_string() == contract_name)
         {
-            return true
+            return true;
         }
 
         // Check all of the module's `use` statements for crate-local imports,
@@ -813,6 +817,196 @@ impl Project {
                         found_module.clone(),
                         contract.implementation.clone().unwrap(),
                     ));
+                }
+            }
+        }
+
+        None
+    }
+
+    pub fn is_type_definition_declared(
+        &mut self,
+        module: Rc<RefCell<ir::Module>>,
+        name: &str,
+    ) -> bool {
+        // Check to see if the type definition was defined in the current file
+        if module
+            .borrow()
+            .type_definitions
+            .iter()
+            .any(|x| x.signature.to_string() == name)
+        {
+            return true;
+        }
+
+        // Check all of the module's `use` statements for crate-local imports,
+        // find the module being imported, then check if the type definition lives there.
+        for use_item in module.borrow().uses.iter() {
+            if let Some(found_module) = self.resolve_use(use_item) {
+                if found_module
+                    .borrow()
+                    .type_definitions
+                    .iter()
+                    .any(|x| x.signature.to_string() == name)
+                {
+                    return true;
+                }
+            }
+        }
+
+        false
+    }
+
+    pub fn find_type_definition(
+        &mut self,
+        module: Rc<RefCell<ir::Module>>,
+        name: &str,
+    ) -> Option<sway::TypeDefinition> {
+        // Check to see if the type definition was defined in the current file
+        if let Some(x) = module
+            .borrow()
+            .type_definitions
+            .iter()
+            .find(|x| x.signature.to_string() == name)
+        {
+            return x.implementation.clone();
+        }
+
+        // Check all of the module's `use` statements for crate-local imports,
+        // find the module being imported, then check if the type definition lives there.
+        for use_item in module.borrow().uses.iter() {
+            if let Some(found_module) = self.resolve_use(use_item) {
+                if let Some(x) = found_module
+                    .borrow()
+                    .type_definitions
+                    .iter()
+                    .find(|x| x.signature.to_string() == name)
+                {
+                    return x.implementation.clone();
+                }
+            }
+        }
+
+        None
+    }
+
+    pub fn is_enum_declared(&mut self, module: Rc<RefCell<ir::Module>>, name: &str) -> bool {
+        // Check to see if the enum was defined in the current file
+        if module
+            .borrow()
+            .enums
+            .iter()
+            .any(|x| x.signature.to_string() == name)
+        {
+            return true;
+        }
+
+        // Check all of the module's `use` statements for crate-local imports,
+        // find the module being imported, then check if the enum lives there.
+        for use_item in module.borrow().uses.iter() {
+            if let Some(found_module) = self.resolve_use(use_item) {
+                if found_module
+                    .borrow()
+                    .enums
+                    .iter()
+                    .any(|x| x.signature.to_string() == name)
+                {
+                    return true;
+                }
+            }
+        }
+
+        false
+    }
+
+    pub fn find_enum(&mut self, module: Rc<RefCell<ir::Module>>, name: &str) -> Option<ir::Enum> {
+        // Check to see if the enum was defined in the current file
+        if let Some(x) = module
+            .borrow()
+            .enums
+            .iter()
+            .find(|x| x.signature.to_string() == name)
+        {
+            return x.implementation.clone();
+        }
+
+        // Check all of the module's `use` statements for crate-local imports,
+        // find the module being imported, then check if the enum lives there.
+        for use_item in module.borrow().uses.iter() {
+            if let Some(found_module) = self.resolve_use(use_item) {
+                if let Some(x) = found_module
+                    .borrow()
+                    .enums
+                    .iter()
+                    .find(|x| x.signature.to_string() == name)
+                {
+                    return x.implementation.clone();
+                }
+            }
+        }
+
+        None
+    }
+
+    pub fn is_struct_declared(
+        &mut self,
+        module: Rc<RefCell<ir::Module>>,
+        name: &str,
+    ) -> bool {
+        // Check to see if the struct was defined in the current file
+        if module
+            .borrow()
+            .structs
+            .iter()
+            .any(|x| x.signature.to_string() == name)
+        {
+            return true;
+        }
+
+        // Check all of the module's `use` statements for crate-local imports,
+        // find the module being imported, then check if the struct lives there.
+        for use_item in module.borrow().uses.iter() {
+            if let Some(found_module) = self.resolve_use(use_item) {
+                if found_module
+                    .borrow()
+                    .structs
+                    .iter()
+                    .any(|x| x.signature.to_string() == name)
+                {
+                    return true;
+                }
+            }
+        }
+
+        false
+    }
+
+    pub fn find_struct(
+        &mut self,
+        module: Rc<RefCell<ir::Module>>,
+        name: &str,
+    ) -> Option<Rc<RefCell<sway::Struct>>> {
+        // Check to see if the struct was defined in the current file
+        if let Some(x) = module
+            .borrow()
+            .structs
+            .iter()
+            .find(|x| x.signature.to_string() == name)
+        {
+            return x.implementation.clone();
+        }
+
+        // Check all of the module's `use` statements for crate-local imports,
+        // find the module being imported, then check if the struct lives there.
+        for use_item in module.borrow().uses.iter() {
+            if let Some(found_module) = self.resolve_use(use_item) {
+                if let Some(x) = found_module
+                    .borrow()
+                    .structs
+                    .iter()
+                    .find(|x| x.signature.to_string() == name)
+                {
+                    return x.implementation.clone();
                 }
             }
         }

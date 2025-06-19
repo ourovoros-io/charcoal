@@ -73,11 +73,28 @@ pub fn coerce_expression(
 
     let mut expression = expression.clone();
 
-    //
+    // Check for `Identity` to `b256` coercions
+    if from_type_name.is_identity() && to_type_name.is_b256() {
+        return Some(sway::Expression::create_function_calls(
+            Some(expression),
+            &[("bits", Some((None, vec![])))],
+        ));
+    }
+
+    // Check for `Identity` to `u256` coercions
+    if from_type_name.is_identity() && to_type_name.is_u256() {
+        return Some(sway::Expression::create_function_calls(
+            Some(expression),
+            &[
+                ("bits", Some((None, vec![]))),
+                ("as_u256", Some((None, vec![]))),
+            ],
+        ));
+    }
+
     // If `to_type_name` is `Identity`, but `expression` is an abi cast expression,
     // then we need to de-cast it, so `expression` turns into the 2nd parameter of the abi cast,
     // and `from_type_name` turns into `Identity`.
-    //
     if to_type_name.is_identity() {
         let mut comment = None;
 
@@ -300,7 +317,7 @@ pub fn coerce_expression(
         }
     }
 
-    // Check for `T` to `StorageKey<T>` coercion
+    // Check for `T` to `StorageKey<T>` coercions
     if let Some(storage_key_type) = to_type_name.storage_key_type() {
         if storage_key_type.is_compatible_with(from_type_name) {
             if let sway::Expression::FunctionCall(f) = &expression {
@@ -1056,47 +1073,33 @@ pub fn coerce_expression(
 
 /// Gets the base underlying type of the supplied type name
 pub fn get_underlying_type(
+    project: &mut Project,
     module: Rc<RefCell<ir::Module>>,
     type_name: &sway::TypeName,
 ) -> sway::TypeName {
     // Check to see if the expression's type is a type definition and get the underlying type
-    for type_definition in module.borrow().type_definitions.clone() {
-        if &type_definition.implementation.as_ref().unwrap().name == type_name {
-            return get_underlying_type(
-                module.clone(),
-                type_definition
-                    .implementation
-                    .as_ref()
-                    .unwrap()
-                    .underlying_type
-                    .as_ref()
-                    .unwrap(),
-            );
-        }
+    if let Some(type_definition) =
+        project.find_type_definition(module.clone(), type_name.to_string().as_str())
+    {
+        return get_underlying_type(
+            project,
+            module.clone(),
+            type_definition.underlying_type.as_ref().unwrap(),
+        );
     }
 
     // If we didn't find a type definition, check to see if an enum exists and get its underlying type
-    for translated_enum in module.borrow().enums.clone() {
-        if &translated_enum
-            .implementation
-            .as_ref()
-            .unwrap()
-            .type_definition
-            .name
-            == type_name
-        {
-            return get_underlying_type(
-                module.clone(),
-                translated_enum
-                    .implementation
-                    .as_ref()
-                    .unwrap()
-                    .type_definition
-                    .underlying_type
-                    .as_ref()
-                    .unwrap(),
-            );
-        }
+    if let Some(enum_definition) = project.find_enum(module.clone(), type_name.to_string().as_str())
+    {
+        return get_underlying_type(
+            project,
+            module.clone(),
+            enum_definition
+                .type_definition
+                .underlying_type
+                .as_ref()
+                .unwrap(),
+        );
     }
 
     type_name.clone()
@@ -1558,16 +1561,8 @@ fn get_member_access_type(
         generic_parameters: None,
     } = &container_type
     {
-        if let Some(struct_definition) = module
-            .borrow()
-            .structs
-            .iter()
-            .find(|s| s.signature.to_string() == *name)
-        {
+        if let Some(struct_definition) = project.find_struct(module.clone(), name) {
             if let Some(field) = struct_definition
-                .implementation
-                .as_ref()
-                .unwrap()
                 .borrow()
                 .fields
                 .iter()
@@ -2617,45 +2612,7 @@ fn get_member_access_function_call_type(
         &member_access.expression,
     )?;
 
-    // Check to see if the container's type is a translated enum and switch to its underlying type
-    for enum_definition in module.borrow().enums.iter() {
-        if enum_definition
-            .implementation
-            .as_ref()
-            .unwrap()
-            .type_definition
-            .name
-            == container_type
-        {
-            if let Some(underlying_type) = enum_definition
-                .implementation
-                .as_ref()
-                .unwrap()
-                .type_definition
-                .underlying_type
-                .as_ref()
-            {
-                container_type = underlying_type.clone();
-                break;
-            }
-        }
-    }
-
-    // Check to see if the container's type is a UDT and switch to its underlying type
-    for type_definition in module.borrow().type_definitions.iter() {
-        if type_definition.implementation.as_ref().unwrap().name == container_type {
-            if let Some(underlying_type) = type_definition
-                .implementation
-                .as_ref()
-                .unwrap()
-                .underlying_type
-                .as_ref()
-            {
-                container_type = underlying_type.clone();
-                break;
-            }
-        }
-    }
+    container_type = get_underlying_type(project, module.clone(), &container_type);
 
     match &container_type {
         sway::TypeName::Undefined => panic!("Undefined type name"),
@@ -2843,7 +2800,7 @@ fn get_member_access_function_call_type(
             },
 
             ("Identity", None) => match member_access.member.as_str() {
-                "as_address" => Ok(sway::TypeName::Identifier {
+                "as_address" if parameters.len() == 0 => Ok(sway::TypeName::Identifier {
                     name: "Option".into(),
                     generic_parameters: Some(sway::GenericParameterList {
                         entries: vec![sway::GenericParameter {
@@ -2856,7 +2813,7 @@ fn get_member_access_function_call_type(
                     }),
                 }),
 
-                "as_contract_id" => Ok(sway::TypeName::Identifier {
+                "as_contract_id" if parameters.len() == 0 => Ok(sway::TypeName::Identifier {
                     name: "Option".into(),
                     generic_parameters: Some(sway::GenericParameterList {
                         entries: vec![sway::GenericParameter {
@@ -2869,12 +2826,17 @@ fn get_member_access_function_call_type(
                     }),
                 }),
 
-                "is_address" => Ok(sway::TypeName::Identifier {
+                "bits" if parameters.len() == 0 => Ok(sway::TypeName::Identifier {
+                    name: "b256".into(),
+                    generic_parameters: None,
+                }),
+
+                "is_address" if parameters.len() == 0 => Ok(sway::TypeName::Identifier {
                     name: "bool".into(),
                     generic_parameters: None,
                 }),
 
-                "is_contract_id" => Ok(sway::TypeName::Identifier {
+                "is_contract_id" if parameters.len() == 0 => Ok(sway::TypeName::Identifier {
                     name: "bool".into(),
                     generic_parameters: None,
                 }),

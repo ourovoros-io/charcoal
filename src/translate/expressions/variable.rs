@@ -423,18 +423,12 @@ pub fn translate_variable_access_expression(
             };
 
             // Check if container is a struct
-            if let Some(struct_definition) = module
-                .borrow()
-                .structs
-                .iter()
-                .find(|s| s.signature.to_string() == container_type_name_string)
+            if let Some(struct_definition) =
+                project.find_struct(module.clone(), &container_type_name_string)
             {
                 let field_name = translate_naming_convention(member.name.as_str(), Case::Snake);
 
                 if struct_definition
-                    .implementation
-                    .as_ref()
-                    .unwrap()
                     .borrow()
                     .fields
                     .iter()
