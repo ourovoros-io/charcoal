@@ -1,7 +1,4 @@
-use crate::{
-    cli,
-    project::{Framework, Project},
-};
+use crate::{cli, framework::Framework, project::Project};
 use colorize::AnsiColor;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use std::{

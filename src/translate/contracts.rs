@@ -311,7 +311,6 @@ pub fn translate_contract_definition(
                         name: "bool".into(),
                         generic_parameters: None,
                     },
-                    abi_type_name: None,
                     value: sway::Expression::from(sway::Literal::Bool(false)),
                 });
 

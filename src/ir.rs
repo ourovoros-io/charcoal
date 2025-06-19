@@ -21,7 +21,6 @@ pub struct Variable {
     pub old_name: String,
     pub new_name: String,
     pub type_name: sway::TypeName,
-    pub abi_type_name: Option<sway::TypeName>,
     pub statement_index: Option<usize>,
     pub read_count: usize,
     pub mutation_count: usize,
@@ -41,6 +40,12 @@ pub struct Function {
     pub constructor_calls: Vec<sway::FunctionCall>,
     pub modifiers: Vec<sway::FunctionCall>,
     pub type_name: sway::TypeName,
+}
+
+pub struct FunctionName {
+    pub old_name: String,
+    pub top_level_fn_name: String,
+    pub abi_fn_name: String,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -319,7 +324,7 @@ impl Module {
     #[inline]
     pub fn get_storage(&mut self, scope: Rc<RefCell<Scope>>) -> Rc<RefCell<sway::Storage>> {
         let contract_name = scope.borrow().get_contract_name().unwrap();
-        
+
         let contract_item = self
             .contracts
             .iter()
@@ -418,6 +423,7 @@ impl Module {
         })
     }
 
+    /// Returns the translated module name in snake case
     #[inline]
     pub fn get_module_name(&self) -> String {
         translate_naming_convention(&self.name, Case::Snake)

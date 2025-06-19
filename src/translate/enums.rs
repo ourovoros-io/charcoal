@@ -43,7 +43,6 @@ pub fn translate_enum_definition(
                     Case::Constant,
                 ),
                 type_name: type_definition.name.clone(),
-                abi_type_name: None,
                 value: Some(sway::Expression::from(sway::Literal::DecInt(
                     BigUint::from(i),
                     None,
@@ -74,59 +73,19 @@ pub fn translate_event_definition(
     let scope = Rc::new(RefCell::new(ir::Scope::new(contract_name, None)));
 
     let type_name = if event_definition.fields.len() == 1 {
-        match translate_type_name(
+        translate_type_name(
             project,
             module.clone(),
             scope.clone(),
             &event_definition.fields[0].ty,
             None,
-        ) {
-            sway::TypeName::Identifier {
-                name,
-                generic_parameters,
-            } => {
-                if project.is_contract_declared(module.clone(), &name) {
-                    sway::TypeName::Identifier {
-                        name: "Identity".into(),
-                        generic_parameters: None,
-                    }
-                } else {
-                    sway::TypeName::Identifier {
-                        name,
-                        generic_parameters,
-                    }
-                }
-            }
-
-            type_name => type_name,
-        }
+        )
     } else {
         sway::TypeName::Tuple {
             type_names: event_definition
                 .fields
                 .iter()
-                .map(|f| {
-                    match translate_type_name(project, module.clone(), scope.clone(), &f.ty, None) {
-                        sway::TypeName::Identifier {
-                            name,
-                            generic_parameters,
-                        } => {
-                            if project.is_contract_declared(module.clone(), &name) {
-                                sway::TypeName::Identifier {
-                                    name: "Identity".into(),
-                                    generic_parameters: None,
-                                }
-                            } else {
-                                sway::TypeName::Identifier {
-                                    name,
-                                    generic_parameters,
-                                }
-                            }
-                        }
-
-                        type_name => type_name,
-                    }
-                })
+                .map(|f| translate_type_name(project, module.clone(), scope.clone(), &f.ty, None))
                 .collect(),
         }
     };

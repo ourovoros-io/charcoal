@@ -31,6 +31,11 @@ pub fn translate_type_name(
     type_name: &solidity::Expression,
     storage_location: Option<&solidity::StorageLocation>,
 ) -> sway::TypeName {
+    // println!(
+    //     "Translating type_name: {type_name} at {}",
+    //     project.loc_to_file_location_string(module.clone(), &type_name.loc())
+    // );
+
     let mut type_name = match type_name {
         solidity::Expression::Type(_, type_expression) => match type_expression {
             solidity::Type::Address => sway::TypeName::Identifier {
@@ -411,9 +416,11 @@ pub fn translate_type_name(
             }
             // Check if type is an ABI
             else if project.is_contract_declared(module.clone(), name) {
-                sway::TypeName::Identifier {
-                    name: name.clone(),
-                    generic_parameters: None,
+                sway::TypeName::Abi {
+                    type_name: Box::new(sway::TypeName::Identifier {
+                        name: name.clone(),
+                        generic_parameters: None,
+                    }),
                 }
             } else {
                 todo!(
@@ -434,9 +441,11 @@ pub fn translate_type_name(
                         type_name,
                         storage_location,
                     );
+
                     if let Some(storage_key_type) = type_name.storage_key_type() {
                         type_name = storage_key_type;
                     }
+
                     type_name
                 }),
                 length: {
@@ -534,10 +543,12 @@ pub fn translate_type_name(
                                             type_name,
                                             Some(storage_location),
                                         );
+
                                         if let Some(storage_key_type) = type_name.storage_key_type()
                                         {
                                             type_name = storage_key_type;
                                         }
+
                                         type_name
                                     },
                                     implements: None,

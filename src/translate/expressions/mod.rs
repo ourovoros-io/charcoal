@@ -820,12 +820,14 @@ pub fn create_value_expression(
                         None,
                     );
                 }
+                
                 // Check to see if the type is a translated enum
                 else if let Some(translated_enum) = project.find_enum(module.clone(), name) {
                     let Some(sway::ImplItem::Constant(value)) =
                         translated_enum.variants_impl.items.first()
                     else {
-                        let underlying_type = get_underlying_type(project, module.clone(), type_name);
+                        let underlying_type =
+                            get_underlying_type(project, module.clone(), type_name);
                         return create_value_expression(
                             project,
                             module.clone(),
@@ -899,5 +901,18 @@ pub fn create_value_expression(
         sway::TypeName::Function { .. } => {
             sway::Expression::create_todo(Some(type_name.to_string()))
         }
+
+        sway::TypeName::Abi { .. } => sway::Expression::from(sway::FunctionCall {
+            function: sway::Expression::create_identifier("Identity::Address".into()),
+            generic_parameters: None,
+            parameters: vec![sway::Expression::from(sway::FunctionCall {
+                function: sway::Expression::create_identifier("Address::from".into()),
+                generic_parameters: None,
+                parameters: vec![sway::Expression::create_function_calls(
+                    None,
+                    &[("b256::zero", Some((None, vec![])))],
+                )],
+            })],
+        }),
     }
 }

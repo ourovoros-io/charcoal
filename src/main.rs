@@ -1,5 +1,6 @@
 pub mod cli;
 pub mod error;
+pub mod framework;
 pub mod ir;
 pub mod project;
 pub mod sway;
@@ -19,6 +20,6 @@ fn main() {
 fn translate_project() -> Result<(), error::Error> {
     use clap::Parser;
     let options = cli::Args::parse().canonicalize()?;
-    let framework = project::Framework::from_path(&options.input)?;
+    let framework = framework::Framework::from_path(&options.input)?;
     project::Project::new(options, framework)?.translate()
 }

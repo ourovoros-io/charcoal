@@ -1131,23 +1131,7 @@ pub fn get_return_type_name(
             }
         }
 
-        _ => {
-            // Check if the parameter's type is an ABI and make it an Identity
-            if let sway::TypeName::Identifier {
-                name,
-                generic_parameters: None,
-            } = &type_name
-            {
-                if project.is_contract_declared(module.clone(), &name) {
-                    return sway::TypeName::Identifier {
-                        name: "Identity".into(),
-                        generic_parameters: None,
-                    };
-                }
-            }
-
-            type_name.clone()
-        }
+        _ => type_name.clone(),
     }
 }
 

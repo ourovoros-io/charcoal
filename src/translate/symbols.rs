@@ -410,7 +410,7 @@ pub fn resolve_abi_function_call(
                 project.find_contract(module.clone(), inherit.to_string().as_str())
             {
                 let abi = contract.borrow().abi.clone();
-                
+
                 if let Some(result) = resolve_abi_function_call(
                     project,
                     module.clone(),
@@ -591,7 +591,7 @@ pub fn resolve_function_call(
                 if let sway::TypeName::Identifier {
                     name: parameter_type_name,
                     generic_parameters: None,
-                } = parameter_type_name
+                } = &parameter_type_name
                 {
                     match parameter_type_name.as_str() {
                         "Bytes" => match value_type_name {
@@ -693,7 +693,7 @@ pub fn resolve_function_call(
                     if let sway::TypeName::Array {
                         type_name: parameter_element_type,
                         length: parameter_element_length,
-                    } = parameter_type_name
+                    } = &parameter_type_name
                     {
                         if value_element_length != parameter_element_length {
                             return false;
@@ -710,13 +710,13 @@ pub fn resolve_function_call(
                 }
 
                 if let Some(expr) =
-                    coerce_expression(&parameters[i], value_type_name, parameter_type_name)
+                    coerce_expression(&parameters[i], value_type_name, &parameter_type_name)
                 {
                     parameters[i] = expr;
                     continue;
                 }
 
-                if !value_type_name.is_compatible_with(parameter_type_name) {
+                if !value_type_name.is_compatible_with(&parameter_type_name) {
                     return false;
                 }
             }

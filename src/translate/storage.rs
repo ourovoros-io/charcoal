@@ -87,19 +87,31 @@ pub fn translate_state_variable(
     }
 
     // Translate the variable's type name
-    let storage_location = if is_storage {
-        Some(solidity::StorageLocation::Storage(Default::default()))
-    } else {
-        None
-    };
+    // let storage_location = if is_storage {
+    //     Some(solidity::StorageLocation::Storage(Default::default()))
+    // } else {
+    //     None
+    // };
 
     let mut variable_type_name = translate_type_name(
         project,
         module.clone(),
         value_scope.clone(),
         &variable_definition.ty,
-        storage_location.as_ref(),
+        None,
     );
+
+    if is_storage {
+        if let sway::TypeName::Identifier {
+            name,
+            generic_parameters: Some(_),
+        } = &mut variable_type_name
+        {
+            if name == "Vec" {
+                *name = "StorageVec".to_string();
+            }
+        }
+    }
 
     // Storage fields should not be wrapped in a `StorageKey<T>`
     if is_storage {
@@ -108,33 +120,7 @@ pub fn translate_state_variable(
         }
     }
 
-    // Check if the variable's type is an ABI
-    let mut abi_type_name = None;
-
-    if let sway::TypeName::Identifier {
-        name,
-        generic_parameters: None,
-    } = &variable_type_name
-    {
-        if project.is_contract_declared(module.clone(), name.as_str()) {
-            // TODO:
-            // for entry in contract.borrow().uses.iter() {
-            //     if !module.uses.contains(entry) {
-            //         module.uses.push(entry.clone());
-            //     }
-            // }
-
-            abi_type_name = Some(variable_type_name.clone());
-
-            variable_type_name = sway::TypeName::Identifier {
-                name: "Identity".into(),
-                generic_parameters: None,
-            };
-        }
-    }
-
     // Translate the variable's initial value
-
     let mut deferred_initializations = vec![];
     let mut mapping_names = vec![];
 
@@ -267,7 +253,6 @@ pub fn translate_state_variable(
                                         name: "u64".into(),
                                         generic_parameters: None,
                                     },
-                                    abi_type_name: abi_type_name.clone(),
                                     value: sway::Expression::Literal(sway::Literal::DecInt(
                                         BigUint::zero(),
                                         None,
@@ -311,7 +296,6 @@ pub fn translate_state_variable(
                                             ],
                                         }),
                                     },
-                                    abi_type_name: abi_type_name.clone(),
                                     value: sway::Expression::from(sway::Constructor {
                                         type_name: sway::TypeName::Identifier {
                                             name: "StorageMap".into(),
@@ -363,6 +347,40 @@ pub fn translate_state_variable(
             )
         }
 
+        sway::TypeName::Abi { .. } => {
+            let initializer = variable_definition
+                .initializer
+                .as_ref()
+                .map(|x| {
+                    let mut value =
+                        translate_expression(project, module.clone(), value_scope.clone(), x);
+
+                    if let Ok(sway::Expression::Commented(comment, expression)) = &value {
+                        if let sway::Expression::FunctionCall(function_call) = expression.as_ref() {
+                            if let Some(identifier) = function_call.function.as_identifier() {
+                                if identifier == "abi" && function_call.parameters.len() == 2 {
+                                    value = Ok(sway::Expression::Commented(
+                                        comment.clone(),
+                                        Box::new(function_call.parameters[1].clone()),
+                                    ));
+                                }
+                            }
+                        }
+                    }
+
+                    value
+                })
+                .transpose()?;
+
+            create_value_expression(
+                project,
+                module.clone(),
+                value_scope.clone(),
+                &variable_type_name,
+                initializer.as_ref(),
+            )
+        }
+
         _ => {
             if let Some(x) = variable_definition.initializer.as_ref() {
                 let value = translate_expression(project, module.clone(), value_scope.clone(), x)?;
@@ -403,7 +421,6 @@ pub fn translate_state_variable(
             old_name: old_name.clone(),
             name: new_name.clone(),
             type_name: variable_type_name.clone(),
-            abi_type_name,
             value: Some(value),
         });
     }
@@ -421,7 +438,6 @@ pub fn translate_state_variable(
                 old_name: old_name.clone(),
                 name: new_name.clone(),
                 type_name: variable_type_name.clone(),
-                abi_type_name,
                 value,
             });
     }
@@ -436,7 +452,6 @@ pub fn translate_state_variable(
             .push(sway::StorageField {
                 old_name: old_name.clone(),
                 name: new_name.clone(),
-                abi_type_name,
                 type_name: variable_type_name.clone(),
                 value,
             });
@@ -458,7 +473,7 @@ pub fn translate_state_variable(
         return_type = inner_return_type;
     }
 
-    let (_, toplevel_fn_name, abi_fn_name) = translate_function_name(
+    let function_name = translate_function_name(
         project,
         module.clone(),
         contract_name,
@@ -480,7 +495,7 @@ pub fn translate_state_variable(
         },
         is_public: false,
         old_name: old_name.clone(),
-        name: abi_fn_name.clone(),
+        name: function_name.abi_fn_name.clone(),
         generic_parameters: None,
         parameters: sway::ParameterList {
             entries: parameters.iter().map(|(p, _)| p.clone()).collect(),
@@ -493,7 +508,7 @@ pub fn translate_state_variable(
 
     // Create the the toplevel function
     let mut toplevel_function = abi_function.clone();
-    toplevel_function.name = toplevel_fn_name;
+    toplevel_function.name = function_name.top_level_fn_name;
 
     toplevel_function.body = Some(sway::Block {
         statements: vec![],
@@ -553,5 +568,9 @@ pub fn translate_state_variable(
         )),
     });
 
-    Ok((deferred_initializations, mapping_names, Some((abi_function, toplevel_function, impl_function))))
+    Ok((
+        deferred_initializations,
+        mapping_names,
+        Some((abi_function, toplevel_function, impl_function)),
+    ))
 }

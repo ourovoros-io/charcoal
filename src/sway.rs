@@ -456,6 +456,9 @@ pub enum TypeName {
         parameters: ParameterList,
         return_type: Option<Box<TypeName>>,
     },
+    Abi {
+        type_name: Box<TypeName>,
+    },
 }
 
 impl Display for TypeName {
@@ -506,6 +509,7 @@ impl Display for TypeName {
                     },
                 )
             }
+            TypeName::Abi { .. } => write!(f, "Identity"),
         }
     }
 }
@@ -619,6 +623,9 @@ impl TypeName {
                 name,
                 generic_parameters: None,
             } => name == "Identity",
+
+            TypeName::Abi { .. } => true,
+
             _ => false,
         }
     }
@@ -633,7 +640,6 @@ impl TypeName {
             _ => false,
         }
     }
-
 
     /// Checks if the type name is `Address`
     pub fn is_address(&self) -> bool {
@@ -1084,7 +1090,6 @@ pub struct Constant {
     pub old_name: String,
     pub name: String,
     pub type_name: TypeName,
-    pub abi_type_name: Option<TypeName>,
     pub value: Option<Expression>,
 }
 
@@ -1433,7 +1438,6 @@ pub struct StorageField {
     pub old_name: String,
     pub name: String,
     pub type_name: TypeName,
-    pub abi_type_name: Option<TypeName>,
     pub value: Expression,
 }
 
@@ -1472,7 +1476,6 @@ pub struct ConfigurableField {
     pub old_name: String,
     pub name: String,
     pub type_name: TypeName,
-    pub abi_type_name: Option<TypeName>,
     pub value: Expression,
 }
 

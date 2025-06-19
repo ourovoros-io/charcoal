@@ -15,30 +15,14 @@ pub fn translate_variable_definition_statement(
 ) -> Result<sway::Statement, Error> {
     let old_name = variable_declaration.name.as_ref().unwrap().name.clone();
     let new_name = translate_naming_convention(old_name.as_str(), Case::Snake);
-    let mut type_name = translate_type_name(
+
+    let type_name = translate_type_name(
         project,
         module.clone(),
         scope.clone(),
         &variable_declaration.ty,
         variable_declaration.storage.as_ref(),
     );
-    let mut abi_type_name = None;
-
-    // Check if the parameter's type is an ABI
-    if let sway::TypeName::Identifier {
-        name,
-        generic_parameters: None,
-    } = &type_name
-    {
-        if project.is_contract_declared(module.clone(), &name) {
-            abi_type_name = Some(type_name.clone());
-
-            type_name = sway::TypeName::Identifier {
-                name: "Identity".into(),
-                generic_parameters: None,
-            };
-        }
-    }
 
     let mut value = None;
 
@@ -51,7 +35,8 @@ pub fn translate_variable_definition_statement(
 
         if type_name != new_type_name {
             panic!(
-                "Invalid new expression type name: expected `{type_name}`, found `{new_type_name}`"
+                "Invalid new expression type name: expected `{type_name}`, found `{new_type_name}` - `{}`",
+                project.loc_to_file_location_string(module.clone(), &variable_declaration.loc)
             );
         }
 
@@ -219,7 +204,6 @@ pub fn translate_variable_definition_statement(
             old_name,
             new_name,
             type_name,
-            abi_type_name,
             ..Default::default()
         })));
 
