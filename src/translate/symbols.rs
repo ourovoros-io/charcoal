@@ -107,6 +107,28 @@ pub fn resolve_symbol(
         }
     }
 
+    // If we didn't find it in the current contract, try checking inheritted contracts
+    if let Some(contract_name) = scope.borrow().get_contract_name() {
+        if let Some(contract) = project.find_contract(module.clone(), &contract_name) {
+            let inherits = contract.borrow().abi.inherits.clone();
+
+            for inherit in inherits {
+                let inherit_type_name = inherit.to_string();
+                let scope = Rc::new(RefCell::new(ir::Scope::new(
+                    Some(&inherit_type_name.as_str()),
+                    Some(scope.clone()),
+                )));
+
+                if let Some(result) =
+                    resolve_symbol(project, module.clone(), scope.clone(), symbol.clone())
+                {
+                    return Some(result);
+                }
+            }
+        }
+    }
+
+    // If we didn't find it in the current module, try checking imported modules
     for use_expr in module.borrow().uses.iter() {
         if let Some(imported_module) = project.resolve_use(use_expr) {
             if let Some(symbol) = resolve_symbol(
@@ -224,6 +246,7 @@ pub fn resolve_abi_function_call(
         function = functions.iter().find(|function| {
             let function_parameters = &function.parameters;
             let mut parameters = parameters_cell.borrow_mut();
+
             // Ensure the function's old name matches the function call we're translating
             if function.old_name != function_name {
                 return false;
@@ -387,7 +410,7 @@ pub fn resolve_abi_function_call(
                 project.find_contract(module.clone(), inherit.to_string().as_str())
             {
                 let abi = contract.borrow().abi.clone();
-
+                
                 if let Some(result) = resolve_abi_function_call(
                     project,
                     module.clone(),

@@ -764,7 +764,8 @@ pub fn coerce_expression(
             }
 
             // From uint to Identity
-            if (from_type_name.is_uint() || from_type_name.is_b256()) && rhs_name == "Identity" {
+            if (from_type_name.is_uint() || from_type_name.is_b256()) && to_type_name.is_identity()
+            {
                 if from_type_name.is_uint() {
                     expression =
                         coerce_expression(&expression, from_type_name, &b256_type_name).unwrap();
@@ -786,7 +787,7 @@ pub fn coerce_expression(
             }
 
             // From abi cast to Identity
-            if rhs_name == "Identity" {
+            if to_type_name.is_identity() {
                 if let sway::Expression::FunctionCall(f) = &expression {
                     if let Some("abi") = f.function.as_identifier() {
                         return Some(
@@ -797,8 +798,16 @@ pub fn coerce_expression(
                 }
             }
 
+            // From ContractId to Identity
+            if from_type_name.is_contract_id() && to_type_name.is_identity() {
+                return Some(sway::Expression::create_function_calls(
+                    None,
+                    &[("Identity::ContractId", Some((None, vec![expression])))],
+                ));
+            }
+
             // From uint to Bytes
-            if (from_type_name.is_uint() || from_type_name.is_b256()) && rhs_name == "Bytes" {
+            if (from_type_name.is_uint() || from_type_name.is_b256()) && to_type_name.is_bytes() {
                 if lhs_name == "u8" {
                     todo!()
                 }
@@ -810,7 +819,7 @@ pub fn coerce_expression(
             }
 
             // From String to Bytes
-            if from_type_name.is_string() && rhs_name == "Bytes" {
+            if from_type_name.is_string() && to_type_name.is_bytes() {
                 return Some(sway::Expression::create_function_calls(
                     Some(expression),
                     &[("as_bytes", Some((None, vec![])))],

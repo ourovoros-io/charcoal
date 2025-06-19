@@ -623,6 +623,29 @@ impl TypeName {
         }
     }
 
+    /// Checks if the type name is `ContractId`
+    pub fn is_contract_id(&self) -> bool {
+        match self {
+            TypeName::Identifier {
+                name,
+                generic_parameters: None,
+            } => name == "ContractId",
+            _ => false,
+        }
+    }
+
+
+    /// Checks if the type name is `Address`
+    pub fn is_address(&self) -> bool {
+        match self {
+            TypeName::Identifier {
+                name,
+                generic_parameters: None,
+            } => name == "Address",
+            _ => false,
+        }
+    }
+
     pub fn is_string_slice(&self) -> bool {
         matches!(self, TypeName::StringSlice)
     }

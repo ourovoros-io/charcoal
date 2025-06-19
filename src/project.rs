@@ -774,13 +774,8 @@ impl Project {
         // find the module being imported, then check if the contract lives there.
         for use_item in module.borrow().uses.iter() {
             if let Some(found_module) = self.resolve_use(use_item) {
-                if let Some(contract) = found_module
-                    .borrow()
-                    .contracts
-                    .iter()
-                    .find(|c| c.signature.to_string() == contract_name)
-                {
-                    return contract.implementation.clone();
+                if let Some(contract) = self.find_contract(found_module, contract_name) {
+                    return Some(contract.clone());
                 }
             }
         }
