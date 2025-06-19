@@ -2848,31 +2848,34 @@ fn translate_super_member_access_function_call(
         .map(|p| get_expression_type(project, module.clone(), scope.clone(), p))
         .collect::<Result<Vec<_>, _>>()?;
 
-    // TODO
-    // for inherit in module.borrow().inherits.clone() {
-    //     let Some(inherited_definition) = project
-    //         .translated_modules
-    //         .iter()
-    //         .find(|d| d.name == inherit)
-    //         .cloned()
-    //     else {
-    //         panic!("Failed to find inherited definition for `{inherit}`");
-    //     };
+    if let Some(contract_name) = scope.borrow().get_contract_name() {
+        if let Some(contract) = project.find_contract(module.clone(), &contract_name) {
+            let abi = contract.borrow().abi.clone();
 
-    //     // Try to resolve the function call
-    //     if let Some(result) = resolve_function_call(
-    //         project,
-    //         module.clone(),
-    //         scope.clone(),
-    //         &inherited_definition.toplevel_scope,
-    //         member.name.as_str(),
-    //         named_arguments,
-    //         parameters.clone(),
-    //         parameter_types.clone(),
-    //     )? {
-    //         return Ok(result);
-    //     }
-    // }
+            for inherit in abi.inherits.iter() {
+                let contract_name = inherit.to_string();
+                
+                let scope = Rc::new(RefCell::new(ir::Scope::new(
+                    Some(&contract_name),
+                    Some(scope.clone()),
+                )));
+
+                if let Some(result) = resolve_abi_function_call(
+                    project,
+                    module.clone(),
+                    scope.clone(),
+                    &abi,
+                    None,
+                    member,
+                    named_arguments,
+                    parameters.clone(),
+                    parameter_types.clone(),
+                )? {
+                    return Ok(Some(result));
+                }
+            }
+        }
+    }
 
     Ok(None)
 }
