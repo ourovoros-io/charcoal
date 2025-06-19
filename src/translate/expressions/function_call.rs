@@ -368,24 +368,6 @@ fn translate_variable_function_call(
         }
     }
 
-    // for f in module
-    //     .borrow()
-    //     .functions
-    //     .iter()
-    //     .map(|f| f.signature.clone())
-    // {
-    //     let sway::TypeName::Function {
-    //         old_name, new_name, ..
-    //     } = &f
-    //     else {
-    //         unreachable!()
-    //     };
-    //     println!("----------------------------------------------");
-    //     println!("old name: {old_name}");
-    //     println!("new name: {new_name}");
-    //     println!("type: {f}");
-    // }
-
     panic!(
         "{}: ERROR: Failed to find function `{name}({})` in scope: {name}({})",
         project.loc_to_file_location_string(module.clone(), &expression.loc()),
@@ -1363,7 +1345,7 @@ fn translate_function_call_function_call(
     scope: Rc<RefCell<ir::Scope>>,
     function: &solidity::Expression,
     args: &[solidity::Expression],
-    expression: &solidity::Expression,
+    solidity_expression: &solidity::Expression,
     arguments: &[solidity::Expression],
 ) -> Result<sway::Expression, Error> {
     // timelock.executeTransaction.value(proposal.values[i])
@@ -1612,7 +1594,7 @@ fn translate_function_call_block_member_access_function_call(
     block: &solidity::Statement,
     member: &solidity::Identifier,
 ) -> Result<sway::Expression, Error> {
-    let mut container =
+    let container =
         translate_expression(project, module.clone(), scope.clone(), solidity_container)?;
     let type_name = get_expression_type(project, module.clone(), scope.clone(), &container)?;
 
@@ -1683,25 +1665,165 @@ fn translate_function_call_block_member_access_function_call(
 
     let mut name = name.clone();
 
-    let variable = translate_variable_access_expression(
+    let Some(ir::VariableAccess {
+        variable,
+        mut expression,
+    }) = translate_variable_access_expression(
         project,
         module.clone(),
         scope.clone(),
         solidity_container,
     )?
-    .map(|v| v.variable)
-    .flatten();
+    else {
+        panic!(
+            "{}: Failed to translate variable access expression: {expression}",
+            project.loc_to_file_location_string(module.clone(), &expression.loc())
+        )
+    };
+
+    // HACK: remove `.read()` if present
+    if let sway::Expression::FunctionCall(f) = &expression {
+        if let sway::Expression::MemberAccess(m) = &f.function {
+            if m.member == "read" && f.parameters.is_empty() {
+                let container_type =
+                    get_expression_type(project, module.clone(), scope.clone(), &m.expression)?;
+
+                if container_type.is_storage_key() {
+                    expression = m.expression.clone();
+                }
+            }
+        }
+    }
 
     // Check if expression is a variable that had an ABI type
     if let Some(variable) = variable.as_ref() {
         if let Some(abi_type_name) = variable.borrow().abi_type_name.as_ref() {
             name = abi_type_name.to_string();
         }
+    } else {
+        match &expression {
+            sway::Expression::PathExpr(p) => {
+                if let sway::PathExprRoot::Identifier(ident) = &p.root {
+                    if p.segments.is_empty() {
+                        let mut name_found = false;
+
+                        // Check if expression is an Identity configurable field that had an ABI type
+                        if let Some(configurable) = module.borrow().configurable.as_ref() {
+                            for field in configurable.fields.iter() {
+                                if field.name == *ident {
+                                    if let Some(abi_type_name) = field.abi_type_name.as_ref() {
+                                        name = abi_type_name.to_string();
+                                        name_found = true;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+
+                        // Check if expression is an Identity constant that had an ABI type
+                        if !name_found {
+                            if let Some(constant) =
+                                module.borrow().constants.iter().find(|c| c.name == *ident)
+                            {
+                                if let Some(abi_type_name) = constant.abi_type_name.as_ref() {
+                                    name = abi_type_name.to_string();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            sway::Expression::MemberAccess(m) => {
+                // Check if expression is an Identity storage field that had an ABI type
+                if let sway::Expression::PathExpr(path_expr) = &m.expression {
+                    if let sway::PathExprRoot::Identifier(root_ident) = &path_expr.root {
+                        if root_ident == "storage" {
+                            let mut storage_namespace: Option<Rc<RefCell<sway::StorageNamespace>>> =
+                                None;
+
+                            for segment in path_expr.segments.iter() {
+                                let namespace = match storage_namespace {
+                                    None => {
+                                        let module = module.borrow();
+
+                                        let contract_name =
+                                            scope.borrow().get_contract_name().unwrap();
+
+                                        let contract_item = module
+                                            .contracts
+                                            .iter()
+                                            .find(|c| c.signature.to_string() == contract_name)
+                                            .unwrap();
+
+                                        if let Some(contract) =
+                                            contract_item.implementation.as_ref()
+                                        {
+                                            if contract.borrow().storage.is_none() {
+                                                contract.borrow_mut().storage = Some(Rc::new(
+                                                    RefCell::new(sway::Storage::default()),
+                                                ));
+                                            }
+
+                                            if let Some(storage) =
+                                                contract.borrow().storage.as_ref()
+                                            {
+                                                storage
+                                                    .borrow()
+                                                    .namespaces
+                                                    .iter()
+                                                    .find(|s| s.borrow().name == segment.name)
+                                                    .cloned()
+                                            } else {
+                                                None
+                                            }
+                                        } else {
+                                            None
+                                        }
+                                    }
+
+                                    Some(storage_namespace) => storage_namespace
+                                        .borrow()
+                                        .namespaces
+                                        .iter()
+                                        .find(|s| s.borrow().name == segment.name)
+                                        .cloned(),
+                                };
+
+                                if namespace.is_none() {
+                                    storage_namespace = None;
+                                    break;
+                                }
+
+                                storage_namespace = namespace;
+                            }
+
+                            if let Some(storage_namespace) = storage_namespace {
+                                if let Some(storage_field) = storage_namespace
+                                    .borrow()
+                                    .fields
+                                    .iter()
+                                    .find(|s| s.name == m.member)
+                                {
+                                    if let Some(abi_type_name) =
+                                        storage_field.abi_type_name.as_ref()
+                                    {
+                                        name = abi_type_name.to_string();
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            _ => {}
+        }
     }
 
     // Check to see if the type is a contract ABI
-    if let Some(external_definition) = project.find_contract(module.clone(), &name) {
-        let abi = external_definition.borrow().abi.clone();
+    if let Some(contract) = project.find_contract(module.clone(), &name) {
+        let abi = contract.borrow().abi.clone();
 
         let parameters = arguments
             .iter()
@@ -1730,7 +1852,7 @@ fn translate_function_call_block_member_access_function_call(
 
     todo!(
         "{}: translate Identity member function call block `{member}{}`: {}",
-        project.loc_to_file_location_string(module.clone(), &expression.loc()),
+        project.loc_to_file_location_string(module.clone(), &solidity_container.loc()),
         block.to_string(),
         sway::TabbedDisplayer(&container)
     )
@@ -1969,6 +2091,7 @@ fn translate_identity_member_access_function_call(
                 if let sway::PathExprRoot::Identifier(ident) = &p.root {
                     if p.segments.is_empty() {
                         let mut name_found = false;
+
                         if let Some(configurable) = module.borrow().configurable.as_ref() {
                             for field in configurable.fields.iter() {
                                 if field.name == *ident {

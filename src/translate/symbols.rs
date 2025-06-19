@@ -45,54 +45,58 @@ pub fn resolve_symbol(
         }
 
         Symbol::Event(name) => {
-            if let Some(event_enum) = module
-                .borrow()
-                .events_enums
-                .iter()
-                .find(|e| e.0.borrow().variants.iter().any(|v| v.name == *name))
-            {
-                let variant = event_enum
-                    .0
-                    .borrow()
-                    .variants
-                    .iter()
-                    .find(|v| v.name == *name)
-                    .cloned()
-                    .unwrap();
+            if let Some(contract_name) = scope.borrow().get_contract_name() {
+                let event_name = format!("{contract_name}Event");
 
-                return Some(SymbolData::Event {
-                    type_name: sway::TypeName::Identifier {
-                        name: event_enum.0.borrow().name.clone(),
-                        generic_parameters: None,
-                    },
-                    variant,
-                });
+                if let Some(event_enum) = module.borrow().events_enums.iter().find(|e| {
+                    e.0.borrow().name == event_name
+                        && e.0.borrow().variants.iter().any(|v| v.name == *name)
+                }) {
+                    let variant = event_enum
+                        .0
+                        .borrow()
+                        .variants
+                        .iter()
+                        .find(|v| v.name == *name)
+                        .cloned()
+                        .unwrap();
+
+                    return Some(SymbolData::Event {
+                        type_name: sway::TypeName::Identifier {
+                            name: event_enum.0.borrow().name.clone(),
+                            generic_parameters: None,
+                        },
+                        variant,
+                    });
+                }
             }
         }
 
         Symbol::Error(name) => {
-            if let Some(error_enum) = module
-                .borrow()
-                .errors_enums
-                .iter()
-                .find(|e| e.0.borrow().variants.iter().any(|v| v.name == *name))
-            {
-                let variant = error_enum
-                    .0
-                    .borrow()
-                    .variants
-                    .iter()
-                    .find(|v| v.name == *name)
-                    .cloned()
-                    .unwrap();
+            if let Some(contract_name) = scope.borrow().get_contract_name() {
+                let error_name = format!("{contract_name}Error");
 
-                return Some(SymbolData::Error {
-                    type_name: sway::TypeName::Identifier {
-                        name: error_enum.0.borrow().name.clone(),
-                        generic_parameters: None,
-                    },
-                    variant,
-                });
+                if let Some(error_enum) = module.borrow().errors_enums.iter().find(|e| {
+                    e.0.borrow().name == error_name
+                        && e.0.borrow().variants.iter().any(|v| v.name == *name)
+                }) {
+                    let variant = error_enum
+                        .0
+                        .borrow()
+                        .variants
+                        .iter()
+                        .find(|v| v.name == *name)
+                        .cloned()
+                        .unwrap();
+
+                    return Some(SymbolData::Error {
+                        type_name: sway::TypeName::Identifier {
+                            name: error_enum.0.borrow().name.clone(),
+                            generic_parameters: None,
+                        },
+                        variant,
+                    });
+                }
             }
         }
 
