@@ -602,6 +602,39 @@ impl TypeName {
     }
 
     #[inline(always)]
+    pub fn is_u8(&self) -> bool {
+        match self {
+            TypeName::Identifier {
+                name,
+                generic_parameters: None,
+            } => name == "u8",
+            _ => false,
+        }
+    }
+
+    #[inline(always)]
+    pub fn is_u16(&self) -> bool {
+        match self {
+            TypeName::Identifier {
+                name,
+                generic_parameters: None,
+            } => name == "u16",
+            _ => false,
+        }
+    }
+
+    #[inline(always)]
+    pub fn is_u32(&self) -> bool {
+        match self {
+            TypeName::Identifier {
+                name,
+                generic_parameters: None,
+            } => name == "u32",
+            _ => false,
+        }
+    }
+
+    #[inline(always)]
     pub fn is_u64(&self) -> bool {
         match self {
             TypeName::Identifier {
@@ -668,14 +701,18 @@ impl TypeName {
     }
 
     #[inline(always)]
+    pub fn is_string_array(&self) -> bool {
+        matches!(self, TypeName::StringArray { .. })
+    }
+
+    #[inline(always)]
     pub fn is_string(&self) -> bool {
         match self {
             TypeName::Identifier {
                 name,
                 generic_parameters: None,
             } => name == "String",
-            TypeName::StringSlice => true,
-            TypeName::StringArray { .. } => true,
+            
             _ => false,
         }
     }
@@ -706,6 +743,19 @@ impl TypeName {
     #[inline(always)]
     pub fn is_array(&self) -> bool {
         self.array_info().is_some()
+    }
+
+    #[inline(always)]
+    pub fn tuple_type_names(&self) -> Option<Vec<TypeName>> {
+        match self {
+            TypeName::Tuple { type_names } => Some(type_names.clone()),
+            _ => None,
+        }
+    }
+
+    #[inline(always)]
+    pub fn is_tuple(&self) -> bool {
+        self.tuple_type_names().is_some()
     }
 
     #[inline(always)]

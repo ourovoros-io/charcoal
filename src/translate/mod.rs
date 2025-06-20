@@ -62,16 +62,49 @@ pub fn coerce_expression(
     from_type_name: &sway::TypeName,
     to_type_name: &sway::TypeName,
 ) -> Option<sway::Expression> {
+    if from_type_name.is_compatible_with(to_type_name) {
+        return Some(expression.clone());
+    }
+
     // println!(
     //     "Coercing from `{from_type_name}` to `{to_type_name}`: {}",
     //     sway::TabbedDisplayer(expression)
     // );
 
-    if from_type_name.is_compatible_with(to_type_name) {
-        return Some(expression.clone());
-    }
+    let b256_type_name = sway::TypeName::Identifier {
+        name: "b256".into(),
+        generic_parameters: None,
+    };
+
+    let u256_type_name = sway::TypeName::Identifier {
+        name: "u256".into(),
+        generic_parameters: None,
+    };
 
     let mut expression = expression.clone();
+
+    // Check for `StorageKey<T>` to `T` coercions
+    if let Some(storage_key_type) = from_type_name.storage_key_type() {
+        if to_type_name.is_compatible_with(&storage_key_type) {
+            return Some(sway::Expression::create_function_calls(
+                Some(expression),
+                &[("read", Some((None, vec![])))],
+            ));
+        }
+    }
+
+    // Check for `T` to `StorageKey<T>` coercions
+    if let Some(storage_key_type) = to_type_name.storage_key_type() {
+        if storage_key_type.is_compatible_with(from_type_name) {
+            if let sway::Expression::FunctionCall(f) = &expression {
+                if let sway::Expression::MemberAccess(m) = &f.function {
+                    if m.member == "read" && f.parameters.len() == 0 {
+                        return Some(m.expression.clone());
+                    }
+                }
+            }
+        }
+    }
 
     // Check for `Identity` to `b256` coercions
     if from_type_name.is_identity() && to_type_name.is_b256() {
@@ -92,11 +125,31 @@ pub fn coerce_expression(
         ));
     }
 
-    // If `to_type_name` is `Identity`, but `expression` is an abi cast expression,
-    // then we need to de-cast it, so `expression` turns into the 2nd parameter of the abi cast,
-    // and `from_type_name` turns into `Identity`.
+    // From uint to Identity
+    if (from_type_name.is_uint() || from_type_name.is_b256()) && to_type_name.is_identity() {
+        if from_type_name.is_uint() {
+            expression = coerce_expression(&expression, from_type_name, &b256_type_name).unwrap();
+        }
+
+        return Some(sway::Expression::create_function_calls(
+            None,
+            &[(
+                "Identity::Address",
+                Some((
+                    None,
+                    vec![sway::Expression::create_function_calls(
+                        None,
+                        &[("Address::from", Some((None, vec![expression])))],
+                    )],
+                )),
+            )],
+        ));
+    }
+
+    // Check for abi cast to `Identity` coercions
     if to_type_name.is_identity() {
         let mut comment = None;
+        let mut expression = expression.clone();
 
         if let sway::Expression::Commented(c, e) = &expression {
             comment = Some(c.clone());
@@ -104,86 +157,357 @@ pub fn coerce_expression(
         }
 
         if let sway::Expression::FunctionCall(f) = &expression {
-            if let Some(ident) = f.function.as_identifier() {
-                if ident == "abi" && f.parameters.len() == 2 {
-                    let rhs = f.parameters[1].clone();
+            if let Some("abi") = f.function.as_identifier() {
+                if f.parameters.len() == 2 {
+                    return Some(
+                        coerce_expression(
+                            &if let Some(comment) = comment {
+                                sway::Expression::Commented(
+                                    comment,
+                                    Box::new(f.parameters[1].clone()),
+                                )
+                            } else {
+                                f.parameters[1].clone()
+                            },
+                            &b256_type_name,
+                            to_type_name,
+                        )
+                        .unwrap(),
+                    );
+                }
+            }
+        }
+    }
 
-                    // Check for `ContractId::from`
-                    if let sway::Expression::FunctionCall(f) = &rhs {
-                        if let Some("ContractId::from") = f.function.as_identifier() {
-                            return Some(sway::Expression::create_function_calls(
+    // Check for `ContractId` to `Identity` coercions
+    if from_type_name.is_contract_id() && to_type_name.is_identity() {
+        return Some(sway::Expression::create_function_calls(
+            None,
+            &[("Identity::ContractId", Some((None, vec![expression])))],
+        ));
+    }
+
+    // Check for uint to int coercions
+    if from_type_name.is_uint() && to_type_name.is_int() {
+        let lhs_bits: usize = from_type_name
+            .to_string()
+            .trim_start_matches('u')
+            .trim_start_matches('U')
+            .trim_start_matches('I')
+            .parse()
+            .unwrap();
+
+        let rhs_bits: usize = to_type_name
+            .to_string()
+            .trim_start_matches('u')
+            .trim_start_matches('U')
+            .trim_start_matches('I')
+            .parse()
+            .unwrap();
+
+        if lhs_bits > rhs_bits {
+            expression = sway::Expression::create_function_calls(
+                None,
+                &[
+                    (
+                        format!("u{rhs_bits}::try_from").as_str(),
+                        Some((None, vec![expression.clone()])),
+                    ),
+                    ("unwrap", Some((None, vec![]))),
+                ],
+            );
+        } else if lhs_bits < rhs_bits {
+            expression = sway::Expression::create_function_calls(
+                Some(expression.clone()),
+                &[(format!("as_u{rhs_bits}").as_str(), Some((None, vec![])))],
+            );
+        }
+
+        return Some(sway::Expression::create_function_calls(
+            None,
+            &[(
+                format!("I{rhs_bits}::from_uint").as_str(),
+                Some((None, vec![expression.clone()])),
+            )],
+        ));
+    }
+
+    // Check for int to uint coercions
+    if from_type_name.is_int() && to_type_name.is_uint() {
+        let lhs_bits: usize = from_type_name
+            .to_string()
+            .trim_start_matches('u')
+            .trim_start_matches('U')
+            .trim_start_matches('I')
+            .parse()
+            .unwrap();
+
+        let rhs_bits: usize = to_type_name
+            .to_string()
+            .trim_start_matches('u')
+            .trim_start_matches('U')
+            .trim_start_matches('I')
+            .parse()
+            .unwrap();
+
+        if lhs_bits > rhs_bits {
+            expression = sway::Expression::create_function_calls(
+                None,
+                &[
+                    (
+                        format!("u{rhs_bits}::try_from").as_str(),
+                        Some((
+                            None,
+                            vec![sway::Expression::from(sway::MemberAccess {
+                                expression: expression.clone(),
+                                member: "underlying".to_string(),
+                            })],
+                        )),
+                    ),
+                    ("unwrap", Some((None, vec![]))),
+                ],
+            );
+        } else if lhs_bits < rhs_bits {
+            expression = sway::Expression::create_function_calls(
+                Some(expression.clone()),
+                &[
+                    ("underlying", None),
+                    (format!("as_u{rhs_bits}").as_str(), Some((None, vec![]))),
+                ],
+            );
+        }
+
+        return Some(sway::Expression::create_function_calls(
+            None,
+            &[(
+                format!("I{rhs_bits}::from_uint").as_str(),
+                Some((None, vec![expression.clone()])),
+            )],
+        ));
+    }
+
+    // Check for uint/int coercions of different bit lengths
+    if (from_type_name.is_uint() && to_type_name.is_uint())
+        || (from_type_name.is_int() && to_type_name.is_int())
+    {
+        let lhs_bits: usize = from_type_name
+            .to_string()
+            .trim_start_matches('u')
+            .trim_start_matches('U')
+            .trim_start_matches('I')
+            .parse()
+            .unwrap();
+
+        let rhs_bits: usize = to_type_name
+            .to_string()
+            .trim_start_matches('u')
+            .trim_start_matches('U')
+            .trim_start_matches('I')
+            .parse()
+            .unwrap();
+
+        match &expression {
+            sway::Expression::Literal(sway::Literal::DecInt(i, suffix)) => {
+                if suffix.is_none() {
+                    return Some(sway::Expression::Literal(sway::Literal::DecInt(
+                        i.clone(),
+                        Some(format!(
+                            "{}{}",
+                            to_type_name.to_string().chars().nth(0).unwrap(),
+                            rhs_bits
+                        )),
+                    )));
+                }
+
+                if lhs_bits > rhs_bits {
+                    // x.as_u256()
+                    // u64::try_from(x).unwrap()
+                    return Some(sway::Expression::create_function_calls(
+                        None,
+                        &[
+                            (
+                                format!("{to_type_name}::try_from").as_str(),
+                                Some((None, vec![expression.clone()])),
+                            ),
+                            ("unwrap", Some((None, vec![]))),
+                        ],
+                    ));
+                }
+
+                if lhs_bits < rhs_bits {
+                    return Some(sway::Expression::create_function_calls(
+                        Some(expression.clone()),
+                        &[(format!("as_{to_type_name}").as_str(), Some((None, vec![])))],
+                    ));
+                }
+            }
+
+            _ => {
+                if lhs_bits > rhs_bits {
+                    // x.as_u256()
+                    // u64::try_from(x).unwrap()
+                    return Some(sway::Expression::create_function_calls(
+                        None,
+                        &[
+                            (
+                                format!("{to_type_name}::try_from").as_str(),
+                                Some((None, vec![expression.clone()])),
+                            ),
+                            ("unwrap", Some((None, vec![]))),
+                        ],
+                    ));
+                }
+
+                if lhs_bits < rhs_bits {
+                    return Some(sway::Expression::create_function_calls(
+                        Some(expression.clone()),
+                        &[(format!("as_{to_type_name}").as_str(), Some((None, vec![])))],
+                    ));
+                }
+            }
+        }
+    }
+
+    // Check for uint to `b256` coercions
+    if from_type_name.is_uint() && to_type_name.is_b256() {
+        expression = coerce_expression(&expression, from_type_name, &u256_type_name).unwrap();
+
+        return Some(sway::Expression::create_function_calls(
+            Some(expression),
+            &[("as_b256", Some((None, vec![])))],
+        ));
+    }
+
+    // Check for b256 to `u256` coercions
+    if from_type_name.is_b256() && to_type_name.is_u256() {
+        return Some(sway::Expression::create_function_calls(
+            Some(expression),
+            &[("as_u256", Some((None, vec![])))],
+        ));
+    }
+
+    // Check for uint to `Bytes` coercions
+    if (from_type_name.is_uint() || from_type_name.is_b256()) && to_type_name.is_bytes() {
+        if from_type_name.is_u8() {
+            todo!()
+        }
+
+        return Some(sway::Expression::create_function_calls(
+            Some(expression),
+            &[("to_be_bytes", Some((None, vec![])))],
+        ));
+    }
+
+    // Check for `String` to `Bytes` coercions
+    if from_type_name.is_string() && to_type_name.is_bytes() {
+        return Some(sway::Expression::create_function_calls(
+            Some(expression),
+            &[("as_bytes", Some((None, vec![])))],
+        ));
+    }
+
+    // Check for `StorageKey<StorageVec<T>>` to `Vec<T>` coercions
+    if let Some(storage_key_type) = from_type_name.storage_key_type() {
+        if let Some(storage_vec_type) = storage_key_type.storage_vec_type() {
+            if let Some(vec_type) = to_type_name.vec_type() {
+                let get_expression = sway::Expression::create_function_calls(
+                    Some(expression.clone()),
+                    &[
+                        (
+                            "get",
+                            Some((
+                                None,
+                                vec![sway::Expression::create_identifier("i".to_string())],
+                            )),
+                        ),
+                        ("unwrap", Some((None, vec![]))),
+                        ("read", Some((None, vec![]))),
+                    ],
+                );
+
+                let element_expression =
+                    coerce_expression(&get_expression, &storage_vec_type, &vec_type).unwrap();
+
+                return Some(sway::Expression::from(sway::Block {
+                    statements: vec![
+                        sway::Statement::from(sway::Let {
+                            pattern: sway::LetPattern::Identifier(sway::LetIdentifier {
+                                is_mutable: false,
+                                name: "len".to_string(),
+                            }),
+                            type_name: None,
+                            value: sway::Expression::create_function_calls(
+                                Some(expression.clone()),
+                                &[("len", Some((None, vec![])))],
+                            ),
+                        }),
+                        sway::Statement::from(sway::Let {
+                            pattern: sway::LetPattern::Identifier(sway::LetIdentifier {
+                                is_mutable: true,
+                                name: "v".to_string(),
+                            }),
+                            type_name: None,
+                            value: sway::Expression::create_function_calls(
                                 None,
                                 &[(
-                                    "Identity::ContractId",
+                                    "Vec::with_capacity",
                                     Some((
                                         None,
-                                        vec![if let Some(comment) = comment {
-                                            sway::Expression::Commented(comment, Box::new(rhs))
-                                        } else {
-                                            rhs
-                                        }],
+                                        vec![sway::Expression::create_identifier(
+                                            "len".to_string(),
+                                        )],
                                     )),
                                 )],
-                            ));
-                        }
-                    }
-
-                    // Check for `x.as_contract_id().unwrap().into()`
-                    if let sway::Expression::FunctionCall(f) = &rhs {
-                        if let sway::Expression::MemberAccess(e) = &f.function {
-                            if e.member == "into" {
-                                if let sway::Expression::FunctionCall(f) = &e.expression {
-                                    if let sway::Expression::MemberAccess(e) = &f.function {
-                                        if e.member == "unwrap" {
-                                            if let sway::Expression::FunctionCall(f) = &e.expression
-                                            {
-                                                if let sway::Expression::MemberAccess(e) =
-                                                    &f.function
-                                                {
-                                                    if e.member == "as_contract_id" {
-                                                        return Some(
-                                                            if let Some(comment) = comment {
-                                                                sway::Expression::Commented(
-                                                                    comment,
-                                                                    Box::new(e.expression.clone()),
-                                                                )
-                                                            } else {
-                                                                e.expression.clone()
-                                                            },
-                                                        );
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // Check for `x.into()` if `x` is a number literal
-                    if let sway::Expression::FunctionCall(f) = &rhs {
-                        if let sway::Expression::MemberAccess(m) = &f.function {
-                            if m.member == "into" && f.parameters.is_empty() {
-                                if let sway::Expression::Literal(
-                                    sway::Literal::DecInt(_, _) | sway::Literal::HexInt(_, _),
-                                ) = &m.expression
-                                {
-                                    return Some(
-                                        if let Some(comment) = comment {
-                                            sway::Expression::Commented(
-                                                comment,
-                                                Box::new(m.expression.clone()),
-                                            )
-                                        } else {
-                                            m.expression.clone()
+                            ),
+                        }),
+                        sway::Statement::from(sway::Let {
+                            pattern: sway::LetPattern::Identifier(sway::LetIdentifier {
+                                is_mutable: true,
+                                name: "i".to_string(),
+                            }),
+                            type_name: None,
+                            value: sway::Expression::from(sway::Literal::DecInt(
+                                BigUint::zero(),
+                                None,
+                            )),
+                        }),
+                        sway::Statement::from(sway::Expression::from(sway::While {
+                            condition: sway::Expression::from(sway::BinaryExpression {
+                                operator: "<".to_string(),
+                                lhs: sway::Expression::create_identifier("i".to_string()),
+                                rhs: sway::Expression::create_identifier("len".to_string()),
+                            }),
+                            body: sway::Block {
+                                statements: vec![
+                                    sway::Statement::from(sway::Expression::create_function_calls(
+                                        None,
+                                        &[
+                                            ("v", None),
+                                            (
+                                                "push",
+                                                Some((None, vec![element_expression.clone()])),
+                                            ),
+                                        ],
+                                    )),
+                                    sway::Statement::from(sway::Expression::from(
+                                        sway::BinaryExpression {
+                                            operator: "+=".to_string(),
+                                            lhs: sway::Expression::create_identifier(
+                                                "i".to_string(),
+                                            ),
+                                            rhs: sway::Expression::from(sway::Literal::DecInt(
+                                                BigUint::one(),
+                                                None,
+                                            )),
                                         },
-                                    );
-                                }
-                            }
-                        }
-                    }
-                }
+                                    )),
+                                ],
+                                final_expr: None,
+                            },
+                        })),
+                    ],
+                    final_expr: Some(sway::Expression::create_identifier("v".to_string())),
+                }));
             }
         }
     }
@@ -340,572 +664,137 @@ pub fn coerce_expression(
         }
     }
 
-    // Check for `T` to `StorageKey<T>` coercions
-    if let Some(storage_key_type) = to_type_name.storage_key_type() {
-        if storage_key_type.is_compatible_with(from_type_name) {
-            if let sway::Expression::FunctionCall(f) = &expression {
-                if let sway::Expression::MemberAccess(m) = &f.function {
-                    if m.member == "read" && f.parameters.len() == 0 {
-                        return Some(m.expression.clone());
-                    }
-                }
-            }
-        }
+    // Check for `String` to `str` coercions
+    if from_type_name.is_string() && to_type_name.is_string_slice() {
+        return Some(sway::Expression::create_function_calls(
+            Some(expression),
+            &[("as_str", Some((None, vec![])))],
+        ));
     }
 
-    // Check for all other coercions
-    match (from_type_name, to_type_name) {
-        (sway::TypeName::Undefined, sway::TypeName::Undefined) => {}
+    // Check for `str` to `String` coercions
+    if from_type_name.is_string_slice() && to_type_name.is_string() {
+        // String::from_ascii_str(x)
+        return Some(sway::Expression::create_function_calls(
+            None,
+            &[(
+                "String::from_ascii_str",
+                Some((None, vec![expression.clone()])),
+            )],
+        ));
+    }
 
-        (
-            sway::TypeName::Identifier {
-                name: lhs_name,
-                generic_parameters: lhs_generic_parameters,
-            },
-            sway::TypeName::Identifier {
-                name: rhs_name,
-                generic_parameters: rhs_generic_parameters,
-            },
-        ) => {
-            if lhs_generic_parameters.is_some() != rhs_generic_parameters.is_some() {
-                // From `StorageKey<T>` to `T`
-                if let Some(storage_key_type) = from_type_name.storage_key_type() {
-                    if !storage_key_type.is_compatible_with(to_type_name) {
-                        if let (Some(lhs_bits), Some(rhs_bits)) =
-                            (storage_key_type.uint_bits(), to_type_name.uint_bits())
-                        {
-                            match &expression {
-                                sway::Expression::Literal(sway::Literal::DecInt(i, suffix)) => {
-                                    if suffix.is_none() {
-                                        return Some(sway::Expression::Literal(
-                                            sway::Literal::DecInt(
-                                                i.clone(),
-                                                Some(format!(
-                                                    "{}{}",
-                                                    rhs_name.chars().nth(0).unwrap(),
-                                                    rhs_bits
-                                                )),
-                                            ),
-                                        ));
-                                    }
+    // Check for `str[]` to `String` coercions
+    if from_type_name.is_string_array() && to_type_name.is_string() {
+        // String::from_ascii_str(from_str_array(x))
+        return Some(sway::Expression::create_function_calls(
+            None,
+            &[(
+                "String::from_ascii_str",
+                Some((
+                    None,
+                    vec![sway::Expression::create_function_calls(
+                        None,
+                        &[("from_str_array", Some((None, vec![expression.clone()])))],
+                    )],
+                )),
+            )],
+        ));
+    }
 
-                                    if lhs_bits > rhs_bits {
-                                        // x.as_u256()
-                                        // u64::try_from(x).unwrap()
-                                        return Some(sway::Expression::create_function_calls(
-                                            None,
-                                            &[
-                                                (
-                                                    format!("{to_type_name}::try_from").as_str(),
-                                                    Some((None, vec![expression.clone()])),
-                                                ),
-                                                ("unwrap", Some((None, vec![]))),
-                                            ],
-                                        ));
-                                    }
-
-                                    if lhs_bits < rhs_bits {
-                                        return Some(sway::Expression::create_function_calls(
-                                            Some(expression.clone()),
-                                            &[(
-                                                format!("as_{to_type_name}").as_str(),
-                                                Some((None, vec![])),
-                                            )],
-                                        ));
-                                    }
-                                }
-
-                                _ => {
-                                    if lhs_bits > rhs_bits {
-                                        // x.as_u256()
-                                        // u64::try_from(x).unwrap()
-                                        return Some(sway::Expression::create_function_calls(
-                                            None,
-                                            &[
-                                                (
-                                                    format!("{to_type_name}::try_from").as_str(),
-                                                    Some((None, vec![expression.clone()])),
-                                                ),
-                                                ("unwrap", Some((None, vec![]))),
-                                            ],
-                                        ));
-                                    }
-
-                                    if lhs_bits < rhs_bits {
-                                        return Some(sway::Expression::create_function_calls(
-                                            Some(expression.clone()),
-                                            &[(
-                                                format!("as_{to_type_name}").as_str(),
-                                                Some((None, vec![])),
-                                            )],
-                                        ));
-                                    }
-                                }
-                            }
-                        }
-
-                        return None;
-                    }
-
-                    return Some(sway::Expression::create_function_calls(
-                        Some(expression.clone()),
-                        &[("read", Some((None, vec![])))],
-                    ));
-                }
-
-                return None;
-            }
-
-            if let (Some(lhs_generic_parameters), Some(rhs_generic_parameters)) = (
-                lhs_generic_parameters.as_ref(),
-                rhs_generic_parameters.as_ref(),
-            ) {
-                if lhs_generic_parameters.entries.len() != rhs_generic_parameters.entries.len() {
-                    return None;
-                }
-            }
-
-            // {
-            //     let mut v = Vec::new();
-            //     let len = storage.storageVec.len();
-            //     let mut i = 0;
-            //     while i < len {
-            //         v.push(storage.storageVec.get(i).unwrap().read())
-            //         i += 1;
-            //     }
-            //     v
-            // }
-            if let Some(storage_key_type) = from_type_name.storage_key_type() {
-                if let Some(storage_vec_type) = storage_key_type.storage_vec_type() {
-                    if let Some(vec_type) = to_type_name.vec_type() {
-                        // let unique_variable_name =
-                        let get_expression = sway::Expression::create_function_calls(
-                            Some(expression.clone()),
-                            &[
-                                (
-                                    "get",
-                                    Some((
-                                        None,
-                                        vec![sway::Expression::create_identifier("i".to_string())],
-                                    )),
-                                ),
-                                ("unwrap", Some((None, vec![]))),
-                                ("read", Some((None, vec![]))),
-                            ],
-                        );
-
-                        let element_expression =
-                            coerce_expression(&get_expression, &storage_vec_type, &vec_type)
-                                .unwrap();
-
-                        return Some(sway::Expression::from(sway::Block {
-                            statements: vec![
-                                sway::Statement::from(sway::Let {
-                                    pattern: sway::LetPattern::Identifier(sway::LetIdentifier {
-                                        is_mutable: false,
-                                        name: "len".to_string(),
-                                    }),
-                                    type_name: None,
-                                    value: sway::Expression::create_function_calls(
+    // Check for `str` to `Bytes` coercions
+    if from_type_name.is_string_slice() && to_type_name.is_bytes() {
+        // Bytes::from(raw_slice::from_parts::<u8>((s.as_ptr(), s.len())))
+        return Some(sway::Expression::create_function_calls(
+            None,
+            &[(
+                "Bytes::from",
+                Some((
+                    None,
+                    vec![sway::Expression::create_function_calls(
+                        None,
+                        &[(
+                            "raw_slice::from_parts",
+                            Some((
+                                Some(sway::GenericParameterList {
+                                    entries: vec![sway::GenericParameter {
+                                        type_name: sway::TypeName::Identifier {
+                                            name: "u8".into(),
+                                            generic_parameters: None,
+                                        },
+                                        implements: None,
+                                    }],
+                                }),
+                                vec![
+                                    sway::Expression::create_function_calls(
+                                        Some(expression.clone()),
+                                        &[("as_ptr", Some((None, vec![])))],
+                                    ),
+                                    sway::Expression::create_function_calls(
                                         Some(expression.clone()),
                                         &[("len", Some((None, vec![])))],
                                     ),
-                                }),
-                                sway::Statement::from(sway::Let {
-                                    pattern: sway::LetPattern::Identifier(sway::LetIdentifier {
-                                        is_mutable: true,
-                                        name: "v".to_string(),
-                                    }),
-                                    type_name: None,
-                                    value: sway::Expression::create_function_calls(
-                                        None,
-                                        &[(
-                                            "Vec::with_capacity",
-                                            Some((
-                                                None,
-                                                vec![sway::Expression::create_identifier(
-                                                    "len".to_string(),
-                                                )],
-                                            )),
-                                        )],
-                                    ),
-                                }),
-                                sway::Statement::from(sway::Let {
-                                    pattern: sway::LetPattern::Identifier(sway::LetIdentifier {
-                                        is_mutable: true,
-                                        name: "i".to_string(),
-                                    }),
-                                    type_name: None,
-                                    value: sway::Expression::from(sway::Literal::DecInt(
-                                        BigUint::zero(),
-                                        None,
-                                    )),
-                                }),
-                                sway::Statement::from(sway::Expression::from(sway::While {
-                                    condition: sway::Expression::from(sway::BinaryExpression {
-                                        operator: "<".to_string(),
-                                        lhs: sway::Expression::create_identifier("i".to_string()),
-                                        rhs: sway::Expression::create_identifier("len".to_string()),
-                                    }),
-                                    body: sway::Block {
-                                        statements: vec![
-                                            sway::Statement::from(
-                                                sway::Expression::create_function_calls(
-                                                    None,
-                                                    &[
-                                                        ("v", None),
-                                                        (
-                                                            "push",
-                                                            Some((
-                                                                None,
-                                                                vec![element_expression.clone()],
-                                                            )),
-                                                        ),
-                                                    ],
-                                                ),
-                                            ),
-                                            sway::Statement::from(sway::Expression::from(
-                                                sway::BinaryExpression {
-                                                    operator: "+=".to_string(),
-                                                    lhs: sway::Expression::create_identifier(
-                                                        "i".to_string(),
-                                                    ),
-                                                    rhs: sway::Expression::from(
-                                                        sway::Literal::DecInt(BigUint::one(), None),
-                                                    ),
-                                                },
-                                            )),
-                                        ],
-                                        final_expr: None,
-                                    },
-                                })),
-                            ],
-                            final_expr: Some(sway::Expression::create_identifier("v".to_string())),
-                        }));
-                    }
-                }
-            }
-
-            // From uint to int
-            if from_type_name.is_uint() && to_type_name.is_int() {
-                let lhs_bits: usize = lhs_name
-                    .trim_start_matches('u')
-                    .trim_start_matches('U')
-                    .trim_start_matches('I')
-                    .parse()
-                    .unwrap();
-
-                let rhs_bits: usize = rhs_name
-                    .trim_start_matches('u')
-                    .trim_start_matches('U')
-                    .trim_start_matches('I')
-                    .parse()
-                    .unwrap();
-
-                if lhs_bits > rhs_bits {
-                    expression = sway::Expression::create_function_calls(
-                        None,
-                        &[
-                            (
-                                format!("u{rhs_bits}::try_from").as_str(),
-                                Some((None, vec![expression.clone()])),
-                            ),
-                            ("unwrap", Some((None, vec![]))),
-                        ],
-                    );
-                } else if lhs_bits < rhs_bits {
-                    expression = sway::Expression::create_function_calls(
-                        Some(expression.clone()),
-                        &[(format!("as_u{rhs_bits}").as_str(), Some((None, vec![])))],
-                    );
-                }
-
-                return Some(sway::Expression::create_function_calls(
-                    None,
-                    &[(
-                        format!("I{rhs_bits}::from_uint").as_str(),
-                        Some((None, vec![expression.clone()])),
+                                ],
+                            )),
+                        )],
                     )],
-                ));
+                )),
+            )],
+        ));
+    }
+
+    // Check for `[u8; 32]` to `b256` coercions
+    if let Some(length) = from_type_name.u8_array_length() {
+        if length == 32 && to_type_name.is_b256() {
+            return Some(sway::Expression::create_function_calls(
+                None,
+                &[("b256::from_be_bytes", Some((None, vec![expression])))],
+            ));
+        }
+    }
+
+    // Check for array to array coercions
+    if let (Some((lhs_type_name, lhs_len)), Some((rhs_type_name, rhs_len))) =
+        (from_type_name.array_info(), to_type_name.array_info())
+    {
+        if lhs_len == rhs_len {
+            if let sway::Expression::Array(array) = &expression {
+                return Some(sway::Expression::from(sway::Array {
+                    elements: array
+                        .elements
+                        .iter()
+                        .map(|e| coerce_expression(e, &lhs_type_name, &rhs_type_name).unwrap())
+                        .collect(),
+                }));
             }
 
-            // From int to uint
-            if from_type_name.is_int() && to_type_name.is_uint() {
-                let lhs_bits: usize = lhs_name
-                    .trim_start_matches('u')
-                    .trim_start_matches('U')
-                    .trim_start_matches('I')
-                    .parse()
-                    .unwrap();
-
-                let rhs_bits: usize = rhs_name
-                    .trim_start_matches('u')
-                    .trim_start_matches('U')
-                    .trim_start_matches('I')
-                    .parse()
-                    .unwrap();
-
-                if lhs_bits > rhs_bits {
-                    expression = sway::Expression::create_function_calls(
-                        None,
-                        &[
-                            (
-                                format!("u{rhs_bits}::try_from").as_str(),
-                                Some((
+            return Some(sway::Expression::from(sway::Array {
+                elements: (0..rhs_len)
+                    .map(|i| {
+                        coerce_expression(
+                            &sway::Expression::from(sway::ArrayAccess {
+                                expression: expression.clone(),
+                                index: sway::Expression::from(sway::Literal::DecInt(
+                                    i.into(),
                                     None,
-                                    vec![sway::Expression::from(sway::MemberAccess {
-                                        expression: expression.clone(),
-                                        member: "underlying".to_string(),
-                                    })],
                                 )),
-                            ),
-                            ("unwrap", Some((None, vec![]))),
-                        ],
-                    );
-                } else if lhs_bits < rhs_bits {
-                    expression = sway::Expression::create_function_calls(
-                        Some(expression.clone()),
-                        &[
-                            ("underlying", None),
-                            (format!("as_u{rhs_bits}").as_str(), Some((None, vec![]))),
-                        ],
-                    );
-                }
-
-                return Some(sway::Expression::create_function_calls(
-                    None,
-                    &[(
-                        format!("I{rhs_bits}::from_uint").as_str(),
-                        Some((None, vec![expression.clone()])),
-                    )],
-                ));
-            }
-
-            // From uint/int of different bit lengths
-            if (from_type_name.is_uint() && to_type_name.is_uint())
-                || (from_type_name.is_int() && to_type_name.is_int())
-            {
-                let lhs_bits: usize = lhs_name
-                    .trim_start_matches('u')
-                    .trim_start_matches('U')
-                    .trim_start_matches('I')
-                    .parse()
-                    .unwrap();
-
-                let rhs_bits: usize = rhs_name
-                    .trim_start_matches('u')
-                    .trim_start_matches('U')
-                    .trim_start_matches('I')
-                    .parse()
-                    .unwrap();
-
-                match &expression {
-                    sway::Expression::Literal(sway::Literal::DecInt(i, suffix)) => {
-                        if suffix.is_none() {
-                            return Some(sway::Expression::Literal(sway::Literal::DecInt(
-                                i.clone(),
-                                Some(format!("{}{}", rhs_name.chars().nth(0).unwrap(), rhs_bits)),
-                            )));
-                        }
-
-                        if lhs_bits > rhs_bits {
-                            // x.as_u256()
-                            // u64::try_from(x).unwrap()
-                            return Some(sway::Expression::create_function_calls(
-                                None,
-                                &[
-                                    (
-                                        format!("{to_type_name}::try_from").as_str(),
-                                        Some((None, vec![expression.clone()])),
-                                    ),
-                                    ("unwrap", Some((None, vec![]))),
-                                ],
-                            ));
-                        }
-
-                        if lhs_bits < rhs_bits {
-                            return Some(sway::Expression::create_function_calls(
-                                Some(expression.clone()),
-                                &[(format!("as_{to_type_name}").as_str(), Some((None, vec![])))],
-                            ));
-                        }
-                    }
-
-                    _ => {
-                        if lhs_bits > rhs_bits {
-                            // x.as_u256()
-                            // u64::try_from(x).unwrap()
-                            return Some(sway::Expression::create_function_calls(
-                                None,
-                                &[
-                                    (
-                                        format!("{to_type_name}::try_from").as_str(),
-                                        Some((None, vec![expression.clone()])),
-                                    ),
-                                    ("unwrap", Some((None, vec![]))),
-                                ],
-                            ));
-                        }
-
-                        if lhs_bits < rhs_bits {
-                            return Some(sway::Expression::create_function_calls(
-                                Some(expression.clone()),
-                                &[(format!("as_{to_type_name}").as_str(), Some((None, vec![])))],
-                            ));
-                        }
-                    }
-                }
-            }
-
-            let b256_type_name = sway::TypeName::Identifier {
-                name: "b256".into(),
-                generic_parameters: None,
-            };
-
-            let u256_type_name = sway::TypeName::Identifier {
-                name: "u256".into(),
-                generic_parameters: None,
-            };
-
-            // From uint to b256
-            if from_type_name.is_uint() && to_type_name.is_b256() {
-                expression =
-                    coerce_expression(&expression, from_type_name, &u256_type_name).unwrap();
-
-                return Some(sway::Expression::create_function_calls(
-                    Some(expression),
-                    &[("as_b256", Some((None, vec![])))],
-                ));
-            }
-
-            // From b256 to u256
-            if from_type_name.is_b256() && to_type_name.is_u256() {
-                return Some(sway::Expression::create_function_calls(
-                    Some(expression),
-                    &[("as_u256", Some((None, vec![])))],
-                ));
-            }
-
-            // From uint to Identity
-            if (from_type_name.is_uint() || from_type_name.is_b256()) && to_type_name.is_identity()
-            {
-                if from_type_name.is_uint() {
-                    expression =
-                        coerce_expression(&expression, from_type_name, &b256_type_name).unwrap();
-                }
-
-                return Some(sway::Expression::create_function_calls(
-                    None,
-                    &[(
-                        "Identity::Address",
-                        Some((
-                            None,
-                            vec![sway::Expression::create_function_calls(
-                                None,
-                                &[("Address::from", Some((None, vec![expression])))],
-                            )],
-                        )),
-                    )],
-                ));
-            }
-
-            // From abi cast to Identity
-            if to_type_name.is_identity() {
-                if let sway::Expression::FunctionCall(f) = &expression {
-                    if let Some("abi") = f.function.as_identifier() {
-                        return Some(
-                            coerce_expression(&f.parameters[1], &b256_type_name, to_type_name)
-                                .unwrap(),
-                        );
-                    }
-                }
-            }
-
-            // From ContractId to Identity
-            if from_type_name.is_contract_id() && to_type_name.is_identity() {
-                return Some(sway::Expression::create_function_calls(
-                    None,
-                    &[("Identity::ContractId", Some((None, vec![expression])))],
-                ));
-            }
-
-            // From uint to Bytes
-            if (from_type_name.is_uint() || from_type_name.is_b256()) && to_type_name.is_bytes() {
-                if lhs_name == "u8" {
-                    todo!()
-                }
-
-                return Some(sway::Expression::create_function_calls(
-                    Some(expression),
-                    &[("to_be_bytes", Some((None, vec![])))],
-                ));
-            }
-
-            // From String to Bytes
-            if from_type_name.is_string() && to_type_name.is_bytes() {
-                return Some(sway::Expression::create_function_calls(
-                    Some(expression),
-                    &[("as_bytes", Some((None, vec![])))],
-                ));
-            }
+                            }),
+                            &lhs_type_name,
+                            &rhs_type_name,
+                        )
+                        .unwrap()
+                    })
+                    .collect(),
+            }));
         }
+    }
 
-        (
-            sway::TypeName::Array {
-                type_name: lhs_type_name,
-                length: lhs_len,
-            },
-            sway::TypeName::Array {
-                type_name: rhs_type_name,
-                length: rhs_len,
-            },
-        ) => {
-            if lhs_len != rhs_len {
-                return None;
-            }
-
-            match expression {
-                sway::Expression::Array(array) => {
-                    return Some(sway::Expression::from(sway::Array {
-                        elements: array
-                            .elements
-                            .iter()
-                            .map(|e| coerce_expression(e, lhs_type_name, rhs_type_name).unwrap())
-                            .collect(),
-                    }));
-                }
-
-                _ => {
-                    return Some(sway::Expression::from(sway::Array {
-                        elements: (0..*rhs_len)
-                            .map(|i| {
-                                coerce_expression(
-                                    &sway::Expression::from(sway::ArrayAccess {
-                                        expression: expression.clone(),
-                                        index: sway::Expression::from(sway::Literal::DecInt(
-                                            i.into(),
-                                            None,
-                                        )),
-                                    }),
-                                    lhs_type_name,
-                                    rhs_type_name,
-                                )
-                                .unwrap()
-                            })
-                            .collect(),
-                    }));
-                }
-            }
-        }
-
-        (
-            sway::TypeName::Tuple {
-                type_names: lhs_type_names,
-            },
-            sway::TypeName::Tuple {
-                type_names: rhs_type_names,
-            },
-        ) => match &expression {
+    // Check for tuple to tuple coercions
+    if let (Some(lhs_type_names), Some(rhs_type_names)) = (
+        from_type_name.tuple_type_names(),
+        to_type_name.tuple_type_names(),
+    ) {
+        match &expression {
             sway::Expression::PathExpr(path_expr) if path_expr.is_identifier() => {
                 let component_names = ('a'..='z')
                     .enumerate()
@@ -950,7 +839,8 @@ pub fn coerce_expression(
                     return None;
                 }
 
-                for (i, (lhs, rhs)) in lhs_type_names.iter().zip(rhs_type_names).enumerate() {
+                for (i, (lhs, rhs)) in lhs_type_names.iter().zip(rhs_type_names.iter()).enumerate()
+                {
                     match coerce_expression(&expressions[i], lhs, rhs) {
                         Some(expr) => expressions[i] = expr,
                         None => return None,
@@ -961,143 +851,7 @@ pub fn coerce_expression(
             }
 
             _ => {}
-        },
-
-        (
-            _,
-            sway::TypeName::Identifier {
-                name,
-                generic_parameters,
-            },
-        ) => match (name.as_str(), generic_parameters.as_ref()) {
-            ("Bytes", None) => match from_type_name {
-                sway::TypeName::StringSlice => {
-                    // Bytes::from(raw_slice::from_parts::<u8>((s.as_ptr(), s.len())))
-                    return Some(sway::Expression::create_function_calls(
-                        None,
-                        &[(
-                            "Bytes::from",
-                            Some((
-                                None,
-                                vec![sway::Expression::create_function_calls(
-                                    None,
-                                    &[(
-                                        "raw_slice::from_parts",
-                                        Some((
-                                            Some(sway::GenericParameterList {
-                                                entries: vec![sway::GenericParameter {
-                                                    type_name: sway::TypeName::Identifier {
-                                                        name: "u8".into(),
-                                                        generic_parameters: None,
-                                                    },
-                                                    implements: None,
-                                                }],
-                                            }),
-                                            vec![
-                                                sway::Expression::create_function_calls(
-                                                    Some(expression.clone()),
-                                                    &[("as_ptr", Some((None, vec![])))],
-                                                ),
-                                                sway::Expression::create_function_calls(
-                                                    Some(expression.clone()),
-                                                    &[("len", Some((None, vec![])))],
-                                                ),
-                                            ],
-                                        )),
-                                    )],
-                                )],
-                            )),
-                        )],
-                    ));
-                }
-
-                _ => {}
-            },
-
-            ("String", None) => match from_type_name {
-                sway::TypeName::Identifier {
-                    name,
-                    generic_parameters,
-                } => match (name.as_str(), generic_parameters.as_ref()) {
-                    ("todo!", None) => return Some(expression),
-                    ("String", None) => return Some(expression),
-                    _ => {}
-                },
-
-                // String::from_ascii_str(x)
-                sway::TypeName::StringSlice => {
-                    return Some(sway::Expression::create_function_calls(
-                        None,
-                        &[(
-                            "String::from_ascii_str",
-                            Some((None, vec![expression.clone()])),
-                        )],
-                    ));
-                }
-
-                // String::from_ascii_str(from_str_array(x))
-                sway::TypeName::StringArray { .. } => {
-                    return Some(sway::Expression::create_function_calls(
-                        None,
-                        &[(
-                            "String::from_ascii_str",
-                            Some((
-                                None,
-                                vec![sway::Expression::create_function_calls(
-                                    None,
-                                    &[("from_str_array", Some((None, vec![expression.clone()])))],
-                                )],
-                            )),
-                        )],
-                    ));
-                }
-
-                _ => todo!("{}", sway::TabbedDisplayer(&to_type_name)),
-            },
-
-            ("b256", None) => match from_type_name {
-                sway::TypeName::Array { type_name, length } => match type_name.as_ref() {
-                    sway::TypeName::Identifier {
-                        name,
-                        generic_parameters,
-                    } => match (name.as_str(), generic_parameters.as_ref(), *length) {
-                        ("u8", None, 32) => {
-                            return Some(sway::Expression::create_function_calls(
-                                None,
-                                &[("b256::from_be_bytes", Some((None, vec![expression])))],
-                            ));
-                        }
-
-                        _ => {}
-                    },
-
-                    _ => {}
-                },
-
-                _ => {}
-            },
-
-            _ => {}
-        },
-
-        (
-            sway::TypeName::Identifier {
-                name,
-                generic_parameters,
-            },
-            sway::TypeName::StringSlice,
-        ) => match (name.as_str(), generic_parameters.as_ref()) {
-            ("String", None) => {
-                return Some(sway::Expression::create_function_calls(
-                    Some(expression),
-                    &[("as_str", Some((None, vec![])))],
-                ));
-            }
-
-            _ => {}
-        },
-
-        _ => {}
+        }
     }
 
     None
@@ -2691,6 +2445,63 @@ fn get_member_access_function_call_type(
 
     container_type = get_underlying_type(project, module.clone(), &container_type);
 
+    if container_type.is_identity() {
+        match member_access.member.as_str() {
+            "as_address" if parameters.len() == 0 => {
+                return Ok(sway::TypeName::Identifier {
+                    name: "Option".into(),
+                    generic_parameters: Some(sway::GenericParameterList {
+                        entries: vec![sway::GenericParameter {
+                            type_name: sway::TypeName::Identifier {
+                                name: "Address".into(),
+                                generic_parameters: None,
+                            },
+                            implements: None,
+                        }],
+                    }),
+                });
+            }
+
+            "as_contract_id" if parameters.len() == 0 => {
+                return Ok(sway::TypeName::Identifier {
+                    name: "Option".into(),
+                    generic_parameters: Some(sway::GenericParameterList {
+                        entries: vec![sway::GenericParameter {
+                            type_name: sway::TypeName::Identifier {
+                                name: "ContractId".into(),
+                                generic_parameters: None,
+                            },
+                            implements: None,
+                        }],
+                    }),
+                });
+            }
+
+            "bits" if parameters.len() == 0 => {
+                return Ok(sway::TypeName::Identifier {
+                    name: "b256".into(),
+                    generic_parameters: None,
+                });
+            }
+
+            "is_address" if parameters.len() == 0 => {
+                return Ok(sway::TypeName::Identifier {
+                    name: "bool".into(),
+                    generic_parameters: None,
+                });
+            }
+
+            "is_contract_id" if parameters.len() == 0 => {
+                return Ok(sway::TypeName::Identifier {
+                    name: "bool".into(),
+                    generic_parameters: None,
+                });
+            }
+
+            _ => {}
+        }
+    }
+
     match &container_type {
         sway::TypeName::Undefined => panic!("Undefined type name"),
 
@@ -2874,57 +2685,6 @@ fn get_member_access_function_call_type(
                     "get type of function call expression: {}",
                     sway::TabbedDisplayer(member_access)
                 ),
-            },
-
-            ("Identity", None) => match member_access.member.as_str() {
-                "as_address" if parameters.len() == 0 => Ok(sway::TypeName::Identifier {
-                    name: "Option".into(),
-                    generic_parameters: Some(sway::GenericParameterList {
-                        entries: vec![sway::GenericParameter {
-                            type_name: sway::TypeName::Identifier {
-                                name: "Address".into(),
-                                generic_parameters: None,
-                            },
-                            implements: None,
-                        }],
-                    }),
-                }),
-
-                "as_contract_id" if parameters.len() == 0 => Ok(sway::TypeName::Identifier {
-                    name: "Option".into(),
-                    generic_parameters: Some(sway::GenericParameterList {
-                        entries: vec![sway::GenericParameter {
-                            type_name: sway::TypeName::Identifier {
-                                name: "ContractId".into(),
-                                generic_parameters: None,
-                            },
-                            implements: None,
-                        }],
-                    }),
-                }),
-
-                "bits" if parameters.len() == 0 => Ok(sway::TypeName::Identifier {
-                    name: "b256".into(),
-                    generic_parameters: None,
-                }),
-
-                "is_address" if parameters.len() == 0 => Ok(sway::TypeName::Identifier {
-                    name: "bool".into(),
-                    generic_parameters: None,
-                }),
-
-                "is_contract_id" if parameters.len() == 0 => Ok(sway::TypeName::Identifier {
-                    name: "bool".into(),
-                    generic_parameters: None,
-                }),
-
-                _ => {
-                    todo!(
-                        "get type of `{container_type}::{}` function call member_access: {}",
-                        member_access.member,
-                        sway::TabbedDisplayer(member_access)
-                    )
-                }
             },
 
             ("Option", Some(generic_parameters)) if generic_parameters.entries.len() == 1 => {
