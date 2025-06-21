@@ -546,18 +546,20 @@ pub fn translate_yul_variable_expression(
         _ => {}
     }
 
-    let Some(variable) = scope.borrow().get_variable_from_old_name(name) else {
-        panic!(
-            "{}: ERROR: Variable not found in scope: \"{name}\"",
-            project.loc_to_file_location_string(module.clone(), &expression.loc()),
-        );
-    };
+    // Attempt to find a value source matching the name of the variable
+    if let Some(symbol) = resolve_symbol(
+        project,
+        module.clone(),
+        scope.clone(),
+        Symbol::ValueSource(name.into()),
+    ) {
+        return Ok(symbol.try_into()?);
+    }
 
-    let variable = variable.borrow();
-
-    Ok(sway::Expression::create_identifier(
-        variable.new_name.clone(),
-    ))
+    panic!(
+        "{}: ERROR: Variable not found in scope: \"{name}\"",
+        project.loc_to_file_location_string(module.clone(), &expression.loc()),
+    )
 }
 
 #[inline]

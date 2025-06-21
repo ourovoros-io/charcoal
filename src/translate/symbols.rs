@@ -8,21 +8,73 @@ pub enum Symbol {
     Event(String),
     Error(String),
     Struct(String),
+    ValueSource(String),
 }
 
 #[derive(Clone, Debug)]
 pub enum SymbolData {
     TypeDefinition(sway::TypeDefinition),
     Enum(ir::Enum),
-    Event {
+    EventVariant {
         type_name: sway::TypeName,
         variant: sway::EnumVariant,
     },
-    Error {
+    ErrorVariant {
         type_name: sway::TypeName,
         variant: sway::EnumVariant,
     },
     Struct(Rc<RefCell<sway::Struct>>),
+    Variable(Rc<RefCell<ir::Variable>>),
+    Constant(sway::Constant),
+    ConfigurableField(sway::ConfigurableField),
+    StorageField {
+        namespace: Option<String>,
+        field: sway::StorageField,
+    },
+}
+
+impl TryInto<sway::Expression> for SymbolData {
+    type Error = Error;
+
+    fn try_into(self) -> Result<sway::Expression, Self::Error> {
+        match self {
+            SymbolData::Variable(variable) => Ok(sway::Expression::create_identifier(
+                variable.borrow().new_name.clone(),
+            )),
+
+            SymbolData::Constant(constant) => {
+                Ok(sway::Expression::create_identifier(constant.name.clone()))
+            }
+
+            SymbolData::ConfigurableField(configurable_field) => Ok(
+                sway::Expression::create_identifier(configurable_field.name.clone()),
+            ),
+
+            SymbolData::StorageField { namespace, field } => {
+                let mut namespace_path = sway::PathExpr {
+                    root: sway::PathExprRoot::Identifier("storage".into()),
+                    segments: vec![],
+                };
+
+                if let Some(namespace) = namespace {
+                    namespace_path.segments.push(sway::PathExprSegment {
+                        name: namespace,
+                        generic_parameters: None,
+                    });
+                }
+
+                Ok(sway::Expression::from(sway::MemberAccess {
+                    expression: sway::Expression::from(namespace_path),
+                    member: field.name.clone(),
+                }))
+            }
+
+            _ => Err(Error::Wrapped(Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("Invalid symbol to expression input: {self:#?}"),
+            )))),
+        }
+    }
 }
 
 pub fn resolve_symbol(
@@ -61,7 +113,7 @@ pub fn resolve_symbol(
                         .cloned()
                         .unwrap();
 
-                    return Some(SymbolData::Event {
+                    return Some(SymbolData::EventVariant {
                         type_name: sway::TypeName::Identifier {
                             name: event_enum.0.borrow().name.clone(),
                             generic_parameters: None,
@@ -89,7 +141,7 @@ pub fn resolve_symbol(
                         .cloned()
                         .unwrap();
 
-                    return Some(SymbolData::Error {
+                    return Some(SymbolData::ErrorVariant {
                         type_name: sway::TypeName::Identifier {
                             name: error_enum.0.borrow().name.clone(),
                             generic_parameters: None,
@@ -103,6 +155,61 @@ pub fn resolve_symbol(
         Symbol::Struct(name) => {
             if let Some(struct_definition) = project.find_struct(module.clone(), name) {
                 return Some(SymbolData::Struct(struct_definition.clone()));
+            }
+        }
+
+        Symbol::ValueSource(name) => {
+            // Check to see if the variable refers to a local variable or parameter defined in scope
+            if let Some(variable) = scope.borrow().get_variable_from_old_name(name) {
+                return Some(SymbolData::Variable(variable));
+            }
+
+            // Check to see if the variable refers to a constant
+            if let Some(constant) = module
+                .borrow()
+                .constants
+                .iter()
+                .find(|c| c.old_name == *name)
+            {
+                return Some(SymbolData::Constant(constant.clone()));
+            }
+
+            // Check to see if the variable refers to a configurable
+            if let Some(configurable) = module.borrow().configurable.as_ref() {
+                if let Some(field) = configurable.fields.iter().find(|f| f.old_name == *name) {
+                    return Some(SymbolData::ConfigurableField(field.clone()));
+                }
+            }
+
+            // Check to see if the variable refers to a storage field
+            if let Some(contract_name) = scope.borrow().get_contract_name() {
+                if let Some(contract) =
+                    project.find_contract(module.clone(), contract_name.as_str())
+                {
+                    let storage_namespace_name = contract.borrow().name.to_case(Case::Snake);
+                    let storage_field_name = name.clone();
+
+                    if let Some(storage) = contract.borrow().storage.as_ref() {
+                        if let Some(storage_namespace) = storage
+                            .borrow()
+                            .namespaces
+                            .iter()
+                            .find(|n| n.borrow().name == storage_namespace_name)
+                        {
+                            if let Some(field) = storage_namespace
+                                .borrow()
+                                .fields
+                                .iter()
+                                .find(|f| f.old_name == storage_field_name)
+                            {
+                                return Some(SymbolData::StorageField {
+                                    namespace: Some(storage_namespace_name),
+                                    field: field.clone(),
+                                });
+                            }
+                        }
+                    }
+                }
             }
         }
     }

@@ -8,7 +8,6 @@ pub fn translate_contract_definition(
     module: Rc<RefCell<ir::Module>>,
     contract_definition: &solidity::ContractDefinition,
     contract: Rc<RefCell<ir::Contract>>,
-    functions_index: usize,
 ) -> Result<(), Error> {
     // println!(
     //     "Translating contract `{}` at {}",
@@ -169,8 +168,6 @@ pub fn translate_contract_definition(
     }
 
     // Translate each function
-    let mut i = 0;
-
     for function_definition in function_definitions.iter() {
         let is_modifier = matches!(function_definition.ty, solidity::FunctionTy::Modifier);
         if is_modifier {
@@ -190,9 +187,23 @@ pub fn translate_contract_definition(
             }
         }
 
-        module.borrow_mut().functions[functions_index + i].implementation = Some(function);
+        let mut module = module.borrow_mut();
 
-        i += 1;
+        let function_signature = sway::TypeName::Function {
+            old_name: function.old_name.clone(),
+            new_name: function.name.clone(),
+            generic_parameters: function.generic_parameters.clone(),
+            parameters: function.parameters.clone(),
+            return_type: function.return_type.clone().map(Box::new),
+        };
+
+        let function_entry = module
+            .functions
+            .iter_mut()
+            .find(|f| f.signature.is_compatible_with(&function_signature))
+            .unwrap();
+
+        function_entry.implementation = Some(function);
     }
 
     // Translate each modifier

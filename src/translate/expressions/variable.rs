@@ -73,116 +73,34 @@ pub fn translate_variable_access_expression(
 
     match solidity_expression {
         solidity::Expression::Variable(solidity::Identifier { name, .. }) => {
-            // Check to see if the variable refers to a local variable or parameter defined in scope
-            if let Some(variable) = scope.borrow().get_variable_from_old_name(name) {
-                let variable_name = variable.borrow().new_name.clone();
+            // Attempt to find a value source matching the name of the variable
+            if let Some(symbol) = resolve_symbol(
+                project,
+                module.clone(),
+                scope.clone(),
+                Symbol::ValueSource(name.into()),
+            ) {
+                let variable = match &symbol {
+                    SymbolData::Variable(variable) => Some(variable.clone()),
+                    _ => None,
+                };
+
+                let mut expression: sway::Expression = symbol.try_into()?;
+                
+                let expression_type =
+                    get_expression_type(project, module.clone(), scope.clone(), &expression)?;
+
+                if expression_type.is_storage_key() {
+                    expression = sway::Expression::create_function_calls(
+                        Some(expression),
+                        &[("read", Some((None, vec![])))],
+                    );
+                }
 
                 return Ok(Some(ir::VariableAccess {
-                    variable: Some(variable),
-                    expression: sway::Expression::create_identifier(variable_name),
+                    variable,
+                    expression,
                 }));
-            }
-
-            // Check to see if the variable refers to a constant
-            if let Some(constant) = module
-                .borrow()
-                .constants
-                .iter()
-                .find(|c| c.old_name == *name)
-            {
-                return Ok(Some(ir::VariableAccess {
-                    variable: None,
-                    expression: sway::Expression::create_identifier(constant.name.clone()),
-                }));
-            }
-
-            // Check to see if the variable refers to a configurable
-            if let Some(configurable) = module.borrow().configurable.as_ref() {
-                if let Some(field) = configurable.fields.iter().find(|f| f.old_name == *name) {
-                    return Ok(Some(ir::VariableAccess {
-                        variable: None,
-                        expression: sway::Expression::create_identifier(field.name.clone()),
-                    }));
-                }
-            }
-
-            // Check to see if the variable refers to a storage field
-            if let Some(contract_name) = scope.borrow().get_contract_name() {
-                fn check_contract(
-                    project: &mut Project,
-                    module: Rc<RefCell<ir::Module>>,
-                    contract: Rc<RefCell<ir::Contract>>,
-                    storage_field_name: &str,
-                ) -> Result<Option<ir::VariableAccess>, Error> {
-                    let storage_namespace_name = contract.borrow().name.to_case(Case::Snake);
-
-                    if let Some(storage) = contract.borrow().storage.as_ref() {
-                        if let Some(storage_namespace) = storage
-                            .borrow()
-                            .namespaces
-                            .iter()
-                            .find(|n| n.borrow().name == storage_namespace_name)
-                        {
-                            if let Some(field) = storage_namespace
-                                .borrow()
-                                .fields
-                                .iter()
-                                .find(|f| f.old_name == storage_field_name)
-                            {
-                                return Ok(Some(ir::VariableAccess {
-                                    variable: None,
-                                    expression: sway::Expression::create_function_calls(
-                                        None,
-                                        &[
-                                            (
-                                                format!(
-                                                    "storage::{}",
-                                                    storage_namespace.borrow().name
-                                                )
-                                                .as_str(),
-                                                None,
-                                            ),
-                                            (field.name.as_str(), None),
-                                            ("read", Some((None, vec![]))),
-                                        ],
-                                    ),
-                                }));
-                            }
-                        }
-                    }
-
-                    let inherits = contract.borrow().abi.inherits.clone();
-
-                    for inherited_contract_name in inherits {
-                        let inherited_contract = project
-                            .find_contract(
-                                module.clone(),
-                                inherited_contract_name.to_string().as_str(),
-                            )
-                            .unwrap();
-
-                        if let Some(result) = check_contract(
-                            project,
-                            module.clone(),
-                            inherited_contract.clone(),
-                            storage_field_name,
-                        )? {
-                            return Ok(Some(result));
-                        }
-                    }
-
-                    Ok(None)
-                }
-
-                if let Some(contract) =
-                    project.find_contract(module.clone(), contract_name.as_str())
-                {
-                    if let Some(result) =
-                        check_contract(project, module.clone(), contract.clone(), name.as_str())?
-                    {
-                        return Ok(Some(result));
-                    }
-                }
             }
 
             // Check to see if the variable refers to a function

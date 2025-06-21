@@ -1593,17 +1593,6 @@ fn translate_function_call_block_member_access_function_call(
         }
     }
 
-    println!(
-        "{}",
-        module
-            .borrow()
-            .contracts
-            .iter()
-            .map(|x| format!("    {}", x.signature))
-            .collect::<Vec<_>>()
-            .join("\n")
-    );
-
     todo!(
         "{}: translate Identity member function call block `{member}{}`: {}",
         project.loc_to_file_location_string(module.clone(), &solidity_container.loc()),
@@ -1620,7 +1609,7 @@ fn translate_identity_member_access_function_call(
     expression: &solidity::Expression,
     arguments: &[solidity::Expression],
     named_arguments: Option<&[solidity::NamedArgument]>,
-    mut container: sway::Expression,
+    container: sway::Expression,
     member: &solidity::Identifier,
     solidity_container: &solidity::Expression,
     name: String,

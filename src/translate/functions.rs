@@ -213,7 +213,7 @@ fn translate_function_parameters(
 
         let new_name = translate_naming_convention(old_name.as_str(), Case::Snake);
 
-        let mut type_name = translate_type_name(
+        let type_name = translate_type_name(
             project,
             module.clone(),
             scope.clone(),
@@ -573,7 +573,7 @@ pub fn translate_function_definition(
             .map_or("_".into(), |n| n.name.clone());
         let new_name = translate_naming_convention(old_name.as_str(), Case::Snake);
 
-        let mut type_name = translate_type_name(
+        let type_name = translate_type_name(
             project,
             module.clone(),
             scope.clone(),

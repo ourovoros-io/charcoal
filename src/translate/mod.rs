@@ -893,7 +893,7 @@ pub fn get_underlying_type(
 
 #[inline]
 pub fn get_return_type_name(
-    project: &mut Project,
+    _project: &mut Project,
     module: Rc<RefCell<ir::Module>>,
     type_name: &sway::TypeName,
 ) -> sway::TypeName {

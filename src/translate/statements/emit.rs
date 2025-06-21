@@ -144,7 +144,7 @@ pub fn translate_emit_statement(
                 _ => todo!(),
             };
 
-            if let Some(SymbolData::Event {
+            if let Some(SymbolData::EventVariant {
                 type_name: event_type_name,
                 variant: event_variant,
             }) = resolve_symbol(

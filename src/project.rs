@@ -1,6 +1,4 @@
-use crate::{
-    cli::Args, error::Error, framework::Framework, ir, sway, translate::*, utils, wrapped_err,
-};
+use crate::{cli::Args, error::Error, framework::Framework, ir, sway, translate::*, wrapped_err};
 use convert_case::{Case, Casing};
 use solang_parser::pt as solidity;
 use std::{
@@ -949,7 +947,7 @@ impl Project {
         let mut error_definitions = vec![];
         let mut function_definitions = vec![];
         let mut variable_definitions = vec![];
-        let mut contract_definitions: Vec<(Option<usize>, solidity::ContractDefinition)> = vec![];
+        let mut contract_definitions = vec![];
 
         for source_unit_part in source_unit.0.iter() {
             match source_unit_part {
@@ -962,7 +960,7 @@ impl Project {
                 }
 
                 solidity::SourceUnitPart::ContractDefinition(contract_definition) => {
-                    contract_definitions.push((None, *contract_definition.clone()));
+                    contract_definitions.push(contract_definition.clone());
                 }
 
                 solidity::SourceUnitPart::EnumDefinition(enum_definition) => {
@@ -1063,8 +1061,6 @@ impl Project {
         }
 
         // Collect the function signatures ahead of time
-        let functions_index = module.borrow().functions.len();
-
         for function_definition in function_definitions.iter() {
             if matches!(function_definition.ty, solidity::FunctionTy::Modifier) {
                 continue;
@@ -1082,7 +1078,7 @@ impl Project {
         // Collect the contract signatures ahead of time
         let contracts_index = module.borrow().contracts.len();
 
-        for (_, contract_definition) in contract_definitions.iter() {
+        for contract_definition in contract_definitions.iter() {
             let contract_name = contract_definition.name.as_ref().unwrap().name.as_str();
 
             module.borrow_mut().contracts.push(ir::Item {
@@ -1104,11 +1100,7 @@ impl Project {
         }
 
         // Collect the contract's toplevel item signatures ahead of time
-        for (i, (functions_index, contract_definition)) in
-            contract_definitions.iter_mut().enumerate()
-        {
-            *functions_index = Some(module.borrow().functions.len());
-
+        for (i, contract_definition) in contract_definitions.iter().enumerate() {
             let contract_name = contract_definition.name.as_ref().unwrap().name.as_str();
             let mut inherits = vec![];
 
@@ -1339,7 +1331,7 @@ impl Project {
             translate_error_definition(self, module.clone(), None, &error_definition)?;
         }
 
-        for (i, function_definition) in function_definitions.into_iter().enumerate() {
+        for function_definition in function_definitions {
             if matches!(function_definition.ty, solidity::FunctionTy::Modifier) {
                 continue;
             }
@@ -1349,21 +1341,33 @@ impl Project {
 
             assert!(impl_item.is_none());
 
-            module.borrow_mut().functions[functions_index + i].implementation = Some(function);
+            let mut module = module.borrow_mut();
+
+            let function_signature = sway::TypeName::Function {
+                old_name: function.old_name.clone(),
+                new_name: function.name.clone(),
+                generic_parameters: function.generic_parameters.clone(),
+                parameters: function.parameters.clone(),
+                return_type: function.return_type.clone().map(Box::new),
+            };
+
+            let function_entry = module
+                .functions
+                .iter_mut()
+                .find(|f| f.signature.is_compatible_with(&function_signature))
+                .unwrap();
+
+            function_entry.implementation = Some(function);
         }
 
-        for (i, (functions_index, contract_definition)) in
-            contract_definitions.into_iter().enumerate()
-        {
+        for (i, contract_definition) in contract_definitions.into_iter().enumerate() {
             let contract = module.borrow().contracts[contracts_index + i].clone();
-            let functions_index = functions_index.unwrap();
 
             translate_contract_definition(
                 self,
                 module.clone(),
                 &contract_definition,
                 contract.implementation.clone().unwrap(),
-                functions_index,
             )?;
         }
 
