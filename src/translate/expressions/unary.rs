@@ -100,7 +100,15 @@ pub fn translate_binary_expression(
         abi_check(&rhs_type, &mut lhs, &mut lhs_type);
     }
 
-    rhs = coerce_expression(&rhs, &rhs_type, &lhs_type).unwrap();
+    rhs = coerce_expression(
+        project,
+        module.clone(),
+        scope.clone(),
+        &rhs,
+        &rhs_type,
+        &lhs_type,
+    )
+    .unwrap();
 
     Ok(sway::Expression::from(sway::BinaryExpression {
         operator: operator.into(),

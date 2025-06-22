@@ -231,6 +231,9 @@ pub fn translate_assignment_expression(
                                                         (vec_var_name.as_str(), None),
                                                         ("push", Some((None, vec![
                                                             coerce_expression(
+                                                                project,
+                                                                module.clone(),
+                                                                scope.clone(),
                                                                 &sway::Expression::from(sway::ArrayAccess {
                                                                     expression: sway::Expression::create_identifier(array_var_name.clone()),
                                                                     index: sway::Expression::create_identifier(i_var_name.clone()),
@@ -269,7 +272,15 @@ pub fn translate_assignment_expression(
                         }));
                     }
 
-                    _ => coerce_expression(&rhs, &rhs_type_name, &storage_key_type).unwrap(),
+                    _ => coerce_expression(
+                        project,
+                        module.clone(),
+                        scope.clone(),
+                        &rhs,
+                        &rhs_type_name,
+                        &storage_key_type,
+                    )
+                    .unwrap(),
                 },
 
                 (
@@ -289,7 +300,15 @@ pub fn translate_assignment_expression(
                         )
                     }
 
-                    _ => coerce_expression(&rhs, &rhs_type_name, &storage_key_type).unwrap(),
+                    _ => coerce_expression(
+                        project,
+                        module.clone(),
+                        scope.clone(),
+                        &rhs,
+                        &rhs_type_name,
+                        &storage_key_type,
+                    )
+                    .unwrap(),
                 },
 
                 (
@@ -307,10 +326,26 @@ pub fn translate_assignment_expression(
                 ) {
                     (("StorageString", None), ("String", None)) => rhs,
 
-                    _ => coerce_expression(&rhs, &rhs_type_name, &storage_key_type).unwrap(),
+                    _ => coerce_expression(
+                        project,
+                        module.clone(),
+                        scope.clone(),
+                        &rhs,
+                        &rhs_type_name,
+                        &storage_key_type,
+                    )
+                    .unwrap(),
                 },
 
-                _ => coerce_expression(&rhs, &rhs_type_name, &storage_key_type).unwrap(),
+                _ => coerce_expression(
+                    project,
+                    module.clone(),
+                    scope.clone(),
+                    &rhs,
+                    &rhs_type_name,
+                    &storage_key_type,
+                )
+                .unwrap(),
             },
 
             _ => sway::Expression::from(sway::BinaryExpression {
@@ -319,7 +354,15 @@ pub fn translate_assignment_expression(
                     Some(expression.clone()),
                     &[("read", Some((None, vec![])))],
                 ),
-                rhs: coerce_expression(&rhs, &rhs_type_name, &storage_key_type).unwrap(),
+                rhs: coerce_expression(
+                    project,
+                    module.clone(),
+                    scope.clone(),
+                    &rhs,
+                    &rhs_type_name,
+                    &storage_key_type,
+                )
+                .unwrap(),
             }),
         };
 
@@ -423,7 +466,15 @@ pub fn create_assignment_expression(
                         expression: member_access.expression.clone(),
                         member: field.name.clone(),
                     }),
-                    rhs: coerce_expression(rhs, rhs_type_name, &field.type_name).unwrap(),
+                    rhs: coerce_expression(
+                        project,
+                        module.clone(),
+                        scope.clone(),
+                        rhs,
+                        rhs_type_name,
+                        &field.type_name,
+                    )
+                    .unwrap(),
                 }));
             }
         }
@@ -482,13 +533,23 @@ pub fn create_assignment_expression(
                             generic_parameters: None,
                         };
 
-                        let index =
-                            coerce_expression(&array_access.index, &index_type, &u64_type).unwrap();
+                        let index = coerce_expression(
+                            project,
+                            module.clone(),
+                            scope.clone(),
+                            &array_access.index,
+                            &index_type,
+                            &u64_type,
+                        )
+                        .unwrap();
 
                         let rhs_type =
                             get_expression_type(project, module.clone(), scope.clone(), rhs)?;
 
                         let rhs = coerce_expression(
+                            project,
+                            module.clone(),
+                            scope.clone(),
                             rhs,
                             &rhs_type,
                             &generic_parameters.entries[0].type_name,
@@ -663,7 +724,12 @@ pub fn create_assignment_expression(
                                                             )?;
 
                                                             let rhs = coerce_expression(
-                                                                rhs, &rhs_type, &lhs_type,
+                                                                project,
+                                                                module.clone(),
+                                                                scope.clone(),
+                                                                rhs,
+                                                                &rhs_type,
+                                                                &lhs_type,
                                                             )
                                                             .unwrap();
 
@@ -723,7 +789,15 @@ pub fn create_assignment_expression(
     }
 
     // All other assignments
-    let rhs = coerce_expression(rhs, rhs_type_name, &expr_type_name).unwrap();
+    let rhs = coerce_expression(
+        project,
+        module.clone(),
+        scope.clone(),
+        rhs,
+        rhs_type_name,
+        &expr_type_name,
+    )
+    .unwrap();
 
     match operator {
         "&=" | "|=" | "^=" => {

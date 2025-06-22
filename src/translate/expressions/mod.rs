@@ -678,7 +678,15 @@ pub fn create_value_expression(
         let value_type =
             get_expression_type(project, module.clone(), scope.clone(), value).unwrap();
 
-        return coerce_expression(value, &value_type, type_name).unwrap();
+        return coerce_expression(
+            project,
+            module.clone(),
+            scope.clone(),
+            value,
+            &value_type,
+            type_name,
+        )
+        .unwrap();
     }
 
     match type_name {
@@ -717,7 +725,16 @@ pub fn create_value_expression(
 
                 let value_type =
                     get_expression_type(project, module.clone(), scope.clone(), &value).unwrap();
-                coerce_expression(&value, &value_type, type_name).unwrap()
+                
+                coerce_expression(
+                    project,
+                    module.clone(),
+                    scope.clone(),
+                    &value,
+                    &value_type,
+                    type_name,
+                )
+                .unwrap()
             }
 
             ("u8" | "u16" | "u32" | "u64" | "u256", None) => {
@@ -820,7 +837,6 @@ pub fn create_value_expression(
                         None,
                     );
                 }
-                
                 // Check to see if the type is a translated enum
                 else if let Some(translated_enum) = project.find_enum(module.clone(), name) {
                     let Some(sway::ImplItem::Constant(value)) =

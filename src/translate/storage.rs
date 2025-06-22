@@ -98,20 +98,13 @@ pub fn translate_state_variable(
         module.clone(),
         value_scope.clone(),
         &variable_definition.ty,
-        None,
-    );
-
-    if is_storage {
-        if let sway::TypeName::Identifier {
-            name,
-            generic_parameters: Some(_),
-        } = &mut variable_type_name
-        {
-            if name == "Vec" {
-                *name = "StorageVec".to_string();
-            }
+        if is_storage {
+            Some(solidity::StorageLocation::Storage(Default::default()))
+        } else {
+            None
         }
-    }
+        .as_ref(),
+    );
 
     // Storage fields should not be wrapped in a `StorageKey<T>`
     if is_storage {

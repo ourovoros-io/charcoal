@@ -86,7 +86,7 @@ pub fn translate_variable_access_expression(
                 };
 
                 let mut expression: sway::Expression = symbol.try_into()?;
-                
+
                 let expression_type =
                     get_expression_type(project, module.clone(), scope.clone(), &expression)?;
 
@@ -221,13 +221,21 @@ pub fn translate_variable_access_expression(
                                             scope.clone(),
                                             &index,
                                         )?;
+
                                         let u64_type = sway::TypeName::Identifier {
                                             name: "u64".to_string(),
                                             generic_parameters: None,
                                         };
-                                        index =
-                                            coerce_expression(&index, &index_type_name, &u64_type)
-                                                .unwrap();
+                                        
+                                        index = coerce_expression(
+                                            project,
+                                            module.clone(),
+                                            scope.clone(),
+                                            &index,
+                                            &index_type_name,
+                                            &u64_type,
+                                        )
+                                        .unwrap();
 
                                         sway::Expression::create_function_calls(
                                             Some(expression),
@@ -279,11 +287,21 @@ pub fn translate_variable_access_expression(
                                 scope.clone(),
                                 &index,
                             )?;
+
                             let u64_type = sway::TypeName::Identifier {
                                 name: "u64".to_string(),
                                 generic_parameters: None,
                             };
-                            index = coerce_expression(&index, &index_type_name, &u64_type).unwrap();
+
+                            index = coerce_expression(
+                                project,
+                                module.clone(),
+                                scope.clone(),
+                                &index,
+                                &index_type_name,
+                                &u64_type,
+                            )
+                            .unwrap();
 
                             sway::Expression::create_function_calls(
                                 Some(expression),

@@ -75,6 +75,9 @@ pub fn translate_emit_statement(
                                                                             )?;
 
                                                                         coerce_expression(
+                                                                            project,
+                                                                            module.clone(),
+                                                                            scope.clone(),
                                                                             &argument,
                                                                             &argument_type,
                                                                             &variant.type_name,
@@ -117,7 +120,7 @@ pub fn translate_emit_statement(
                                                                                     .zip(type_names)
                                                                             )
                                                                             .map(|(expr, (from_type_name, to_type_name))| {
-                                                                                coerce_expression(expr, from_type_name, to_type_name).unwrap()
+                                                                                coerce_expression(project, module.clone(), scope.clone(), expr, from_type_name, to_type_name).unwrap()
                                                                             })
                                                                             .collect();
 
@@ -185,6 +188,9 @@ pub fn translate_emit_statement(
                                             )?;
 
                                             coerce_expression(
+                                                project,
+                                                module.clone(),
+                                                scope.clone(),
                                                 &argument,
                                                 &argument_type,
                                                 &event_variant.type_name,
@@ -227,6 +233,9 @@ pub fn translate_emit_statement(
                                                 .zip(arguments_types.iter_mut().zip(type_names))
                                                 .map(|(expr, (from_type_name, to_type_name))| {
                                                     coerce_expression(
+                                                        project,
+                                                        module.clone(),
+                                                        scope.clone(),
                                                         expr,
                                                         from_type_name,
                                                         to_type_name,

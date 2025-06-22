@@ -116,6 +116,9 @@ pub fn translate_revert_statement(
                                     &parameter_expression,
                                 )?;
                                 coerce_expression(
+                                    project,
+                                    module.clone(),
+                                    scope.clone(),
                                     &parameter_expression,
                                     &parameter_expression_type,
                                     &error_variant.type_name,
@@ -146,6 +149,9 @@ pub fn translate_revert_statement(
                                             )
                                             .unwrap();
                                             coerce_expression(
+                                                project,
+                                                module.clone(),
+                                                scope.clone(),
                                                 &parameter_expression,
                                                 &parameter_expression_type,
                                                 type_name,

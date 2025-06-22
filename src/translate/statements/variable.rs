@@ -157,7 +157,15 @@ pub fn translate_variable_definition_statement(
 
     let value = if let Some(value) = value {
         let value_type = get_expression_type(project, module.clone(), scope.clone(), &value)?;
-        coerce_expression(&value, &value_type, &type_name).unwrap()
+        coerce_expression(
+            project,
+            module.clone(),
+            scope.clone(),
+            &value,
+            &value_type,
+            &type_name,
+        )
+        .unwrap()
     } else if let Some(x) = initializer.as_ref() {
         let mut x = translate_expression(project, module.clone(), scope.clone(), &x)?;
 
@@ -175,12 +183,20 @@ pub fn translate_variable_definition_statement(
         }
 
         let value_type = get_expression_type(project, module.clone(), scope.clone(), &x)?;
-        
+
         // HACK: Get underlying types for coercion
         let value_type = get_underlying_type(project, module.clone(), &value_type);
         let type_name = get_underlying_type(project, module.clone(), &type_name);
 
-        coerce_expression(&x, &value_type, &type_name).unwrap()
+        coerce_expression(
+            project,
+            module.clone(),
+            scope.clone(),
+            &x,
+            &value_type,
+            &type_name,
+        )
+        .unwrap()
     } else {
         create_value_expression(project, module.clone(), scope.clone(), &type_name, None)
     };

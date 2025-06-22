@@ -168,7 +168,15 @@ fn translate_type_function_call(
     let to_type_name =
         translate_type_name(project, module.clone(), scope.clone(), expression, None);
 
-    Ok(coerce_expression(&from_expression, &from_type_name, &to_type_name).unwrap())
+    Ok(coerce_expression(
+        project,
+        module.clone(),
+        scope.clone(),
+        &from_expression,
+        &from_type_name,
+        &to_type_name,
+    )
+    .unwrap())
 }
 
 fn translate_variable_function_call(
@@ -634,6 +642,9 @@ fn translate_builtin_function_call(
                 get_expression_type(project, module.clone(), scope.clone(), &parameters[0])?;
 
             parameters[0] = coerce_expression(
+                project,
+                module.clone(),
+                scope.clone(),
                 &parameters[0],
                 &parameter_type,
                 &sway::TypeName::Identifier {
@@ -1627,8 +1638,15 @@ fn translate_identity_member_access_function_call(
                 generic_parameters: None,
             };
 
-            let argument =
-                coerce_expression(&argument, &argument_type_name, &container_type).unwrap();
+            let argument = coerce_expression(
+                project,
+                module.clone(),
+                scope.clone(),
+                &argument,
+                &argument_type_name,
+                &container_type,
+            )
+            .unwrap();
 
             return Ok(sway::Expression::create_function_calls(
                 None,
@@ -1664,7 +1682,15 @@ fn translate_identity_member_access_function_call(
                 generic_parameters: None,
             };
 
-            let argument = coerce_expression(&argument, &argument_type_name, &u64_type).unwrap();
+            let argument = coerce_expression(
+                project,
+                module.clone(),
+                scope.clone(),
+                &argument,
+                &argument_type_name,
+                &u64_type,
+            )
+            .unwrap();
 
             return Ok(sway::Expression::from(sway::Block {
                 statements: vec![sway::Statement::from(

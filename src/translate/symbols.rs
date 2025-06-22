@@ -478,9 +478,14 @@ pub fn resolve_abi_function_call(
                     }
                 }
 
-                if let Some(expr) =
-                    coerce_expression(&parameters[i], value_type_name, parameter_type_name)
-                {
+                if let Some(expr) = coerce_expression(
+                    project,
+                    module.clone(),
+                    scope.clone(),
+                    &parameters[i],
+                    value_type_name,
+                    parameter_type_name,
+                ) {
                     parameters[i] = expr;
                     continue;
                 }
@@ -784,9 +789,14 @@ pub fn resolve_function_call(
                     }
                 }
 
-                if let Some(expr) =
-                    coerce_expression(&parameters[i], value_type_name, &parameter_type_name)
-                {
+                if let Some(expr) = coerce_expression(
+                    project,
+                    module.clone(),
+                    scope.clone(),
+                    &parameters[i],
+                    value_type_name,
+                    &parameter_type_name,
+                ) {
                     parameters[i] = expr;
                     continue;
                 }
@@ -900,7 +910,14 @@ pub fn resolve_struct_constructor(
                 .iter(),
         )
     {
-        match coerce_expression(parameter, parameter_type, &field.type_name) {
+        match coerce_expression(
+            project,
+            module.clone(),
+            scope.clone(),
+            parameter,
+            parameter_type,
+            &field.type_name,
+        ) {
             Some(expression) => *parameter = expression,
             None => return Ok(None),
         }
