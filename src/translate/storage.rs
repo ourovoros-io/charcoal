@@ -425,6 +425,7 @@ pub fn translate_state_variable(
         module.clone(),
         contract_name,
         Some(old_name.as_str()),
+        &Default::default(), // TODO: generate solidity parameter list for implicit getter functions...
         &solidity::FunctionTy::Function,
     );
 

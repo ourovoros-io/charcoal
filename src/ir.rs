@@ -42,6 +42,7 @@ pub struct Function {
     pub type_name: sway::TypeName,
 }
 
+#[derive(Clone, Debug, PartialEq)]
 pub struct FunctionName {
     pub old_name: String,
     pub top_level_fn_name: String,

@@ -134,35 +134,63 @@ pub fn translate_function_name(
     module: Rc<RefCell<ir::Module>>,
     contract_name: Option<&str>,
     function_name: Option<&str>,
+    parameters: &solidity::ParameterList,
     function_ty: &solidity::FunctionTy,
 ) -> FunctionName {
-    let abi_fn_name = match function_ty {
-        solidity::FunctionTy::Constructor => "constructor".to_string(),
-        solidity::FunctionTy::Fallback => "fallback".to_string(),
-        solidity::FunctionTy::Receive => "receive".to_string(),
+    // Generate the function signature
+    let mut signature = function_name
+        .unwrap_or_else(|| match function_ty {
+            solidity::FunctionTy::Constructor => "constructor",
+            solidity::FunctionTy::Fallback => "fallback",
+            solidity::FunctionTy::Receive => "receive",
+            _ => todo!(),
+        })
+        .to_string();
 
-        solidity::FunctionTy::Function | solidity::FunctionTy::Modifier => {
-            let old_name = function_name.map(|s| s.to_string()).unwrap();
-            let mut new_name = translate_naming_convention(old_name.as_str(), Case::Snake);
+    let old_name = signature.clone();
 
-            // Increase the function name count
-            let mut module = module.borrow_mut();
+    if let Some(contract_name) = contract_name {
+        signature = format!("{contract_name}.{signature}");
+    }
 
-            let count = module
-                .function_name_counts
-                .entry(new_name.clone())
-                .or_insert(0);
+    signature.push('(');
 
-            *count += 1;
+    for (i, (_, parameter)) in parameters.iter().enumerate() {
+        signature = format!(
+            "{signature}{}{}",
+            if i > 0 { "," } else { "" },
+            parameter.as_ref().unwrap().ty,
+        );
+    }
 
-            // Append the function name count to the end of the function name if there is more than 1
-            if *count > 1 {
-                new_name = format!("{new_name}_{}", *count);
-            }
+    signature.push(')');
 
-            new_name
+    // Add the translated function name to the function names mapping if we haven't already
+    if !module.borrow().function_names.contains_key(&signature) {
+        let mut module = module.borrow_mut();
+        let mut new_name = translate_naming_convention(old_name.as_str(), Case::Snake);
+
+        // Increase the function name count
+        let count = module
+            .function_name_counts
+            .entry(new_name.clone())
+            .or_insert(0);
+        *count += 1;
+
+        // Append the function name count to the end of the function name if there is more than 1
+        if *count > 1 {
+            new_name = format!("{new_name}_{}", *count);
         }
-    };
+
+        module.function_names.insert(signature.clone(), new_name);
+    }
+
+    let abi_fn_name = module
+        .borrow()
+        .function_names
+        .get(&signature)
+        .unwrap()
+        .clone();
 
     let (old_name, mut top_level_fn_name) = if matches!(
         function_ty,
@@ -292,6 +320,7 @@ pub fn translate_function_declaration(
         module.clone(),
         contract_name,
         function_definition.name.as_ref().map(|n| n.name.as_str()),
+        &function_definition.params,
         &function_definition.ty,
     );
 
@@ -423,6 +452,7 @@ pub fn translate_abi_function(
         module.clone(),
         Some(contract_name),
         function_definition.name.as_ref().map(|n| n.name.as_str()),
+        &function_definition.params,
         &function_definition.ty,
     );
 
@@ -495,13 +525,26 @@ pub fn translate_function_definition(
     function_definition: &solidity::FunctionDefinition,
 ) -> Result<(sway::Function, Option<sway::ImplItem>), Error> {
     // println!(
-    //     "Translating function {}.{} at {}",
-    //     module.borrow().name,
-    //     function_definition
-    //         .name
-    //         .as_ref()
-    //         .map(|n| n.name.as_str())
-    //         .unwrap_or_else(|| new_name_2.as_str()),
+    //     "Translating function `{}` at {}",
+    //     match contract_name {
+    //         Some(contract_name) => format!(
+    //             "{}.{}",
+    //             contract_name,
+    //             function_definition
+    //                 .name
+    //                 .as_ref()
+    //                 .map(|s| s.name.as_str())
+    //                 .unwrap_or_else(|| "<unnamed>")
+    //         ),
+    //         None => format!(
+    //             "{}",
+    //             function_definition
+    //                 .name
+    //                 .as_ref()
+    //                 .map(|s| s.name.as_str())
+    //                 .unwrap_or_else(|| "<unnamed>")
+    //         ),
+    //     },
     //     project.loc_to_file_location_string(module.clone(), &function_definition.loc),
     // );
 
@@ -519,6 +562,7 @@ pub fn translate_function_definition(
         module.clone(),
         contract_name,
         function_definition.name.as_ref().map(|n| n.name.as_str()),
+        &function_definition.params,
         &function_definition.ty,
     );
 
@@ -545,19 +589,9 @@ pub fn translate_function_definition(
         body: None,
     };
 
-    if function_attributes.is_public {
-        sway_function
-            .name
-            .clone_from(&function_name.top_level_fn_name)
-    }
-
     // Convert the statements in the function's body (if any)
     let Some(solidity::Statement::Block { statements, .. }) = function_definition.body.as_ref()
     else {
-        if contract_name.is_some() {
-            sway_function.name = function_name.abi_fn_name;
-        }
-
         return Ok((sway_function, None));
     };
 
@@ -912,6 +946,8 @@ pub fn translate_function_definition(
 
     // Add the toplevel function
     let mut toplevel_function = sway_function.clone();
+    toplevel_function.name = function_name.top_level_fn_name.clone();
+
     if let Some((index, _)) = toplevel_function
         .attributes
         .as_ref()

@@ -197,11 +197,31 @@ pub fn translate_contract_definition(
             return_type: function.return_type.clone().map(Box::new),
         };
 
-        let function_entry = module
-            .functions
-            .iter_mut()
-            .find(|f| f.signature.is_compatible_with(&function_signature))
-            .unwrap();
+        let Some(function_entry) = module.functions.iter_mut().find(|f| {
+            let sway::TypeName::Function { new_name, .. } = &f.signature else {
+                unreachable!()
+            };
+
+            *new_name == function.name && f.signature.is_compatible_with(&function_signature)
+        }) else {
+            panic!(
+                "Failed to find function {} - {} - in list:\n{}",
+                function.name,
+                function_signature,
+                module
+                    .functions
+                    .iter()
+                    .map(|f| {
+                        let sway::TypeName::Function { new_name, .. } = &f.signature else {
+                            unreachable!()
+                        };
+
+                        format!("    {} - {}", new_name, f.signature)
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            );
+        };
 
         function_entry.implementation = Some(function);
     }
