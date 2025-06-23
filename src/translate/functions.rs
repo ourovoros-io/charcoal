@@ -675,15 +675,7 @@ pub fn translate_function_definition(
 
     // Create a constructor guard if the function is a constructor
     if function_attributes.is_constructor {
-        let prefix = translate_naming_convention(
-            contract_name
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| module.borrow().name.clone())
-                .as_str(),
-            Case::Snake,
-        );
-
-        let constructor_called_variable_name = format!("{prefix}_constructor_called");
+        let constructor_called_field_name = "constructor_called".to_string();
 
         let storage_namespace = module
             .borrow_mut()
@@ -694,7 +686,7 @@ pub fn translate_function_definition(
             .borrow()
             .fields
             .iter()
-            .any(|s| s.name == constructor_called_variable_name);
+            .any(|s| s.name == constructor_called_field_name);
 
         if !has_field {
             // Add the `constructor_called` field to the storage block
@@ -703,7 +695,7 @@ pub fn translate_function_definition(
                 .fields
                 .push(sway::StorageField {
                     old_name: String::new(),
-                    name: constructor_called_variable_name.clone(),
+                    name: constructor_called_field_name.clone(),
                     type_name: sway::TypeName::Identifier {
                         name: "bool".into(),
                         generic_parameters: None,
@@ -735,7 +727,7 @@ pub fn translate_function_definition(
                                                 .as_str(),
                                                 None,
                                             ),
-                                            (constructor_called_variable_name.as_str(), None),
+                                            (constructor_called_field_name.as_str(), None),
                                             ("read", Some((None, vec![]))),
                                         ],
                                     ),
@@ -762,7 +754,7 @@ pub fn translate_function_definition(
                             format!("storage::{}", storage_namespace.borrow().name).as_str(),
                             None,
                         ),
-                        (constructor_called_variable_name.as_str(), None),
+                        (constructor_called_field_name.as_str(), None),
                         (
                             "write",
                             Some((

@@ -328,8 +328,7 @@ pub fn translate_contract_definition(
             function.body = Some(sway::Block::default());
             let function_body = function.body.as_mut().unwrap();
 
-            let prefix = translate_naming_convention(contract_name.as_str(), Case::Snake);
-            let constructor_called_variable_name = format!("{prefix}_constructor_called");
+            let constructor_called_field_name = "constructor_called".to_string();
 
             // Add the `constructor_called` field to the storage block
             module
@@ -340,7 +339,7 @@ pub fn translate_contract_definition(
                 .fields
                 .push(sway::StorageField {
                     old_name: String::new(),
-                    name: constructor_called_variable_name.clone(),
+                    name: constructor_called_field_name.clone(),
                     type_name: sway::TypeName::Identifier {
                         name: "bool".into(),
                         generic_parameters: None,
@@ -365,7 +364,7 @@ pub fn translate_contract_definition(
                                         None,
                                         &[
                                             (format!("storage::{namespace_name}").as_str(), None),
-                                            (constructor_called_variable_name.as_str(), None),
+                                            (constructor_called_field_name.as_str(), None),
                                             ("read", Some((None, vec![]))),
                                         ],
                                     ),
@@ -387,7 +386,7 @@ pub fn translate_contract_definition(
                     None,
                     &[
                         (format!("storage::{namespace_name}").as_str(), None),
-                        (constructor_called_variable_name.as_str(), None),
+                        (constructor_called_field_name.as_str(), None),
                         (
                             "write",
                             Some((
