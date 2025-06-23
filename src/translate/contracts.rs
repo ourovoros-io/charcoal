@@ -495,8 +495,8 @@ pub fn translate_using_directive(
                 .join(".");
 
             // Find the translated library definition
-            let Some((library_definition, _)) =
-                project.find_module_with_contract(module.clone(), &library_name)
+            let Some(library_definition) =
+                project.find_module_containing_contract(module.clone(), &library_name)
             else {
                 panic!(
                     "Failed to find translated library: \"{library_name}\"; from {}",

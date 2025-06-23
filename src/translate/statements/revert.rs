@@ -22,65 +22,53 @@ pub fn translate_revert_statement(
 
         let mut ids_iter = error_type.identifiers.iter();
 
-        // Find the error variant
-        let (error_variant_name, errors_enum_and_impl) = if error_type.identifiers.len() == 2 {
+        // Check if the error variant is under an explicit contract
+        let (error_type_name, error_variant) = if error_type.identifiers.len() == 2 {
             let external_definition_name = ids_iter.next().unwrap().name.clone();
             let error_variant_name = ids_iter.next().unwrap().name.clone();
 
-            let (external_definition, _) = project
-                .find_module_with_contract(module.clone(), external_definition_name.as_str())
-                .unwrap();
+            let Some(_) = project
+                .find_module_containing_contract(module.clone(), external_definition_name.as_str())
+            else {
+                panic!(
+                    "Failed to find module containing contract: {}",
+                    external_definition_name
+                );
+            };
 
-            let errors_enum_and_impl = external_definition
-                .borrow()
-                .errors_enums
-                .iter()
-                .find(|(e, _)| {
-                    e.borrow()
-                        .variants
-                        .iter()
-                        .any(|v| v.name == error_variant_name)
-                })
-                .cloned()
-                .unwrap();
+            let scope = Rc::new(RefCell::new(ir::Scope::new(
+                Some(&external_definition_name),
+                Some(scope.clone()),
+            )));
 
-            (error_variant_name, errors_enum_and_impl)
-        } else {
+            let SymbolData::ErrorVariant { type_name, variant } = resolve_symbol(
+                project,
+                module.clone(),
+                scope.clone(),
+                Symbol::Error(error_variant_name),
+            )
+            .unwrap() else {
+                unreachable!()
+            };
+
+            (type_name, variant)
+        }
+        // Check if the error variant is defined in the current module
+        else {
             let error_variant_name = ids_iter.next().unwrap().name.clone();
 
-            let errors_enum_and_impl = module
-                .borrow()
-                .errors_enums
-                .iter()
-                .find(|(e, _)| {
-                    e.borrow()
-                        .variants
-                        .iter()
-                        .any(|v| v.name == error_variant_name)
-                })
-                .cloned()
-                .unwrap();
+            let SymbolData::ErrorVariant { type_name, variant } = resolve_symbol(
+                project,
+                module.clone(),
+                scope.clone(),
+                Symbol::Error(error_variant_name),
+            )
+            .unwrap() else {
+                unreachable!()
+            };
 
-            (error_variant_name, errors_enum_and_impl)
+            (type_name, variant)
         };
-
-        // Add the error definition to the current definition if we haven't already
-        if !module.borrow().errors_enums.contains(&errors_enum_and_impl) {
-            module
-                .borrow_mut()
-                .errors_enums
-                .push(errors_enum_and_impl.clone());
-        }
-
-        let (errors_enum, _) = errors_enum_and_impl;
-
-        let error_variant = errors_enum
-            .borrow()
-            .variants
-            .iter()
-            .find(|e| e.name == error_variant_name)
-            .unwrap()
-            .clone();
 
         return Ok(sway::Statement::from(sway::Expression::from(sway::Block {
             statements: vec![
@@ -91,15 +79,13 @@ pub fn translate_revert_statement(
                     parameters: vec![if parameters.is_empty() {
                         sway::Expression::create_identifier(format!(
                             "{}::{}",
-                            errors_enum.borrow().name,
-                            error_variant_name,
+                            error_type_name, error_variant.name,
                         ))
                     } else {
                         sway::Expression::from(sway::FunctionCall {
                             function: sway::Expression::create_identifier(format!(
                                 "{}::{}",
-                                errors_enum.borrow().name,
-                                error_variant_name,
+                                error_type_name, error_variant.name,
                             )),
                             generic_parameters: None,
                             parameters: vec![if parameters.len() == 1 {

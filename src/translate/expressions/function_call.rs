@@ -165,8 +165,12 @@ fn translate_type_function_call(
     let from_type_name =
         get_expression_type(project, module.clone(), scope.clone(), &from_expression)?;
 
+    let from_type_name = get_underlying_type(project, module.clone(), &from_type_name);
+
     let to_type_name =
         translate_type_name(project, module.clone(), scope.clone(), expression, None);
+
+    let to_type_name = get_underlying_type(project, module.clone(), &to_type_name);
 
     Ok(coerce_expression(
         project,
@@ -372,6 +376,27 @@ fn translate_variable_function_call(
         parameter_types.clone(),
     )? {
         return Ok(result);
+    }
+
+    // Try to resolve the function call under the current contract
+    if let Some(contract_name) = scope.borrow().get_contract_name() {
+        if let Some(contract) = project.find_contract(module.clone(), &contract_name) {
+            let abi = contract.borrow().abi.clone();
+
+            if let Some(result) = resolve_abi_function_call(
+                project,
+                module.clone(),
+                scope.clone(),
+                &abi,
+                None,
+                &name,
+                named_arguments,
+                parameters.clone(),
+                parameter_types.clone(),
+            )? {
+                return Ok(result);
+            }
+        }
     }
 
     // Check all of the module's `use` statements for crate-local imports,
@@ -875,24 +900,30 @@ fn translate_member_access_function_call(
             // TODO: check full inheritance hierarchy
 
             // Check for explicit super function calls
-            // if module.borrow().inherits.iter().any(|i| i == name) {
-            //     if let Some(inherited_definition) =
-            //         project.find_definition_with_abi(name).cloned()
-            //     {
-            //         if let Some(result) = resolve_function_call(
-            //             project,
-            //             module.clone(),
-            //             scope.clone(),
-            //             &inherited_definition.toplevel_scope,
-            //             member.name.as_str(),
-            //             named_arguments,
-            //             parameters.clone(),
-            //             parameter_types.clone(),
-            //         )? {
-            //             return Ok(result);
-            //         }
-            //     }
-            // }
+            if let Some((module, contract)) =
+                project.find_module_and_contract(module.clone(), &name)
+            {
+                let abi = contract.borrow().abi.clone();
+
+                let scope = Rc::new(RefCell::new(ir::Scope::new(
+                    Some(name),
+                    Some(scope.clone()),
+                )));
+
+                if let Some(result) = resolve_abi_function_call(
+                    project,
+                    module.clone(),
+                    scope.clone(),
+                    &abi,
+                    None,
+                    &member.name,
+                    named_arguments,
+                    parameters.clone(),
+                    parameter_types.clone(),
+                )? {
+                    return Ok(result);
+                }
+            }
 
             // Check for user-defined type value wrapping
             if let "wrap" | "unwrap" = member.name.as_str() {
@@ -907,8 +938,8 @@ fn translate_member_access_function_call(
             }
 
             // Check if function is contained in an external definition
-            if let Some((external_module, _)) =
-                project.find_module_with_contract(module.clone(), &name)
+            if let Some(external_module) =
+                project.find_module_containing_contract(module.clone(), &name)
             {
                 // Check to see if the expression is a by-value struct constructor
                 let structs = {
@@ -951,24 +982,34 @@ fn translate_member_access_function_call(
 
             // Check to see if the member function is defined in the ABI type
             {
-                let mut type_name = type_name.clone();
+                let mut abi_type_name = type_name.clone();
 
                 if let sway::TypeName::Abi {
-                    type_name: abi_type_name,
-                } = &type_name
+                    type_name: abi_type_name2,
+                } = &abi_type_name
                 {
-                    type_name = abi_type_name.as_ref().clone();
+                    abi_type_name = abi_type_name2.as_ref().clone();
                 }
 
                 if let sway::TypeName::Identifier {
                     name: abi_type_name_string,
                     generic_parameters: None,
-                } = &type_name
+                } = &abi_type_name
                 {
                     if let Some(contract) =
                         project.find_contract(module.clone(), &abi_type_name_string)
                     {
                         let abi = contract.borrow().abi.clone();
+
+                        let container = coerce_expression(
+                            project,
+                            module.clone(),
+                            scope.clone(),
+                            &container,
+                            &type_name,
+                            &abi_type_name,
+                        )
+                        .unwrap();
 
                         if let Some(result) = resolve_abi_function_call(
                             project,
@@ -1139,8 +1180,8 @@ fn translate_member_access_function_call(
                 }
 
                 // Look up the definition of the using directive
-                let Some((external_module, _)) = project
-                    .find_module_with_contract(module.clone(), &using_directive.library_name)
+                let Some(external_module) = project
+                    .find_module_containing_contract(module.clone(), &using_directive.library_name)
                 else {
                     continue;
                 };
@@ -1160,6 +1201,19 @@ fn translate_member_access_function_call(
 
             if let Some(contract) = project.find_contract(module.clone(), &name) {
                 let abi = contract.borrow().abi.clone();
+
+                let container = coerce_expression(
+                    project,
+                    module.clone(),
+                    scope.clone(),
+                    &container,
+                    &type_name,
+                    &sway::TypeName::Identifier {
+                        name: abi.name.clone(),
+                        generic_parameters: None,
+                    },
+                )
+                .unwrap();
 
                 if let Some(result) = resolve_abi_function_call(
                     project,
@@ -1560,19 +1614,19 @@ fn translate_function_call_block_member_access_function_call(
 
     // Check to see if the type is a contract ABI
     {
-        let mut type_name = type_name.clone();
+        let mut abi_type_name = type_name.clone();
 
         if let sway::TypeName::Abi {
-            type_name: abi_type_name,
-        } = &type_name
+            type_name: abi_type_name2,
+        } = &abi_type_name
         {
-            type_name = abi_type_name.as_ref().clone();
+            abi_type_name = abi_type_name2.as_ref().clone();
         }
 
         if let sway::TypeName::Identifier {
             name: contract_name,
             generic_parameters: None,
-        } = &type_name
+        } = &abi_type_name
         {
             if let Some(contract) = project.find_contract(module.clone(), &contract_name) {
                 let abi = contract.borrow().abi.clone();
@@ -1586,6 +1640,16 @@ fn translate_function_call_block_member_access_function_call(
                     .iter()
                     .map(|p| get_expression_type(project, module.clone(), scope.clone(), p))
                     .collect::<Result<Vec<_>, _>>()?;
+
+                let container = coerce_expression(
+                    project,
+                    module.clone(),
+                    scope.clone(),
+                    &container,
+                    &type_name,
+                    &abi_type_name,
+                )
+                .unwrap();
 
                 if let Some(result) = resolve_abi_function_call(
                     project,
@@ -1970,9 +2034,30 @@ fn translate_identity_member_access_function_call(
         .map(|p| get_expression_type(project, module.clone(), scope.clone(), p))
         .collect::<Result<Vec<_>, _>>()?;
 
+    let type_name = get_expression_type(project, module.clone(), scope.clone(), &container)?;
+
     // Check to see if the type is located in an external ABI
-    if let Some(contract) = project.find_contract(module.clone(), &name) {
+    if let Some((module, contract)) = project.find_module_and_contract(module.clone(), &name) {
         let abi = contract.borrow().abi.clone();
+
+        let scope = Rc::new(RefCell::new(ir::Scope::new(
+            Some(&name),
+            Some(scope.clone()),
+        )));
+
+        let container = coerce_expression(
+            project,
+            module.clone(),
+            scope.clone(),
+            &container,
+            &type_name,
+            &sway::TypeName::Identifier {
+                name: abi.name.clone(),
+                generic_parameters: None,
+            },
+        )
+        .unwrap();
+
         if let Some(result) = resolve_abi_function_call(
             project,
             module.clone(),
@@ -2596,7 +2681,9 @@ fn translate_super_member_access_function_call(
         .collect::<Result<Vec<_>, _>>()?;
 
     if let Some(contract_name) = scope.borrow().get_contract_name() {
-        if let Some(contract) = project.find_contract(module.clone(), &contract_name) {
+        if let Some((module, contract)) =
+            project.find_module_and_contract(module.clone(), &contract_name)
+        {
             let abi = contract.borrow().abi.clone();
 
             for inherit in abi.inherits.iter() {

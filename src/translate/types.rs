@@ -605,7 +605,7 @@ pub fn translate_type_name(
         solidity::Expression::MemberAccess(_, container, member) => match container.as_ref() {
             solidity::Expression::Variable(solidity::Identifier { name, .. }) => {
                 if let Some((external_module, external_contract)) =
-                    project.find_module_with_contract(module.clone(), name.as_str())
+                    project.find_module_and_contract(module.clone(), name.as_str())
                 {
                     // Check if type refers to a type definition
                     if let Some(SymbolData::TypeDefinition(type_definition)) = resolve_symbol(

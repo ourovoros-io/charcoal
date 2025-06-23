@@ -350,6 +350,35 @@ pub fn coerce_expression(
         }
     }
 
+    // Check for `Identity` to abi cast coercions
+    if from_type_name.is_identity() {
+        if project
+            .find_contract(module.clone(), to_type_name.to_string().as_str())
+            .is_some()
+        {
+            return Some(sway::Expression::create_function_calls(
+                None,
+                &[(
+                    "abi",
+                    Some((
+                        None,
+                        vec![
+                            sway::Expression::create_identifier(to_type_name.to_string()),
+                            sway::Expression::create_function_calls(
+                                Some(expression),
+                                &[
+                                    ("as_contract_id", Some((None, vec![]))),
+                                    ("unwrap", Some((None, vec![]))),
+                                    ("into", Some((None, vec![]))),
+                                ],
+                            ),
+                        ],
+                    )),
+                )],
+            ));
+        }
+    }
+
     // Check for `ContractId` to `Identity` coercions
     if from_type_name.is_contract_id() && to_type_name.is_identity() {
         return Some(sway::Expression::create_function_calls(
@@ -1007,9 +1036,12 @@ pub fn get_expression_type(
 ) -> Result<sway::TypeName, Error> {
     match expression {
         sway::Expression::Literal(literal) => Ok(get_literal_type(literal)),
-        sway::Expression::PathExpr(path_expr) => {
-            Ok(get_path_expr_type(module.clone(), scope.clone(), path_expr))
-        }
+        sway::Expression::PathExpr(path_expr) => Ok(get_path_expr_type(
+            project,
+            module.clone(),
+            scope.clone(),
+            path_expr,
+        )),
         sway::Expression::FunctionCall(_) | sway::Expression::FunctionCallBlock(_) => {
             get_function_call_type(project, module.clone(), scope.clone(), expression)
         }
@@ -1120,85 +1152,123 @@ fn get_literal_type(literal: &sway::Literal) -> sway::TypeName {
 
 #[inline(always)]
 fn get_path_expr_type(
+    project: &mut Project,
     module: Rc<RefCell<ir::Module>>,
     scope: Rc<RefCell<ir::Scope>>,
     path_expr: &sway::PathExpr,
 ) -> sway::TypeName {
-    let Some(name) = path_expr.as_identifier() else {
-        todo!("get type of non-identifier path expressions: {path_expr} - {path_expr:#?}")
-    };
+    fn check_expr(
+        project: &mut Project,
+        module: Rc<RefCell<ir::Module>>,
+        scope: Rc<RefCell<ir::Scope>>,
+        path_expr: &sway::PathExpr,
+    ) -> Option<sway::TypeName> {
+        let Some(name) = path_expr.as_identifier() else {
+            todo!("get type of non-identifier path expressions: {path_expr} - {path_expr:#?}")
+        };
 
-    // HACK: Check if the identifier is a translated enum variant
-    if name.contains("::") {
-        let parts = name.split("::").collect::<Vec<_>>();
+        // HACK: Check if the identifier is a translated enum variant
+        if name.contains("::") {
+            let parts = name.split("::").collect::<Vec<_>>();
 
-        if parts.len() == 2 {
-            let enum_name = parts[0];
-            let variant_name = parts[1];
+            if parts.len() == 2 {
+                let enum_name = parts[0];
+                let variant_name = parts[1];
 
-            if module.borrow().enums.iter().any(|e| {
-                let sway::TypeName::Identifier {
-                    name,
-                    generic_parameters: None,
-                } = &e.implementation.as_ref().unwrap().type_definition.name
-                else {
-                    return false;
-                };
+                if module.borrow().enums.iter().any(|e| {
+                    let sway::TypeName::Identifier {
+                        name,
+                        generic_parameters: None,
+                    } = &e.implementation.as_ref().unwrap().type_definition.name
+                    else {
+                        return false;
+                    };
 
-                if !e
-                    .implementation
-                    .as_ref()
-                    .unwrap()
-                    .variants_impl
-                    .items
-                    .iter()
-                    .any(|i| {
-                        let sway::ImplItem::Constant(variant) = i else {
-                            return false;
-                        };
+                    if !e
+                        .implementation
+                        .as_ref()
+                        .unwrap()
+                        .variants_impl
+                        .items
+                        .iter()
+                        .any(|i| {
+                            let sway::ImplItem::Constant(variant) = i else {
+                                return false;
+                            };
 
-                        variant.name == variant_name
-                    })
-                {
-                    return false;
+                            variant.name == variant_name
+                        })
+                    {
+                        return false;
+                    }
+
+                    name == enum_name
+                }) {
+                    return Some(sway::TypeName::Identifier {
+                        name: enum_name.into(),
+                        generic_parameters: None,
+                    });
                 }
-
-                name == enum_name
-            }) {
-                return sway::TypeName::Identifier {
-                    name: enum_name.into(),
-                    generic_parameters: None,
-                };
             }
         }
-    }
 
-    if let Some(variable) = scope.borrow().get_variable_from_new_name(name) {
-        let variable = variable.borrow();
+        if let Some(variable) = scope.borrow().get_variable_from_new_name(name) {
+            let variable = variable.borrow();
 
-        return variable.type_name.clone();
-    }
-
-    if let Some(function) = module.borrow().functions.iter().find(|f| {
-        let sway::TypeName::Function { new_name, .. } = &f.signature else {
-            unreachable!()
-        };
-        new_name == name
-    }) {
-        return function.signature.clone();
-    }
-
-    if let Some(constant) = module.borrow().constants.iter().find(|c| c.name == name) {
-        return constant.type_name.clone();
-    }
-
-    if let Some(configurable) = module.borrow().configurable.as_ref() {
-        if let Some(field) = configurable.fields.iter().find(|c| c.name == name) {
-            return field.type_name.clone();
+            return Some(variable.type_name.clone());
         }
+
+        if let Some(function) = module.borrow().functions.iter().find(|f| {
+            let sway::TypeName::Function { new_name, .. } = &f.signature else {
+                unreachable!()
+            };
+            new_name == name
+        }) {
+            return Some(function.signature.clone());
+        }
+
+        if let Some(constant) = module.borrow().constants.iter().find(|c| c.name == name) {
+            return Some(constant.type_name.clone());
+        }
+
+        if let Some(configurable) = module.borrow().configurable.as_ref() {
+            if let Some(field) = configurable.fields.iter().find(|c| c.name == name) {
+                return Some(field.type_name.clone());
+            }
+        }
+
+        if let Some(contract_name) = scope.borrow().get_contract_name() {
+            if let Some(module) =
+                project.find_module_containing_contract(module.clone(), &contract_name)
+            {
+                let scope = Rc::new(RefCell::new(ir::Scope::new(
+                    Some(contract_name.as_str()),
+                    Some(scope.clone()),
+                )));
+
+                for use_item in module.borrow().uses.iter() {
+                    if let Some(module) = project.resolve_use(use_item) {
+                        if let Some(result) =
+                            check_expr(project, module.clone(), scope.clone(), path_expr)
+                        {
+                            return Some(result);
+                        }
+                    }
+                }
+            }
+        }
+
+        None
     }
 
-    panic!("error: Variable not found in scope: \"{name}\"");
+    if let Some(result) = check_expr(project, module.clone(), scope.clone(), path_expr) {
+        return result;
+    }
+
+    panic!(
+        "error: Variable not found in scope: \"{}\"",
+        sway::TabbedDisplayer(path_expr)
+    );
 }
 
 #[inline(always)]
@@ -1371,8 +1441,11 @@ fn get_member_access_type(
                 let inherits = contract.borrow().abi.inherits.clone();
 
                 for inherited_contract_name in inherits {
-                    let inherited_contract = project
-                        .find_contract(module.clone(), inherited_contract_name.to_string().as_str())
+                    let (module, inherited_contract) = project
+                        .find_module_and_contract(
+                            module.clone(),
+                            inherited_contract_name.to_string().as_str(),
+                        )
                         .unwrap();
 
                     if let Some(result) = check_contract(
@@ -1765,10 +1838,40 @@ fn get_path_expr_function_call_type(
             }));
         }
 
+        "I8::try_from" => {
+            return Ok(Some(sway::TypeName::Identifier {
+                name: "Option".into(),
+                generic_parameters: Some(sway::GenericParameterList {
+                    entries: vec![sway::GenericParameter {
+                        type_name: sway::TypeName::Identifier {
+                            name: "I8".into(),
+                            generic_parameters: None,
+                        },
+                        implements: None,
+                    }],
+                }),
+            }));
+        }
+
         "I16::from" | "I16::from_uint" | "I16::max" | "I16::min" => {
             return Ok(Some(sway::TypeName::Identifier {
                 name: "I16".into(),
                 generic_parameters: None,
+            }));
+        }
+
+        "I16::try_from" => {
+            return Ok(Some(sway::TypeName::Identifier {
+                name: "Option".into(),
+                generic_parameters: Some(sway::GenericParameterList {
+                    entries: vec![sway::GenericParameter {
+                        type_name: sway::TypeName::Identifier {
+                            name: "I16".into(),
+                            generic_parameters: None,
+                        },
+                        implements: None,
+                    }],
+                }),
             }));
         }
 
@@ -1779,10 +1882,40 @@ fn get_path_expr_function_call_type(
             }));
         }
 
+        "I32::try_from" => {
+            return Ok(Some(sway::TypeName::Identifier {
+                name: "Option".into(),
+                generic_parameters: Some(sway::GenericParameterList {
+                    entries: vec![sway::GenericParameter {
+                        type_name: sway::TypeName::Identifier {
+                            name: "I32".into(),
+                            generic_parameters: None,
+                        },
+                        implements: None,
+                    }],
+                }),
+            }));
+        }
+
         "I64::from" | "I64::from_uint" | "I64::max" | "I64::min" => {
             return Ok(Some(sway::TypeName::Identifier {
                 name: "I64".into(),
                 generic_parameters: None,
+            }));
+        }
+
+        "I64::try_from" => {
+            return Ok(Some(sway::TypeName::Identifier {
+                name: "Option".into(),
+                generic_parameters: Some(sway::GenericParameterList {
+                    entries: vec![sway::GenericParameter {
+                        type_name: sway::TypeName::Identifier {
+                            name: "I64".into(),
+                            generic_parameters: None,
+                        },
+                        implements: None,
+                    }],
+                }),
             }));
         }
 
@@ -1793,10 +1926,40 @@ fn get_path_expr_function_call_type(
             }));
         }
 
+        "I128::try_from" => {
+            return Ok(Some(sway::TypeName::Identifier {
+                name: "Option".into(),
+                generic_parameters: Some(sway::GenericParameterList {
+                    entries: vec![sway::GenericParameter {
+                        type_name: sway::TypeName::Identifier {
+                            name: "I128".into(),
+                            generic_parameters: None,
+                        },
+                        implements: None,
+                    }],
+                }),
+            }));
+        }
+
         "I256::from" | "I256::from_uint" | "I256::max" | "I256::min" => {
             return Ok(Some(sway::TypeName::Identifier {
                 name: "I256".into(),
                 generic_parameters: None,
+            }));
+        }
+
+        "I256::try_from" => {
+            return Ok(Some(sway::TypeName::Identifier {
+                name: "Option".into(),
+                generic_parameters: Some(sway::GenericParameterList {
+                    entries: vec![sway::GenericParameter {
+                        type_name: sway::TypeName::Identifier {
+                            name: "I256".into(),
+                            generic_parameters: None,
+                        },
+                        implements: None,
+                    }],
+                }),
             }));
         }
 
@@ -2297,7 +2460,8 @@ fn get_path_expr_function_call_type(
     }
 
     fn check_function(
-        module: &mut ir::Module,
+        project: &mut Project,
+        module: Rc<RefCell<ir::Module>>,
         scope: Rc<RefCell<ir::Scope>>,
         name: &str,
         generic_parameters: Option<&sway::GenericParameterList>,
@@ -2305,7 +2469,7 @@ fn get_path_expr_function_call_type(
         parameter_types: &[sway::TypeName],
     ) -> Result<Option<sway::TypeName>, Error> {
         // Attempt to find a function in scope
-        if let Some(function) = module.functions.iter().find(|f| {
+        if let Some(function) = module.borrow().functions.iter().find(|f| {
             let sway::TypeName::Function {
                 new_name: fn_name,
                 parameters: fn_parameters,
@@ -2469,12 +2633,29 @@ fn get_path_expr_function_call_type(
                 return Ok(Some(sway::TypeName::Tuple { type_names: vec![] }));
             }
         }
-        
+
+        for use_item in module.borrow().uses.iter() {
+            if let Some(found_module) = project.resolve_use(use_item) {
+                if let Some(type_name) = check_function(
+                    project,
+                    found_module.clone(),
+                    scope.clone(),
+                    &name,
+                    generic_parameters,
+                    parameters,
+                    &parameter_types,
+                )? {
+                    return Ok(Some(type_name));
+                }
+            }
+        }
+
         Ok(None)
     }
 
     if let Some(type_name) = check_function(
-        &mut module.borrow_mut(),
+        project,
+        module.clone(),
         scope.clone(),
         &name,
         generic_parameters,
@@ -2482,21 +2663,6 @@ fn get_path_expr_function_call_type(
         &parameter_types,
     )? {
         return Ok(Some(type_name));
-    }
-
-    for use_item in module.borrow().uses.iter() {
-        if let Some(found_module) = project.resolve_use(use_item) {
-            if let Some(type_name) = check_function(
-                &mut found_module.borrow_mut(),
-                scope.clone(),
-                &name,
-                generic_parameters,
-                parameters,
-                &parameter_types,
-            )? {
-                return Ok(Some(type_name));
-            }
-        }
     }
 
     panic!(

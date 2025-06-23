@@ -60,36 +60,74 @@ pub fn translate_member_access_expression(
                 }
             }
 
-            //
-            // TODO:
-            //
-            // // Check to see if the variable is an external definition
-            // if let Some(external_definition) = project.translated_definitions.iter().find(|d| d.name == name) {
-            //     // Check to see if the variable exists in the external definition
-            //     if let Some(variable) = external_definition.toplevel_scope.borrow().get_variable_from_old_name(member) {
-            //         let variable = variable.borrow();
-            //
-            //         // If the variable is a constant, ensure it is added to the current definition
-            //         if variable.is_constant {
-            //             let constant = external_definition.constants.iter().find(|c| c.name == variable.new_name).unwrap();
-            //
-            //             if !module.borrow().constants.contains(constant) {
-            //                 module.borrow().constants.push(constant.clone());
-            //             }
-            //
-            //             if !module.borrow().toplevel_scope.borrow().variables.iter().any(|v| v.borrow().new_name == variable.new_name) {
-            //                 module.borrow().toplevel_scope.borrow_mut().variables.push(Rc::new(RefCell::new(variable.clone())));
-            //             }
-            //         }
-            //
-            //         return Ok(sway::Expression::create_identifier(variable.new_name.clone()));
-            //     }
-            //
-            //     // Check to see if the variable is referring to a function (fn pointer type)
-            //     if let Some(function) = external_definition.toplevel_scope.borrow().find_function(|f| f.borrow().old_name == member) {
-            //         return Ok(sway::Expression::create_identifier(function.borrow().new_name.clone()));
-            //     }
-            // }
+            // Check to see if the variable is an external definition
+            if let Some(module) = project.find_module_containing_contract(module.clone(), &name) {
+                let scope = Rc::new(RefCell::new(ir::Scope::new(
+                    Some(name),
+                    Some(scope.clone()),
+                )));
+
+                // Check to see if the variable exists in the external definition
+                match resolve_symbol(
+                    project,
+                    module.clone(),
+                    scope.clone(),
+                    Symbol::ValueSource(member.to_string()),
+                ) {
+                    Some(symbol) => match symbol {
+                        SymbolData::Variable(variable) => {
+                            return Ok(sway::Expression::create_identifier(
+                                variable.borrow().new_name.clone(),
+                            ));
+                        }
+                        SymbolData::Constant(constant) => {
+                            return Ok(sway::Expression::create_identifier(constant.name.clone()));
+                        }
+                        SymbolData::ConfigurableField(configurable_field) => {
+                            return Ok(sway::Expression::create_identifier(
+                                configurable_field.name.clone(),
+                            ));
+                        }
+                        SymbolData::StorageField { namespace, field } => {
+                            return Ok(sway::Expression::create_function_calls(
+                                None,
+                                &[
+                                    (
+                                        format!(
+                                            "storage{}",
+                                            namespace
+                                                .as_ref()
+                                                .map(|n| format!("::{n}"))
+                                                .unwrap_or_default()
+                                        )
+                                        .as_str(),
+                                        None,
+                                    ),
+                                    (field.name.as_str(), None),
+                                ],
+                            ));
+                        }
+
+                        _ => todo!(),
+                    },
+                    None => {}
+                }
+
+                // Check to see if the variable is a function pointer
+                if let Some(function) = module.borrow().functions.iter().find(|f| {
+                    let sway::TypeName::Function { old_name, .. } = &f.signature else {
+                        unreachable!()
+                    };
+
+                    *old_name == member.name
+                }) {
+                    let sway::TypeName::Function { new_name, .. } = &function.signature else {
+                        unreachable!()
+                    };
+
+                    return Ok(sway::Expression::create_identifier(new_name.clone()));
+                }
+            }
         }
 
         solidity::Expression::MemberAccess(_, container1, member1) => match container1.as_ref() {

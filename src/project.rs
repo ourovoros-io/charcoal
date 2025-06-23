@@ -685,7 +685,7 @@ impl Project {
         None
     }
 
-    pub fn find_module_with_contract(
+    pub fn find_module_and_contract(
         &mut self,
         module: Rc<RefCell<ir::Module>>,
         contract_name: &str,
@@ -714,6 +714,39 @@ impl Project {
                         found_module.clone(),
                         contract.implementation.clone().unwrap(),
                     ));
+                }
+            }
+        }
+
+        None
+    }
+
+    pub fn find_module_containing_contract(
+        &mut self,
+        module: Rc<RefCell<ir::Module>>,
+        contract_name: &str,
+    ) -> Option<Rc<RefCell<ir::Module>>> {
+        // Check to see if the contract was defined in the current file
+        if module
+            .borrow()
+            .contracts
+            .iter()
+            .any(|c| c.signature.to_string() == contract_name)
+        {
+            return Some(module.clone());
+        }
+
+        // Check all of the module's `use` statements for crate-local imports,
+        // find the module being imported, then check if the contract lives there.
+        for use_item in module.borrow().uses.iter() {
+            if let Some(found_module) = self.resolve_use(use_item) {
+                if found_module
+                    .borrow()
+                    .contracts
+                    .iter()
+                    .any(|c| c.signature.to_string() == contract_name)
+                {
+                    return Some(found_module.clone());
                 }
             }
         }
