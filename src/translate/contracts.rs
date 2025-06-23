@@ -174,12 +174,15 @@ pub fn translate_contract_definition(
             continue;
         }
 
-        let (function, impl_item) = translate_function_definition(
+        let (Some(function), impl_item) = translate_function_definition(
             project,
             module.clone(),
             Some(&contract_name),
             &function_definition,
-        )?;
+        )?
+        else {
+            continue;
+        };
 
         if let Some(impl_item) = impl_item {
             if !contract.borrow().abi_impl.items.contains(&impl_item) {

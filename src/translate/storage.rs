@@ -449,6 +449,7 @@ pub fn translate_state_variable(
 
     // Create the the toplevel function
     let mut toplevel_function = abi_function.clone();
+    toplevel_function.is_public = true;
     toplevel_function.name = function_name.top_level_fn_name;
 
     toplevel_function.body = Some(sway::Block {

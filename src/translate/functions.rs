@@ -523,7 +523,7 @@ pub fn translate_function_definition(
     module: Rc<RefCell<ir::Module>>,
     contract_name: Option<&str>,
     function_definition: &solidity::FunctionDefinition,
-) -> Result<(sway::Function, Option<sway::ImplItem>), Error> {
+) -> Result<(Option<sway::Function>, Option<sway::ImplItem>), Error> {
     // println!(
     //     "Translating function `{}` at {}",
     //     match contract_name {
@@ -573,7 +573,7 @@ pub fn translate_function_definition(
     let scope = Rc::new(RefCell::new(ir::Scope::new(contract_name, None)));
 
     // Create the function declaration
-    let mut sway_function = sway::Function {
+    let function_declaration = sway::Function {
         attributes: function_attributes.clone().into(),
         is_public: false,
         old_name: function_name.old_name.clone(),
@@ -592,7 +592,7 @@ pub fn translate_function_definition(
     // Convert the statements in the function's body (if any)
     let Some(solidity::Statement::Block { statements, .. }) = function_definition.body.as_ref()
     else {
-        return Ok((sway_function, None));
+        return Ok((None, None));
     };
 
     // Add the function parameters to the scope
@@ -673,6 +673,7 @@ pub fn translate_function_definition(
         statements.as_slice(),
     )?;
 
+    // Create a constructor guard if the function is a constructor
     if function_attributes.is_constructor {
         let prefix = translate_naming_convention(
             contract_name
@@ -697,10 +698,7 @@ pub fn translate_function_definition(
 
         if !has_field {
             // Add the `constructor_called` field to the storage block
-            module
-                .borrow_mut()
-                .get_storage_namespace(scope.clone())
-                .unwrap()
+            storage_namespace
                 .borrow_mut()
                 .fields
                 .push(sway::StorageField {
@@ -941,13 +939,13 @@ pub fn translate_function_definition(
             )));
     }
 
-    // Create the body for the toplevel function
-    sway_function.body = Some(function_body);
-
-    // Add the toplevel function
-    let mut toplevel_function = sway_function.clone();
+    // Create the toplevel function
+    let mut toplevel_function = function_declaration.clone();
+    toplevel_function.is_public = true;
     toplevel_function.name = function_name.top_level_fn_name.clone();
+    toplevel_function.body = Some(function_body);
 
+    // Remove `payable` attribute from toplevel function if present
     if let Some((index, _)) = toplevel_function
         .attributes
         .as_ref()
@@ -971,10 +969,13 @@ pub fn translate_function_definition(
     let mut impl_item = None;
 
     if function_attributes.is_public && !function_attributes.is_fallback {
+        let mut impl_function = function_declaration.clone();
+        impl_function.name = function_name.abi_fn_name.clone();
+
         let mut statements = vec![];
 
         // Convert parameters of `str` to `String`, since they are not allowed in abi function signatures
-        for p in sway_function.parameters.entries.iter_mut() {
+        for p in impl_function.parameters.entries.iter_mut() {
             let Some(sway::TypeName::StringSlice) = p.type_name else {
                 continue;
             };
@@ -999,15 +1000,15 @@ pub fn translate_function_definition(
             }));
         }
 
-        sway_function.body = Some(sway::Block {
+        impl_function.body = Some(sway::Block {
             statements,
             final_expr: Some(sway::Expression::create_function_calls(
                 None,
                 &[(
-                    format!("::{}", sway_function.name).as_str(),
+                    format!("::{}", impl_function.name).as_str(),
                     Some((
                         None,
-                        sway_function
+                        impl_function
                             .parameters
                             .entries
                             .iter()
@@ -1018,13 +1019,11 @@ pub fn translate_function_definition(
             )),
         });
 
-        sway_function.name = function_name.abi_fn_name.clone();
-
         // Create the function wrapper item for the contract impl block
-        impl_item = Some(sway::ImplItem::Function(sway_function.clone()));
+        impl_item = Some(sway::ImplItem::Function(impl_function.clone()));
     }
 
-    Ok((toplevel_function, impl_item))
+    Ok((Some(toplevel_function), impl_item))
 }
 
 #[inline]

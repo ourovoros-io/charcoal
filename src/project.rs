@@ -1276,6 +1276,10 @@ impl Project {
 
             // Translate abi functions
             for function_definition in function_definitions {
+                if matches!(function_definition.ty, solidity::FunctionTy::Modifier) {
+                    continue;
+                }
+
                 if let Some(abi_fn) = translate_abi_function(
                     self,
                     module.clone(),
@@ -1285,20 +1289,23 @@ impl Project {
                     contract.borrow_mut().abi.functions.push(abi_fn);
                 }
 
-                if !matches!(function_definition.ty, solidity::FunctionTy::Modifier) {
-                    let signature = translate_function_declaration(
-                        self,
-                        module.clone(),
-                        Some(&contract_name),
-                        &function_definition,
-                    )?
-                    .type_name;
-
-                    module.borrow_mut().functions.push(ir::Item {
-                        signature,
-                        implementation: None,
-                    });
+                // Only create a toplevel function if the function has a body
+                if function_definition.body.is_none() {
+                    continue;
                 }
+
+                let signature = translate_function_declaration(
+                    self,
+                    module.clone(),
+                    Some(&contract_name),
+                    &function_definition,
+                )?
+                .type_name;
+
+                module.borrow_mut().functions.push(ir::Item {
+                    signature,
+                    implementation: None,
+                });
             }
 
             module.borrow_mut().contracts[contracts_index + i].implementation =
@@ -1336,8 +1343,11 @@ impl Project {
                 continue;
             }
 
-            let (function, impl_item) =
-                translate_function_definition(self, module.clone(), None, &function_definition)?;
+            let (Some(function), impl_item) =
+                translate_function_definition(self, module.clone(), None, &function_definition)?
+            else {
+                continue;
+            };
 
             assert!(impl_item.is_none());
 
