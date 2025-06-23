@@ -1005,7 +1005,7 @@ pub fn translate_function_definition(
             final_expr: Some(sway::Expression::create_function_calls(
                 None,
                 &[(
-                    format!("::{}", impl_function.name).as_str(),
+                    toplevel_function.name.as_str(),
                     Some((
                         None,
                         impl_function

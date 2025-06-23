@@ -504,7 +504,7 @@ pub fn translate_state_variable(
         final_expr: Some(sway::Expression::create_function_calls(
             None,
             &[(
-                format!("::{}", toplevel_function.name).as_str(),
+                toplevel_function.name.as_str(),
                 Some((None, vec![])),
             )],
         )),
