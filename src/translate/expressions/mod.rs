@@ -725,7 +725,7 @@ pub fn create_value_expression(
 
                 let value_type =
                     get_expression_type(project, module.clone(), scope.clone(), &value).unwrap();
-                
+
                 coerce_expression(
                     project,
                     module.clone(),
@@ -859,7 +859,9 @@ pub fn create_value_expression(
                     ));
                 }
                 // Check to see if the type is a struct definition
-                else if let Some(struct_definition) = project.find_struct(module.clone(), name) {
+                else if let Some(struct_definition) =
+                    project.find_struct(module.clone(), scope.clone(), name)
+                {
                     return sway::Expression::from(sway::Constructor {
                         type_name: sway::TypeName::Identifier {
                             name: name.to_string(),

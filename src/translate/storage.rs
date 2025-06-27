@@ -2,20 +2,26 @@ use crate::{error::Error, ir, project::Project, translate::*};
 use solang_parser::pt as solidity;
 use std::{cell::RefCell, rc::Rc};
 
+pub struct StateVariableInfo {
+    pub is_public: bool,
+    pub is_storage: bool,
+    pub is_immutable: bool,
+    pub is_constant: bool,
+    pub is_configurable: bool,
+    pub old_name: String,
+    pub new_name: String,
+    pub type_name: sway::TypeName,
+    pub deferred_initializations: Vec<ir::DeferredInitialization>,
+    pub mapping_names: Vec<(String, Vec<String>)>,
+}
+
 #[inline]
 pub fn translate_state_variable(
     project: &mut Project,
     module: Rc<RefCell<ir::Module>>,
     contract_name: Option<&str>,
     variable_definition: &solidity::VariableDefinition,
-) -> Result<
-    (
-        Vec<ir::DeferredInitialization>,
-        Vec<(String, Vec<String>)>,
-        Option<(sway::Function, sway::Function, sway::Function)>,
-    ),
-    Error,
-> {
+) -> Result<StateVariableInfo, Error> {
     // println!(
     //     "Translating state variable {} at: {}",
     //     variable_definition,
@@ -213,9 +219,11 @@ pub fn translate_state_variable(
 
     if value.is_none() {
         // HACK: Add to mapping names for toplevel structs in storage that contain storage mappings
-        if let Some(struct_definition) =
-            project.find_struct(module.clone(), &variable_type_name.to_string())
-        {
+        if let Some(struct_definition) = project.find_struct(
+            module.clone(),
+            value_scope.clone(),
+            &variable_type_name.to_string(),
+        ) {
             for field in struct_definition.borrow().fields.iter() {
                 let Some(option_type) = field.type_name.option_type() else {
                     continue;
@@ -385,6 +393,25 @@ pub fn translate_state_variable(
     else if storage_namespace.is_some() {
         module
             .borrow_mut()
+            .get_storage_struct(value_scope.clone())
+            .borrow_mut()
+            .fields
+            .push(sway::StructField {
+                is_public: true,
+                name: new_name.clone(),
+                type_name: sway::TypeName::Identifier {
+                    name: "StorageKey".to_string(),
+                    generic_parameters: Some(sway::GenericParameterList {
+                        entries: vec![sway::GenericParameter {
+                            type_name: variable_type_name.clone(),
+                            implements: None,
+                        }],
+                    }),
+                },
+            });
+
+        module
+            .borrow_mut()
             .get_storage_namespace(value_scope.clone())
             .unwrap()
             .borrow_mut()
@@ -397,17 +424,36 @@ pub fn translate_state_variable(
             });
     }
 
-    // Generate a getter function if the storage field is public
-    if !is_public {
-        return Ok((deferred_initializations, mapping_names, None));
-    }
+    Ok(StateVariableInfo {
+        is_public,
+        is_storage,
+        is_immutable,
+        is_constant,
+        is_configurable,
+        old_name,
+        new_name,
+        type_name: variable_type_name.clone(),
+        deferred_initializations,
+        mapping_names,
+    })
+}
 
+pub fn generate_state_variable_getter_functions(
+    project: &mut Project,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
+    contract_name: Option<&str>,
+    variable_definition: &solidity::VariableDefinition,
+    state_variable_info: &StateVariableInfo,
+) -> Result<(sway::Function, sway::Function, sway::Function), Error> {
     // Generate parameters and return type for the public getter function
     let mut parameters = vec![];
-    let mut return_type = get_return_type_name(project, module.clone(), &variable_type_name);
+    let mut return_type =
+        get_return_type_name(project, module.clone(), &state_variable_info.type_name);
 
-    if let Some((inner_parameters, inner_return_type)) =
-        variable_type_name.getter_function_parameters_and_return_type()
+    if let Some((inner_parameters, inner_return_type)) = state_variable_info
+        .type_name
+        .getter_function_parameters_and_return_type()
     {
         parameters = inner_parameters;
         return_type = inner_return_type;
@@ -417,14 +463,14 @@ pub fn translate_state_variable(
         project,
         module.clone(),
         contract_name,
-        Some(old_name.as_str()),
+        Some(&state_variable_info.old_name.as_str()),
         &Default::default(), // TODO: generate solidity parameter list for implicit getter functions...
         &solidity::FunctionTy::Function,
     );
 
     // Create the function declaration for the abi
     let abi_function = sway::Function {
-        attributes: if is_storage {
+        attributes: if state_variable_info.is_storage {
             Some(sway::AttributeList {
                 attributes: vec![sway::Attribute {
                     name: "storage".into(),
@@ -435,31 +481,45 @@ pub fn translate_state_variable(
             None
         },
         is_public: false,
-        old_name: old_name.clone(),
-        name: function_name.abi_fn_name.clone(),
+        old_name: state_variable_info.old_name.clone(),
+        new_name: function_name.abi_fn_name.clone(),
         generic_parameters: None,
         parameters: sway::ParameterList {
             entries: parameters.iter().map(|(p, _)| p.clone()).collect(),
         },
+        storage_struct_parameter: None,
         return_type: Some(return_type.clone()),
         body: None,
     };
 
-    let namespace_name = translate_naming_convention(contract_name.unwrap(), Case::Snake);
-
     // Create the the toplevel function
     let mut toplevel_function = abi_function.clone();
     toplevel_function.is_public = true;
-    toplevel_function.name = function_name.top_level_fn_name;
+    toplevel_function.new_name = function_name.top_level_fn_name;
+
+    if let Some(contract_name) = contract_name.as_ref() {
+        toplevel_function.storage_struct_parameter = Some(sway::Parameter {
+            is_ref: false,
+            is_mut: false,
+            name: "storage_struct".to_string(),
+            type_name: Some(sway::TypeName::Identifier {
+                name: format!("{contract_name}Storage"),
+                generic_parameters: None,
+            }),
+        });
+    }
+
+    module.borrow_mut().functions.push(ir::Item {
+        signature: toplevel_function.get_type_name(),
+        implementation: None,
+    });
 
     toplevel_function.body = Some(sway::Block {
         statements: vec![],
-        final_expr: Some(if is_storage {
+        final_expr: Some(if state_variable_info.is_storage {
             let mut expression = sway::Expression::from(sway::MemberAccess {
-                expression: sway::Expression::create_identifier(format!(
-                    "storage::{namespace_name}"
-                )),
-                member: new_name.clone(),
+                expression: sway::Expression::create_identifier("storage_struct".to_string()),
+                member: state_variable_info.new_name.clone(),
             });
 
             for (parameter, needs_unwrap) in parameters.iter() {
@@ -487,20 +547,23 @@ pub fn translate_state_variable(
                 &[("read", Some((None, vec![])))],
             );
 
-            let value_type =
-                get_expression_type(project, module.clone(), value_scope.clone(), &value)?;
+            scope
+                .borrow_mut()
+                .set_function_name(&toplevel_function.new_name);
+
+            let value_type = get_expression_type(project, module.clone(), scope.clone(), &value)?;
 
             coerce_expression(
                 project,
                 module.clone(),
-                value_scope.clone(),
+                scope.clone(),
                 &value,
                 &value_type,
                 &return_type,
             )
             .unwrap()
-        } else if is_constant || is_immutable {
-            sway::Expression::create_identifier(new_name.clone())
+        } else if state_variable_info.is_constant || state_variable_info.is_immutable {
+            sway::Expression::create_identifier(state_variable_info.new_name.clone())
         } else {
             todo!(
                 "Handle getter function for non-storage variables: {} - {variable_definition:#?}",
@@ -512,17 +575,85 @@ pub fn translate_state_variable(
     // Create the contract impl's function wrapper
     let mut impl_function = abi_function.clone();
 
+    let mut statements = vec![];
+    let mut parameters = vec![];
+
+    if state_variable_info.is_storage {
+        let contract_name = contract_name.unwrap();
+        let storage_namespace_name = module
+            .borrow()
+            .get_storage_namespace_name(scope.clone())
+            .unwrap();
+
+        let contract = project
+            .find_contract(module.clone(), contract_name)
+            .unwrap();
+
+        statements.push(sway::Statement::from(sway::Let {
+            pattern: sway::LetPattern::from(sway::LetIdentifier {
+                is_mutable: false,
+                name: "storage_struct".to_string(),
+            }),
+            type_name: None,
+            value: sway::Expression::from(sway::Constructor {
+                type_name: sway::TypeName::Identifier {
+                    name: format!("{contract_name}Storage"),
+                    generic_parameters: None,
+                },
+                fields: contract
+                    .borrow()
+                    .storage_struct
+                    .as_ref()
+                    .unwrap()
+                    .borrow()
+                    .fields
+                    .iter()
+                    .map(|f| sway::ConstructorField {
+                        name: f.name.clone(),
+                        value: sway::Expression::from(sway::MemberAccess {
+                            expression: sway::Expression::from(sway::PathExpr {
+                                root: sway::PathExprRoot::Identifier("storage".to_string()),
+                                segments: vec![sway::PathExprSegment {
+                                    name: storage_namespace_name.clone(),
+                                    generic_parameters: None,
+                                }],
+                            }),
+                            member: f.name.clone(),
+                        }),
+                    })
+                    .collect(),
+            }),
+        }));
+
+        scope
+            .borrow_mut()
+            .add_variable(Rc::new(RefCell::new(ir::Variable {
+                old_name: state_variable_info.old_name.clone(),
+                new_name: "storage_struct".to_string(),
+                type_name: sway::TypeName::Identifier {
+                    name: format!("{contract_name}Storage"),
+                    generic_parameters: None,
+                },
+                statement_index: Some(0),
+                read_count: 0,
+                mutation_count: 0,
+            })));
+
+        parameters.push(sway::Expression::create_identifier(
+            "storage_struct".to_string(),
+        ));
+    }
+
     impl_function.body = Some(sway::Block {
-        statements: vec![],
+        statements,
         final_expr: Some(sway::Expression::create_function_calls(
             None,
-            &[(toplevel_function.name.as_str(), Some((None, vec![])))],
+            &[(
+                toplevel_function.new_name.as_str(),
+                Some((None, parameters)),
+            )],
         )),
     });
 
-    Ok((
-        deferred_initializations,
-        mapping_names,
-        Some((abi_function, toplevel_function, impl_function)),
-    ))
+    Ok((abi_function, toplevel_function, impl_function))
 }

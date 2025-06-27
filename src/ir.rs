@@ -110,6 +110,10 @@ impl Scope {
         None
     }
 
+    pub fn set_function_name(&mut self, function_name: &str) {
+        self.function_name = Some(function_name.to_string());
+    }
+
     #[inline]
     pub fn get_parent(&self) -> Option<Rc<RefCell<Scope>>> {
         self.parent.clone()
@@ -229,6 +233,7 @@ pub struct Contract {
     pub abi: sway::Abi,
     pub abi_impl: sway::Impl,
     pub storage: Option<Rc<RefCell<sway::Storage>>>,
+    pub storage_struct: Option<Rc<RefCell<sway::Struct>>>,
 }
 
 impl Contract {
@@ -254,6 +259,7 @@ impl Contract {
                 items: vec![],
             },
             storage: None,
+            storage_struct: None,
         }
     }
 }
@@ -359,6 +365,32 @@ impl Module {
         }
 
         contract.borrow().storage.clone().unwrap()
+    }
+
+    /// Gets the storage struct for the translated definition. If it doesn't exist, it gets created.
+    #[inline]
+    pub fn get_storage_struct(&mut self, scope: Rc<RefCell<Scope>>) -> Rc<RefCell<sway::Struct>> {
+        let contract_name = scope.borrow().get_contract_name().unwrap();
+
+        let contract_item = self
+            .contracts
+            .iter()
+            .find(|c| c.signature.to_string() == contract_name)
+            .unwrap();
+
+        let contract = contract_item.implementation.clone().unwrap();
+
+        if contract.borrow().storage_struct.is_none() {
+            contract.borrow_mut().storage_struct = Some(Rc::new(RefCell::new(sway::Struct {
+                attributes: None,
+                is_public: true,
+                name: format!("{contract_name}Storage"),
+                generic_parameters: None,
+                fields: vec![],
+            })));
+        }
+
+        contract.borrow().storage_struct.clone().unwrap()
     }
 
     /// Attempt to get storage namespace by name from the translated definition. If it doesn't exist, it gets created.
@@ -516,6 +548,10 @@ impl From<Module> for sway::Module {
             let contract = contract_item.implementation.clone().unwrap();
             let contract = contract.borrow();
 
+            if let Some(storage_struct) = contract.storage_struct.as_ref() {
+                items.push(sway::ModuleItem::Struct(storage_struct.borrow().clone()));
+            }
+
             let Some(storage) = contract.storage.as_ref() else {
                 continue;
             };
@@ -579,7 +615,14 @@ impl From<Module> for sway::Module {
         }
 
         for x in module.functions {
-            items.push(sway::ModuleItem::Function(x.implementation.unwrap()));
+            let mut function = x.implementation.unwrap();
+            if let Some(storage_struct_parameter) = function.storage_struct_parameter.as_ref() {
+                function
+                    .parameters
+                    .entries
+                    .push(storage_struct_parameter.clone());
+            }
+            items.push(sway::ModuleItem::Function(function));
         }
 
         for contract_item in module.contracts {

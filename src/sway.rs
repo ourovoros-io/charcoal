@@ -317,6 +317,7 @@ pub enum TypeName {
         new_name: String,
         generic_parameters: Option<GenericParameterList>,
         parameters: ParameterList,
+        storage_struct_parameter: Option<Box<Parameter>>,
         return_type: Option<Box<TypeName>>,
     },
     Abi {
@@ -575,7 +576,7 @@ impl TypeName {
                 name,
                 generic_parameters: None,
             } => name == "String",
-            
+
             _ => false,
         }
     }
@@ -1444,9 +1445,10 @@ pub struct Function {
     pub attributes: Option<AttributeList>,
     pub is_public: bool,
     pub old_name: String,
-    pub name: String,
+    pub new_name: String,
     pub generic_parameters: Option<GenericParameterList>,
     pub parameters: ParameterList,
+    pub storage_struct_parameter: Option<Parameter>,
     pub return_type: Option<TypeName>,
     pub body: Option<Block>,
 }
@@ -1455,9 +1457,10 @@ impl Function {
     pub fn get_type_name(&self) -> TypeName {
         let Function {
             old_name,
-            name,
+            new_name: name,
             generic_parameters,
             parameters,
+            storage_struct_parameter,
             return_type,
             ..
         } = self;
@@ -1467,6 +1470,7 @@ impl Function {
             new_name: name.clone(),
             generic_parameters: generic_parameters.clone(),
             parameters: parameters.clone(),
+            storage_struct_parameter: storage_struct_parameter.clone().map(Box::new),
             return_type: return_type.clone().map(Box::new),
         }
     }
@@ -1486,7 +1490,7 @@ impl TabbedDisplay for Function {
         write!(
             f,
             "fn {}{}{}",
-            self.name,
+            self.new_name,
             if let Some(p) = self.generic_parameters.as_ref() {
                 format!("{p}")
             } else {
@@ -2840,9 +2844,10 @@ mod tests {
             attributes: None,
             is_public: true,
             old_name: "test".into(),
-            name: "test".into(),
+            new_name: "test".into(),
             generic_parameters: None,
             parameters: ParameterList::default(),
+            storage_struct_parameter: None,
             return_type: None,
             body: Some(Block {
                 statements: vec![Statement::Expression(Expression::Return(None))],

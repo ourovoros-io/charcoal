@@ -437,7 +437,7 @@ pub fn generate_enum_abi_encode_function(
             attributes: None,
             is_public: false,
             old_name: String::new(),
-            name: "abi_encode".into(),
+            new_name: "abi_encode".into(),
             generic_parameters: None,
             parameters: sway::ParameterList {
                 entries: vec![
@@ -457,6 +457,7 @@ pub fn generate_enum_abi_encode_function(
                     },
                 ],
             },
+            storage_struct_parameter: None,
             return_type: Some(sway::TypeName::Identifier {
                 name: "Buffer".into(),
                 generic_parameters: None,

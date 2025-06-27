@@ -415,7 +415,7 @@ pub fn translate_function_declaration(
     let translated_function = ir::Function {
         old_name: function_name.old_name.clone(),
         new_name: function_name.top_level_fn_name.clone(),
-        attributes: function_attributes.into(),
+        attributes: function_attributes.clone().into(),
         constructor_calls,
         modifiers,
         type_name: sway::TypeName::Function {
@@ -423,6 +423,21 @@ pub fn translate_function_declaration(
             new_name: function_name.top_level_fn_name,
             generic_parameters: None,
             parameters,
+            storage_struct_parameter: if function_attributes.is_pure {
+                None
+            } else if let Some(contract_name) = contract_name.as_ref() {
+                Some(Box::new(sway::Parameter {
+                    is_ref: false,
+                    is_mut: false,
+                    name: "storage_struct".to_string(),
+                    type_name: Some(sway::TypeName::Identifier {
+                        name: format!("{contract_name}Storage"),
+                        generic_parameters: None,
+                    }),
+                }))
+            } else {
+                None
+            },
             return_type: translate_return_type_name(
                 project,
                 module.clone(),
@@ -479,9 +494,22 @@ pub fn translate_abi_function(
         attributes: function_attributes.clone().into(),
         is_public: false,
         old_name: function_name.old_name.clone(),
-        name: function_name.top_level_fn_name.clone(),
+        new_name: function_name.top_level_fn_name.clone(),
         generic_parameters: None,
         parameters,
+        storage_struct_parameter: if function_attributes.is_pure {
+            None
+        } else {
+            Some(sway::Parameter {
+                is_ref: false,
+                is_mut: false,
+                name: "storage_struct".to_string(),
+                type_name: Some(sway::TypeName::Identifier {
+                    name: format!("{contract_name}Storage"),
+                    generic_parameters: None,
+                }),
+            })
+        },
         return_type: translate_return_type_name(
             project,
             module.clone(),
@@ -494,7 +522,7 @@ pub fn translate_abi_function(
     let mut abi_fn = None;
 
     if function_attributes.is_public {
-        sway_function.name = function_name.abi_fn_name.clone();
+        sway_function.new_name = function_name.abi_fn_name.clone();
 
         let mut abi_function = sway_function.clone();
         let mut use_string = false;
@@ -518,7 +546,7 @@ pub fn translate_abi_function(
         }
 
         sway_function
-            .name
+            .new_name
             .clone_from(&function_name.top_level_fn_name)
     }
 
@@ -589,9 +617,24 @@ pub fn translate_function_definition(
         attributes: function_attributes.clone().into(),
         is_public: false,
         old_name: function_name.old_name.clone(),
-        name: function_name.top_level_fn_name.clone(),
+        new_name: function_name.top_level_fn_name.clone(),
         generic_parameters: None,
         parameters,
+        storage_struct_parameter: if function_attributes.is_pure {
+            None
+        } else if let Some(contract_name) = contract_name.as_ref() {
+            Some(sway::Parameter {
+                is_ref: false,
+                is_mut: false,
+                name: "storage_struct".to_string(),
+                type_name: Some(sway::TypeName::Identifier {
+                    name: format!("{contract_name}Storage"),
+                    generic_parameters: None,
+                }),
+            })
+        } else {
+            None
+        },
         return_type: translate_return_type_name(
             project,
             module.clone(),
@@ -701,6 +744,29 @@ pub fn translate_function_definition(
             .any(|s| s.name == constructor_called_field_name);
 
         if !has_field {
+            // Add the `constructor_called` field to the storage struct
+            module
+                .borrow_mut()
+                .get_storage_struct(scope.clone())
+                .borrow_mut()
+                .fields
+                .push(sway::StructField {
+                    is_public: true,
+                    name: constructor_called_field_name.clone(),
+                    type_name: sway::TypeName::Identifier {
+                        name: "StorageKey".to_string(),
+                        generic_parameters: Some(sway::GenericParameterList {
+                            entries: vec![sway::GenericParameter {
+                                type_name: sway::TypeName::Identifier {
+                                    name: "bool".into(),
+                                    generic_parameters: None,
+                                },
+                                implements: None,
+                            }],
+                        }),
+                    },
+                });
+
             // Add the `constructor_called` field to the storage block
             storage_namespace
                 .borrow_mut()
@@ -950,7 +1016,7 @@ pub fn translate_function_definition(
     // Create the toplevel function
     let mut toplevel_function = function_declaration.clone();
     toplevel_function.is_public = true;
-    toplevel_function.name = function_name.top_level_fn_name.clone();
+    toplevel_function.new_name = function_name.top_level_fn_name.clone();
     toplevel_function.body = Some(function_body);
 
     // Remove `payable` attribute from toplevel function if present
@@ -978,7 +1044,7 @@ pub fn translate_function_definition(
 
     if function_attributes.is_public && !function_attributes.is_fallback {
         let mut impl_function = function_declaration.clone();
-        impl_function.name = function_name.abi_fn_name.clone();
+        impl_function.new_name = function_name.abi_fn_name.clone();
 
         let mut statements = vec![];
 
@@ -1013,7 +1079,7 @@ pub fn translate_function_definition(
             final_expr: Some(sway::Expression::create_function_calls(
                 None,
                 &[(
-                    toplevel_function.name.as_str(),
+                    toplevel_function.new_name.as_str(),
                     Some((
                         None,
                         impl_function
@@ -1292,15 +1358,17 @@ pub fn translate_modifier_definition(
                     new_name: String::new(),
                     generic_parameters: None,
                     parameters: modifier.parameters.clone(),
+                    storage_struct_parameter: None,
                     return_type: None,
                 },
                 implementation: Some(sway::Function {
                     attributes: create_attributes(has_pre_storage_read, has_pre_storage_write),
                     is_public: false,
                     old_name: String::new(), // TODO
-                    name: modifier_pre_function_name.clone(),
+                    new_name: modifier_pre_function_name.clone(),
                     generic_parameters: None,
                     parameters: modifier.parameters.clone(),
+                    storage_struct_parameter: None,
                     return_type: None,
                     body: Some(pre_body.clone()),
                 }),
@@ -1314,15 +1382,17 @@ pub fn translate_modifier_definition(
                     new_name: String::new(),
                     generic_parameters: None,
                     parameters: modifier.parameters.clone(),
+                    storage_struct_parameter: None,
                     return_type: None,
                 },
                 implementation: Some(sway::Function {
                     attributes: create_attributes(has_post_storage_read, has_post_storage_write),
                     is_public: false,
                     old_name: String::new(), // TODO
-                    name: modifier_post_function_name.clone(),
+                    new_name: modifier_post_function_name.clone(),
                     generic_parameters: None,
                     parameters: modifier.parameters.clone(),
+                    storage_struct_parameter: None,
                     return_type: None,
                     body: Some(post_body.clone()),
                 }),
@@ -1336,15 +1406,17 @@ pub fn translate_modifier_definition(
                     new_name: String::new(),
                     generic_parameters: None,
                     parameters: modifier.parameters.clone(),
+                    storage_struct_parameter: None,
                     return_type: None,
                 },
                 implementation: Some(sway::Function {
                     attributes: create_attributes(has_pre_storage_read, has_pre_storage_write),
                     is_public: false,
                     old_name: modifier.old_name.clone(),
-                    name: modifier.new_name.clone(),
+                    new_name: modifier.new_name.clone(),
                     generic_parameters: None,
                     parameters: modifier.parameters.clone(),
+                    storage_struct_parameter: None,
                     return_type: None,
                     body: Some(pre_body.clone()),
                 }),
@@ -1358,15 +1430,17 @@ pub fn translate_modifier_definition(
                     new_name: String::new(),
                     generic_parameters: None,
                     parameters: modifier.parameters.clone(),
+                    storage_struct_parameter: None,
                     return_type: None,
                 },
                 implementation: Some(sway::Function {
                     attributes: create_attributes(has_post_storage_read, has_post_storage_write),
                     is_public: false,
                     old_name: modifier.old_name.clone(),
-                    name: modifier.new_name.clone(),
+                    new_name: modifier.new_name.clone(),
                     generic_parameters: None,
                     parameters: modifier.parameters.clone(),
+                    storage_struct_parameter: None,
                     return_type: None,
                     body: Some(post_body.clone()),
                 }),
@@ -1398,4 +1472,157 @@ pub fn translate_modifier_definition(
     module.borrow_mut().modifiers.push(modifier);
 
     Ok(())
+}
+
+pub fn create_constructor_function(
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
+    contract: Rc<RefCell<ir::Contract>>,
+) {
+    let contract_name = contract.borrow().abi.name.clone();
+
+    let namespace_name = module
+        .borrow()
+        .get_storage_namespace_name(scope.clone())
+        .unwrap();
+
+    // Create the constructor if it doesn't exist
+    if !contract.borrow().abi_impl.items.iter().any(|i| {
+        let sway::ImplItem::Function(f) = i else {
+            return false;
+        };
+        f.new_name == "constructor"
+    }) {
+        let mut function = sway::Function {
+            attributes: None,
+            is_public: false,
+            old_name: String::new(),
+            new_name: "constructor".into(),
+            generic_parameters: None,
+            storage_struct_parameter: Some(sway::Parameter {
+                is_ref: false,
+                is_mut: false,
+                name: "storage_struct".to_string(),
+                type_name: Some(sway::TypeName::Identifier {
+                    name: format!("{contract_name}Storage"),
+                    generic_parameters: None,
+                }),
+            }),
+            parameters: sway::ParameterList::default(),
+            return_type: None,
+            body: None,
+        };
+
+        contract
+            .borrow_mut()
+            .abi
+            .functions
+            .insert(0, function.clone());
+
+        function.body = Some(sway::Block::default());
+        let function_body = function.body.as_mut().unwrap();
+
+        let constructor_called_field_name = "constructor_called".to_string();
+
+        // Add the `constructor_called` field to the storage struct
+        module
+            .borrow_mut()
+            .get_storage_struct(scope.clone())
+            .borrow_mut()
+            .fields
+            .push(sway::StructField {
+                is_public: true,
+                name: constructor_called_field_name.clone(),
+                type_name: sway::TypeName::Identifier {
+                    name: "StorageKey".to_string(),
+                    generic_parameters: Some(sway::GenericParameterList {
+                        entries: vec![sway::GenericParameter {
+                            type_name: sway::TypeName::Identifier {
+                                name: "bool".into(),
+                                generic_parameters: None,
+                            },
+                            implements: None,
+                        }],
+                    }),
+                },
+            });
+
+        // Add the `constructor_called` field to the storage block
+        module
+            .borrow_mut()
+            .get_storage_namespace(scope.clone())
+            .unwrap()
+            .borrow_mut()
+            .fields
+            .push(sway::StorageField {
+                old_name: String::new(),
+                name: constructor_called_field_name.clone(),
+                type_name: sway::TypeName::Identifier {
+                    name: "bool".into(),
+                    generic_parameters: None,
+                },
+                value: sway::Expression::from(sway::Literal::Bool(false)),
+            });
+
+        // Add the `constructor_called` requirement to the beginning of the function
+        // require(!storage.initialized.read(), "The Contract constructor has already been called");
+        function_body.statements.insert(
+            0,
+            sway::Statement::from(sway::Expression::create_function_calls(
+                None,
+                &[(
+                    "require",
+                    Some((
+                        None,
+                        vec![
+                            sway::Expression::from(sway::UnaryExpression {
+                                operator: "!".into(),
+                                expression: sway::Expression::create_function_calls(
+                                    None,
+                                    &[
+                                        (format!("storage::{namespace_name}").as_str(), None),
+                                        (constructor_called_field_name.as_str(), None),
+                                        ("read", Some((None, vec![]))),
+                                    ],
+                                ),
+                            }),
+                            sway::Expression::from(sway::Literal::String(format!(
+                                "The {} constructor has already been called",
+                                contract.borrow().name
+                            ))),
+                        ],
+                    )),
+                )],
+            )),
+        );
+
+        // Set the `constructor_called` storage field to `true` at the end of the function
+        // storage.initialized.write(true);
+        function_body.statements.push(sway::Statement::from(
+            sway::Expression::create_function_calls(
+                None,
+                &[
+                    (format!("storage::{namespace_name}").as_str(), None),
+                    (constructor_called_field_name.as_str(), None),
+                    (
+                        "write",
+                        Some((
+                            None,
+                            vec![sway::Expression::from(sway::Literal::Bool(true))],
+                        )),
+                    ),
+                ],
+            ),
+        ));
+
+        contract
+            .borrow_mut()
+            .abi_impl
+            .items
+            .insert(0, sway::ImplItem::Function(function));
+
+        //
+        // TODO: We need to insert a top level function for inheritence
+        //
+    }
 }

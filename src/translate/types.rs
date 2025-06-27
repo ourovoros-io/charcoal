@@ -359,6 +359,7 @@ pub fn translate_type_name(
                         })
                         .collect(),
                 },
+                storage_struct_parameter: None,
                 return_type: {
                     let returns: Option<Vec<sway::TypeName>> = returns.as_ref().map(|r| {
                         r.0.iter()

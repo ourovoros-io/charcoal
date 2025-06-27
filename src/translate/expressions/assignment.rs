@@ -80,7 +80,9 @@ pub fn translate_assignment_expression(
             )?;
 
             if let sway::TypeName::Identifier { name, .. } = expression_type {
-                if let Some(struct_definition) = project.find_struct(module.clone(), &name) {
+                if let Some(struct_definition) =
+                    project.find_struct(module.clone(), scope.clone(), &name)
+                {
                     if struct_definition
                         .borrow()
                         .fields

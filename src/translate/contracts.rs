@@ -136,35 +136,69 @@ pub fn translate_contract_definition(
         )?;
     }
 
+    let scope = Rc::new(RefCell::new(ir::Scope::new(
+        Some(contract_name.as_str()),
+        None,
+        None,
+    )));
+
     // Translate contract state variables
     let mut deferred_initializations = vec![];
     let mut mapping_names = vec![];
+    let mut state_variable_infos = vec![];
 
-    for variable_definition in variable_definitions {
-        let (d, m, f) = translate_state_variable(
+    for variable_definition in variable_definitions.iter() {
+        let state_variable_info = translate_state_variable(
             project,
             module.clone(),
             Some(&contract_name),
             &variable_definition,
         )?;
 
-        deferred_initializations.extend(d);
-        mapping_names.extend(m);
+        if !state_variable_info.deferred_initializations.is_empty() {
+            create_constructor_function(module.clone(), scope.clone(), contract.clone());
+        }
 
-        if let Some((abi_fn, toplevel_fn, impl_fn)) = f {
-            contract.borrow_mut().abi.functions.push(abi_fn);
+        deferred_initializations.extend(state_variable_info.deferred_initializations.clone());
+        mapping_names.extend(state_variable_info.mapping_names.clone());
 
+        state_variable_infos.push(state_variable_info);
+    }
+
+    for (variable_definition, state_variable_info) in
+        variable_definitions.into_iter().zip(state_variable_infos)
+    {
+        let (abi_fn, toplevel_fn, impl_fn) = generate_state_variable_getter_functions(
+            project,
+            module.clone(),
+            scope.clone(),
+            Some(contract_name.as_str()),
+            &variable_definition,
+            &state_variable_info,
+        )?;
+
+        contract.borrow_mut().abi.functions.push(abi_fn);
+
+        if let Some(function) = module
+            .borrow_mut()
+            .functions
+            .iter_mut()
+            .find(|f| f.signature == toplevel_fn.get_type_name())
+        {
+            assert!(function.implementation.is_none());
+            function.implementation = Some(toplevel_fn);
+        } else {
             module.borrow_mut().functions.push(ir::Item {
                 signature: toplevel_fn.get_type_name(),
                 implementation: Some(toplevel_fn),
             });
-
-            contract
-                .borrow_mut()
-                .abi_impl
-                .items
-                .push(sway::ImplItem::Function(impl_fn));
         }
+
+        contract
+            .borrow_mut()
+            .abi_impl
+            .items
+            .push(sway::ImplItem::Function(impl_fn));
     }
 
     // Translate each function
@@ -194,9 +228,10 @@ pub fn translate_contract_definition(
 
         let function_signature = sway::TypeName::Function {
             old_name: function.old_name.clone(),
-            new_name: function.name.clone(),
+            new_name: function.new_name.clone(),
             generic_parameters: function.generic_parameters.clone(),
             parameters: function.parameters.clone(),
+            storage_struct_parameter: function.storage_struct_parameter.clone().map(Box::new),
             return_type: function.return_type.clone().map(Box::new),
         };
 
@@ -205,11 +240,11 @@ pub fn translate_contract_definition(
                 unreachable!()
             };
 
-            *new_name == function.name && f.signature.is_compatible_with(&function_signature)
+            *new_name == function.new_name && f.signature.is_compatible_with(&function_signature)
         }) else {
             panic!(
                 "Failed to find function {} - {} - in list:\n{}",
-                function.name,
+                function.new_name,
                 function_signature,
                 module
                     .functions
@@ -302,113 +337,7 @@ pub fn translate_contract_definition(
             }
         }
 
-        // Create the constructor if it doesn't exist
-        if !contract.borrow().abi_impl.items.iter().any(|i| {
-            let sway::ImplItem::Function(f) = i else {
-                return false;
-            };
-            f.name == "constructor"
-        }) {
-            let mut function = sway::Function {
-                attributes: None,
-                is_public: false,
-                old_name: String::new(),
-                name: "constructor".into(),
-                generic_parameters: None,
-                parameters: sway::ParameterList::default(),
-                return_type: None,
-                body: None,
-            };
-
-            contract
-                .borrow_mut()
-                .abi
-                .functions
-                .insert(0, function.clone());
-
-            function.body = Some(sway::Block::default());
-            let function_body = function.body.as_mut().unwrap();
-
-            let constructor_called_field_name = "constructor_called".to_string();
-
-            // Add the `constructor_called` field to the storage block
-            module
-                .borrow_mut()
-                .get_storage_namespace(scope.clone())
-                .unwrap()
-                .borrow_mut()
-                .fields
-                .push(sway::StorageField {
-                    old_name: String::new(),
-                    name: constructor_called_field_name.clone(),
-                    type_name: sway::TypeName::Identifier {
-                        name: "bool".into(),
-                        generic_parameters: None,
-                    },
-                    value: sway::Expression::from(sway::Literal::Bool(false)),
-                });
-
-            // Add the `constructor_called` requirement to the beginning of the function
-            // require(!storage.initialized.read(), "The Contract constructor has already been called");
-            function_body.statements.insert(
-                0,
-                sway::Statement::from(sway::Expression::create_function_calls(
-                    None,
-                    &[(
-                        "require",
-                        Some((
-                            None,
-                            vec![
-                                sway::Expression::from(sway::UnaryExpression {
-                                    operator: "!".into(),
-                                    expression: sway::Expression::create_function_calls(
-                                        None,
-                                        &[
-                                            (format!("storage::{namespace_name}").as_str(), None),
-                                            (constructor_called_field_name.as_str(), None),
-                                            ("read", Some((None, vec![]))),
-                                        ],
-                                    ),
-                                }),
-                                sway::Expression::from(sway::Literal::String(format!(
-                                    "The {} constructor has already been called",
-                                    contract.borrow().name
-                                ))),
-                            ],
-                        )),
-                    )],
-                )),
-            );
-
-            // Set the `constructor_called` storage field to `true` at the end of the function
-            // storage.initialized.write(true);
-            function_body.statements.push(sway::Statement::from(
-                sway::Expression::create_function_calls(
-                    None,
-                    &[
-                        (format!("storage::{namespace_name}").as_str(), None),
-                        (constructor_called_field_name.as_str(), None),
-                        (
-                            "write",
-                            Some((
-                                None,
-                                vec![sway::Expression::from(sway::Literal::Bool(true))],
-                            )),
-                        ),
-                    ],
-                ),
-            ));
-
-            contract
-                .borrow_mut()
-                .abi_impl
-                .items
-                .insert(0, sway::ImplItem::Function(function));
-
-            //
-            // TODO: We need to insert a top level function for inheritence
-            //
-        }
+        create_constructor_function(module.clone(), scope.clone(), contract.clone());
 
         let mut contract = contract.borrow_mut();
 
@@ -421,7 +350,7 @@ pub fn translate_contract_definition(
                     return false;
                 };
 
-                f.name == "constructor"
+                f.new_name == "constructor"
             })
             .map(|i| {
                 let sway::ImplItem::Function(f) = i else {

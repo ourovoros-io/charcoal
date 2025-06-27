@@ -226,7 +226,7 @@ pub fn translate_variable_access_expression(
                                             name: "u64".to_string(),
                                             generic_parameters: None,
                                         };
-                                        
+
                                         index = coerce_expression(
                                             project,
                                             module.clone(),
@@ -360,7 +360,7 @@ pub fn translate_variable_access_expression(
 
             // Check if container is a struct
             if let Some(struct_definition) =
-                project.find_struct(module.clone(), &container_type_name_string)
+                project.find_struct(module.clone(), scope.clone(), &container_type_name_string)
             {
                 let field_name = translate_naming_convention(member.name.as_str(), Case::Snake);
 

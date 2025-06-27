@@ -910,6 +910,7 @@ impl Project {
     pub fn find_struct(
         &mut self,
         module: Rc<RefCell<ir::Module>>,
+        scope: Rc<RefCell<ir::Scope>>,
         name: &str,
     ) -> Option<Rc<RefCell<sway::Struct>>> {
         // Check to see if the struct was defined in the current file
@@ -920,6 +921,17 @@ impl Project {
             .find(|x| x.signature.to_string() == name)
         {
             return x.implementation.clone();
+        }
+
+        // Check to see if the struct is a storage struct
+        if let Some(contract_name) = scope.borrow().get_contract_name() {
+            if let Some(contract) = self.find_contract(module.clone(), &contract_name) {
+                if let Some(x) = contract.borrow().storage_struct.as_ref() {
+                    if x.borrow().name == name {
+                        return Some(x.clone());
+                    }
+                }
+            }
         }
 
         // Check all of the module's `use` statements for crate-local imports,
@@ -1125,11 +1137,10 @@ impl Project {
 
         // Translate toplevel variable definitions
         for variable_definition in variable_definitions {
-            let (deferred_initializations, mapping_names, functions) =
+            let state_variable_info =
                 translate_state_variable(self, module.clone(), None, &variable_definition)?;
-            assert!(deferred_initializations.is_empty());
-            assert!(mapping_names.is_empty());
-            assert!(functions.is_none());
+            assert!(state_variable_info.deferred_initializations.is_empty());
+            assert!(state_variable_info.mapping_names.is_empty());
         }
 
         // Collect the contract's toplevel item signatures ahead of time
@@ -1250,32 +1261,61 @@ impl Project {
             }
 
             // Translate contract constants and immutables
-            for variable_definition in variable_definitions {
-                let (deferred_initializations, mapping_names, functions) =
-                    translate_state_variable(
-                        self,
-                        module.clone(),
-                        Some(contract_name),
-                        variable_definition,
-                    )?;
+            let mut state_variable_infos = vec![];
+            for variable_definition in variable_definitions.iter() {
+                let state_variable_info = translate_state_variable(
+                    self,
+                    module.clone(),
+                    Some(contract_name),
+                    variable_definition,
+                )?;
 
-                assert!(deferred_initializations.is_empty());
-                assert!(mapping_names.is_empty());
+                assert!(state_variable_info.deferred_initializations.is_empty());
+                assert!(state_variable_info.mapping_names.is_empty());
 
-                if let Some((abi_fn, toplevel_fn, impl_fn)) = functions {
-                    contract.borrow_mut().abi.functions.push(abi_fn);
+                state_variable_infos.push(state_variable_info);
+            }
 
+            let scope = Rc::new(RefCell::new(ir::Scope::new(
+                Some(contract_name),
+                None,
+                None,
+            )));
+
+            for (variable_definition, state_variable_info) in
+                variable_definitions.into_iter().zip(state_variable_infos)
+            {
+                let (abi_fn, toplevel_fn, impl_fn) = generate_state_variable_getter_functions(
+                    self,
+                    module.clone(),
+                    scope.clone(),
+                    Some(contract_name),
+                    variable_definition,
+                    &state_variable_info,
+                )?;
+
+                contract.borrow_mut().abi.functions.push(abi_fn);
+
+                if let Some(function) = module
+                    .borrow_mut()
+                    .functions
+                    .iter_mut()
+                    .find(|f| f.signature == toplevel_fn.get_type_name())
+                {
+                    assert!(function.implementation.is_none());
+                    function.implementation = Some(toplevel_fn);
+                } else {
                     module.borrow_mut().functions.push(ir::Item {
                         signature: toplevel_fn.get_type_name(),
                         implementation: Some(toplevel_fn),
                     });
-
-                    contract
-                        .borrow_mut()
-                        .abi_impl
-                        .items
-                        .push(sway::ImplItem::Function(impl_fn));
                 }
+
+                contract
+                    .borrow_mut()
+                    .abi_impl
+                    .items
+                    .push(sway::ImplItem::Function(impl_fn));
             }
 
             // Translate contract type definitions
@@ -1388,9 +1428,10 @@ impl Project {
 
             let function_signature = sway::TypeName::Function {
                 old_name: function.old_name.clone(),
-                new_name: function.name.clone(),
+                new_name: function.new_name.clone(),
                 generic_parameters: function.generic_parameters.clone(),
                 parameters: function.parameters.clone(),
+                storage_struct_parameter: function.storage_struct_parameter.clone().map(Box::new),
                 return_type: function.return_type.clone().map(Box::new),
             };
 
@@ -1399,11 +1440,12 @@ impl Project {
                     unreachable!()
                 };
 
-                *new_name == function.name && f.signature.is_compatible_with(&function_signature)
+                *new_name == function.new_name
+                    && f.signature.is_compatible_with(&function_signature)
             }) else {
                 panic!(
                     "Failed to find function {} - {} - in list:\n{}",
-                    function.name,
+                    function.new_name,
                     function_signature,
                     module
                         .functions

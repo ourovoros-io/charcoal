@@ -153,7 +153,9 @@ pub fn resolve_symbol(
         }
 
         Symbol::Struct(name) => {
-            if let Some(struct_definition) = project.find_struct(module.clone(), name) {
+            if let Some(struct_definition) =
+                project.find_struct(module.clone(), scope.clone(), name)
+            {
                 return Some(SymbolData::Struct(struct_definition.clone()));
             }
         }
@@ -276,6 +278,7 @@ pub fn resolve_abi_function_call(
                     new_name,
                     generic_parameters,
                     parameters,
+                    storage_struct_parameter,
                     return_type,
                 } = &f.signature
                 else {
@@ -285,9 +288,12 @@ pub fn resolve_abi_function_call(
                     attributes: None,
                     is_public: false,
                     old_name: old_name.clone(),
-                    name: new_name.clone(),
+                    new_name: new_name.clone(),
                     generic_parameters: generic_parameters.clone(),
                     parameters: parameters.clone(),
+                    storage_struct_parameter: storage_struct_parameter
+                        .as_ref()
+                        .map(|x| x.as_ref().clone()),
                     return_type: return_type.as_ref().map(|x| x.as_ref().clone()),
                     body: None,
                 }
@@ -538,12 +544,12 @@ pub fn resolve_abi_function_call(
     match contract_id {
         Some(contract_id) => Ok(Some(sway::Expression::create_function_calls(
             Some(contract_id.clone()),
-            &[(function.name.as_str(), Some((None, parameters)))],
+            &[(function.new_name.as_str(), Some((None, parameters)))],
         ))),
 
         None => Ok(Some(sway::Expression::create_function_calls(
             None,
-            &[(function.name.as_str(), Some((None, parameters)))],
+            &[(function.new_name.as_str(), Some((None, parameters)))],
         ))),
     }
 }

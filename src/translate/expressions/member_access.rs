@@ -198,7 +198,7 @@ pub fn translate_member_access_expression(
 
         // Check if container is a struct
         if let Some(struct_definition) =
-            project.find_struct(module.clone(), &container_type_name_string)
+            project.find_struct(module.clone(), scope.clone(), &container_type_name_string)
         {
             let field_name = translate_naming_convention(member.name.as_str(), Case::Snake);
 

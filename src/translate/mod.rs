@@ -1287,11 +1287,34 @@ fn get_path_expr_type(
             if let Some(module) =
                 project.find_module_containing_contract(module.clone(), &contract_name)
             {
-                let scope = Rc::new(RefCell::new(ir::Scope::new(
-                    Some(contract_name.as_str()),
-                    None,
-                    Some(scope.clone()),
-                )));
+                if let Some(function_name) = scope.borrow().get_function_name() {
+                    let module = module.borrow();
+
+                    let function = module
+                        .functions
+                        .iter()
+                        .find(|f| {
+                            let sway::TypeName::Function { new_name, .. } = &f.signature else {
+                                unreachable!()
+                            };
+                            *new_name == function_name
+                        })
+                        .unwrap();
+
+                    let sway::TypeName::Function {
+                        storage_struct_parameter,
+                        ..
+                    } = &function.signature
+                    else {
+                        unreachable!()
+                    };
+
+                    if let Some(storage_struct_parameter) = storage_struct_parameter.as_ref() {
+                        if name == storage_struct_parameter.name {
+                            return storage_struct_parameter.type_name.clone();
+                        }
+                    }
+                }
 
                 for use_item in module.borrow().uses.iter() {
                     if let Some(module) = project.resolve_use(use_item) {
@@ -1578,7 +1601,7 @@ fn get_member_access_type(
         generic_parameters: None,
     } = &container_type
     {
-        if let Some(struct_definition) = project.find_struct(module.clone(), name) {
+        if let Some(struct_definition) = project.find_struct(module.clone(), scope.clone(), name) {
             if let Some(field) = struct_definition
                 .borrow()
                 .fields
@@ -3742,7 +3765,7 @@ fn get_member_access_function_call_type(
                         .abi
                         .functions
                         .iter()
-                        .find(|f| f.name == member_access.member)
+                        .find(|f| f.new_name == member_access.member)
                     {
                         return Ok(function_definition
                             .return_type

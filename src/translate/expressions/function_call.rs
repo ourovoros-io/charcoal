@@ -1493,7 +1493,7 @@ fn translate_function_call_function_call(
                                     .abi
                                     .functions
                                     .iter()
-                                    .any(|f| f.name == function_new_name)
+                                    .any(|f| f.new_name == function_new_name)
                                 {
                                     let mut fields = vec![];
 
