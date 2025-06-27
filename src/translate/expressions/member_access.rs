@@ -64,6 +64,7 @@ pub fn translate_member_access_expression(
             if let Some(module) = project.find_module_containing_contract(module.clone(), &name) {
                 let scope = Rc::new(RefCell::new(ir::Scope::new(
                     Some(name),
+                    None,
                     Some(scope.clone()),
                 )));
 

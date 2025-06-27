@@ -11,7 +11,10 @@ use walkdir::WalkDir;
 
 #[test]
 fn test_foundry_template() {
-    Test::new("foundry-template", "./tests/foundry-template").run();
+    Test::new("foundry-template", "./tests/foundry-template")
+        .with_repo_url("https://github.com/foundry-rs/forge-template.git")
+        .with_repo_dir("./tests/foundry-template")
+        .run();
 }
 
 #[test]

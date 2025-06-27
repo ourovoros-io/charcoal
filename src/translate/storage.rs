@@ -22,7 +22,7 @@ pub fn translate_state_variable(
     //     project.loc_to_file_location_string(module.clone(), &variable_definition.loc)
     // );
 
-    let value_scope = Rc::new(RefCell::new(ir::Scope::new(contract_name, None)));
+    let value_scope = Rc::new(RefCell::new(ir::Scope::new(contract_name, None, None)));
 
     // Collect information about the variable from its attributes
     let is_public = variable_definition.attrs.iter().any(|x| {
@@ -261,7 +261,7 @@ pub fn translate_state_variable(
                 } else {
                     storage.borrow_mut().fields.push(sway::StorageField {
                         old_name: String::new(),
-                        name: instance_field_name,
+                        name: instance_field_name.clone(),
                         type_name: sway::TypeName::Identifier {
                             name: "u64".into(),
                             generic_parameters: None,
@@ -290,7 +290,7 @@ pub fn translate_state_variable(
                 } else {
                     storage.borrow_mut().fields.push(sway::StorageField {
                         old_name: String::new(),
-                        name: mapping_field_name,
+                        name: mapping_field_name.clone(),
                         type_name: sway::TypeName::Identifier {
                             name: "StorageMap".into(),
                             generic_parameters: Some(sway::GenericParameterList {
@@ -345,7 +345,7 @@ pub fn translate_state_variable(
 
     // Handle constant variable definitions
     if is_constant {
-        let scope = Rc::new(RefCell::new(ir::Scope::new(contract_name, None)));
+        let scope = Rc::new(RefCell::new(ir::Scope::new(contract_name, None, None)));
 
         // Evaluate the value ahead of time in order to generate an appropriate constant value expression
         let value = evaluate_expression(
@@ -441,7 +441,7 @@ pub fn translate_state_variable(
         parameters: sway::ParameterList {
             entries: parameters.iter().map(|(p, _)| p.clone()).collect(),
         },
-        return_type: Some(return_type),
+        return_type: Some(return_type.clone()),
         body: None,
     };
 
@@ -482,10 +482,23 @@ pub fn translate_state_variable(
                 }
             }
 
-            sway::Expression::create_function_calls(
+            let value = sway::Expression::create_function_calls(
                 Some(expression),
                 &[("read", Some((None, vec![])))],
+            );
+
+            let value_type =
+                get_expression_type(project, module.clone(), value_scope.clone(), &value)?;
+
+            coerce_expression(
+                project,
+                module.clone(),
+                value_scope.clone(),
+                &value,
+                &value_type,
+                &return_type,
             )
+            .unwrap()
         } else if is_constant || is_immutable {
             sway::Expression::create_identifier(new_name.clone())
         } else {
@@ -503,10 +516,7 @@ pub fn translate_state_variable(
         statements: vec![],
         final_expr: Some(sway::Expression::create_function_calls(
             None,
-            &[(
-                toplevel_function.name.as_str(),
-                Some((None, vec![])),
-            )],
+            &[(toplevel_function.name.as_str(), Some((None, vec![])))],
         )),
     });
 

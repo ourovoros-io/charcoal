@@ -9,7 +9,7 @@ pub fn translate_type_definition(
     contract_name: Option<&str>,
     type_definition: &solidity::TypeDefinition,
 ) -> Result<sway::TypeDefinition, Error> {
-    let scope = Rc::new(RefCell::new(ir::Scope::new(contract_name, None)));
+    let scope = Rc::new(RefCell::new(ir::Scope::new(contract_name, None, None)));
 
     let underlying_type =
         translate_type_name(project, module.clone(), scope, &type_definition.ty, None);
@@ -456,6 +456,7 @@ pub fn translate_type_name(
                             .get_contract_name()
                             .as_ref()
                             .map(|s| s.as_str()),
+                        None,
                         Some(scope.clone()),
                     )));
 

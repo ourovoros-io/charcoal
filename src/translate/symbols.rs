@@ -223,6 +223,7 @@ pub fn resolve_symbol(
                 let inherit_type_name = inherit.to_string();
                 let scope = Rc::new(RefCell::new(ir::Scope::new(
                     Some(&inherit_type_name.as_str()),
+                    None,
                     Some(scope.clone()),
                 )));
 
@@ -509,6 +510,7 @@ pub fn resolve_abi_function_call(
 
                 let scope = Rc::new(RefCell::new(ir::Scope::new(
                     Some(inherit.to_string().as_str()),
+                    None,
                     Some(scope.clone()),
                 )));
 
@@ -588,10 +590,15 @@ pub fn resolve_function_call(
                 return false;
             }
 
-            f_parameters
+            if !f_parameters
                 .entries
                 .iter()
                 .all(|p| named_parameters.iter().any(|(name, _)| p.name == *name))
+            {
+                return false;
+            }
+
+            true
         }) {
             let sway::TypeName::Function {
                 parameters: f_parameters,
@@ -613,14 +620,28 @@ pub fn resolve_function_call(
                     })
                     .unwrap();
 
-                let parameter =
+                let mut value =
                     translate_expression(project, module.clone(), scope.clone(), &arg.expr)?;
 
-                let parameter_type =
-                    get_expression_type(project, module.clone(), scope.clone(), &parameter)?;
+                let mut value_type =
+                    get_expression_type(project, module.clone(), scope.clone(), &value)?;
 
-                parameters.push(parameter);
-                parameter_types.push(parameter_type);
+                if let Some(parameter_type_name) = parameter.type_name.as_ref() {
+                    value = coerce_expression(
+                        project,
+                        module.clone(),
+                        scope.clone(),
+                        &value,
+                        &value_type,
+                        parameter_type_name,
+                    )
+                    .unwrap();
+
+                    value_type = parameter_type_name.clone();
+                }
+
+                parameters.push(value);
+                parameter_types.push(value_type);
             }
 
             function = Some(f.clone());

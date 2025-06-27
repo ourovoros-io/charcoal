@@ -70,7 +70,7 @@ pub fn translate_event_definition(
             .unwrap_or_else(|| module.borrow().name.clone())
     );
 
-    let scope = Rc::new(RefCell::new(ir::Scope::new(contract_name, None)));
+    let scope = Rc::new(RefCell::new(ir::Scope::new(contract_name, None, None)));
 
     let type_name = if event_definition.fields.len() == 1 {
         translate_type_name(
@@ -149,7 +149,7 @@ pub fn translate_error_definition(
             .unwrap_or_else(|| module.borrow().name.clone())
     );
 
-    let scope = Rc::new(RefCell::new(ir::Scope::new(contract_name, None)));
+    let scope = Rc::new(RefCell::new(ir::Scope::new(contract_name, None, None)));
 
     let type_name = if error_definition.fields.len() == 1 {
         translate_type_name(

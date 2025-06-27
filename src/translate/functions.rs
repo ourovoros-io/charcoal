@@ -228,7 +228,7 @@ fn translate_function_parameters(
     let mut parameters = sway::ParameterList::default();
     let mut parameter_names = 'a'..='z';
 
-    let scope = Rc::new(RefCell::new(ir::Scope::new(contract_name, None)));
+    let scope = Rc::new(RefCell::new(ir::Scope::new(contract_name, None, None)));
 
     for (_, parameter) in function_definition.params.iter() {
         let old_name = parameter
@@ -328,7 +328,11 @@ pub fn translate_function_declaration(
         translate_function_parameters(project, module.clone(), contract_name, function_definition);
 
     // Create a scope for modifier invocation translations
-    let scope = Rc::new(RefCell::new(ir::Scope::new(contract_name, None)));
+    let scope = Rc::new(RefCell::new(ir::Scope::new(
+        contract_name,
+        Some(&function_name.top_level_fn_name),
+        None,
+    )));
 
     // Add the function parameters to the scope
     for (_, p) in function_definition.params.iter() {
@@ -464,7 +468,11 @@ pub fn translate_abi_function(
     );
 
     // Create the scope for the body of the toplevel function
-    let scope = Rc::new(RefCell::new(ir::Scope::new(Some(contract_name), None)));
+    let scope = Rc::new(RefCell::new(ir::Scope::new(
+        Some(contract_name),
+        Some(&function_name.top_level_fn_name),
+        None,
+    )));
 
     // Create the function declaration
     let mut sway_function = sway::Function {
@@ -570,7 +578,11 @@ pub fn translate_function_definition(
         translate_function_parameters(project, module.clone(), contract_name, function_definition);
 
     // Create the scope for the body of the toplevel function
-    let scope = Rc::new(RefCell::new(ir::Scope::new(contract_name, None)));
+    let scope = Rc::new(RefCell::new(ir::Scope::new(
+        contract_name,
+        Some(&function_name.top_level_fn_name),
+        None,
+    )));
 
     // Create the function declaration
     let function_declaration = sway::Function {
@@ -797,7 +809,11 @@ pub fn translate_function_definition(
 
     // Propagate the return variable declarations
     for return_parameter in return_parameters.iter().rev() {
-        let scope = Rc::new(RefCell::new(ir::Scope::new(contract_name, None)));
+        let scope = Rc::new(RefCell::new(ir::Scope::new(
+            contract_name,
+            Some(&function_name.top_level_fn_name),
+            None,
+        )));
 
         function_body.statements.insert(
             0,
@@ -1049,7 +1065,11 @@ pub fn translate_modifier_definition(
         post_body: None,
     };
 
-    let scope = Rc::new(RefCell::new(ir::Scope::new(contract_name, None)));
+    let scope = Rc::new(RefCell::new(ir::Scope::new(
+        contract_name,
+        Some(&new_name),
+        None,
+    )));
 
     for (_, p) in function_definition.params.iter() {
         let old_name = p
@@ -1061,7 +1081,7 @@ pub fn translate_modifier_definition(
             .unwrap_or_else(String::new);
 
         let new_name = if old_name.is_empty() {
-            println!("WARNING: found unnamed parameter");
+            // println!("WARNING: found unnamed parameter");
             // TODO: we should generate a unique parameter name
             "_".to_string()
         } else {
@@ -1174,6 +1194,7 @@ pub fn translate_modifier_definition(
                     .get_contract_name()
                     .as_ref()
                     .map(|s| s.as_str()),
+                Some(&new_name),
                 scope.borrow().get_parent(),
             );
 

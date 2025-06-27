@@ -907,6 +907,7 @@ fn translate_member_access_function_call(
 
                 let scope = Rc::new(RefCell::new(ir::Scope::new(
                     Some(name),
+                    None,
                     Some(scope.clone()),
                 )));
 
@@ -2042,6 +2043,7 @@ fn translate_identity_member_access_function_call(
 
         let scope = Rc::new(RefCell::new(ir::Scope::new(
             Some(&name),
+            None,
             Some(scope.clone()),
         )));
 
@@ -2691,6 +2693,7 @@ fn translate_super_member_access_function_call(
 
                 let scope = Rc::new(RefCell::new(ir::Scope::new(
                     Some(&contract_name),
+                    None,
                     Some(scope.clone()),
                 )));
 

@@ -21,7 +21,11 @@ pub fn translate_for_statement(
     // }
 
     // Create a scope for the block that will contain the for loop logic
-    let scope = Rc::new(RefCell::new(ir::Scope::new(None, Some(scope.clone()))));
+    let scope = Rc::new(RefCell::new(ir::Scope::new(
+        None,
+        None,
+        Some(scope.clone()),
+    )));
 
     // Collect statements for the for loop logic block
     let mut statements = vec![];

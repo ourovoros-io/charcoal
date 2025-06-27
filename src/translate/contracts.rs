@@ -250,6 +250,7 @@ pub fn translate_contract_definition(
         let scope = Rc::new(RefCell::new(ir::Scope::new(
             Some(contract_name.as_str()),
             None,
+            None,
         )));
 
         let mut assignment_statements = vec![];
@@ -333,7 +334,7 @@ pub fn translate_contract_definition(
             // Add the `constructor_called` field to the storage block
             module
                 .borrow_mut()
-                .get_storage_namespace(scope)
+                .get_storage_namespace(scope.clone())
                 .unwrap()
                 .borrow_mut()
                 .fields
@@ -477,7 +478,7 @@ pub fn translate_using_directive(
     contract_name: Option<&str>,
     using_directive: &solidity::Using,
 ) -> Result<(), Error> {
-    let scope = Rc::new(RefCell::new(ir::Scope::new(contract_name, None)));
+    let scope = Rc::new(RefCell::new(ir::Scope::new(contract_name, None, None)));
 
     let for_type = using_directive
         .ty

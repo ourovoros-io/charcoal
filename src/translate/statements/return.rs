@@ -12,19 +12,24 @@ pub fn translate_return_statement(
     let Some(expression) = expression else {
         return Ok(sway::Statement::from(sway::Expression::Return(None)));
     };
-    // TODO
-    // let current_function_name = module.current_functions.last().unwrap();
-    // let function = scope
-    //     .borrow()
-    //     .find_function(|f| f.borrow().new_name == *current_function_name)
-    //     .unwrap();
 
-    // let sway::TypeName::Function { return_type, .. } = function.borrow().type_name.clone() else {
-    //     panic!(
-    //         "Invalid function type name: {:#?}",
-    //         function.borrow().type_name
-    //     )
-    // };
+    let current_function_name = scope.borrow().get_function_name().unwrap();
+    let function = module
+        .borrow()
+        .functions
+        .iter()
+        .find(|f| {
+            let sway::TypeName::Function { new_name, .. } = &f.signature else {
+                unreachable!()
+            };
+            *new_name == current_function_name
+        })
+        .cloned()
+        .unwrap();
+
+    let sway::TypeName::Function { return_type, .. } = function.signature.clone() else {
+        panic!("Invalid function type name: {:#?}", function.signature)
+    };
 
     let mut expression = translate_expression(project, module.clone(), scope.clone(), expression)?;
 
@@ -42,14 +47,23 @@ pub fn translate_return_statement(
         }
     }
 
-    // TODO
-    // if return_type.is_none() {
-    //     return Ok(sway::Statement::from(expression));
-    // }
+    if return_type.is_none() {
+        return Ok(sway::Statement::from(expression));
+    }
 
-    // let return_type = return_type.unwrap();
+    let return_type = return_type.unwrap();
 
-    // expression = coerce_expression(&expression, &expression_type, &return_type).unwrap();
+    let expression_type = get_expression_type(project, module.clone(), scope.clone(), &expression)?;
+
+    expression = coerce_expression(
+        project,
+        module.clone(),
+        scope.clone(),
+        &expression,
+        &expression_type,
+        &return_type,
+    )
+    .unwrap();
 
     Ok(sway::Statement::from(sway::Expression::Return(Some(
         Box::new(expression),

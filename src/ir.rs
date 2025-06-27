@@ -63,14 +63,20 @@ pub struct Modifier {
 #[derive(Debug, Clone)]
 pub struct Scope {
     contract_name: Option<String>,
+    function_name: Option<String>,
     parent: Option<Rc<RefCell<Scope>>>,
     variables: Vec<Rc<RefCell<Variable>>>,
 }
 
 impl Scope {
-    pub fn new(contract_name: Option<&str>, parent: Option<Rc<RefCell<Scope>>>) -> Self {
+    pub fn new(
+        contract_name: Option<&str>,
+        function_name: Option<&str>,
+        parent: Option<Rc<RefCell<Scope>>>,
+    ) -> Self {
         Self {
             contract_name: contract_name.map(|s| s.to_string()),
+            function_name: function_name.map(|f| f.to_string()),
             parent,
             variables: vec![],
         }
@@ -84,6 +90,20 @@ impl Scope {
         if let Some(parent) = self.parent.as_ref() {
             if let Some(contract_name) = parent.borrow().get_contract_name() {
                 return Some(contract_name.clone());
+            }
+        }
+
+        None
+    }
+
+    pub fn get_function_name(&self) -> Option<String> {
+        if let Some(function_name) = self.function_name.as_ref() {
+            return Some(function_name.clone());
+        }
+
+        if let Some(parent) = self.parent.as_ref() {
+            if let Some(function_name) = parent.borrow().get_function_name() {
+                return Some(function_name.clone());
             }
         }
 

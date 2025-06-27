@@ -38,6 +38,7 @@ pub fn translate_revert_statement(
 
             let scope = Rc::new(RefCell::new(ir::Scope::new(
                 Some(&external_definition_name),
+                None,
                 Some(scope.clone()),
             )));
 

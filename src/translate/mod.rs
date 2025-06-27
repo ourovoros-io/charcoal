@@ -105,17 +105,29 @@ pub fn coerce_expression(
         }
     }
 
-    // Check for `StorageKey<StorageString>` to `Bytes` coercions
     if let Some(storage_key_type) = from_type_name.storage_key_type() {
-        if storage_key_type.is_storage_string() && to_type_name.is_bytes() {
-            return Some(sway::Expression::create_function_calls(
-                Some(expression),
-                &[
-                    ("read_slice", Some((None, vec![]))),
-                    ("unwrap", Some((None, vec![]))),
-                    ("as_bytes", Some((None, vec![]))),
-                ],
-            ));
+        if storage_key_type.is_storage_string() {
+            // Check for `StorageKey<StorageString>` to `Bytes` coercions
+            if to_type_name.is_bytes() {
+                return Some(sway::Expression::create_function_calls(
+                    Some(expression),
+                    &[
+                        ("read_slice", Some((None, vec![]))),
+                        ("unwrap", Some((None, vec![]))),
+                        ("as_bytes", Some((None, vec![]))),
+                    ],
+                ));
+            }
+            // Check for `StorageKey<StorageString>` to `String` coercions
+            if to_type_name.is_string() {
+                return Some(sway::Expression::create_function_calls(
+                    Some(expression),
+                    &[
+                        ("read_slice", Some((None, vec![]))),
+                        ("unwrap", Some((None, vec![]))),
+                    ],
+                ));
+            }
         }
     }
 
@@ -772,6 +784,21 @@ pub fn coerce_expression(
         ));
     }
 
+    // Check for `str` to `Bytes` coercions
+    if from_type_name.is_string_slice() && to_type_name.is_bytes() {
+        // String::from_ascii_str(input).as_bytes()
+        return Some(sway::Expression::create_function_calls(
+            None,
+            &[
+                (
+                    "String::from_ascii_str",
+                    Some((None, vec![expression.clone()])),
+                ),
+                ("as_bytes", Some((None, vec![]))),
+            ],
+        ));
+    }
+
     // Check for `str[]` to `String` coercions
     if from_type_name.is_string_array() && to_type_name.is_string() {
         // String::from_ascii_str(from_str_array(x))
@@ -784,6 +811,27 @@ pub fn coerce_expression(
                     vec![sway::Expression::create_function_calls(
                         None,
                         &[("from_str_array", Some((None, vec![expression.clone()])))],
+                    )],
+                )),
+            )],
+        ));
+    }
+
+    // Check for `str[n]` to `Bytes` coercions
+    if from_type_name.is_string_array() && to_type_name.is_bytes() {
+        // String::from_ascii_str(from_str_array(input)).as_bytes()
+        return Some(sway::Expression::create_function_calls(
+            None,
+            &[(
+                "String::from_ascii_str",
+                Some((
+                    None,
+                    vec![sway::Expression::create_function_calls(
+                        None,
+                        &[
+                            ("from_str_array", Some((None, vec![expression.clone()]))),
+                            ("as_bytes", Some((None, vec![]))),
+                        ],
                     )],
                 )),
             )],
@@ -845,7 +893,7 @@ pub fn coerce_expression(
     if let (Some((lhs_type_name, lhs_len)), Some((rhs_type_name, rhs_len))) =
         (from_type_name.array_info(), to_type_name.array_info())
     {
-        if lhs_len == rhs_len {
+        if lhs_len >= rhs_len {
             if let sway::Expression::Array(array) = &expression {
                 return Some(sway::Expression::from(sway::Array {
                     elements: array
@@ -1012,19 +1060,17 @@ pub fn get_return_type_name(
     module: Rc<RefCell<ir::Module>>,
     type_name: &sway::TypeName,
 ) -> sway::TypeName {
-    match type_name {
-        sway::TypeName::StringSlice => {
-            // Ensure `std::string::*` is imported
-            module.borrow_mut().ensure_use_declared("std::string::*");
+    if type_name.is_string_slice() || type_name.is_storage_string() {
+        // Ensure `std::string::*` is imported
+        module.borrow_mut().ensure_use_declared("std::string::*");
 
-            sway::TypeName::Identifier {
-                name: "String".into(),
-                generic_parameters: None,
-            }
-        }
-
-        _ => type_name.clone(),
+        return sway::TypeName::Identifier {
+            name: "String".into(),
+            generic_parameters: None,
+        };
     }
+
+    type_name.clone()
 }
 
 /// Attempts to get the type of the supplied expression.
@@ -1243,6 +1289,7 @@ fn get_path_expr_type(
             {
                 let scope = Rc::new(RefCell::new(ir::Scope::new(
                     Some(contract_name.as_str()),
+                    None,
                     Some(scope.clone()),
                 )));
 
@@ -1282,7 +1329,11 @@ fn get_block_type(
         return Ok(sway::TypeName::Tuple { type_names: vec![] });
     };
 
-    let inner_scope = Rc::new(RefCell::new(ir::Scope::new(None, Some(scope.clone()))));
+    let inner_scope = Rc::new(RefCell::new(ir::Scope::new(
+        None,
+        None,
+        Some(scope.clone()),
+    )));
 
     for statement in block.statements.iter() {
         let sway::Statement::Let(sway::Let {
@@ -1588,7 +1639,11 @@ fn get_match_type(
     match_expr: &sway::Match,
 ) -> Result<sway::TypeName, Error> {
     if let Some(branch) = match_expr.branches.first() {
-        let branch_scope = Rc::new(RefCell::new(ir::Scope::new(None, Some(scope.clone()))));
+        let branch_scope = Rc::new(RefCell::new(ir::Scope::new(
+            None,
+            None,
+            Some(scope.clone()),
+        )));
 
         // Add branch pattern destructured variables to branch-specific scope
         match &branch.pattern {
@@ -2276,7 +2331,7 @@ fn get_path_expr_function_call_type(
             }));
         }
 
-        "String::from_ascii" => {
+        "String::from_ascii" | "String::from_ascii_str" => {
             return Ok(Some(sway::TypeName::Identifier {
                 name: "String".into(),
                 generic_parameters: None,
