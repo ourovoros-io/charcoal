@@ -125,9 +125,7 @@ fn translate_type_function_call(
     arguments: &[solidity::Expression],
     named_arguments: Option<&[solidity::NamedArgument]>,
 ) -> Result<sway::Expression, Error> {
-    //
-    // TODO: check named arguments
-    //
+    assert!(named_arguments.is_none());
 
     // Type casting
     if arguments.len() != 1 {
@@ -751,9 +749,7 @@ fn translate_builtin_type_member_access_function_call(
     arguments: &[solidity::Expression],
     named_arguments: Option<&[solidity::NamedArgument]>,
 ) -> Result<Option<sway::Expression>, Error> {
-    //
-    // TODO: Check named_arguments
-    //
+    assert!(named_arguments.is_none());
 
     match ty {
         solidity::Type::String => match member {
@@ -2293,6 +2289,8 @@ fn translate_builtin_abi_member_access_function_call(
     arguments: &[solidity::Expression],
     named_arguments: Option<&[solidity::NamedArgument]>,
 ) -> Result<Option<sway::Expression>, Error> {
+    assert!(named_arguments.is_none());
+    
     match member_name {
         "decode" => {
             // abi.decode(encodedData, (uint256, bool)) =>
