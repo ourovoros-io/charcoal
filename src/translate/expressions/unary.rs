@@ -12,27 +12,25 @@ pub fn translate_binary_expression(
     rhs: &solidity::Expression,
 ) -> Result<sway::Expression, Error> {
     // Hack: x.code.length == 0 => x.as_contract_id().is_none()
-    if let solidity::Expression::MemberAccess(_, x, member2) = lhs {
-        if let solidity::Expression::MemberAccess(_, x, member1) = x.as_ref() {
-            if member1.name == "code" && member2.name == "length" {
-                let expression = translate_expression(project, module.clone(), scope.clone(), x)?;
-                let type_name =
-                    get_expression_type(project, module.clone(), scope.clone(), &expression)?;
+    if let solidity::Expression::MemberAccess(_, x, member2) = lhs
+        && let solidity::Expression::MemberAccess(_, x, member1) = x.as_ref()
+        && member1.name == "code"
+        && member2.name == "length"
+    {
+        let expression = translate_expression(project, module.clone(), scope.clone(), x)?;
+        let type_name = get_expression_type(project, module.clone(), scope.clone(), &expression)?;
 
-                if type_name.is_identity() {
-                    if let solidity::Expression::NumberLiteral(_, value, _, _) = rhs {
-                        if value == "0" {
-                            return Ok(sway::Expression::create_function_calls(
-                                Some(expression),
-                                &[
-                                    ("as_contract_id", Some((None, vec![]))),
-                                    ("is_none", Some((None, vec![]))),
-                                ],
-                            ));
-                        }
-                    }
-                }
-            }
+        if type_name.is_identity()
+            && let solidity::Expression::NumberLiteral(_, value, _, _) = rhs
+            && value == "0"
+        {
+            return Ok(sway::Expression::create_function_calls(
+                Some(expression),
+                &[
+                    ("as_contract_id", Some((None, vec![]))),
+                    ("is_none", Some((None, vec![]))),
+                ],
+            ));
         }
     }
 
@@ -57,42 +55,32 @@ pub fn translate_binary_expression(
                          rhs: &mut sway::Expression,
                          rhs_type: &mut sway::TypeName|
      -> bool {
-        if lhs_type.is_identity() {
-            if let sway::Expression::FunctionCall(expr) = &rhs {
-                if let Some(ident) = expr.function.as_identifier() {
-                    if ident == "abi" && expr.parameters.len() == 2 {
-                        *rhs = expr.parameters[1].clone();
-                        if let sway::Expression::FunctionCall(f) = &rhs {
-                            if let sway::Expression::MemberAccess(e) = &f.function {
-                                if e.member == "into" {
-                                    if let sway::Expression::FunctionCall(f) = &e.expression {
-                                        if let sway::Expression::MemberAccess(e) = &f.function {
-                                            if e.member == "unwrap" {
-                                                if let sway::Expression::FunctionCall(f) =
-                                                    &e.expression
-                                                {
-                                                    if let sway::Expression::MemberAccess(e) =
-                                                        &f.function
-                                                    {
-                                                        if e.member == "as_contract_id" {
-                                                            *rhs = e.expression.clone();
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        *rhs_type =
-                            get_expression_type(project, module.clone(), scope.clone(), rhs)
-                                .unwrap();
-                        return true;
-                    }
-                }
+        if lhs_type.is_identity()
+            && let sway::Expression::FunctionCall(expr) = &rhs
+            && let Some(ident) = expr.function.as_identifier()
+            && ident == "abi"
+            && expr.parameters.len() == 2
+        {
+            *rhs = expr.parameters[1].clone();
+
+            if let sway::Expression::FunctionCall(f) = &rhs
+                && let sway::Expression::MemberAccess(e) = &f.function
+                && e.member == "into"
+                && let sway::Expression::FunctionCall(f) = &e.expression
+                && let sway::Expression::MemberAccess(e) = &f.function
+                && e.member == "unwrap"
+                && let sway::Expression::FunctionCall(f) = &e.expression
+                && let sway::Expression::MemberAccess(e) = &f.function
+                && e.member == "as_contract_id"
+            {
+                *rhs = e.expression.clone();
             }
+
+            *rhs_type = get_expression_type(project, module.clone(), scope.clone(), rhs).unwrap();
+
+            return true;
         }
+
         false
     };
 

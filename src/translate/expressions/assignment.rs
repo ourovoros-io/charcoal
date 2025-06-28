@@ -44,16 +44,16 @@ pub fn translate_assignment_expression(
     };
 
     // HACK: remove `.read()` if present
-    if let sway::Expression::FunctionCall(f) = &expression {
-        if let sway::Expression::MemberAccess(m) = &f.function {
-            if m.member == "read" && f.parameters.is_empty() {
-                let container_type =
-                    get_expression_type(project, module.clone(), scope.clone(), &m.expression)?;
+    if let sway::Expression::FunctionCall(f) = &expression
+        && let sway::Expression::MemberAccess(m) = &f.function
+        && m.member == "read"
+        && f.parameters.is_empty()
+    {
+        let container_type =
+            get_expression_type(project, module.clone(), scope.clone(), &m.expression)?;
 
-                if container_type.is_storage_key() {
-                    expression = m.expression.clone();
-                }
-            }
+        if container_type.is_storage_key() {
+            expression = m.expression.clone();
         }
     }
 
@@ -63,12 +63,11 @@ pub fn translate_assignment_expression(
     if let sway::Expression::MemberAccess(member_access) = &expression {
         let mut is_storage_keyword = false;
 
-        if let sway::Expression::PathExpr(path_expr) = &member_access.expression {
-            if let sway::PathExprRoot::Identifier(id) = &path_expr.root {
-                if *id == "storage" {
-                    is_storage_keyword = true;
-                }
-            }
+        if let sway::Expression::PathExpr(path_expr) = &member_access.expression
+            && let sway::PathExprRoot::Identifier(id) = &path_expr.root
+            && *id == "storage"
+        {
+            is_storage_keyword = true;
         }
 
         if !is_storage_keyword {
@@ -79,19 +78,16 @@ pub fn translate_assignment_expression(
                 &member_access.expression,
             )?;
 
-            if let sway::TypeName::Identifier { name, .. } = expression_type {
-                if let Some(struct_definition) =
+            if let sway::TypeName::Identifier { name, .. } = expression_type
+                && let Some(struct_definition) =
                     project.find_struct(module.clone(), scope.clone(), &name)
-                {
-                    if struct_definition
-                        .borrow()
-                        .fields
-                        .iter()
-                        .any(|f| f.name == member_access.member)
-                    {
-                        return Ok(expression);
-                    }
-                }
+                && struct_definition
+                    .borrow()
+                    .fields
+                    .iter()
+                    .any(|f| f.name == member_access.member)
+            {
+                return Ok(expression);
             }
         }
     }
@@ -118,22 +114,20 @@ pub fn translate_assignment_expression(
                 },
 
                 ("StorageMap", Some(_)) => {
-                    if let sway::Expression::FunctionCall(function_call) = &expression {
-                        if let sway::Expression::MemberAccess(member_access) =
+                    if let sway::Expression::FunctionCall(function_call) = &expression
+                        && let sway::Expression::MemberAccess(member_access) =
                             &function_call.function
-                        {
-                            if member_access.member == "get" && function_call.parameters.len() == 1
-                            {
-                                return Ok(sway::Expression::from(sway::FunctionCall {
-                                    function: sway::Expression::from(sway::MemberAccess {
-                                        expression: member_access.expression.clone(),
-                                        member: "insert".into(),
-                                    }),
-                                    generic_parameters: None,
-                                    parameters: vec![rhs],
-                                }));
-                            }
-                        }
+                        && member_access.member == "get"
+                        && function_call.parameters.len() == 1
+                    {
+                        return Ok(sway::Expression::from(sway::FunctionCall {
+                            function: sway::Expression::from(sway::MemberAccess {
+                                expression: member_access.expression.clone(),
+                                member: "insert".into(),
+                            }),
+                            generic_parameters: None,
+                            parameters: vec![rhs],
+                        }));
                     }
 
                     todo!()
@@ -412,73 +406,70 @@ pub fn create_assignment_expression(
     let expr_type_name = get_expression_type(project, module.clone(), scope.clone(), expression)?;
 
     // Check for assignments to fields of struct variables defined in scope
-    if !type_name.is_compatible_with(&expr_type_name) {
-        if let sway::Expression::MemberAccess(member_access) = expression {
-            let type_name = get_expression_type(
-                project,
-                module.clone(),
-                scope.clone(),
-                &member_access.expression,
-            )?;
+    if !type_name.is_compatible_with(&expr_type_name)
+        && let sway::Expression::MemberAccess(member_access) = expression
+    {
+        let type_name = get_expression_type(
+            project,
+            module.clone(),
+            scope.clone(),
+            &member_access.expression,
+        )?;
 
-            if let Some(struct_definition) = module.borrow().structs.iter().find(|s| {
-                let s = s.implementation.as_ref().unwrap().borrow();
+        if let Some(struct_definition) = module.borrow().structs.iter().find(|s| {
+            let s = s.implementation.as_ref().unwrap().borrow();
 
-                let sway::TypeName::Identifier {
-                    name,
-                    generic_parameters,
-                } = &type_name
-                else {
-                    return false;
-                };
+            let sway::TypeName::Identifier {
+                name,
+                generic_parameters,
+            } = &type_name
+            else {
+                return false;
+            };
 
-                if s.name != *name || s.generic_parameters.is_some() != generic_parameters.is_some()
-                {
-                    return false;
-                }
-
-                if let (Some(lhs_generic_parameters), Some(rhs_generic_parameters)) =
-                    (s.generic_parameters.as_ref(), generic_parameters.as_ref())
-                {
-                    if lhs_generic_parameters.entries.len() != rhs_generic_parameters.entries.len()
-                    {
-                        return false;
-                    }
-                }
-
-                if !s.fields.iter().any(|f| f.name == member_access.member) {
-                    return false;
-                }
-
-                true
-            }) {
-                let struct_definition = struct_definition.implementation.as_ref().unwrap().borrow();
-
-                let field = struct_definition
-                    .fields
-                    .iter()
-                    .find(|f| f.name == member_access.member)
-                    .unwrap();
-
-                // Non-storage struct field assignment
-                //   blah.field = value;
-                return Ok(sway::Expression::from(sway::BinaryExpression {
-                    operator: "=".into(),
-                    lhs: sway::Expression::from(sway::MemberAccess {
-                        expression: member_access.expression.clone(),
-                        member: field.name.clone(),
-                    }),
-                    rhs: coerce_expression(
-                        project,
-                        module.clone(),
-                        scope.clone(),
-                        rhs,
-                        rhs_type_name,
-                        &field.type_name,
-                    )
-                    .unwrap(),
-                }));
+            if s.name != *name || s.generic_parameters.is_some() != generic_parameters.is_some() {
+                return false;
             }
+
+            if let (Some(lhs_generic_parameters), Some(rhs_generic_parameters)) =
+                (s.generic_parameters.as_ref(), generic_parameters.as_ref())
+                && lhs_generic_parameters.entries.len() != rhs_generic_parameters.entries.len()
+            {
+                return false;
+            }
+
+            if !s.fields.iter().any(|f| f.name == member_access.member) {
+                return false;
+            }
+
+            true
+        }) {
+            let struct_definition = struct_definition.implementation.as_ref().unwrap().borrow();
+
+            let field = struct_definition
+                .fields
+                .iter()
+                .find(|f| f.name == member_access.member)
+                .unwrap();
+
+            // Non-storage struct field assignment
+            //   blah.field = value;
+            return Ok(sway::Expression::from(sway::BinaryExpression {
+                operator: "=".into(),
+                lhs: sway::Expression::from(sway::MemberAccess {
+                    expression: member_access.expression.clone(),
+                    member: field.name.clone(),
+                }),
+                rhs: coerce_expression(
+                    project,
+                    module.clone(),
+                    scope.clone(),
+                    rhs,
+                    rhs_type_name,
+                    &field.type_name,
+                )
+                .unwrap(),
+            }));
         }
     }
 

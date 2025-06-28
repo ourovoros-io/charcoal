@@ -61,17 +61,16 @@ impl TabbedDisplay for Module {
         let mut prev_item: Option<&ModuleItem> = None;
 
         for (i, item) in self.items.iter().enumerate() {
-            if let Some(prev_item) = prev_item {
-                if !(matches!(prev_item, ModuleItem::Use(_)) && matches!(item, ModuleItem::Use(_))
+            if let Some(prev_item) = prev_item
+                && !(matches!(prev_item, ModuleItem::Use(_)) && matches!(item, ModuleItem::Use(_))
                     || matches!(prev_item, ModuleItem::Constant(_))
                         && matches!(item, ModuleItem::Constant(_))
                     || matches!(prev_item, ModuleItem::TypeDefinition(_))
                         && matches!(item, ModuleItem::TypeDefinition(_))
                     || matches!(prev_item, ModuleItem::Submodule(_))
                         && matches!(item, ModuleItem::Submodule(_)))
-                {
-                    writeln!(f)?;
-                }
+            {
+                writeln!(f)?;
             } else if i > 0 {
                 writeln!(f)?;
             }
@@ -799,25 +798,23 @@ impl TypeName {
                 generic_parameters: Some(rhs_generic_parameters),
             },
         ) = (self, other)
+            && lhs_name == rhs_name
+            && lhs_generic_parameters.entries.len() == rhs_generic_parameters.entries.len()
         {
-            if lhs_name == rhs_name
-                && lhs_generic_parameters.entries.len() == rhs_generic_parameters.entries.len()
+            for (lhs_generic_parameter, rhs_generic_parameter) in lhs_generic_parameters
+                .entries
+                .iter()
+                .zip(rhs_generic_parameters.entries.iter())
             {
-                for (lhs_generic_parameter, rhs_generic_parameter) in lhs_generic_parameters
-                    .entries
-                    .iter()
-                    .zip(rhs_generic_parameters.entries.iter())
+                if !lhs_generic_parameter
+                    .type_name
+                    .is_compatible_with(&rhs_generic_parameter.type_name)
                 {
-                    if !lhs_generic_parameter
-                        .type_name
-                        .is_compatible_with(&rhs_generic_parameter.type_name)
-                    {
-                        return false;
-                    }
+                    return false;
                 }
-
-                return true;
             }
+
+            return true;
         }
 
         // Check array type compatibility
@@ -1724,10 +1721,10 @@ impl Statement {
             }
 
             Statement::Commented(_, statement) => {
-                if let Some(statement) = statement.as_ref() {
-                    if let Some(result) = statement.filter_map(f.clone()) {
-                        return Some(result);
-                    }
+                if let Some(statement) = statement.as_ref()
+                    && let Some(result) = statement.filter_map(f.clone())
+                {
+                    return Some(result);
                 }
             }
         }
@@ -2204,10 +2201,10 @@ impl Expression {
                 }
 
                 Statement::Commented(_, statement) => {
-                    if let Some(statement) = statement.as_ref() {
-                        if let Some(result) = check_statement(statement, f) {
-                            return Some(result);
-                        }
+                    if let Some(statement) = statement.as_ref()
+                        && let Some(result) = check_statement(statement, f)
+                    {
+                        return Some(result);
                     }
                 }
             }
@@ -2261,18 +2258,18 @@ impl Expression {
                         }
                     }
 
-                    if let Some(final_expr) = block.final_expr.as_ref() {
-                        if let Some(result) = check_expression(&final_expr, f) {
-                            return Some(result);
-                        }
+                    if let Some(final_expr) = block.final_expr.as_ref()
+                        && let Some(result) = check_expression(&final_expr, f)
+                    {
+                        return Some(result);
                     }
                 }
 
                 Expression::Return(expression) => {
-                    if let Some(expression) = expression.as_ref() {
-                        if let Some(result) = check_expression(&expression.as_ref(), f) {
-                            return Some(result);
-                        }
+                    if let Some(expression) = expression.as_ref()
+                        && let Some(result) = check_expression(&expression.as_ref(), f)
+                    {
+                        return Some(result);
                     }
                 }
 
@@ -2312,10 +2309,10 @@ impl Expression {
                     let mut next_if_expr = Some(if_expr.as_ref().clone());
 
                     while let Some(if_expr) = next_if_expr.take() {
-                        if let Some(condition) = if_expr.condition.as_ref() {
-                            if let Some(result) = check_expression(&condition, f) {
-                                return Some(result);
-                            }
+                        if let Some(condition) = if_expr.condition.as_ref()
+                            && let Some(result) = check_expression(&condition, f)
+                        {
+                            return Some(result);
                         }
 
                         for statement in if_expr.then_body.statements.iter() {
@@ -2324,10 +2321,10 @@ impl Expression {
                             }
                         }
 
-                        if let Some(final_expr) = if_expr.then_body.final_expr.as_ref() {
-                            if let Some(result) = check_expression(&final_expr, f) {
-                                return Some(result);
-                            }
+                        if let Some(final_expr) = if_expr.then_body.final_expr.as_ref()
+                            && let Some(result) = check_expression(&final_expr, f)
+                        {
+                            return Some(result);
                         }
 
                         next_if_expr = if_expr.else_if.as_ref().map(|x| x.as_ref().clone());
@@ -2361,10 +2358,10 @@ impl Expression {
                         }
                     }
 
-                    if let Some(final_expr) = while_expr.body.final_expr.as_ref() {
-                        if let Some(result) = check_expression(&final_expr, f) {
-                            return Some(result);
-                        }
+                    if let Some(final_expr) = while_expr.body.final_expr.as_ref()
+                        && let Some(result) = check_expression(&final_expr, f)
+                    {
+                        return Some(result);
                     }
                 }
 
@@ -2394,10 +2391,10 @@ impl Expression {
 
                 Expression::AsmBlock(asm_block) => {
                     for register in asm_block.registers.iter() {
-                        if let Some(value) = register.value.as_ref() {
-                            if let Some(result) = check_expression(&value, f) {
-                                return Some(result);
-                            }
+                        if let Some(value) = register.value.as_ref()
+                            && let Some(result) = check_expression(&value, f)
+                        {
+                            return Some(result);
                         }
                     }
                 }

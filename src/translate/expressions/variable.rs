@@ -142,20 +142,20 @@ pub fn translate_variable_access_expression(
             };
 
             // HACK: remove `.read()` if present
-            if let sway::Expression::FunctionCall(function_call) = &expression {
-                if let sway::Expression::MemberAccess(member_access) = &function_call.function {
-                    if member_access.member == "read" && function_call.parameters.is_empty() {
-                        let container_type = get_expression_type(
-                            project,
-                            module.clone(),
-                            scope.clone(),
-                            &member_access.expression,
-                        )?;
+            if let sway::Expression::FunctionCall(function_call) = &expression
+                && let sway::Expression::MemberAccess(member_access) = &function_call.function
+                && member_access.member == "read"
+                && function_call.parameters.is_empty()
+            {
+                let container_type = get_expression_type(
+                    project,
+                    module.clone(),
+                    scope.clone(),
+                    &member_access.expression,
+                )?;
 
-                        if container_type.is_storage_key() {
-                            expression = member_access.expression.clone();
-                        }
-                    }
+                if container_type.is_storage_key() {
+                    expression = member_access.expression.clone();
                 }
             }
 
@@ -182,18 +182,15 @@ pub fn translate_variable_access_expression(
                         {
                             if let Some(storage_key_type) =
                                 generic_parameters.entries[0].type_name.storage_key_type()
+                                && storage_key_type.is_storage_map()
                             {
-                                if storage_key_type.is_storage_map() {
-                                    sway::Expression::create_function_calls(
-                                        Some(expression),
-                                        &[
-                                            ("unwrap", Some((None, vec![]))),
-                                            ("get", Some((None, vec![index]))),
-                                        ],
-                                    )
-                                } else {
-                                    todo!()
-                                }
+                                sway::Expression::create_function_calls(
+                                    Some(expression),
+                                    &[
+                                        ("unwrap", Some((None, vec![]))),
+                                        ("get", Some((None, vec![index]))),
+                                    ],
+                                )
                             } else {
                                 todo!()
                             }
@@ -359,25 +356,23 @@ pub fn translate_variable_access_expression(
             };
 
             // Check if container is a struct
+            let field_name = translate_naming_convention(member.name.as_str(), Case::Snake);
+
             if let Some(struct_definition) =
                 project.find_struct(module.clone(), scope.clone(), &container_type_name_string)
-            {
-                let field_name = translate_naming_convention(member.name.as_str(), Case::Snake);
-
-                if struct_definition
+                && struct_definition
                     .borrow()
                     .fields
                     .iter()
                     .any(|f| f.name == field_name)
-                {
-                    return Ok(Some(ir::VariableAccess {
-                        variable,
-                        expression: sway::Expression::from(sway::MemberAccess {
-                            expression: translated_container,
-                            member: field_name,
-                        }),
-                    }));
-                }
+            {
+                return Ok(Some(ir::VariableAccess {
+                    variable,
+                    expression: sway::Expression::from(sway::MemberAccess {
+                        expression: translated_container,
+                        member: field_name,
+                    }),
+                }));
             }
 
             panic!(
@@ -398,30 +393,28 @@ pub fn translate_variable_access_expression(
                 .collect::<Result<Vec<_>, _>>()?;
 
             // Check for explicit contract function calls
-            if let solidity::Expression::MemberAccess(_, container, member) = function.as_ref() {
-                if let solidity::Expression::Variable(container) = container.as_ref() {
-                    if let Some(external_contract) =
-                        project.find_contract(module.clone(), container.name.as_str())
-                    {
-                        let abi = external_contract.borrow().abi.clone();
+            if let solidity::Expression::MemberAccess(_, container, member) = function.as_ref()
+                && let solidity::Expression::Variable(container) = container.as_ref()
+                && let Some(external_contract) =
+                    project.find_contract(module.clone(), container.name.as_str())
+            {
+                let abi = external_contract.borrow().abi.clone();
 
-                        if let Some(result) = resolve_abi_function_call(
-                            project,
-                            module.clone(),
-                            scope.clone(),
-                            &abi,
-                            None,
-                            member.name.as_str(),
-                            None,
-                            parameters.clone(),
-                            parameter_types.clone(),
-                        )? {
-                            return Ok(Some(ir::VariableAccess {
-                                variable: None,
-                                expression: result,
-                            }));
-                        }
-                    }
+                if let Some(result) = resolve_abi_function_call(
+                    project,
+                    module.clone(),
+                    scope.clone(),
+                    &abi,
+                    None,
+                    member.name.as_str(),
+                    None,
+                    parameters.clone(),
+                    parameter_types.clone(),
+                )? {
+                    return Ok(Some(ir::VariableAccess {
+                        variable: None,
+                        expression: result,
+                    }));
                 }
             }
 

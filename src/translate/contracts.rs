@@ -218,10 +218,10 @@ pub fn translate_contract_definition(
             continue;
         };
 
-        if let Some(impl_item) = impl_item {
-            if !contract.borrow().abi_impl.items.contains(&impl_item) {
-                contract.borrow_mut().abi_impl.items.push(impl_item);
-            }
+        if let Some(impl_item) = impl_item
+            && !contract.borrow().abi_impl.items.contains(&impl_item)
+        {
+            contract.borrow_mut().abi_impl.items.push(impl_item);
         }
 
         let mut module = module.borrow_mut();

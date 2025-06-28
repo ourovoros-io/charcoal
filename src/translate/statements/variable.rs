@@ -169,16 +169,16 @@ pub fn translate_variable_definition_statement(
     } else if let Some(x) = initializer.as_ref() {
         let mut x = translate_expression(project, module.clone(), scope.clone(), &x)?;
 
-        if let sway::Expression::FunctionCall(f) = &x {
-            if let sway::Expression::MemberAccess(m) = &f.function {
-                if m.member == "read" && f.parameters.is_empty() {
-                    let container_type =
-                        get_expression_type(project, module.clone(), scope.clone(), &m.expression)?;
+        if let sway::Expression::FunctionCall(f) = &x
+            && let sway::Expression::MemberAccess(m) = &f.function
+            && m.member == "read"
+            && f.parameters.is_empty()
+        {
+            let container_type =
+                get_expression_type(project, module.clone(), scope.clone(), &m.expression)?;
 
-                    if container_type.is_storage_key() {
-                        x = m.expression.clone();
-                    }
-                }
+            if container_type.is_storage_key() {
+                x = m.expression.clone();
             }
         }
 

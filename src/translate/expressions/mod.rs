@@ -78,11 +78,11 @@ pub fn evaluate_expression(
                 return constant.value.as_ref().unwrap().clone();
             }
 
-            if let Some(configurable) = module.borrow().configurable.as_ref() {
-                if let Some(field) = configurable.fields.iter().find(|f| f.name == identifier) {
-                    assert!(type_name.is_compatible_with(&field.type_name));
-                    return field.value.clone();
-                }
+            if let Some(configurable) = module.borrow().configurable.as_ref()
+                && let Some(field) = configurable.fields.iter().find(|f| f.name == identifier)
+            {
+                assert!(type_name.is_compatible_with(&field.type_name));
+                return field.value.clone();
             }
 
             let variable = scope

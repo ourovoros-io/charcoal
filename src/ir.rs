@@ -87,10 +87,10 @@ impl Scope {
             return Some(contract_name.clone());
         }
 
-        if let Some(parent) = self.parent.as_ref() {
-            if let Some(contract_name) = parent.borrow().get_contract_name() {
-                return Some(contract_name.clone());
-            }
+        if let Some(parent) = self.parent.as_ref()
+            && let Some(contract_name) = parent.borrow().get_contract_name()
+        {
+            return Some(contract_name.clone());
         }
 
         None
@@ -101,10 +101,10 @@ impl Scope {
             return Some(function_name.clone());
         }
 
-        if let Some(parent) = self.parent.as_ref() {
-            if let Some(function_name) = parent.borrow().get_function_name() {
-                return Some(function_name.clone());
-            }
+        if let Some(parent) = self.parent.as_ref()
+            && let Some(function_name) = parent.borrow().get_function_name()
+        {
+            return Some(function_name.clone());
         }
 
         None
@@ -163,10 +163,10 @@ impl Scope {
             return Some(variable.clone());
         }
 
-        if let Some(parent) = self.parent.as_ref() {
-            if let Some(variable) = parent.borrow().get_variable_from_old_name(old_name) {
-                return Some(variable);
-            }
+        if let Some(parent) = self.parent.as_ref()
+            && let Some(variable) = parent.borrow().get_variable_from_old_name(old_name)
+        {
+            return Some(variable);
         }
 
         None
@@ -183,10 +183,10 @@ impl Scope {
             return Some(variable.clone());
         }
 
-        if let Some(parent) = self.parent.as_ref() {
-            if let Some(variable) = parent.borrow().get_variable_from_new_name(new_name) {
-                return Some(variable);
-            }
+        if let Some(parent) = self.parent.as_ref()
+            && let Some(variable) = parent.borrow().get_variable_from_new_name(new_name)
+        {
+            return Some(variable);
         }
 
         None
@@ -201,10 +201,10 @@ impl Scope {
             return Some(variable.clone());
         }
 
-        if let Some(parent) = self.parent.as_ref() {
-            if let Some(variable) = parent.borrow().find_variable(f) {
-                return Some(variable);
-            }
+        if let Some(parent) = self.parent.as_ref()
+            && let Some(variable) = parent.borrow().find_variable(f)
+        {
+            return Some(variable);
         }
 
         None
@@ -616,12 +616,14 @@ impl From<Module> for sway::Module {
 
         for x in module.functions {
             let mut function = x.implementation.unwrap();
+            
             if let Some(storage_struct_parameter) = function.storage_struct_parameter.as_ref() {
                 function
                     .parameters
                     .entries
                     .push(storage_struct_parameter.clone());
             }
+
             items.push(sway::ModuleItem::Function(function));
         }
 

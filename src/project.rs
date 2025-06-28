@@ -642,15 +642,14 @@ impl Project {
         // Check all of the module's `use` statements for crate-local imports,
         // find the module being imported, then check if the contract lives there.
         for use_item in module.borrow().uses.iter() {
-            if let Some(found_module) = self.resolve_use(use_item) {
-                if found_module
+            if let Some(found_module) = self.resolve_use(use_item)
+                && found_module
                     .borrow()
                     .contracts
                     .iter()
                     .any(|c| c.signature.to_string() == contract_name)
-                {
-                    return true;
-                }
+            {
+                return true;
             }
         }
 
@@ -675,10 +674,10 @@ impl Project {
         // Check all of the module's `use` statements for crate-local imports,
         // find the module being imported, then check if the contract lives there.
         for use_item in module.borrow().uses.iter() {
-            if let Some(found_module) = self.resolve_use(use_item) {
-                if let Some(contract) = self.find_contract(found_module, contract_name) {
-                    return Some(contract.clone());
-                }
+            if let Some(found_module) = self.resolve_use(use_item)
+                && let Some(contract) = self.find_contract(found_module, contract_name)
+            {
+                return Some(contract.clone());
             }
         }
 
@@ -703,18 +702,17 @@ impl Project {
         // Check all of the module's `use` statements for crate-local imports,
         // find the module being imported, then check if the contract lives there.
         for use_item in module.borrow().uses.iter() {
-            if let Some(found_module) = self.resolve_use(use_item) {
-                if let Some(contract) = found_module
+            if let Some(found_module) = self.resolve_use(use_item)
+                && let Some(contract) = found_module
                     .borrow()
                     .contracts
                     .iter()
                     .find(|c| c.signature.to_string() == contract_name)
-                {
-                    return Some((
-                        found_module.clone(),
-                        contract.implementation.clone().unwrap(),
-                    ));
-                }
+            {
+                return Some((
+                    found_module.clone(),
+                    contract.implementation.clone().unwrap(),
+                ));
             }
         }
 
@@ -739,15 +737,14 @@ impl Project {
         // Check all of the module's `use` statements for crate-local imports,
         // find the module being imported, then check if the contract lives there.
         for use_item in module.borrow().uses.iter() {
-            if let Some(found_module) = self.resolve_use(use_item) {
-                if found_module
+            if let Some(found_module) = self.resolve_use(use_item)
+                && found_module
                     .borrow()
                     .contracts
                     .iter()
                     .any(|c| c.signature.to_string() == contract_name)
-                {
-                    return Some(found_module.clone());
-                }
+            {
+                return Some(found_module.clone());
             }
         }
 
@@ -772,15 +769,14 @@ impl Project {
         // Check all of the module's `use` statements for crate-local imports,
         // find the module being imported, then check if the type definition lives there.
         for use_item in module.borrow().uses.iter() {
-            if let Some(found_module) = self.resolve_use(use_item) {
-                if found_module
+            if let Some(found_module) = self.resolve_use(use_item)
+                && found_module
                     .borrow()
                     .type_definitions
                     .iter()
                     .any(|x| x.signature.to_string() == name)
-                {
-                    return true;
-                }
+            {
+                return true;
             }
         }
 
@@ -805,15 +801,14 @@ impl Project {
         // Check all of the module's `use` statements for crate-local imports,
         // find the module being imported, then check if the type definition lives there.
         for use_item in module.borrow().uses.iter() {
-            if let Some(found_module) = self.resolve_use(use_item) {
-                if let Some(x) = found_module
+            if let Some(found_module) = self.resolve_use(use_item)
+                && let Some(x) = found_module
                     .borrow()
                     .type_definitions
                     .iter()
                     .find(|x| x.signature.to_string() == name)
-                {
-                    return x.implementation.clone();
-                }
+            {
+                return x.implementation.clone();
             }
         }
 
@@ -834,15 +829,14 @@ impl Project {
         // Check all of the module's `use` statements for crate-local imports,
         // find the module being imported, then check if the enum lives there.
         for use_item in module.borrow().uses.iter() {
-            if let Some(found_module) = self.resolve_use(use_item) {
-                if found_module
+            if let Some(found_module) = self.resolve_use(use_item)
+                && found_module
                     .borrow()
                     .enums
                     .iter()
                     .any(|x| x.signature.to_string() == name)
-                {
-                    return true;
-                }
+            {
+                return true;
             }
         }
 
@@ -863,15 +857,14 @@ impl Project {
         // Check all of the module's `use` statements for crate-local imports,
         // find the module being imported, then check if the enum lives there.
         for use_item in module.borrow().uses.iter() {
-            if let Some(found_module) = self.resolve_use(use_item) {
-                if let Some(x) = found_module
+            if let Some(found_module) = self.resolve_use(use_item)
+                && let Some(x) = found_module
                     .borrow()
                     .enums
                     .iter()
                     .find(|x| x.signature.to_string() == name)
-                {
-                    return x.implementation.clone();
-                }
+            {
+                return x.implementation.clone();
             }
         }
 
@@ -892,15 +885,14 @@ impl Project {
         // Check all of the module's `use` statements for crate-local imports,
         // find the module being imported, then check if the struct lives there.
         for use_item in module.borrow().uses.iter() {
-            if let Some(found_module) = self.resolve_use(use_item) {
-                if found_module
+            if let Some(found_module) = self.resolve_use(use_item)
+                && found_module
                     .borrow()
                     .structs
                     .iter()
                     .any(|x| x.signature.to_string() == name)
-                {
-                    return true;
-                }
+            {
+                return true;
             }
         }
 
@@ -924,28 +916,25 @@ impl Project {
         }
 
         // Check to see if the struct is a storage struct
-        if let Some(contract_name) = scope.borrow().get_contract_name() {
-            if let Some(contract) = self.find_contract(module.clone(), &contract_name) {
-                if let Some(x) = contract.borrow().storage_struct.as_ref() {
-                    if x.borrow().name == name {
-                        return Some(x.clone());
-                    }
-                }
-            }
+        if let Some(contract_name) = scope.borrow().get_contract_name()
+            && let Some(contract) = self.find_contract(module.clone(), &contract_name)
+            && let Some(x) = contract.borrow().storage_struct.as_ref()
+            && x.borrow().name == name
+        {
+            return Some(x.clone());
         }
 
         // Check all of the module's `use` statements for crate-local imports,
         // find the module being imported, then check if the struct lives there.
         for use_item in module.borrow().uses.iter() {
-            if let Some(found_module) = self.resolve_use(use_item) {
-                if let Some(x) = found_module
+            if let Some(found_module) = self.resolve_use(use_item)
+                && let Some(x) = found_module
                     .borrow()
                     .structs
                     .iter()
                     .find(|x| x.signature.to_string() == name)
-                {
-                    return x.implementation.clone();
-                }
+            {
+                return x.implementation.clone();
             }
         }
 

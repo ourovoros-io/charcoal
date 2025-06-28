@@ -177,78 +177,74 @@ pub fn resolve_symbol(
             }
 
             // Check to see if the variable refers to a configurable
-            if let Some(configurable) = module.borrow().configurable.as_ref() {
-                if let Some(field) = configurable.fields.iter().find(|f| f.old_name == *name) {
-                    return Some(SymbolData::ConfigurableField(field.clone()));
-                }
+            if let Some(configurable) = module.borrow().configurable.as_ref()
+                && let Some(field) = configurable.fields.iter().find(|f| f.old_name == *name)
+            {
+                return Some(SymbolData::ConfigurableField(field.clone()));
             }
 
             // Check to see if the variable refers to a storage field
-            if let Some(contract_name) = scope.borrow().get_contract_name() {
-                if let Some(contract) =
+            if let Some(contract_name) = scope.borrow().get_contract_name()
+                && let Some(contract) =
                     project.find_contract(module.clone(), contract_name.as_str())
-                {
-                    let storage_namespace_name = contract.borrow().name.to_case(Case::Snake);
-                    let storage_field_name = name.clone();
+            {
+                let storage_namespace_name = contract.borrow().name.to_case(Case::Snake);
+                let storage_field_name = name.clone();
 
-                    if let Some(storage) = contract.borrow().storage.as_ref() {
-                        if let Some(storage_namespace) = storage
-                            .borrow()
-                            .namespaces
-                            .iter()
-                            .find(|n| n.borrow().name == storage_namespace_name)
-                        {
-                            if let Some(field) = storage_namespace
-                                .borrow()
-                                .fields
-                                .iter()
-                                .find(|f| f.old_name == storage_field_name)
-                            {
-                                return Some(SymbolData::StorageField {
-                                    namespace: Some(storage_namespace_name),
-                                    field: field.clone(),
-                                });
-                            }
-                        }
-                    }
+                if let Some(storage) = contract.borrow().storage.as_ref()
+                    && let Some(storage_namespace) = storage
+                        .borrow()
+                        .namespaces
+                        .iter()
+                        .find(|n| n.borrow().name == storage_namespace_name)
+                    && let Some(field) = storage_namespace
+                        .borrow()
+                        .fields
+                        .iter()
+                        .find(|f| f.old_name == storage_field_name)
+                {
+                    return Some(SymbolData::StorageField {
+                        namespace: Some(storage_namespace_name),
+                        field: field.clone(),
+                    });
                 }
             }
         }
     }
 
     // If we didn't find it in the current contract, try checking inheritted contracts
-    if let Some(contract_name) = scope.borrow().get_contract_name() {
-        if let Some(contract) = project.find_contract(module.clone(), &contract_name) {
-            let inherits = contract.borrow().abi.inherits.clone();
+    if let Some(contract_name) = scope.borrow().get_contract_name()
+        && let Some(contract) = project.find_contract(module.clone(), &contract_name)
+    {
+        let inherits = contract.borrow().abi.inherits.clone();
 
-            for inherit in inherits {
-                let inherit_type_name = inherit.to_string();
-                let scope = Rc::new(RefCell::new(ir::Scope::new(
-                    Some(&inherit_type_name.as_str()),
-                    None,
-                    Some(scope.clone()),
-                )));
+        for inherit in inherits {
+            let inherit_type_name = inherit.to_string();
+            let scope = Rc::new(RefCell::new(ir::Scope::new(
+                Some(&inherit_type_name.as_str()),
+                None,
+                Some(scope.clone()),
+            )));
 
-                if let Some(result) =
-                    resolve_symbol(project, module.clone(), scope.clone(), symbol.clone())
-                {
-                    return Some(result);
-                }
+            if let Some(result) =
+                resolve_symbol(project, module.clone(), scope.clone(), symbol.clone())
+            {
+                return Some(result);
             }
         }
     }
 
     // If we didn't find it in the current module, try checking imported modules
     for use_expr in module.borrow().uses.iter() {
-        if let Some(imported_module) = project.resolve_use(use_expr) {
-            if let Some(symbol) = resolve_symbol(
+        if let Some(imported_module) = project.resolve_use(use_expr)
+            && let Some(symbol) = resolve_symbol(
                 project,
                 imported_module.clone(),
                 scope.clone(),
                 symbol.clone(),
-            ) {
-                return Some(symbol);
-            }
+            )
+        {
+            return Some(symbol);
         }
     }
 
@@ -380,15 +376,13 @@ pub fn resolve_abi_function_call(
                 // If `parameter_type_name` is `Identity`, but `container` is an abi cast expression,
                 // then we need to de-cast it, so `container` turns into the 2nd parameter of the abi cast,
                 // and `value_type_name` turns into `Identity`.
-                if parameter_type_name.is_identity() {
-                    if let sway::Expression::FunctionCall(function_call) = parameters[i].clone() {
-                        if let Some(function_name) = function_call.function.as_identifier() {
-                            if function_name == "abi" {
-                                parameters[i] = function_call.parameters[1].clone();
-                                continue;
-                            }
-                        }
-                    }
+                if parameter_type_name.is_identity()
+                    && let sway::Expression::FunctionCall(function_call) = parameters[i].clone()
+                    && let Some(function_name) = function_call.function.as_identifier()
+                    && function_name == "abi"
+                {
+                    parameters[i] = function_call.parameters[1].clone();
+                    continue;
                 }
 
                 // HACK: str -> Bytes (is this still necessary?)
@@ -434,30 +428,29 @@ pub fn resolve_abi_function_call(
                 }
 
                 // HACK: StorageKey<*> -> *
-                if let Some(value_type) = value_type_name.storage_key_type() {
-                    if !parameter_type_name.is_storage_key()
-                        && parameter_type_name.is_compatible_with(&value_type)
-                    {
-                        parameters[i] = sway::Expression::create_function_calls(
-                            Some(parameters[i].clone()),
-                            &[("read", Some((None, vec![])))],
-                        );
-                        continue;
-                    }
+                if let Some(value_type) = value_type_name.storage_key_type()
+                    && !parameter_type_name.is_storage_key()
+                    && parameter_type_name.is_compatible_with(&value_type)
+                {
+                    parameters[i] = sway::Expression::create_function_calls(
+                        Some(parameters[i].clone()),
+                        &[("read", Some((None, vec![])))],
+                    );
+                    continue;
                 }
 
                 // HACK: [u8; 32] -> b256
-                if let Some(32) = value_type_name.u8_array_length() {
-                    if parameter_type_name.is_b256() {
-                        parameters[i] = sway::Expression::create_function_calls(
-                            None,
-                            &[(
-                                "b256::from_be_bytes",
-                                Some((None, vec![parameters[i].clone()])),
-                            )],
-                        );
-                        continue;
-                    }
+                if let Some(32) = value_type_name.u8_array_length()
+                    && parameter_type_name.is_b256()
+                {
+                    parameters[i] = sway::Expression::create_function_calls(
+                        None,
+                        &[(
+                            "b256::from_be_bytes",
+                            Some((None, vec![parameters[i].clone()])),
+                        )],
+                    );
+                    continue;
                 }
 
                 // HACK: [u*; N]
@@ -465,23 +458,21 @@ pub fn resolve_abi_function_call(
                     type_name: value_element_type,
                     length: value_element_length,
                 } = &value_type_name
-                {
-                    if let sway::TypeName::Array {
+                    && let sway::TypeName::Array {
                         type_name: parameter_element_type,
                         length: parameter_element_length,
                     } = parameter_type_name
-                    {
-                        if value_element_length != parameter_element_length {
-                            return false;
-                        }
+                {
+                    if value_element_length != parameter_element_length {
+                        return false;
+                    }
 
-                        if value_element_type.is_uint() && parameter_element_type.is_uint() {
-                            return true;
-                        }
+                    if value_element_type.is_uint() && parameter_element_type.is_uint() {
+                        return true;
+                    }
 
-                        if value_element_type.is_compatible_with(parameter_element_type) {
-                            return true;
-                        }
+                    if value_element_type.is_compatible_with(parameter_element_type) {
+                        return true;
                     }
                 }
 
@@ -681,15 +672,13 @@ pub fn resolve_function_call(
             // If `parameter_type_name` is `Identity`, but `container` is an abi cast expression,
             // then we need to de-cast it, so `container` turns into the 2nd parameter of the abi cast,
             // and `value_type_name` turns into `Identity`.
-            if parameter_type_name.is_identity() {
-                if let sway::Expression::FunctionCall(function_call) = parameters[i].clone() {
-                    if let Some(function_name) = function_call.function.as_identifier() {
-                        if function_name == "abi" {
-                            parameters[i] = function_call.parameters[1].clone();
-                            continue;
-                        }
-                    }
-                }
+            if parameter_type_name.is_identity()
+                && let sway::Expression::FunctionCall(function_call) = parameters[i].clone()
+                && let Some(function_name) = function_call.function.as_identifier()
+                && function_name == "abi"
+            {
+                parameters[i] = function_call.parameters[1].clone();
+                continue;
             }
 
             // HACK: str -> Bytes (is this still necessary?)
@@ -735,30 +724,29 @@ pub fn resolve_function_call(
             }
 
             // HACK: StorageKey<*> -> *
-            if let Some(value_type) = value_type_name.storage_key_type() {
-                if !parameter_type_name.is_storage_key()
-                    && parameter_type_name.is_compatible_with(&value_type)
-                {
-                    parameters[i] = sway::Expression::create_function_calls(
-                        Some(parameters[i].clone()),
-                        &[("read", Some((None, vec![])))],
-                    );
-                    continue;
-                }
+            if let Some(value_type) = value_type_name.storage_key_type()
+                && !parameter_type_name.is_storage_key()
+                && parameter_type_name.is_compatible_with(&value_type)
+            {
+                parameters[i] = sway::Expression::create_function_calls(
+                    Some(parameters[i].clone()),
+                    &[("read", Some((None, vec![])))],
+                );
+                continue;
             }
 
             // HACK: [u8; 32] -> b256
-            if let Some(32) = value_type_name.u8_array_length() {
-                if parameter_type_name.is_b256() {
-                    parameters[i] = sway::Expression::create_function_calls(
-                        None,
-                        &[(
-                            "b256::from_be_bytes",
-                            Some((None, vec![parameters[i].clone()])),
-                        )],
-                    );
-                    continue;
-                }
+            if let Some(32) = value_type_name.u8_array_length()
+                && parameter_type_name.is_b256()
+            {
+                parameters[i] = sway::Expression::create_function_calls(
+                    None,
+                    &[(
+                        "b256::from_be_bytes",
+                        Some((None, vec![parameters[i].clone()])),
+                    )],
+                );
+                continue;
             }
 
             // HACK: [u*; N]
@@ -766,23 +754,21 @@ pub fn resolve_function_call(
                 type_name: value_element_type,
                 length: value_element_length,
             } = &value_type_name
-            {
-                if let sway::TypeName::Array {
+                && let sway::TypeName::Array {
                     type_name: parameter_element_type,
                     length: parameter_element_length,
                 } = &parameter_type_name
-                {
-                    if value_element_length != parameter_element_length {
-                        return false;
-                    }
+            {
+                if value_element_length != parameter_element_length {
+                    return false;
+                }
 
-                    if value_element_type.is_uint() && parameter_element_type.is_uint() {
-                        return true;
-                    }
+                if value_element_type.is_uint() && parameter_element_type.is_uint() {
+                    return true;
+                }
 
-                    if value_element_type.is_compatible_with(parameter_element_type) {
-                        return true;
-                    }
+                if value_element_type.is_compatible_with(parameter_element_type) {
+                    return true;
                 }
             }
 
@@ -807,8 +793,8 @@ pub fn resolve_function_call(
     };
 
     // Check to see if the function is defined in the current module
-    if function.is_none() {
-        if let Some(f) = module.borrow().functions.iter().find(|f| {
+    if function.is_none()
+        && let Some(f) = module.borrow().functions.iter().find(|f| {
             let sway::TypeName::Function { old_name, .. } = &f.signature else {
                 unreachable!()
             };
@@ -818,41 +804,40 @@ pub fn resolve_function_call(
             }
 
             check_type_name(&f.signature)
-        }) {
-            function = Some(f.clone());
-        }
+        })
+    {
+        function = Some(f.clone());
     }
 
     // Check to see if the function is a local variable function pointer in scope
-    if function.is_none() {
-        if let Some(variable) = scope.borrow().get_variable_from_old_name(function_name) {
-            if check_type_name(&variable.borrow().type_name) {
-                return Ok(Some(sway::Expression::create_identifier(
-                    function_name.to_string(),
-                )));
-            }
-        }
+    if function.is_none()
+        && let Some(variable) = scope.borrow().get_variable_from_old_name(function_name)
+        && check_type_name(&variable.borrow().type_name)
+    {
+        return Ok(Some(sway::Expression::create_identifier(
+            function_name.to_string(),
+        )));
     }
 
     let Some(function) = function else {
         // If we didn't find a function, check inherited functions
-        if let Some(contract_name) = scope.borrow().get_contract_name() {
-            if let Some(contract) = project.find_contract(module.clone(), &contract_name) {
-                let abi = contract.borrow().abi.clone();
+        if let Some(contract_name) = scope.borrow().get_contract_name()
+            && let Some(contract) = project.find_contract(module.clone(), &contract_name)
+        {
+            let abi = contract.borrow().abi.clone();
 
-                if let Some(result) = resolve_abi_function_call(
-                    project,
-                    module.clone(),
-                    scope.clone(),
-                    &abi,
-                    None,
-                    function_name,
-                    named_arguments,
-                    parameters_cell.borrow().clone(),
-                    parameter_types,
-                )? {
-                    return Ok(Some(result));
-                }
+            if let Some(result) = resolve_abi_function_call(
+                project,
+                module.clone(),
+                scope.clone(),
+                &abi,
+                None,
+                function_name,
+                named_arguments,
+                parameters_cell.borrow().clone(),
+                parameter_types,
+            )? {
+                return Ok(Some(result));
             }
         }
 
@@ -896,48 +881,49 @@ pub fn resolve_struct_constructor(
             .fields
             .len()
     {
-        if let Some(named_arguments) = named_arguments {
-            if named_arguments.len()
-                != struct_definition
-                    .implementation
-                    .as_ref()
-                    .unwrap()
-                    .borrow()
-                    .fields
-                    .len()
-            {
-                return Ok(None);
-            } else {
-                parameters = vec![];
-                parameter_types = vec![];
-
-                for field in struct_definition
-                    .implementation
-                    .as_ref()
-                    .unwrap()
-                    .borrow()
-                    .fields
-                    .iter()
-                {
-                    let arg = named_arguments
-                        .iter()
-                        .find(|a| {
-                            let new_name = translate_naming_convention(&a.name.name, Case::Snake);
-                            new_name == field.name
-                        })
-                        .unwrap();
-
-                    let parameter =
-                        translate_expression(project, module.clone(), scope.clone(), &arg.expr)?;
-                    let parameter_type =
-                        get_expression_type(project, module.clone(), scope.clone(), &parameter)?;
-
-                    parameters.push(parameter);
-                    parameter_types.push(parameter_type);
-                }
-            }
-        } else {
+        let Some(named_arguments) = named_arguments else {
             return Ok(None);
+        };
+
+        if named_arguments.len()
+            != struct_definition
+                .implementation
+                .as_ref()
+                .unwrap()
+                .borrow()
+                .fields
+                .len()
+        {
+            return Ok(None);
+        }
+
+        parameters = vec![];
+        parameter_types = vec![];
+
+        for field in struct_definition
+            .implementation
+            .as_ref()
+            .unwrap()
+            .borrow()
+            .fields
+            .iter()
+        {
+            let arg = named_arguments
+                .iter()
+                .find(|a| {
+                    let new_name = translate_naming_convention(&a.name.name, Case::Snake);
+                    new_name == field.name
+                })
+                .unwrap();
+
+            let parameter =
+                translate_expression(project, module.clone(), scope.clone(), &arg.expr)?;
+
+            let parameter_type =
+                get_expression_type(project, module.clone(), scope.clone(), &parameter)?;
+
+            parameters.push(parameter);
+            parameter_types.push(parameter_type);
         }
     }
 

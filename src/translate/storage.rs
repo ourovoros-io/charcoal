@@ -113,10 +113,8 @@ pub fn translate_state_variable(
     );
 
     // Storage fields should not be wrapped in a `StorageKey<T>`
-    if is_storage {
-        if let Some(storage_key_type) = variable_type_name.storage_key_type() {
-            variable_type_name = storage_key_type;
-        }
+    if is_storage && let Some(storage_key_type) = variable_type_name.storage_key_type() {
+        variable_type_name = storage_key_type;
     }
 
     // Translate the variable's initial value
@@ -133,17 +131,16 @@ pub fn translate_state_variable(
                 let mut value =
                     translate_expression(project, module.clone(), value_scope.clone(), x);
 
-                if let Ok(sway::Expression::Commented(comment, expression)) = &value {
-                    if let sway::Expression::FunctionCall(function_call) = expression.as_ref() {
-                        if let Some(identifier) = function_call.function.as_identifier() {
-                            if identifier == "abi" && function_call.parameters.len() == 2 {
-                                value = Ok(sway::Expression::Commented(
-                                    comment.clone(),
-                                    Box::new(function_call.parameters[1].clone()),
-                                ));
-                            }
-                        }
-                    }
+                if let Ok(sway::Expression::Commented(comment, expression)) = &value
+                    && let sway::Expression::FunctionCall(function_call) = expression.as_ref()
+                    && let Some(identifier) = function_call.function.as_identifier()
+                    && identifier == "abi"
+                    && function_call.parameters.len() == 2
+                {
+                    value = Ok(sway::Expression::Commented(
+                        comment.clone(),
+                        Box::new(function_call.parameters[1].clone()),
+                    ));
                 }
 
                 value

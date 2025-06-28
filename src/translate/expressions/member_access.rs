@@ -142,16 +142,15 @@ pub fn translate_member_access_expression(
                         // }
                     }
 
-                    if let Some(external_contract) = project.find_contract(module.clone(), &name) {
-                        if external_contract
+                    if let Some(external_contract) = project.find_contract(module.clone(), &name)
+                        && external_contract
                             .borrow()
                             .abi
                             .functions
                             .iter()
                             .any(|f| f.old_name == member1.name)
-                        {
-                            return Ok(sway::Expression::create_todo(Some(expression.to_string())));
-                        }
+                    {
+                        return Ok(sway::Expression::create_todo(Some(expression.to_string())));
                     }
 
                     todo!()
@@ -195,24 +194,21 @@ pub fn translate_member_access_expression(
             get_expression_type(project, module.clone(), scope.clone(), container)?;
 
         let container_type_name_string = container_type_name.to_string();
+        let field_name = translate_naming_convention(member.name.as_str(), Case::Snake);
 
         // Check if container is a struct
         if let Some(struct_definition) =
             project.find_struct(module.clone(), scope.clone(), &container_type_name_string)
-        {
-            let field_name = translate_naming_convention(member.name.as_str(), Case::Snake);
-
-            if struct_definition
+            && struct_definition
                 .borrow()
                 .fields
                 .iter()
                 .any(|f| f.name == field_name)
-            {
-                return Ok(Some(sway::Expression::from(sway::MemberAccess {
-                    expression: container.clone(),
-                    member: field_name,
-                })));
-            }
+        {
+            return Ok(Some(sway::Expression::from(sway::MemberAccess {
+                expression: container.clone(),
+                member: field_name,
+            })));
         }
 
         if container_type_name.is_identity() {
@@ -312,12 +308,12 @@ pub fn translate_member_access_expression(
     let mut container = translate_expression(project, module.clone(), scope.clone(), container)?;
 
     // HACK: remove read if present
-    if let sway::Expression::FunctionCall(f) = &container {
-        if let sway::Expression::MemberAccess(m) = &f.function {
-            if m.member == "read" && f.parameters.is_empty() {
-                container = m.expression.clone();
-            }
-        }
+    if let sway::Expression::FunctionCall(f) = &container
+        && let sway::Expression::MemberAccess(m) = &f.function
+        && m.member == "read"
+        && f.parameters.is_empty()
+    {
+        container = m.expression.clone();
     }
 
     let container_type_name =
@@ -344,16 +340,16 @@ pub fn translate_member_access_expression(
     }
 
     // HACK: try tacking `.read()` onto the end and checking again
-    if container_type_name.is_storage_key() {
-        if let Ok(Some(result)) = check_container(
+    if container_type_name.is_storage_key()
+        && let Ok(Some(result)) = check_container(
             project,
             &sway::Expression::create_function_calls(
                 Some(container.clone()),
                 &[("read", Some((None, vec![])))],
             ),
-        ) {
-            return Ok(result);
-        }
+        )
+    {
+        return Ok(result);
     }
 
     todo!(

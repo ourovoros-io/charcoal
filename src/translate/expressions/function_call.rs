@@ -137,24 +137,22 @@ fn translate_type_function_call(
         _,
         solidity::Type::Address | solidity::Type::AddressPayable | solidity::Type::Payable,
     ) = expression
+        && let solidity::Expression::Variable(ident) = &arguments[0]
+        && ident.name == "this"
     {
-        if let solidity::Expression::Variable(ident) = &arguments[0] {
-            if ident.name == "this" {
-                return Ok(sway::Expression::create_function_calls(
+        return Ok(sway::Expression::create_function_calls(
+            None,
+            &[(
+                "Identity::ContractId",
+                Some((
                     None,
-                    &[(
-                        "Identity::ContractId",
-                        Some((
-                            None,
-                            vec![sway::Expression::create_function_calls(
-                                None,
-                                &[("ContractId::this", Some((None, vec![])))],
-                            )],
-                        )),
+                    vec![sway::Expression::create_function_calls(
+                        None,
+                        &[("ContractId::this", Some((None, vec![])))],
                     )],
-                ));
-            }
-        }
+                )),
+            )],
+        ));
     }
 
     let from_expression =
@@ -377,32 +375,32 @@ fn translate_variable_function_call(
     }
 
     // Try to resolve the function call under the current contract
-    if let Some(contract_name) = scope.borrow().get_contract_name() {
-        if let Some(contract) = project.find_contract(module.clone(), &contract_name) {
-            let abi = contract.borrow().abi.clone();
+    if let Some(contract_name) = scope.borrow().get_contract_name()
+        && let Some(contract) = project.find_contract(module.clone(), &contract_name)
+    {
+        let abi = contract.borrow().abi.clone();
 
-            if let Some(result) = resolve_abi_function_call(
-                project,
-                module.clone(),
-                scope.clone(),
-                &abi,
-                None,
-                &name,
-                named_arguments,
-                parameters.clone(),
-                parameter_types.clone(),
-            )? {
-                return Ok(result);
-            }
+        if let Some(result) = resolve_abi_function_call(
+            project,
+            module.clone(),
+            scope.clone(),
+            &abi,
+            None,
+            &name,
+            named_arguments,
+            parameters.clone(),
+            parameter_types.clone(),
+        )? {
+            return Ok(result);
         }
     }
 
     // Check all of the module's `use` statements for crate-local imports,
     // find the module being imported, then check if the function lives there.
     for use_item in module.borrow().uses.iter() {
-        if let Some(found_module) = project.resolve_use(use_item) {
-            // Try to resolve the function call
-            if let Some(result) = resolve_function_call(
+        // Try to resolve the function call
+        if let Some(found_module) = project.resolve_use(use_item)
+            && let Some(result) = resolve_function_call(
                 project,
                 found_module.clone(),
                 scope.clone(),
@@ -410,9 +408,9 @@ fn translate_variable_function_call(
                 named_arguments,
                 parameters.clone(),
                 parameter_types.clone(),
-            )? {
-                return Ok(result);
-            }
+            )?
+        {
+            return Ok(result);
         }
     }
 
@@ -867,101 +865,143 @@ fn translate_member_access_function_call(
     }
 
     // Check for built-in variable member access function calls
-    if let solidity::Expression::Variable(identifier) = container {
+    if let solidity::Expression::Variable(solidity::Identifier { name, .. }) = container {
         if let Some(value) = translate_builtin_variable_member_access_function_call(
             project,
             module.clone(),
             scope.clone(),
-            identifier.name.as_str(),
+            name.as_str(),
             member.name.as_str(),
             arguments,
             named_arguments,
         )? {
             return Ok(value);
         }
-    }
 
-    match container {
-        solidity::Expression::Variable(solidity::Identifier { name, .. }) => {
-            let parameters = arguments
-                .iter()
-                .map(|a| translate_expression(project, module.clone(), scope.clone(), a))
-                .collect::<Result<Vec<_>, _>>()?;
+        let parameters = arguments
+            .iter()
+            .map(|a| translate_expression(project, module.clone(), scope.clone(), a))
+            .collect::<Result<Vec<_>, _>>()?;
 
-            let parameter_types = parameters
-                .iter()
-                .map(|p| get_expression_type(project, module.clone(), scope.clone(), p))
-                .collect::<Result<Vec<_>, _>>()?;
+        let parameter_types = parameters
+            .iter()
+            .map(|p| get_expression_type(project, module.clone(), scope.clone(), p))
+            .collect::<Result<Vec<_>, _>>()?;
 
-            // TODO: check full inheritance hierarchy
+        // TODO: check full inheritance hierarchy
 
-            // Check for explicit super function calls
-            if let Some((module, contract)) =
-                project.find_module_and_contract(module.clone(), &name)
+        // Check for explicit super function calls
+        if let Some((module, contract)) = project.find_module_and_contract(module.clone(), &name) {
+            let abi = contract.borrow().abi.clone();
+
+            let scope = Rc::new(RefCell::new(ir::Scope::new(
+                Some(name),
+                None,
+                Some(scope.clone()),
+            )));
+
+            if let Some(result) = resolve_abi_function_call(
+                project,
+                module.clone(),
+                scope.clone(),
+                &abi,
+                None,
+                &member.name,
+                named_arguments,
+                parameters.clone(),
+                parameter_types.clone(),
+            )? {
+                return Ok(result);
+            }
+        }
+
+        // Check for user-defined type value wrapping
+        if let "wrap" | "unwrap" = member.name.as_str()
+            && let Some(SymbolData::TypeDefinition(_)) = resolve_symbol(
+                project,
+                module.clone(),
+                scope.clone(),
+                Symbol::TypeDefinition(name.clone()),
+            )
+        {
+            return Ok(parameters[0].clone());
+        }
+
+        // Check if function is contained in an external definition
+        if let Some(external_module) =
+            project.find_module_containing_contract(module.clone(), &name)
+        {
+            // Check to see if the expression is a by-value struct constructor
+            let structs = {
+                let module = external_module.borrow();
+                module.structs.clone()
+            };
+
+            if let Some(result) = resolve_struct_constructor(
+                project,
+                module.clone(),
+                scope.clone(),
+                structs.as_slice(),
+                member.name.as_str(),
+                named_arguments,
+                parameters.clone(),
+                parameter_types.clone(),
+            )? {
+                return Ok(result);
+            }
+
+            // Try to resolve the function call
+            if let Some(result) = resolve_function_call(
+                project,
+                external_module.clone(),
+                scope.clone(),
+                member.name.as_str(),
+                named_arguments,
+                parameters.clone(),
+                parameter_types.clone(),
+            )? {
+                return Ok(result);
+            }
+        }
+
+        let container = translate_expression(project, module.clone(), scope.clone(), container)?;
+        let type_name = get_expression_type(project, module.clone(), scope.clone(), &container)?;
+
+        // Check to see if the member function is defined in the ABI type
+        {
+            let mut abi_type_name = type_name.clone();
+
+            if let sway::TypeName::Abi {
+                type_name: abi_type_name2,
+            } = &abi_type_name
+            {
+                abi_type_name = abi_type_name2.as_ref().clone();
+            }
+
+            if let sway::TypeName::Identifier {
+                name: abi_type_name_string,
+                generic_parameters: None,
+            } = &abi_type_name
+                && let Some(contract) = project.find_contract(module.clone(), &abi_type_name_string)
             {
                 let abi = contract.borrow().abi.clone();
 
-                let scope = Rc::new(RefCell::new(ir::Scope::new(
-                    Some(name),
-                    None,
-                    Some(scope.clone()),
-                )));
+                let container = coerce_expression(
+                    project,
+                    module.clone(),
+                    scope.clone(),
+                    &container,
+                    &type_name,
+                    &abi_type_name,
+                )
+                .unwrap();
 
                 if let Some(result) = resolve_abi_function_call(
                     project,
                     module.clone(),
                     scope.clone(),
                     &abi,
-                    None,
-                    &member.name,
-                    named_arguments,
-                    parameters.clone(),
-                    parameter_types.clone(),
-                )? {
-                    return Ok(result);
-                }
-            }
-
-            // Check for user-defined type value wrapping
-            if let "wrap" | "unwrap" = member.name.as_str() {
-                if let Some(SymbolData::TypeDefinition(_)) = resolve_symbol(
-                    project,
-                    module.clone(),
-                    scope.clone(),
-                    Symbol::TypeDefinition(name.clone()),
-                ) {
-                    return Ok(parameters[0].clone());
-                }
-            }
-
-            // Check if function is contained in an external definition
-            if let Some(external_module) =
-                project.find_module_containing_contract(module.clone(), &name)
-            {
-                // Check to see if the expression is a by-value struct constructor
-                let structs = {
-                    let module = external_module.borrow();
-                    module.structs.clone()
-                };
-
-                if let Some(result) = resolve_struct_constructor(
-                    project,
-                    module.clone(),
-                    scope.clone(),
-                    structs.as_slice(),
-                    member.name.as_str(),
-                    named_arguments,
-                    parameters.clone(),
-                    parameter_types.clone(),
-                )? {
-                    return Ok(result);
-                }
-
-                // Try to resolve the function call
-                if let Some(result) = resolve_function_call(
-                    project,
-                    external_module.clone(),
-                    scope.clone(),
+                    Some(&container),
                     member.name.as_str(),
                     named_arguments,
                     parameters.clone(),
@@ -970,112 +1010,56 @@ fn translate_member_access_function_call(
                     return Ok(result);
                 }
             }
-
-            let container =
-                translate_expression(project, module.clone(), scope.clone(), container)?;
-
-            let type_name =
-                get_expression_type(project, module.clone(), scope.clone(), &container)?;
-
-            // Check to see if the member function is defined in the ABI type
-            {
-                let mut abi_type_name = type_name.clone();
-
-                if let sway::TypeName::Abi {
-                    type_name: abi_type_name2,
-                } = &abi_type_name
-                {
-                    abi_type_name = abi_type_name2.as_ref().clone();
-                }
-
-                if let sway::TypeName::Identifier {
-                    name: abi_type_name_string,
-                    generic_parameters: None,
-                } = &abi_type_name
-                {
-                    if let Some(contract) =
-                        project.find_contract(module.clone(), &abi_type_name_string)
-                    {
-                        let abi = contract.borrow().abi.clone();
-
-                        let container = coerce_expression(
-                            project,
-                            module.clone(),
-                            scope.clone(),
-                            &container,
-                            &type_name,
-                            &abi_type_name,
-                        )
-                        .unwrap();
-
-                        if let Some(result) = resolve_abi_function_call(
-                            project,
-                            module.clone(),
-                            scope.clone(),
-                            &abi,
-                            Some(&container),
-                            member.name.as_str(),
-                            named_arguments,
-                            parameters.clone(),
-                            parameter_types.clone(),
-                        )? {
-                            return Ok(result);
-                        }
-                    }
-                }
-            }
-
-            // Check if the member call is an address-specific built-in function
-            if type_name.is_identity() {
-                match member.name.as_str() {
-                    "call" if arguments.len() == 1 => {
-                        let payload = translate_expression(
-                            project,
-                            module.clone(),
-                            scope.clone(),
-                            &arguments[0],
-                        )?;
-                        return translate_address_call_expression(
-                            project,
-                            module.clone(),
-                            scope.clone(),
-                            &payload,
-                            None,
-                            None,
-                            None,
-                        );
-                    }
-
-                    "delegatecall" => {
-                        //
-                        // TODO: is delegatecall possible?
-                        //
-
-                        return Ok(sway::Expression::create_todo(Some(expression.to_string())));
-                    }
-
-                    "staticcall" => {
-                        //
-                        // TODO: is staticcall possible?
-                        //
-
-                        return Ok(sway::Expression::create_todo(Some(expression.to_string())));
-                    }
-
-                    _ => {}
-                }
-            }
-
-            // TODO
-            // Check to see if the function is from using library
-            // if let Some(f) =  module.borrow().using_directives.iter().find_map(|using| using.functions.iter().find(|fnc| fnc.old_name == member.name)) {
-            //     return Ok(sway::Expression::create_function_calls(Some(container), &[
-            //         (&f.new_name, Some((None, parameters)))
-            //     ]))
-            // }
         }
 
-        _ => {}
+        // Check if the member call is an address-specific built-in function
+        if type_name.is_identity() {
+            match member.name.as_str() {
+                "call" if arguments.len() == 1 => {
+                    let payload = translate_expression(
+                        project,
+                        module.clone(),
+                        scope.clone(),
+                        &arguments[0],
+                    )?;
+                    return translate_address_call_expression(
+                        project,
+                        module.clone(),
+                        scope.clone(),
+                        &payload,
+                        None,
+                        None,
+                        None,
+                    );
+                }
+
+                "delegatecall" => {
+                    //
+                    // TODO: is delegatecall possible?
+                    //
+
+                    return Ok(sway::Expression::create_todo(Some(expression.to_string())));
+                }
+
+                "staticcall" => {
+                    //
+                    // TODO: is staticcall possible?
+                    //
+
+                    return Ok(sway::Expression::create_todo(Some(expression.to_string())));
+                }
+
+                _ => {}
+            }
+        }
+
+        // TODO
+        // Check to see if the function is from using library
+        // if let Some(f) =  module.borrow().using_directives.iter().find_map(|using| using.functions.iter().find(|fnc| fnc.old_name == member.name)) {
+        //     return Ok(sway::Expression::create_function_calls(Some(container), &[
+        //         (&f.new_name, Some((None, parameters)))
+        //     ]))
+        // }
     }
 
     let solidity_container = container;
@@ -1170,10 +1154,10 @@ fn translate_member_access_function_call(
 
             for using_directive in module.borrow().using_directives.clone() {
                 // Make sure the type names match
-                if let Some(for_type) = using_directive.for_type.as_ref() {
-                    if *for_type != type_name {
-                        continue;
-                    }
+                if let Some(for_type) = using_directive.for_type.as_ref()
+                    && *for_type != type_name
+                {
+                    continue;
                 }
 
                 // Look up the definition of the using directive
@@ -1259,10 +1243,10 @@ fn translate_member_access_function_call(
             // Check if this is a function from a using directive
             for using_directive in module.borrow().using_directives.clone() {
                 // Make sure the type names match
-                if let Some(for_type) = using_directive.for_type.as_ref() {
-                    if *for_type != type_name {
-                        continue;
-                    }
+                if let Some(for_type) = using_directive.for_type.as_ref()
+                    && *for_type != type_name
+                {
+                    continue;
                 }
 
                 // TODO
@@ -1326,10 +1310,10 @@ fn translate_member_access_function_call(
             // Check if this is a function from a using directive
             for using_directive in module.borrow().using_directives.clone() {
                 // Make sure the type names match
-                if let Some(for_type) = using_directive.for_type.as_ref() {
-                    if *for_type != type_name {
-                        continue;
-                    }
+                if let Some(for_type) = using_directive.for_type.as_ref()
+                    && *for_type != type_name
+                {
+                    continue;
                 }
 
                 // TODO
@@ -1624,43 +1608,42 @@ fn translate_function_call_block_member_access_function_call(
             name: contract_name,
             generic_parameters: None,
         } = &abi_type_name
+            && let Some(contract) = project.find_contract(module.clone(), &contract_name)
         {
-            if let Some(contract) = project.find_contract(module.clone(), &contract_name) {
-                let abi = contract.borrow().abi.clone();
+            let abi = contract.borrow().abi.clone();
 
-                let parameters = arguments
-                    .iter()
-                    .map(|a| translate_expression(project, module.clone(), scope.clone(), a))
-                    .collect::<Result<Vec<_>, _>>()?;
+            let parameters = arguments
+                .iter()
+                .map(|a| translate_expression(project, module.clone(), scope.clone(), a))
+                .collect::<Result<Vec<_>, _>>()?;
 
-                let parameter_types = parameters
-                    .iter()
-                    .map(|p| get_expression_type(project, module.clone(), scope.clone(), p))
-                    .collect::<Result<Vec<_>, _>>()?;
+            let parameter_types = parameters
+                .iter()
+                .map(|p| get_expression_type(project, module.clone(), scope.clone(), p))
+                .collect::<Result<Vec<_>, _>>()?;
 
-                let container = coerce_expression(
-                    project,
-                    module.clone(),
-                    scope.clone(),
-                    &container,
-                    &type_name,
-                    &abi_type_name,
-                )
-                .unwrap();
+            let container = coerce_expression(
+                project,
+                module.clone(),
+                scope.clone(),
+                &container,
+                &type_name,
+                &abi_type_name,
+            )
+            .unwrap();
 
-                if let Some(result) = resolve_abi_function_call(
-                    project,
-                    module.clone(),
-                    scope.clone(),
-                    &abi,
-                    Some(&container),
-                    &member.name,
-                    None,
-                    parameters,
-                    parameter_types,
-                )? {
-                    return Ok(result);
-                }
+            if let Some(result) = resolve_abi_function_call(
+                project,
+                module.clone(),
+                scope.clone(),
+                &abi,
+                Some(&container),
+                &member.name,
+                None,
+                parameters,
+                parameter_types,
+            )? {
+                return Ok(result);
             }
         }
     }
@@ -1890,61 +1873,61 @@ fn translate_identity_member_access_function_call(
         let mut expression = container.clone();
 
         // HACK: remove `.read()`
-        if let sway::Expression::FunctionCall(f) = &expression {
-            if let sway::Expression::MemberAccess(m) = &f.function {
-                if m.member == "read" && f.parameters.is_empty() {
-                    expression = m.expression.clone();
-                }
-            }
+        if let sway::Expression::FunctionCall(f) = &expression
+            && let sway::Expression::MemberAccess(m) = &f.function
+            && m.member == "read"
+            && f.parameters.is_empty()
+        {
+            expression = m.expression.clone();
         }
 
         match &expression {
             sway::Expression::PathExpr(p) => {
-                if let sway::PathExprRoot::Identifier(ident) = &p.root {
-                    if p.segments.is_empty() {
-                        let mut name_found = false;
+                if let sway::PathExprRoot::Identifier(ident) = &p.root
+                    && p.segments.is_empty()
+                {
+                    let mut name_found = false;
 
-                        // Check if ident is a configurable field
-                        if let Some(configurable) = module.borrow().configurable.as_ref() {
-                            for field in configurable.fields.iter() {
-                                if field.name == *ident {
-                                    let mut field_type_name = field.type_name.clone();
+                    // Check if ident is a configurable field
+                    if let Some(configurable) = module.borrow().configurable.as_ref() {
+                        for field in configurable.fields.iter() {
+                            if field.name == *ident {
+                                let mut field_type_name = field.type_name.clone();
 
-                                    if let sway::TypeName::Abi { type_name } = &field_type_name {
-                                        field_type_name = type_name.as_ref().clone();
-                                    }
-
-                                    if let sway::TypeName::Identifier {
-                                        name: abi_type_name,
-                                        generic_parameters: None,
-                                    } = &field_type_name
-                                    {
-                                        name = abi_type_name.clone();
-                                        name_found = true;
-                                    }
-                                }
-                            }
-                        }
-
-                        // Check if ident is a constant
-                        if !name_found {
-                            if let Some(constant) =
-                                module.borrow().constants.iter().find(|c| c.name == *ident)
-                            {
-                                let mut constant_type_name = constant.type_name.clone();
-
-                                if let sway::TypeName::Abi { type_name } = &constant_type_name {
-                                    constant_type_name = type_name.as_ref().clone();
+                                if let sway::TypeName::Abi { type_name } = &field_type_name {
+                                    field_type_name = type_name.as_ref().clone();
                                 }
 
                                 if let sway::TypeName::Identifier {
                                     name: abi_type_name,
                                     generic_parameters: None,
-                                } = &constant_type_name
+                                } = &field_type_name
                                 {
                                     name = abi_type_name.clone();
-                                    // name_found = true;
+                                    name_found = true;
                                 }
+                            }
+                        }
+                    }
+
+                    // Check if ident is a constant
+                    if !name_found {
+                        if let Some(constant) =
+                            module.borrow().constants.iter().find(|c| c.name == *ident)
+                        {
+                            let mut constant_type_name = constant.type_name.clone();
+
+                            if let sway::TypeName::Abi { type_name } = &constant_type_name {
+                                constant_type_name = type_name.as_ref().clone();
+                            }
+
+                            if let sway::TypeName::Identifier {
+                                name: abi_type_name,
+                                generic_parameters: None,
+                            } = &constant_type_name
+                            {
+                                name = abi_type_name.clone();
+                                // name_found = true;
                             }
                         }
                     }
@@ -1952,66 +1935,60 @@ fn translate_identity_member_access_function_call(
             }
 
             sway::Expression::MemberAccess(m) => {
-                if let sway::Expression::PathExpr(path_expr) = &m.expression {
-                    if let sway::PathExprRoot::Identifier(root_ident) = &path_expr.root {
-                        if root_ident == "storage" {
-                            let mut storage_namespace: Option<Rc<RefCell<sway::StorageNamespace>>> =
-                                None;
+                if let sway::Expression::PathExpr(path_expr) = &m.expression
+                    && let sway::PathExprRoot::Identifier(root_ident) = &path_expr.root
+                    && root_ident == "storage"
+                {
+                    let mut storage_namespace: Option<Rc<RefCell<sway::StorageNamespace>>> = None;
 
-                            for segment in path_expr.segments.iter() {
-                                let namespace = match storage_namespace {
-                                    None => {
-                                        let mut module = module.borrow_mut();
-                                        let storage = module.get_storage(scope.clone());
-                                        storage
-                                            .borrow()
-                                            .namespaces
-                                            .iter()
-                                            .find(|s| s.borrow().name == segment.name)
-                                            .cloned()
-                                    }
-
-                                    Some(storage_namespace) => storage_namespace
-                                        .borrow()
-                                        .namespaces
-                                        .iter()
-                                        .find(|s| s.borrow().name == segment.name)
-                                        .cloned(),
-                                };
-
-                                if namespace.is_none() {
-                                    storage_namespace = None;
-                                    break;
-                                }
-
-                                storage_namespace = namespace;
-                            }
-
-                            if let Some(storage_namespace) = storage_namespace {
-                                if let Some(storage_field) = storage_namespace
+                    for segment in path_expr.segments.iter() {
+                        let namespace = match storage_namespace {
+                            None => {
+                                let mut module = module.borrow_mut();
+                                let storage = module.get_storage(scope.clone());
+                                storage
                                     .borrow()
-                                    .fields
+                                    .namespaces
                                     .iter()
-                                    .find(|s| s.name == m.member)
-                                {
-                                    let mut storage_field_type_name =
-                                        storage_field.type_name.clone();
-
-                                    if let sway::TypeName::Abi { type_name } =
-                                        &storage_field_type_name
-                                    {
-                                        storage_field_type_name = type_name.as_ref().clone();
-                                    }
-
-                                    if let sway::TypeName::Identifier {
-                                        name: abi_type_name,
-                                        generic_parameters: None,
-                                    } = &storage_field_type_name
-                                    {
-                                        name = abi_type_name.clone();
-                                    }
-                                }
+                                    .find(|s| s.borrow().name == segment.name)
+                                    .cloned()
                             }
+
+                            Some(storage_namespace) => storage_namespace
+                                .borrow()
+                                .namespaces
+                                .iter()
+                                .find(|s| s.borrow().name == segment.name)
+                                .cloned(),
+                        };
+
+                        if namespace.is_none() {
+                            storage_namespace = None;
+                            break;
+                        }
+
+                        storage_namespace = namespace;
+                    }
+
+                    if let Some(storage_namespace) = storage_namespace
+                        && let Some(storage_field) = storage_namespace
+                            .borrow()
+                            .fields
+                            .iter()
+                            .find(|s| s.name == m.member)
+                    {
+                        let mut storage_field_type_name = storage_field.type_name.clone();
+
+                        if let sway::TypeName::Abi { type_name } = &storage_field_type_name {
+                            storage_field_type_name = type_name.as_ref().clone();
+                        }
+
+                        if let sway::TypeName::Identifier {
+                            name: abi_type_name,
+                            generic_parameters: None,
+                        } = &storage_field_type_name
+                        {
+                            name = abi_type_name.clone();
                         }
                     }
                 }
@@ -2101,16 +2078,14 @@ fn translate_storage_vec_member_access_function_call(
         )
     };
 
-    if let sway::Expression::FunctionCall(f) = &expression {
-        if let sway::Expression::MemberAccess(m) = &f.function {
-            if m.member == "read" && f.parameters.is_empty() {
-                let container_type =
-                    get_expression_type(project, module.clone(), scope.clone(), &m.expression)?;
-                if container_type.is_storage_key() {
-                    expression = m.expression.clone();
-                }
-            }
-        }
+    if let sway::Expression::FunctionCall(f) = &expression
+        && let sway::Expression::MemberAccess(m) = &f.function
+        && m.member == "read"
+        && f.parameters.is_empty()
+        && get_expression_type(project, module.clone(), scope.clone(), &m.expression)?
+            .is_storage_key()
+    {
+        expression = m.expression.clone();
     }
 
     let type_name = get_expression_type(project, module.clone(), scope.clone(), &expression)?;
@@ -2290,7 +2265,7 @@ fn translate_builtin_abi_member_access_function_call(
     named_arguments: Option<&[solidity::NamedArgument]>,
 ) -> Result<Option<sway::Expression>, Error> {
     assert!(named_arguments.is_none());
-    
+
     match member_name {
         "decode" => {
             // abi.decode(encodedData, (uint256, bool)) =>
@@ -2680,34 +2655,33 @@ fn translate_super_member_access_function_call(
         .map(|p| get_expression_type(project, module.clone(), scope.clone(), p))
         .collect::<Result<Vec<_>, _>>()?;
 
-    if let Some(contract_name) = scope.borrow().get_contract_name() {
-        if let Some((module, contract)) =
+    if let Some(contract_name) = scope.borrow().get_contract_name()
+        && let Some((module, contract)) =
             project.find_module_and_contract(module.clone(), &contract_name)
-        {
-            let abi = contract.borrow().abi.clone();
+    {
+        let abi = contract.borrow().abi.clone();
 
-            for inherit in abi.inherits.iter() {
-                let contract_name = inherit.to_string();
+        for inherit in abi.inherits.iter() {
+            let contract_name = inherit.to_string();
 
-                let scope = Rc::new(RefCell::new(ir::Scope::new(
-                    Some(&contract_name),
-                    None,
-                    Some(scope.clone()),
-                )));
+            let scope = Rc::new(RefCell::new(ir::Scope::new(
+                Some(&contract_name),
+                None,
+                Some(scope.clone()),
+            )));
 
-                if let Some(result) = resolve_abi_function_call(
-                    project,
-                    module.clone(),
-                    scope.clone(),
-                    &abi,
-                    None,
-                    member,
-                    named_arguments,
-                    parameters.clone(),
-                    parameter_types.clone(),
-                )? {
-                    return Ok(Some(result));
-                }
+            if let Some(result) = resolve_abi_function_call(
+                project,
+                module.clone(),
+                scope.clone(),
+                &abi,
+                None,
+                member,
+                named_arguments,
+                parameters.clone(),
+                parameter_types.clone(),
+            )? {
+                return Ok(Some(result));
             }
         }
     }

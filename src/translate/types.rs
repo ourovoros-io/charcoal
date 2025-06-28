@@ -473,26 +473,19 @@ pub fn translate_type_name(
 
                         Ok(sway::Expression::PathExpr(path_expr)) => {
                             // Check to see if the expression is a constant
-                            if let Some(ident) = path_expr.as_identifier() {
-                                if let Some(constant) =
+                            if let Some(ident) = path_expr.as_identifier()
+                                && let Some(constant) =
                                     module.borrow().constants.iter().find(|c| c.name == ident)
-                                {
-                                    if let Some(sway::Expression::Literal(
-                                        sway::Literal::DecInt(value, _)
-                                        | sway::Literal::HexInt(value, _),
-                                    )) = constant.value.as_ref()
-                                    {
-                                        println!(
-                                            "WARNING: Constants as array lengths are unsupported. Using `{}` instead of `{}`.",
-                                            value, ident
-                                        );
-                                        value.clone().try_into().unwrap()
-                                    } else {
-                                        panic!("Invalid array length expression: {length:#?}")
-                                    }
-                                } else {
-                                    panic!("Invalid array length expression: {length:#?}")
-                                }
+                                && let Some(sway::Expression::Literal(
+                                    sway::Literal::DecInt(value, _)
+                                    | sway::Literal::HexInt(value, _),
+                                )) = constant.value.as_ref()
+                            {
+                                println!(
+                                    "WARNING: Constants as array lengths are unsupported. Using `{}` instead of `{}`.",
+                                    value, ident
+                                );
+                                value.clone().try_into().unwrap()
                             } else {
                                 panic!("Invalid array length expression: {length:#?}")
                             }

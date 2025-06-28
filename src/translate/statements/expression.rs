@@ -75,12 +75,10 @@ pub fn translate_expression_statement(
                             .iter()
                             .map(|(_, p)| sway::LetIdentifier {
                                 is_mutable: false,
-                                name: if let Some(p) = p.as_ref() {
-                                    if let Some(name) = p.name.as_ref() {
-                                        translate_naming_convention(name.name.as_str(), Case::Snake)
-                                    } else {
-                                        "_".into()
-                                    }
+                                name: if let Some(p) = p.as_ref()
+                                    && let Some(name) = p.name.as_ref()
+                                {
+                                    translate_naming_convention(name.name.as_str(), Case::Snake)
                                 } else {
                                     "_".into()
                                 },

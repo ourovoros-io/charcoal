@@ -34,16 +34,16 @@ pub fn translate_return_statement(
     let mut expression = translate_expression(project, module.clone(), scope.clone(), expression)?;
 
     // HACK: remove `.read()` if present
-    if let sway::Expression::FunctionCall(f) = &expression {
-        if let sway::Expression::MemberAccess(m) = &f.function {
-            if m.member == "read" && f.parameters.is_empty() {
-                let container_type =
-                    get_expression_type(project, module.clone(), scope.clone(), &m.expression)?;
+    if let sway::Expression::FunctionCall(f) = &expression
+        && let sway::Expression::MemberAccess(m) = &f.function
+        && m.member == "read"
+        && f.parameters.is_empty()
+    {
+        let container_type =
+            get_expression_type(project, module.clone(), scope.clone(), &m.expression)?;
 
-                if container_type.is_storage_key() {
-                    expression = m.expression.clone();
-                }
-            }
+        if container_type.is_storage_key() {
+            expression = m.expression.clone();
         }
     }
 

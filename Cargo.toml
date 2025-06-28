@@ -1,5 +1,5 @@
 [package]
-name = "charcoal-v2"
+name = "charcoal"
 version = "0.2.0"
 edition = "2024"
 

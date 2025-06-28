@@ -89,159 +89,146 @@ pub fn coerce_expression(
     let mut add_read_member_call = false;
 
     // HACK: If the expression is reading from a `StorageKey<T>`, remove the `.read()` temporarily
-    if let sway::Expression::FunctionCall(f) = &expression {
-        if let sway::Expression::MemberAccess(m) = &f.function {
-            if m.member == "read" && f.parameters.is_empty() {
-                let container_type =
-                    get_expression_type(project, module.clone(), scope.clone(), &m.expression)
-                        .unwrap();
+    if let sway::Expression::FunctionCall(f) = &expression
+        && let sway::Expression::MemberAccess(m) = &f.function
+    {
+        if m.member == "read" && f.parameters.is_empty() {
+            let container_type =
+                get_expression_type(project, module.clone(), scope.clone(), &m.expression).unwrap();
 
-                if container_type.is_storage_key() {
-                    expression = m.expression.clone();
-                    from_type_name = container_type;
-                    add_read_member_call = true;
-                }
+            if container_type.is_storage_key() {
+                expression = m.expression.clone();
+                from_type_name = container_type;
+                add_read_member_call = true;
             }
         }
     }
 
-    if let Some(storage_key_type) = from_type_name.storage_key_type() {
-        if storage_key_type.is_storage_string() {
-            // Check for `StorageKey<StorageString>` to `Bytes` coercions
-            if to_type_name.is_bytes() {
-                return Some(sway::Expression::create_function_calls(
-                    Some(expression),
-                    &[
-                        ("read_slice", Some((None, vec![]))),
-                        ("unwrap", Some((None, vec![]))),
-                        ("as_bytes", Some((None, vec![]))),
-                    ],
-                ));
-            }
-            // Check for `StorageKey<StorageString>` to `String` coercions
-            if to_type_name.is_string() {
-                return Some(sway::Expression::create_function_calls(
-                    Some(expression),
-                    &[
-                        ("read_slice", Some((None, vec![]))),
-                        ("unwrap", Some((None, vec![]))),
-                    ],
-                ));
-            }
+    if let Some(storage_key_type) = from_type_name.storage_key_type()
+        && storage_key_type.is_storage_string()
+    {
+        // Check for `StorageKey<StorageString>` to `Bytes` coercions
+        if to_type_name.is_bytes() {
+            return Some(sway::Expression::create_function_calls(
+                Some(expression),
+                &[
+                    ("read_slice", Some((None, vec![]))),
+                    ("unwrap", Some((None, vec![]))),
+                    ("as_bytes", Some((None, vec![]))),
+                ],
+            ));
+        }
+
+        // Check for `StorageKey<StorageString>` to `String` coercions
+        if to_type_name.is_string() {
+            return Some(sway::Expression::create_function_calls(
+                Some(expression),
+                &[
+                    ("read_slice", Some((None, vec![]))),
+                    ("unwrap", Some((None, vec![]))),
+                ],
+            ));
         }
     }
 
     // Check for `StorageKey<StorageVec<T>>` to `Vec<T>` coercions
-    if let Some(storage_key_type) = from_type_name.storage_key_type() {
-        if let Some(storage_vec_type) = storage_key_type.storage_vec_type() {
-            if let Some(vec_type) = to_type_name.vec_type() {
-                let get_expression = sway::Expression::create_function_calls(
-                    Some(expression.clone()),
-                    &[
-                        (
-                            "get",
+    if let Some(storage_key_type) = from_type_name.storage_key_type()
+        && let Some(storage_vec_type) = storage_key_type.storage_vec_type()
+        && let Some(vec_type) = to_type_name.vec_type()
+    {
+        let get_expression = sway::Expression::create_function_calls(
+            Some(expression.clone()),
+            &[
+                (
+                    "get",
+                    Some((
+                        None,
+                        vec![sway::Expression::create_identifier("i".to_string())],
+                    )),
+                ),
+                ("unwrap", Some((None, vec![]))),
+                ("read", Some((None, vec![]))),
+            ],
+        );
+
+        let element_expression = coerce_expression(
+            project,
+            module.clone(),
+            scope.clone(),
+            &get_expression,
+            &storage_vec_type,
+            &vec_type,
+        )
+        .unwrap();
+
+        return Some(sway::Expression::from(sway::Block {
+            statements: vec![
+                sway::Statement::from(sway::Let {
+                    pattern: sway::LetPattern::Identifier(sway::LetIdentifier {
+                        is_mutable: false,
+                        name: "len".to_string(),
+                    }),
+                    type_name: None,
+                    value: sway::Expression::create_function_calls(
+                        Some(expression.clone()),
+                        &[("len", Some((None, vec![])))],
+                    ),
+                }),
+                sway::Statement::from(sway::Let {
+                    pattern: sway::LetPattern::Identifier(sway::LetIdentifier {
+                        is_mutable: true,
+                        name: "v".to_string(),
+                    }),
+                    type_name: None,
+                    value: sway::Expression::create_function_calls(
+                        None,
+                        &[(
+                            "Vec::with_capacity",
                             Some((
                                 None,
-                                vec![sway::Expression::create_identifier("i".to_string())],
+                                vec![sway::Expression::create_identifier("len".to_string())],
                             )),
-                        ),
-                        ("unwrap", Some((None, vec![]))),
-                        ("read", Some((None, vec![]))),
-                    ],
-                );
-
-                let element_expression = coerce_expression(
-                    project,
-                    module.clone(),
-                    scope.clone(),
-                    &get_expression,
-                    &storage_vec_type,
-                    &vec_type,
-                )
-                .unwrap();
-
-                return Some(sway::Expression::from(sway::Block {
-                    statements: vec![
-                        sway::Statement::from(sway::Let {
-                            pattern: sway::LetPattern::Identifier(sway::LetIdentifier {
-                                is_mutable: false,
-                                name: "len".to_string(),
-                            }),
-                            type_name: None,
-                            value: sway::Expression::create_function_calls(
-                                Some(expression.clone()),
-                                &[("len", Some((None, vec![])))],
-                            ),
-                        }),
-                        sway::Statement::from(sway::Let {
-                            pattern: sway::LetPattern::Identifier(sway::LetIdentifier {
-                                is_mutable: true,
-                                name: "v".to_string(),
-                            }),
-                            type_name: None,
-                            value: sway::Expression::create_function_calls(
+                        )],
+                    ),
+                }),
+                sway::Statement::from(sway::Let {
+                    pattern: sway::LetPattern::Identifier(sway::LetIdentifier {
+                        is_mutable: true,
+                        name: "i".to_string(),
+                    }),
+                    type_name: None,
+                    value: sway::Expression::from(sway::Literal::DecInt(BigUint::zero(), None)),
+                }),
+                sway::Statement::from(sway::Expression::from(sway::While {
+                    condition: sway::Expression::from(sway::BinaryExpression {
+                        operator: "<".to_string(),
+                        lhs: sway::Expression::create_identifier("i".to_string()),
+                        rhs: sway::Expression::create_identifier("len".to_string()),
+                    }),
+                    body: sway::Block {
+                        statements: vec![
+                            sway::Statement::from(sway::Expression::create_function_calls(
                                 None,
-                                &[(
-                                    "Vec::with_capacity",
-                                    Some((
-                                        None,
-                                        vec![sway::Expression::create_identifier(
-                                            "len".to_string(),
-                                        )],
-                                    )),
-                                )],
-                            ),
-                        }),
-                        sway::Statement::from(sway::Let {
-                            pattern: sway::LetPattern::Identifier(sway::LetIdentifier {
-                                is_mutable: true,
-                                name: "i".to_string(),
-                            }),
-                            type_name: None,
-                            value: sway::Expression::from(sway::Literal::DecInt(
-                                BigUint::zero(),
-                                None,
-                            )),
-                        }),
-                        sway::Statement::from(sway::Expression::from(sway::While {
-                            condition: sway::Expression::from(sway::BinaryExpression {
-                                operator: "<".to_string(),
-                                lhs: sway::Expression::create_identifier("i".to_string()),
-                                rhs: sway::Expression::create_identifier("len".to_string()),
-                            }),
-                            body: sway::Block {
-                                statements: vec![
-                                    sway::Statement::from(sway::Expression::create_function_calls(
-                                        None,
-                                        &[
-                                            ("v", None),
-                                            (
-                                                "push",
-                                                Some((None, vec![element_expression.clone()])),
-                                            ),
-                                        ],
-                                    )),
-                                    sway::Statement::from(sway::Expression::from(
-                                        sway::BinaryExpression {
-                                            operator: "+=".to_string(),
-                                            lhs: sway::Expression::create_identifier(
-                                                "i".to_string(),
-                                            ),
-                                            rhs: sway::Expression::from(sway::Literal::DecInt(
-                                                BigUint::one(),
-                                                None,
-                                            )),
-                                        },
-                                    )),
+                                &[
+                                    ("v", None),
+                                    ("push", Some((None, vec![element_expression.clone()]))),
                                 ],
-                                final_expr: None,
-                            },
-                        })),
-                    ],
-                    final_expr: Some(sway::Expression::create_identifier("v".to_string())),
-                }));
-            }
-        }
+                            )),
+                            sway::Statement::from(sway::Expression::from(sway::BinaryExpression {
+                                operator: "+=".to_string(),
+                                lhs: sway::Expression::create_identifier("i".to_string()),
+                                rhs: sway::Expression::from(sway::Literal::DecInt(
+                                    BigUint::one(),
+                                    None,
+                                )),
+                            })),
+                        ],
+                        final_expr: None,
+                    },
+                })),
+            ],
+            final_expr: Some(sway::Expression::create_identifier("v".to_string())),
+        }));
     }
 
     // HACK: Restore the `.read()` if we removed it
@@ -266,16 +253,14 @@ pub fn coerce_expression(
     }
 
     // Check for `T` to `StorageKey<T>` coercions
-    if let Some(storage_key_type) = to_type_name.storage_key_type() {
-        if storage_key_type.is_compatible_with(&from_type_name) {
-            if let sway::Expression::FunctionCall(f) = &expression {
-                if let sway::Expression::MemberAccess(m) = &f.function {
-                    if m.member == "read" && f.parameters.len() == 0 {
-                        return Some(m.expression.clone());
-                    }
-                }
-            }
-        }
+    if let Some(storage_key_type) = to_type_name.storage_key_type()
+        && storage_key_type.is_compatible_with(&from_type_name)
+        && let sway::Expression::FunctionCall(f) = &expression
+        && let sway::Expression::MemberAccess(m) = &f.function
+        && m.member == "read"
+        && f.parameters.len() == 0
+    {
+        return Some(m.expression.clone());
     }
 
     // Check for `Identity` to `b256` coercions
@@ -336,59 +321,55 @@ pub fn coerce_expression(
             expression = e.as_ref().clone();
         }
 
-        if let sway::Expression::FunctionCall(f) = &expression {
-            if let Some("abi") = f.function.as_identifier() {
-                if f.parameters.len() == 2 {
-                    return Some(
-                        coerce_expression(
-                            project,
-                            module.clone(),
-                            scope.clone(),
-                            &if let Some(comment) = comment {
-                                sway::Expression::Commented(
-                                    comment,
-                                    Box::new(f.parameters[1].clone()),
-                                )
-                            } else {
-                                f.parameters[1].clone()
-                            },
-                            &b256_type_name,
-                            to_type_name,
-                        )
-                        .unwrap(),
-                    );
-                }
+        if let sway::Expression::FunctionCall(f) = &expression
+            && let Some("abi") = f.function.as_identifier()
+        {
+            if f.parameters.len() == 2 {
+                return Some(
+                    coerce_expression(
+                        project,
+                        module.clone(),
+                        scope.clone(),
+                        &if let Some(comment) = comment {
+                            sway::Expression::Commented(comment, Box::new(f.parameters[1].clone()))
+                        } else {
+                            f.parameters[1].clone()
+                        },
+                        &b256_type_name,
+                        to_type_name,
+                    )
+                    .unwrap(),
+                );
             }
         }
     }
 
     // Check for `Identity` to abi cast coercions
-    if from_type_name.is_identity() {
-        if project
+    if from_type_name.is_identity()
+        && project
             .find_contract(module.clone(), to_type_name.to_string().as_str())
             .is_some()
-        {
-            return Some(sway::Expression::create_function_calls(
-                None,
-                &[(
-                    "abi",
-                    Some((
-                        None,
-                        vec![
-                            sway::Expression::create_identifier(to_type_name.to_string()),
-                            sway::Expression::create_function_calls(
-                                Some(expression),
-                                &[
-                                    ("as_contract_id", Some((None, vec![]))),
-                                    ("unwrap", Some((None, vec![]))),
-                                    ("into", Some((None, vec![]))),
-                                ],
-                            ),
-                        ],
-                    )),
-                )],
-            ));
-        }
+    {
+        return Some(sway::Expression::create_function_calls(
+            None,
+            &[(
+                "abi",
+                Some((
+                    None,
+                    vec![
+                        sway::Expression::create_identifier(to_type_name.to_string()),
+                        sway::Expression::create_function_calls(
+                            Some(expression),
+                            &[
+                                ("as_contract_id", Some((None, vec![]))),
+                                ("unwrap", Some((None, vec![]))),
+                                ("into", Some((None, vec![]))),
+                            ],
+                        ),
+                    ],
+                )),
+            )],
+        ));
     }
 
     // Check for `ContractId` to `Identity` coercions
@@ -880,54 +861,32 @@ pub fn coerce_expression(
     }
 
     // Check for `[u8; 32]` to `b256` coercions
-    if let Some(length) = from_type_name.u8_array_length() {
-        if length == 32 && to_type_name.is_b256() {
-            return Some(sway::Expression::create_function_calls(
-                None,
-                &[("b256::from_be_bytes", Some((None, vec![expression])))],
-            ));
-        }
+    if let Some(length) = from_type_name.u8_array_length()
+        && length == 32
+        && to_type_name.is_b256()
+    {
+        return Some(sway::Expression::create_function_calls(
+            None,
+            &[("b256::from_be_bytes", Some((None, vec![expression])))],
+        ));
     }
 
     // Check for array to array coercions
     if let (Some((lhs_type_name, lhs_len)), Some((rhs_type_name, rhs_len))) =
         (from_type_name.array_info(), to_type_name.array_info())
+        && lhs_len >= rhs_len
     {
-        if lhs_len >= rhs_len {
-            if let sway::Expression::Array(array) = &expression {
-                return Some(sway::Expression::from(sway::Array {
-                    elements: array
-                        .elements
-                        .iter()
-                        .map(|e| {
-                            coerce_expression(
-                                project,
-                                module.clone(),
-                                scope.clone(),
-                                e,
-                                &lhs_type_name,
-                                &rhs_type_name,
-                            )
-                            .unwrap()
-                        })
-                        .collect(),
-                }));
-            }
-
+        if let sway::Expression::Array(array) = &expression {
             return Some(sway::Expression::from(sway::Array {
-                elements: (0..rhs_len)
-                    .map(|i| {
+                elements: array
+                    .elements
+                    .iter()
+                    .map(|e| {
                         coerce_expression(
                             project,
                             module.clone(),
                             scope.clone(),
-                            &sway::Expression::from(sway::ArrayAccess {
-                                expression: expression.clone(),
-                                index: sway::Expression::from(sway::Literal::DecInt(
-                                    i.into(),
-                                    None,
-                                )),
-                            }),
+                            e,
                             &lhs_type_name,
                             &rhs_type_name,
                         )
@@ -936,6 +895,25 @@ pub fn coerce_expression(
                     .collect(),
             }));
         }
+
+        return Some(sway::Expression::from(sway::Array {
+            elements: (0..rhs_len)
+                .map(|i| {
+                    coerce_expression(
+                        project,
+                        module.clone(),
+                        scope.clone(),
+                        &sway::Expression::from(sway::ArrayAccess {
+                            expression: expression.clone(),
+                            index: sway::Expression::from(sway::Literal::DecInt(i.into(), None)),
+                        }),
+                        &lhs_type_name,
+                        &rhs_type_name,
+                    )
+                    .unwrap()
+                })
+                .collect(),
+        }));
     }
 
     // Check for tuple to tuple coercions
@@ -1277,53 +1255,51 @@ fn get_path_expr_type(
             return Some(constant.type_name.clone());
         }
 
-        if let Some(configurable) = module.borrow().configurable.as_ref() {
-            if let Some(field) = configurable.fields.iter().find(|c| c.name == name) {
-                return Some(field.type_name.clone());
-            }
+        if let Some(configurable) = module.borrow().configurable.as_ref()
+            && let Some(field) = configurable.fields.iter().find(|c| c.name == name)
+        {
+            return Some(field.type_name.clone());
         }
 
-        if let Some(contract_name) = scope.borrow().get_contract_name() {
-            if let Some(module) =
+        if let Some(contract_name) = scope.borrow().get_contract_name()
+            && let Some(module) =
                 project.find_module_containing_contract(module.clone(), &contract_name)
-            {
-                if let Some(function_name) = scope.borrow().get_function_name() {
-                    let module = module.borrow();
+        {
+            if let Some(function_name) = scope.borrow().get_function_name() {
+                let module = module.borrow();
 
-                    let function = module
-                        .functions
-                        .iter()
-                        .find(|f| {
-                            let sway::TypeName::Function { new_name, .. } = &f.signature else {
-                                unreachable!()
-                            };
-                            *new_name == function_name
-                        })
-                        .unwrap();
+                let function = module
+                    .functions
+                    .iter()
+                    .find(|f| {
+                        let sway::TypeName::Function { new_name, .. } = &f.signature else {
+                            unreachable!()
+                        };
+                        *new_name == function_name
+                    })
+                    .unwrap();
 
-                    let sway::TypeName::Function {
-                        storage_struct_parameter,
-                        ..
-                    } = &function.signature
-                    else {
-                        unreachable!()
-                    };
+                let sway::TypeName::Function {
+                    storage_struct_parameter,
+                    ..
+                } = &function.signature
+                else {
+                    unreachable!()
+                };
 
-                    if let Some(storage_struct_parameter) = storage_struct_parameter.as_ref() {
-                        if name == storage_struct_parameter.name {
-                            return storage_struct_parameter.type_name.clone();
-                        }
-                    }
+                if let Some(storage_struct_parameter) = storage_struct_parameter.as_ref()
+                    && name == storage_struct_parameter.name
+                {
+                    return storage_struct_parameter.type_name.clone();
                 }
+            }
 
-                for use_item in module.borrow().uses.iter() {
-                    if let Some(module) = project.resolve_use(use_item) {
-                        if let Some(result) =
-                            check_expr(project, module.clone(), scope.clone(), path_expr)
-                        {
-                            return Some(result);
-                        }
-                    }
+            for use_item in module.borrow().uses.iter() {
+                if let Some(module) = project.resolve_use(use_item)
+                    && let Some(result) =
+                        check_expr(project, module.clone(), scope.clone(), path_expr)
+                {
+                    return Some(result);
                 }
             }
         }
@@ -1492,24 +1468,20 @@ fn get_member_access_type(
             ) -> Result<Option<sway::TypeName>, Error> {
                 let contract_storage_namespace_name = contract.borrow().name.to_case(Case::Snake);
 
-                if storage_namespace_name == contract_storage_namespace_name {
-                    if let Some(storage) = contract.borrow().storage.as_ref() {
-                        if let Some(storage_namespace) = storage
-                            .borrow()
-                            .namespaces
-                            .iter()
-                            .find(|n| n.borrow().name == contract_storage_namespace_name)
-                        {
-                            if let Some(field) = storage_namespace
-                                .borrow()
-                                .fields
-                                .iter()
-                                .find(|f| f.name == storage_field_name)
-                            {
-                                return Ok(Some(field.type_name.clone()));
-                            }
-                        }
-                    }
+                if storage_namespace_name == contract_storage_namespace_name
+                    && let Some(storage) = contract.borrow().storage.as_ref()
+                    && let Some(storage_namespace) = storage
+                        .borrow()
+                        .namespaces
+                        .iter()
+                        .find(|n| n.borrow().name == contract_storage_namespace_name)
+                    && let Some(field) = storage_namespace
+                        .borrow()
+                        .fields
+                        .iter()
+                        .find(|f| f.name == storage_field_name)
+                {
+                    return Ok(Some(field.type_name.clone()));
                 }
 
                 let inherits = contract.borrow().abi.inherits.clone();
@@ -1601,15 +1573,14 @@ fn get_member_access_type(
         generic_parameters: None,
     } = &container_type
     {
-        if let Some(struct_definition) = project.find_struct(module.clone(), scope.clone(), name) {
-            if let Some(field) = struct_definition
+        if let Some(struct_definition) = project.find_struct(module.clone(), scope.clone(), name)
+            && let Some(field) = struct_definition
                 .borrow()
                 .fields
                 .iter()
                 .find(|f| f.name == member_access.member)
-            {
-                return Ok(field.type_name.clone());
-            }
+        {
+            return Ok(field.type_name.clone());
         }
     }
 
@@ -2713,8 +2684,8 @@ fn get_path_expr_function_call_type(
         }
 
         for use_item in module.borrow().uses.iter() {
-            if let Some(found_module) = project.resolve_use(use_item) {
-                if let Some(type_name) = check_function(
+            if let Some(found_module) = project.resolve_use(use_item)
+                && let Some(type_name) = check_function(
                     project,
                     found_module.clone(),
                     scope.clone(),
@@ -2722,9 +2693,9 @@ fn get_path_expr_function_call_type(
                     generic_parameters,
                     parameters,
                     &parameter_types,
-                )? {
-                    return Ok(Some(type_name));
-                }
+                )?
+            {
+                return Ok(Some(type_name));
             }
         }
 
@@ -3759,19 +3730,18 @@ fn get_member_access_function_call_type(
             }
 
             (name, None) => {
-                if let Some(contract) = project.find_contract(module.clone(), name) {
-                    if let Some(function_definition) = contract
+                if let Some(contract) = project.find_contract(module.clone(), name)
+                    && let Some(function_definition) = contract
                         .borrow()
                         .abi
                         .functions
                         .iter()
                         .find(|f| f.new_name == member_access.member)
-                    {
-                        return Ok(function_definition
-                            .return_type
-                            .clone()
-                            .unwrap_or_else(|| sway::TypeName::Tuple { type_names: vec![] }));
-                    }
+                {
+                    return Ok(function_definition
+                        .return_type
+                        .clone()
+                        .unwrap_or_else(|| sway::TypeName::Tuple { type_names: vec![] }));
                 }
 
                 todo!(
