@@ -126,10 +126,6 @@ pub fn translate_array_slice_expression(
         *to_index_type = u64_type.clone();
     }
 
-    //
-    // TODO: Check if to_index needs to be cast to u64
-    //
-
     match &type_name {
         sway::TypeName::Identifier {
             name,

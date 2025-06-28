@@ -268,6 +268,7 @@ pub fn translate_revert_named_arguments(
         .unwrap()
         .name
         .clone();
+    
     if module.borrow().errors_enums.iter().any(|e| {
         e.0.borrow()
             .variants

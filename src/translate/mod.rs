@@ -1789,21 +1789,17 @@ fn get_path_expr_function_call_type(
     generic_parameters: Option<&sway::GenericParameterList>,
     parameters: &[sway::Expression],
 ) -> Result<Option<sway::TypeName>, Error> {
-    //
-    // TODO: check generic parameters!
-    //
-
     let name = path_expr.to_string();
 
     match name.as_str() {
-        "todo!" => {
+        "todo!" if generic_parameters.is_none() => {
             return Ok(Some(sway::TypeName::Identifier {
                 name: "todo!".into(),
                 generic_parameters: None,
             }));
         }
 
-        "abi" => {
+        "abi" if generic_parameters.is_none() => {
             assert!(
                 parameters.len() == 2,
                 "Malformed abi cast, expected 2 parameters, found {}",
@@ -1832,14 +1828,14 @@ fn get_path_expr_function_call_type(
         .collect::<Result<Vec<_>, _>>()?;
 
     match name.as_str() {
-        "__size_of" => {
+        "__size_of" if generic_parameters.is_none() => {
             return Ok(Some(sway::TypeName::Identifier {
                 name: "u64".into(),
                 generic_parameters: None,
             }));
         }
 
-        "Address::from" => {
+        "Address::from" if generic_parameters.is_none() => {
             assert!(
                 parameters.len() == 1,
                 "Malformed `Address::from` call, expected 1 parameter, found {}",
@@ -1852,42 +1848,44 @@ fn get_path_expr_function_call_type(
             }));
         }
 
-        "AssetId::default" => {
+        "AssetId::default" if generic_parameters.is_none() => {
             return Ok(Some(sway::TypeName::Identifier {
                 name: "AssetId".into(),
                 generic_parameters: None,
             }));
         }
 
-        "b256::from" | "b256::from_be_bytes" | "b256::from_le_bytes" | "b256::zero" => {
+        "b256::from" | "b256::from_be_bytes" | "b256::from_le_bytes" | "b256::zero"
+            if generic_parameters.is_none() =>
+        {
             return Ok(Some(sway::TypeName::Identifier {
                 name: "b256".into(),
                 generic_parameters: None,
             }));
         }
 
-        "Bytes::new" | "Bytes::from" | "Bytes::with_capacity" => {
+        "Bytes::new" | "Bytes::from" | "Bytes::with_capacity" if generic_parameters.is_none() => {
             return Ok(Some(sway::TypeName::Identifier {
                 name: "Bytes".into(),
                 generic_parameters: None,
             }));
         }
 
-        "ContractId::from" | "ContractId::this" => {
+        "ContractId::from" | "ContractId::this" if generic_parameters.is_none() => {
             return Ok(Some(sway::TypeName::Identifier {
                 name: "ContractId".into(),
                 generic_parameters: None,
             }));
         }
 
-        "I8::from" | "I8::from_uint" | "I8::max" | "I8::min" => {
+        "I8::from" | "I8::from_uint" | "I8::max" | "I8::min" if generic_parameters.is_none() => {
             return Ok(Some(sway::TypeName::Identifier {
                 name: "I8".into(),
                 generic_parameters: None,
             }));
         }
 
-        "I8::try_from" => {
+        "I8::try_from" if generic_parameters.is_none() => {
             return Ok(Some(sway::TypeName::Identifier {
                 name: "Option".into(),
                 generic_parameters: Some(sway::GenericParameterList {
@@ -1902,14 +1900,16 @@ fn get_path_expr_function_call_type(
             }));
         }
 
-        "I16::from" | "I16::from_uint" | "I16::max" | "I16::min" => {
+        "I16::from" | "I16::from_uint" | "I16::max" | "I16::min"
+            if generic_parameters.is_none() =>
+        {
             return Ok(Some(sway::TypeName::Identifier {
                 name: "I16".into(),
                 generic_parameters: None,
             }));
         }
 
-        "I16::try_from" => {
+        "I16::try_from" if generic_parameters.is_none() => {
             return Ok(Some(sway::TypeName::Identifier {
                 name: "Option".into(),
                 generic_parameters: Some(sway::GenericParameterList {
@@ -1924,14 +1924,16 @@ fn get_path_expr_function_call_type(
             }));
         }
 
-        "I32::from" | "I32::from_uint" | "I32::max" | "I32::min" => {
+        "I32::from" | "I32::from_uint" | "I32::max" | "I32::min"
+            if generic_parameters.is_none() =>
+        {
             return Ok(Some(sway::TypeName::Identifier {
                 name: "I32".into(),
                 generic_parameters: None,
             }));
         }
 
-        "I32::try_from" => {
+        "I32::try_from" if generic_parameters.is_none() => {
             return Ok(Some(sway::TypeName::Identifier {
                 name: "Option".into(),
                 generic_parameters: Some(sway::GenericParameterList {
@@ -1946,14 +1948,16 @@ fn get_path_expr_function_call_type(
             }));
         }
 
-        "I64::from" | "I64::from_uint" | "I64::max" | "I64::min" => {
+        "I64::from" | "I64::from_uint" | "I64::max" | "I64::min"
+            if generic_parameters.is_none() =>
+        {
             return Ok(Some(sway::TypeName::Identifier {
                 name: "I64".into(),
                 generic_parameters: None,
             }));
         }
 
-        "I64::try_from" => {
+        "I64::try_from" if generic_parameters.is_none() => {
             return Ok(Some(sway::TypeName::Identifier {
                 name: "Option".into(),
                 generic_parameters: Some(sway::GenericParameterList {
@@ -1968,14 +1972,16 @@ fn get_path_expr_function_call_type(
             }));
         }
 
-        "I128::from" | "I128::from_uint" | "I128::max" | "I128::min" => {
+        "I128::from" | "I128::from_uint" | "I128::max" | "I128::min"
+            if generic_parameters.is_none() =>
+        {
             return Ok(Some(sway::TypeName::Identifier {
                 name: "I128".into(),
                 generic_parameters: None,
             }));
         }
 
-        "I128::try_from" => {
+        "I128::try_from" if generic_parameters.is_none() => {
             return Ok(Some(sway::TypeName::Identifier {
                 name: "Option".into(),
                 generic_parameters: Some(sway::GenericParameterList {
@@ -1990,14 +1996,16 @@ fn get_path_expr_function_call_type(
             }));
         }
 
-        "I256::from" | "I256::from_uint" | "I256::max" | "I256::min" => {
+        "I256::from" | "I256::from_uint" | "I256::max" | "I256::min"
+            if generic_parameters.is_none() =>
+        {
             return Ok(Some(sway::TypeName::Identifier {
                 name: "I256".into(),
                 generic_parameters: None,
             }));
         }
 
-        "I256::try_from" => {
+        "I256::try_from" if generic_parameters.is_none() => {
             return Ok(Some(sway::TypeName::Identifier {
                 name: "Option".into(),
                 generic_parameters: Some(sway::GenericParameterList {
@@ -2012,14 +2020,16 @@ fn get_path_expr_function_call_type(
             }));
         }
 
-        "Identity::Address" | "Identity::ContractId" | "Identity::from" => {
+        "Identity::Address" | "Identity::ContractId" | "Identity::from"
+            if generic_parameters.is_none() =>
+        {
             return Ok(Some(sway::TypeName::Identifier {
                 name: "Identity".into(),
                 generic_parameters: None,
             }));
         }
 
-        "msg_sender" => {
+        "msg_sender" if generic_parameters.is_none() => {
             return Ok(Some(sway::TypeName::Identifier {
                 name: "Option".into(),
                 generic_parameters: Some(sway::GenericParameterList {
@@ -2034,28 +2044,28 @@ fn get_path_expr_function_call_type(
             }));
         }
 
-        "raw_slice::from_parts" => {
+        "raw_slice::from_parts" if generic_parameters.is_none() => {
             return Ok(Some(sway::TypeName::Identifier {
                 name: "raw_slice".into(),
                 generic_parameters: None,
             }));
         }
 
-        "Secp256k1::from" => {
+        "Secp256k1::from" if generic_parameters.is_none() => {
             return Ok(Some(sway::TypeName::Identifier {
                 name: "Secp256k1".into(),
                 generic_parameters: None,
             }));
         }
 
-        "std::alloc::alloc" => {
+        "std::alloc::alloc" if generic_parameters.is_none() => {
             return Ok(Some(sway::TypeName::Identifier {
                 name: "raw_ptr".into(),
                 generic_parameters: None,
             }));
         }
 
-        "std::block::block_header_hash" => {
+        "std::block::block_header_hash" if generic_parameters.is_none() => {
             return Ok(Some(sway::TypeName::Identifier {
                 name: "Result".into(),
                 generic_parameters: Some(sway::GenericParameterList {
@@ -2079,56 +2089,56 @@ fn get_path_expr_function_call_type(
             }));
         }
 
-        "std::block::height" => {
+        "std::block::height" if generic_parameters.is_none() => {
             return Ok(Some(sway::TypeName::Identifier {
                 name: "u32".into(),
                 generic_parameters: None,
             }));
         }
 
-        "std::block::timestamp" => {
+        "std::block::timestamp" if generic_parameters.is_none() => {
             return Ok(Some(sway::TypeName::Identifier {
                 name: "u64".into(),
                 generic_parameters: None,
             }));
         }
 
-        "std::context::balance_of" => {
+        "std::context::balance_of" if generic_parameters.is_none() => {
             return Ok(Some(sway::TypeName::Identifier {
                 name: "u64".into(),
                 generic_parameters: None,
             }));
         }
 
-        "std::context::msg_amount" => {
+        "std::context::msg_amount" if generic_parameters.is_none() => {
             return Ok(Some(sway::TypeName::Identifier {
                 name: "u64".into(),
                 generic_parameters: None,
             }));
         }
 
-        "std::context::this_balance" => {
+        "std::context::this_balance" if generic_parameters.is_none() => {
             return Ok(Some(sway::TypeName::Identifier {
                 name: "u64".into(),
                 generic_parameters: None,
             }));
         }
 
-        "std::hash::keccak256" => {
+        "std::hash::keccak256" if generic_parameters.is_none() => {
             return Ok(Some(sway::TypeName::Identifier {
                 name: "b256".into(),
                 generic_parameters: None,
             }));
         }
 
-        "std::hash::sha256" => {
+        "std::hash::sha256" if generic_parameters.is_none() => {
             return Ok(Some(sway::TypeName::Identifier {
                 name: "b256".into(),
                 generic_parameters: None,
             }));
         }
 
-        "std::inputs::input_message_data" => {
+        "std::inputs::input_message_data" if generic_parameters.is_none() => {
             return Ok(Some(sway::TypeName::Identifier {
                 name: "Option".into(),
                 generic_parameters: Some(sway::GenericParameterList {
@@ -2143,7 +2153,7 @@ fn get_path_expr_function_call_type(
             }));
         }
 
-        "std::registers::balance" => {
+        "std::registers::balance" if generic_parameters.is_none() => {
             assert!(
                 parameters.is_empty(),
                 "Malformed `std::registers::balance` call, expected 0 parameters, found {}",
@@ -2156,7 +2166,7 @@ fn get_path_expr_function_call_type(
             }));
         }
 
-        "std::registers::context_gas" => {
+        "std::registers::context_gas" if generic_parameters.is_none() => {
             assert!(
                 parameters.is_empty(),
                 "Malformed `std::registers::context_gas` call, expected 0 parameters, found {}",
@@ -2169,7 +2179,7 @@ fn get_path_expr_function_call_type(
             }));
         }
 
-        "std::registers::error" => {
+        "std::registers::error" if generic_parameters.is_none() => {
             assert!(
                 parameters.is_empty(),
                 "Malformed `std::registers::error` call, expected 0 parameters, found {}",
@@ -2182,7 +2192,7 @@ fn get_path_expr_function_call_type(
             }));
         }
 
-        "std::registers::flags" => {
+        "std::registers::flags" if generic_parameters.is_none() => {
             assert!(
                 parameters.is_empty(),
                 "Malformed `std::registers::flags` call, expected 0 parameters, found {}",
@@ -2195,7 +2205,7 @@ fn get_path_expr_function_call_type(
             }));
         }
 
-        "std::registers::frame_ptr" => {
+        "std::registers::frame_ptr" if generic_parameters.is_none() => {
             assert!(
                 parameters.is_empty(),
                 "Malformed `std::registers::frame_ptr` call, expected 0 parameters, found {}",
@@ -2208,7 +2218,7 @@ fn get_path_expr_function_call_type(
             }));
         }
 
-        "std::registers::global_gas" => {
+        "std::registers::global_gas" if generic_parameters.is_none() => {
             assert!(
                 parameters.is_empty(),
                 "Malformed `std::registers::global_gas` call, expected 0 parameters, found {}",
@@ -2221,7 +2231,7 @@ fn get_path_expr_function_call_type(
             }));
         }
 
-        "std::registers::heap_ptr" => {
+        "std::registers::heap_ptr" if generic_parameters.is_none() => {
             assert!(
                 parameters.is_empty(),
                 "Malformed `std::registers::heap_ptr` call, expected 0 parameters, found {}",
@@ -2234,7 +2244,7 @@ fn get_path_expr_function_call_type(
             }));
         }
 
-        "std::registers::instrs_start" => {
+        "std::registers::instrs_start" if generic_parameters.is_none() => {
             assert!(
                 parameters.is_empty(),
                 "Malformed `std::registers::instrs_start` call, expected 0 parameters, found {}",
@@ -2247,7 +2257,7 @@ fn get_path_expr_function_call_type(
             }));
         }
 
-        "std::registers::overflow" => {
+        "std::registers::overflow" if generic_parameters.is_none() => {
             assert!(
                 parameters.is_empty(),
                 "Malformed `std::registers::overflow` call, expected 0 parameters, found {}",
@@ -2260,7 +2270,7 @@ fn get_path_expr_function_call_type(
             }));
         }
 
-        "std::registers::program_counter" => {
+        "std::registers::program_counter" if generic_parameters.is_none() => {
             assert!(
                 parameters.is_empty(),
                 "Malformed `std::registers::program_counter` call, expected 0 parameters, found {}",
@@ -2273,7 +2283,7 @@ fn get_path_expr_function_call_type(
             }));
         }
 
-        "std::registers::return_value" => {
+        "std::registers::return_value" if generic_parameters.is_none() => {
             assert!(
                 parameters.is_empty(),
                 "Malformed `std::registers::return_value` call, expected 0 parameters, found {}",
@@ -2286,7 +2296,7 @@ fn get_path_expr_function_call_type(
             }));
         }
 
-        "std::registers::return_length" => {
+        "std::registers::return_length" if generic_parameters.is_none() => {
             assert!(
                 parameters.is_empty(),
                 "Malformed `std::registers::return_length` call, expected 0 parameters, found {}",
@@ -2299,7 +2309,7 @@ fn get_path_expr_function_call_type(
             }));
         }
 
-        "std::registers::stack_ptr" => {
+        "std::registers::stack_ptr" if generic_parameters.is_none() => {
             assert!(
                 parameters.is_empty(),
                 "Malformed `std::registers::stack_ptr` call, expected 0 parameters, found {}",
@@ -2312,7 +2322,7 @@ fn get_path_expr_function_call_type(
             }));
         }
 
-        "std::registers::stack_start_ptr" => {
+        "std::registers::stack_start_ptr" if generic_parameters.is_none() => {
             assert!(
                 parameters.is_empty(),
                 "Malformed `std::registers::stack_start_ptr` call, expected 0 parameters, found {}",
@@ -2325,21 +2335,23 @@ fn get_path_expr_function_call_type(
             }));
         }
 
-        "String::from_ascii" | "String::from_ascii_str" => {
+        "String::from_ascii" | "String::from_ascii_str" if generic_parameters.is_none() => {
             return Ok(Some(sway::TypeName::Identifier {
                 name: "String".into(),
                 generic_parameters: None,
             }));
         }
 
-        "u8::from" | "u8::max" | "u8::min" | "u8::from_be_bytes" | "u8::from_le_bytes" => {
+        "u8::from" | "u8::max" | "u8::min" | "u8::from_be_bytes" | "u8::from_le_bytes"
+            if generic_parameters.is_none() =>
+        {
             return Ok(Some(sway::TypeName::Identifier {
                 name: "u8".into(),
                 generic_parameters: None,
             }));
         }
 
-        "u8::try_from" => {
+        "u8::try_from" if generic_parameters.is_none() => {
             return Ok(Some(sway::TypeName::Identifier {
                 name: "Option".into(),
                 generic_parameters: Some(sway::GenericParameterList {
@@ -2354,14 +2366,16 @@ fn get_path_expr_function_call_type(
             }));
         }
 
-        "u16::from" | "u16::max" | "u16::min" | "u16::from_be_bytes" | "u16::from_le_bytes" => {
+        "u16::from" | "u16::max" | "u16::min" | "u16::from_be_bytes" | "u16::from_le_bytes"
+            if generic_parameters.is_none() =>
+        {
             return Ok(Some(sway::TypeName::Identifier {
                 name: "u16".into(),
                 generic_parameters: None,
             }));
         }
 
-        "u16::try_from" => {
+        "u16::try_from" if generic_parameters.is_none() => {
             return Ok(Some(sway::TypeName::Identifier {
                 name: "Option".into(),
                 generic_parameters: Some(sway::GenericParameterList {
@@ -2376,14 +2390,16 @@ fn get_path_expr_function_call_type(
             }));
         }
 
-        "u32::from" | "u32::max" | "u32::min" | "u32::from_be_bytes" | "u32::from_le_bytes" => {
+        "u32::from" | "u32::max" | "u32::min" | "u32::from_be_bytes" | "u32::from_le_bytes"
+            if generic_parameters.is_none() =>
+        {
             return Ok(Some(sway::TypeName::Identifier {
                 name: "u32".into(),
                 generic_parameters: None,
             }));
         }
 
-        "u32::try_from" => {
+        "u32::try_from" if generic_parameters.is_none() => {
             return Ok(Some(sway::TypeName::Identifier {
                 name: "Option".into(),
                 generic_parameters: Some(sway::GenericParameterList {
@@ -2398,14 +2414,16 @@ fn get_path_expr_function_call_type(
             }));
         }
 
-        "u64::from" | "u64::max" | "u64::min" | "u64::from_be_bytes" | "u64::from_le_bytes" => {
+        "u64::from" | "u64::max" | "u64::min" | "u64::from_be_bytes" | "u64::from_le_bytes"
+            if generic_parameters.is_none() =>
+        {
             return Ok(Some(sway::TypeName::Identifier {
                 name: "u64".into(),
                 generic_parameters: None,
             }));
         }
 
-        "u64::try_from" => {
+        "u64::try_from" if generic_parameters.is_none() => {
             return Ok(Some(sway::TypeName::Identifier {
                 name: "Option".into(),
                 generic_parameters: Some(sway::GenericParameterList {
@@ -2424,14 +2442,16 @@ fn get_path_expr_function_call_type(
         | "u256::max"
         | "u256::min"
         | "u256::from_be_bytes"
-        | "u256::from_le_bytes" => {
+        | "u256::from_le_bytes"
+            if generic_parameters.is_none() =>
+        {
             return Ok(Some(sway::TypeName::Identifier {
                 name: "u256".into(),
                 generic_parameters: None,
             }));
         }
 
-        "u256::try_from" => {
+        "u256::try_from" if generic_parameters.is_none() => {
             return Ok(Some(sway::TypeName::Identifier {
                 name: "Option".into(),
                 generic_parameters: Some(sway::GenericParameterList {
@@ -2446,14 +2466,14 @@ fn get_path_expr_function_call_type(
             }));
         }
 
-        "U128::from" | "U128::max" | "U128::min" | "U128::zero" => {
+        "U128::from" | "U128::max" | "U128::min" | "U128::zero" if generic_parameters.is_none() => {
             return Ok(Some(sway::TypeName::Identifier {
                 name: "U128".into(),
                 generic_parameters: None,
             }));
         }
 
-        "U128::try_from" => {
+        "U128::try_from" if generic_parameters.is_none() => {
             return Ok(Some(sway::TypeName::Identifier {
                 name: "Option".into(),
                 generic_parameters: Some(sway::GenericParameterList {
@@ -2468,14 +2488,14 @@ fn get_path_expr_function_call_type(
             }));
         }
 
-        "U256::from" | "U256::max" | "U256::min" => {
+        "U256::from" | "U256::max" | "U256::min" if generic_parameters.is_none() => {
             return Ok(Some(sway::TypeName::Identifier {
                 name: "U256".into(),
                 generic_parameters: None,
             }));
         }
 
-        "U256::try_from" => {
+        "U256::try_from" if generic_parameters.is_none() => {
             return Ok(Some(sway::TypeName::Identifier {
                 name: "Option".into(),
                 generic_parameters: Some(sway::GenericParameterList {
@@ -2490,7 +2510,7 @@ fn get_path_expr_function_call_type(
             }));
         }
 
-        "Vec::with_capacity" => {
+        "Vec::with_capacity" if generic_parameters.is_none() => {
             return Ok(Some(sway::TypeName::Identifier {
                 name: "Vec".into(),
                 generic_parameters: Some(sway::GenericParameterList {

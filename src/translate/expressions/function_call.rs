@@ -249,10 +249,6 @@ fn translate_variable_function_call(
                     generic_parameters,
                 } => match (type_name.as_str(), generic_parameters.as_ref()) {
                     ("Identity", None) => {
-                        //
-                        // TODO: Ensure a use statement for the ABI is added to the current module
-                        //
-
                         // abi(T, x.as_contract_id().unwrap().into())
                         return Ok(sway::Expression::create_function_calls(
                             None,
@@ -277,10 +273,6 @@ fn translate_variable_function_call(
                     }
 
                     ("ContractId", None) => {
-                        //
-                        // TODO: Ensure a use statement for the ABI is added to the current module
-                        //
-
                         // abi(T, x.into())
                         return Ok(sway::Expression::create_function_calls(
                             None,
@@ -302,11 +294,6 @@ fn translate_variable_function_call(
 
                     ("u256" | "b256", None) => {
                         // Thing(x) => abi(Thing, Identity::from(ContractId::from(x)))
-
-                        //
-                        // TODO Ensure a use statement for the ABI is added to the current module
-                        //
-
                         let mut value = parameters[0].clone();
 
                         if type_name == "u256" {
@@ -888,8 +875,6 @@ fn translate_member_access_function_call(
             .map(|p| get_expression_type(project, module.clone(), scope.clone(), p))
             .collect::<Result<Vec<_>, _>>()?;
 
-        // TODO: check full inheritance hierarchy
-
         // Check for explicit super function calls
         if let Some((module, contract)) = project.find_module_and_contract(module.clone(), &name) {
             let abi = contract.borrow().abi.clone();
@@ -1224,58 +1209,60 @@ fn translate_member_access_function_call(
         }
 
         sway::TypeName::Array { .. } => {
-            let mut parameters = arguments
-                .iter()
-                .map(|a| translate_expression(project, module.clone(), scope.clone(), a))
-                .collect::<Result<Vec<_>, _>>()?;
-
-            let mut parameter_types = parameters
-                .iter()
-                .map(|p| get_expression_type(project, module.clone(), scope.clone(), p))
-                .collect::<Result<Vec<_>, _>>()?;
-
-            parameters.insert(0, container.clone());
-            parameter_types.insert(
-                0,
-                get_expression_type(project, module.clone(), scope.clone(), &container)?,
-            );
-
-            // Check if this is a function from a using directive
-            for using_directive in module.borrow().using_directives.clone() {
-                // Make sure the type names match
-                if let Some(for_type) = using_directive.for_type.as_ref()
-                    && *for_type != type_name
-                {
-                    continue;
-                }
-
-                // TODO
-                // Look up the definition of the using directive
-                // let external_scope = if matches!(module.borrow().kind, Some(solidity::ContractTy::Library(_))) && using_directive.library_name == module.borrow().name {
-                //     module.borrow().toplevel_scope.clone()
-                // } else {
-                //     match project.find_module_with_contract(module.clone(), &using_directive.library_name)
-                //     .map(|d| d.toplevel_scope.clone()) {
-                //         Some(s) => s,
-                //         None => continue,
-                //     }
-                // };
-
-                // TODO
-                // Try to resolve the function call
-                // if let Some(result) = resolve_function_call(
-                //     project,
-                //     module.clone(),
-                //     scope.clone(),
-                //     &external_scope,
-                //     member.name.as_str(),
-                //     named_arguments,
-                //     parameters.clone(),
-                //     parameter_types.clone(),
-                // )? {
-                //     return Ok(result);
-                // }
-            }
+            //
+            // TODO: Is this still necessary?
+            //
+            // let mut parameters = arguments
+            //     .iter()
+            //     .map(|a| translate_expression(project, module.clone(), scope.clone(), a))
+            //     .collect::<Result<Vec<_>, _>>()?;
+            //
+            // let mut parameter_types = parameters
+            //     .iter()
+            //     .map(|p| get_expression_type(project, module.clone(), scope.clone(), p))
+            //     .collect::<Result<Vec<_>, _>>()?;
+            //
+            // parameters.insert(0, container.clone());
+            //
+            // parameter_types.insert(
+            //     0,
+            //     get_expression_type(project, module.clone(), scope.clone(), &container)?,
+            // );
+            //
+            // // Check if this is a function from a using directive
+            // for using_directive in module.borrow().using_directives.clone() {
+            //     // Make sure the type names match
+            //     if let Some(for_type) = using_directive.for_type.as_ref()
+            //         && *for_type != type_name
+            //     {
+            //         continue;
+            //     }
+            //
+            //     // Look up the definition of the using directive
+            //     let external_scope = if matches!(module.borrow().kind, Some(solidity::ContractTy::Library(_))) && using_directive.library_name == module.borrow().name {
+            //         module.borrow().toplevel_scope.clone()
+            //     } else {
+            //         match project.find_module_with_contract(module.clone(), &using_directive.library_name)
+            //         .map(|d| d.toplevel_scope.clone()) {
+            //             Some(s) => s,
+            //             None => continue,
+            //         }
+            //     };
+            //
+            //     // Try to resolve the function call
+            //     if let Some(result) = resolve_function_call(
+            //         project,
+            //         module.clone(),
+            //         scope.clone(),
+            //         &external_scope,
+            //         member.name.as_str(),
+            //         named_arguments,
+            //         parameters.clone(),
+            //         parameter_types.clone(),
+            //     )? {
+            //         return Ok(result);
+            //     }
+            // }
 
             panic!(
                 "{}: TODO: translate array member function call: {} - {}",
@@ -1291,52 +1278,53 @@ fn translate_member_access_function_call(
         ),
 
         sway::TypeName::StringSlice => {
-            let mut parameters = arguments
-                .iter()
-                .map(|a| translate_expression(project, module.clone(), scope.clone(), a))
-                .collect::<Result<Vec<_>, _>>()?;
-
-            let mut parameter_types = parameters
-                .iter()
-                .map(|p| get_expression_type(project, module.clone(), scope.clone(), p))
-                .collect::<Result<Vec<_>, _>>()?;
-
-            parameters.insert(0, container.clone());
-            parameter_types.insert(
-                0,
-                get_expression_type(project, module.clone(), scope.clone(), &container)?,
-            );
-
-            // Check if this is a function from a using directive
-            for using_directive in module.borrow().using_directives.clone() {
-                // Make sure the type names match
-                if let Some(for_type) = using_directive.for_type.as_ref()
-                    && *for_type != type_name
-                {
-                    continue;
-                }
-
-                // TODO
-                // Look up the definition of the using directive
-                // let Some(external_scope) = project.find_module_with_contract(module.clone(), &using_directive.library_name)
-                //     .map(|d| d.toplevel_scope.clone())
-                // else { continue };
-
-                // TODO
-                // Try to resolve the function call
-                // if let Some(result) = resolve_function_call(
-                //     project,
-                //     module.clone(),
-                //     scope.clone(),
-                //     &external_scope,
-                //     member.name.as_str(),
-                //     named_arguments,
-                //     parameters.clone(),
-                //     parameter_types.clone(),
-                // )? {
-                //     return Ok(result);
-                // }
-            }
+            //
+            // TODO: Is this still necessary?
+            //
+            // let mut parameters = arguments
+            //     .iter()
+            //     .map(|a| translate_expression(project, module.clone(), scope.clone(), a))
+            //     .collect::<Result<Vec<_>, _>>()?;
+            //
+            // let mut parameter_types = parameters
+            //     .iter()
+            //     .map(|p| get_expression_type(project, module.clone(), scope.clone(), p))
+            //     .collect::<Result<Vec<_>, _>>()?;
+            //
+            // parameters.insert(0, container.clone());
+            // parameter_types.insert(
+            //     0,
+            //     get_expression_type(project, module.clone(), scope.clone(), &container)?,
+            // );
+            //
+            // // Check if this is a function from a using directive
+            // for using_directive in module.borrow().using_directives.clone() {
+            //     // Make sure the type names match
+            //     if let Some(for_type) = using_directive.for_type.as_ref()
+            //         && *for_type != type_name
+            //     {
+            //         continue;
+            //     }
+            //
+            //     // Look up the definition of the using directive
+            //     let Some(external_scope) = project.find_module_with_contract(module.clone(), &using_directive.library_name)
+            //         .map(|d| d.toplevel_scope.clone())
+            //     else { continue };
+            //
+            //     // Try to resolve the function call
+            //     if let Some(result) = resolve_function_call(
+            //         project,
+            //         module.clone(),
+            //         scope.clone(),
+            //         &external_scope,
+            //         member.name.as_str(),
+            //         named_arguments,
+            //         parameters.clone(),
+            //         parameter_types.clone(),
+            //     )? {
+            //         return Ok(result);
+            //     }
+            // }
 
             panic!(
                 "{}: TODO: translate string slice member function call: {expression}",
@@ -1796,7 +1784,7 @@ fn translate_identity_member_access_function_call(
     let mut name = name.clone();
 
     //
-    // TODO:
+    // TODO: is this still necessary?
     //
     // // Check using directives for Identity-specific function
     // for using_directive in module.using_directives.iter() {

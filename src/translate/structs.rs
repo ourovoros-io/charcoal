@@ -18,6 +18,7 @@ pub fn translate_struct_definition(
         // TODO: keep track of original struct name?
         let name =
             translate_naming_convention(field.name.as_ref().unwrap().name.as_str(), Case::Snake);
+            
         let mut type_name = translate_type_name(
             project,
             module.clone(),
