@@ -156,7 +156,7 @@ pub fn translate_contract_definition(
         )?;
 
         if !state_variable_info.deferred_initializations.is_empty() {
-            create_constructor_function(module.clone(), scope.clone(), contract.clone());
+            create_constructor_function(project, module.clone(), scope.clone(), contract.clone());
         }
 
         deferred_initializations.extend(state_variable_info.deferred_initializations.clone());
@@ -337,7 +337,7 @@ pub fn translate_contract_definition(
             }
         }
 
-        create_constructor_function(module.clone(), scope.clone(), contract.clone());
+        create_constructor_function(project, module.clone(), scope.clone(), contract.clone());
 
         let mut contract = contract.borrow_mut();
 

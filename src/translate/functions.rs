@@ -1121,7 +1121,20 @@ pub fn translate_function_definition(
         let mut impl_function = function_declaration.clone();
         impl_function.new_name = function_name.abi_fn_name.clone();
 
+        let contract_name = contract_name.unwrap();
+
+        let contract = project
+            .find_contract(module.clone(), contract_name)
+            .unwrap();
+
         let mut statements = vec![];
+
+        let mut parameters = impl_function
+            .parameters
+            .entries
+            .iter()
+            .map(|p| sway::Expression::create_identifier(p.name.clone()))
+            .collect::<Vec<_>>();
 
         // Convert parameters of `str` to `String`, since they are not allowed in abi function signatures
         for p in impl_function.parameters.entries.iter_mut() {
@@ -1149,21 +1162,55 @@ pub fn translate_function_definition(
             }));
         }
 
+        // If the contract has a storage struct, generate bindings and a storage struct parameter for the toplevel function call
+        if let Some(storage_struct) = contract.borrow().storage_struct.as_ref() {
+            let storage_namespace_name = module
+                .borrow()
+                .get_storage_namespace_name(scope.clone())
+                .unwrap();
+
+            statements.push(sway::Statement::from(sway::Let {
+                pattern: sway::LetPattern::from(sway::LetIdentifier {
+                    is_mutable: false,
+                    name: "storage_struct".to_string(),
+                }),
+                type_name: None,
+                value: sway::Expression::from(sway::Constructor {
+                    type_name: sway::TypeName::Identifier {
+                        name: format!("{}Storage", contract_name),
+                        generic_parameters: None,
+                    },
+                    fields: storage_struct
+                        .borrow()
+                        .fields
+                        .iter()
+                        .map(|f| sway::ConstructorField {
+                            name: f.new_name.clone(),
+                            value: sway::Expression::from(sway::MemberAccess {
+                                expression: sway::Expression::from(sway::PathExpr {
+                                    root: sway::PathExprRoot::Identifier("storage".to_string()),
+                                    segments: vec![sway::PathExprSegment {
+                                        name: storage_namespace_name.clone(),
+                                        generic_parameters: None,
+                                    }],
+                                }),
+                                member: f.new_name.clone(),
+                            }),
+                        })
+                        .collect(),
+                }),
+            }));
+
+            parameters.push(sway::Expression::create_identifier("storage_struct".into()));
+        }
+
         impl_function.body = Some(sway::Block {
             statements,
             final_expr: Some(sway::Expression::create_function_calls(
                 None,
                 &[(
                     toplevel_function.new_name.as_str(),
-                    Some((
-                        None,
-                        impl_function
-                            .parameters
-                            .entries
-                            .iter()
-                            .map(|p| sway::Expression::create_identifier(p.name.clone()))
-                            .collect(),
-                    )),
+                    Some((None, parameters)),
                 )],
             )),
         });
@@ -1550,6 +1597,7 @@ pub fn translate_modifier_definition(
 }
 
 pub fn create_constructor_function(
+    project: &mut Project,
     module: Rc<RefCell<ir::Module>>,
     scope: Rc<RefCell<ir::Scope>>,
     contract: Rc<RefCell<ir::Contract>>,
@@ -1564,26 +1612,30 @@ pub fn create_constructor_function(
         return;
     }
 
-    let abi_function = sway::Function {
-        attributes: None,
-        is_public: false,
-        old_name: String::new(),
-        new_name: "constructor".into(),
-        generic_parameters: None,
-        storage_struct_parameter: None,
-        parameters: sway::ParameterList::default(),
-        return_type: None,
-        body: None,
-    };
+    let contract_name = contract.borrow().name.clone();
 
-    let mut impl_function = abi_function.clone();
-    impl_function.body = Some(sway::Block::default());
-    let function_body = impl_function.body.as_mut().unwrap();
+    let function_name = translate_function_name(
+        project,
+        module.clone(),
+        Some(contract_name.as_str()),
+        None,
+        &vec![],
+        &solidity::FunctionTy::Constructor,
+    );
 
-    let namespace_name = module
-        .borrow()
-        .get_storage_namespace_name(scope.clone())
-        .unwrap();
+    assert!(
+        module
+            .borrow()
+            .functions
+            .iter()
+            .find(|f| {
+                let sway::TypeName::Function { new_name, .. } = &f.signature else {
+                    unreachable!()
+                };
+                *new_name == function_name.top_level_fn_name
+            })
+            .is_none()
+    );
 
     let constructor_called_field_name = "constructor_called".to_string();
 
@@ -1628,57 +1680,139 @@ pub fn create_constructor_function(
             value: sway::Expression::from(sway::Literal::Bool(false)),
         });
 
-    // Add the `constructor_called` requirement to the beginning of the function
-    // require(!storage.initialized.read(), "The Contract constructor has already been called");
-    function_body.statements.insert(
-        0,
-        sway::Statement::from(sway::Expression::create_function_calls(
+    // Create the ABI function
+    let abi_function = sway::Function {
+        attributes: None,
+        is_public: false,
+        old_name: String::new(),
+        new_name: "constructor".into(),
+        generic_parameters: None,
+        storage_struct_parameter: None,
+        parameters: sway::ParameterList::default(),
+        return_type: None,
+        body: None,
+    };
+
+    // Create the ABI impl function
+    let mut impl_function = abi_function.clone();
+
+    let storage_namespace_name = module
+        .borrow()
+        .get_storage_namespace_name(scope.clone())
+        .unwrap();
+
+    impl_function.body = Some(sway::Block {
+        statements: vec![sway::Statement::from(sway::Let {
+            pattern: sway::LetPattern::from(sway::LetIdentifier {
+                is_mutable: false,
+                name: "storage_struct".to_string(),
+            }),
+            type_name: None,
+            value: sway::Expression::from(sway::Constructor {
+                type_name: sway::TypeName::Identifier {
+                    name: format!("{}Storage", contract_name),
+                    generic_parameters: None,
+                },
+                fields: contract
+                    .borrow()
+                    .storage_struct
+                    .as_ref()
+                    .unwrap()
+                    .borrow()
+                    .fields
+                    .iter()
+                    .map(|f| sway::ConstructorField {
+                        name: f.new_name.clone(),
+                        value: sway::Expression::from(sway::MemberAccess {
+                            expression: sway::Expression::from(sway::PathExpr {
+                                root: sway::PathExprRoot::Identifier("storage".to_string()),
+                                segments: vec![sway::PathExprSegment {
+                                    name: storage_namespace_name.clone(),
+                                    generic_parameters: None,
+                                }],
+                            }),
+                            member: f.new_name.clone(),
+                        }),
+                    })
+                    .collect(),
+            }),
+        })],
+        final_expr: Some(sway::Expression::create_function_calls(
             None,
             &[(
-                "require",
+                function_name.top_level_fn_name.as_str(),
                 Some((
                     None,
-                    vec![
-                        sway::Expression::from(sway::UnaryExpression {
-                            operator: "!".into(),
-                            expression: sway::Expression::create_function_calls(
-                                None,
-                                &[
-                                    (format!("storage::{namespace_name}").as_str(), None),
-                                    (constructor_called_field_name.as_str(), None),
-                                    ("read", Some((None, vec![]))),
-                                ],
-                            ),
-                        }),
-                        sway::Expression::from(sway::Literal::String(format!(
-                            "The {} constructor has already been called",
-                            contract.borrow().name
-                        ))),
-                    ],
+                    vec![sway::Expression::create_identifier("storage_struct".into())],
                 )),
             )],
         )),
-    );
+    });
 
-    // Set the `constructor_called` storage field to `true` at the end of the function
-    // storage.initialized.write(true);
-    function_body.statements.push(sway::Statement::from(
-        sway::Expression::create_function_calls(
-            None,
-            &[
-                (format!("storage::{namespace_name}").as_str(), None),
-                (constructor_called_field_name.as_str(), None),
-                (
-                    "write",
+    // Create the the toplevel function
+    let mut toplevel_function = abi_function.clone();
+    toplevel_function.is_public = true;
+    toplevel_function.new_name = function_name.top_level_fn_name.clone();
+
+    toplevel_function.storage_struct_parameter = Some(sway::Parameter {
+        is_ref: false,
+        is_mut: false,
+        name: "storage_struct".to_string(),
+        type_name: Some(sway::TypeName::Identifier {
+            name: format!("{}Storage", contract_name),
+            generic_parameters: None,
+        }),
+    });
+
+    toplevel_function.body = Some(sway::Block {
+        statements: vec![
+            // require(!storage.initialized.read(), "The Contract constructor has already been called");
+            sway::Statement::from(sway::Expression::create_function_calls(
+                None,
+                &[(
+                    "require",
                     Some((
                         None,
-                        vec![sway::Expression::from(sway::Literal::Bool(true))],
+                        vec![
+                            sway::Expression::from(sway::UnaryExpression {
+                                operator: "!".into(),
+                                expression: sway::Expression::create_function_calls(
+                                    None,
+                                    &[
+                                        ("storage_struct", None),
+                                        (constructor_called_field_name.as_str(), None),
+                                        ("read", Some((None, vec![]))),
+                                    ],
+                                ),
+                            }),
+                            sway::Expression::from(sway::Literal::String(format!(
+                                "The {} constructor has already been called",
+                                contract_name
+                            ))),
+                        ],
                     )),
-                ),
-            ],
-        ),
-    ));
+                )],
+            )),
+            // storage_struct.constructor_called.write(true);
+            sway::Statement::from(sway::Expression::create_function_calls(
+                None,
+                &[
+                    ("storage_struct", None),
+                    (constructor_called_field_name.as_str(), None),
+                    (
+                        "write",
+                        Some((
+                            None,
+                            vec![sway::Expression::from(sway::Literal::Bool(true))],
+                        )),
+                    ),
+                ],
+            )),
+        ],
+        final_expr: None,
+    });
 
+    // Add the functions to the contract and module
     contract
         .borrow_mut()
         .abi
@@ -1691,7 +1825,23 @@ pub fn create_constructor_function(
         .items
         .insert(0, sway::ImplItem::Function(impl_function));
 
-    //
-    // TODO: We need to insert a top level function for inheritence
-    //
+    module.borrow_mut().functions.push(ir::Item {
+        signature: sway::TypeName::Function {
+            old_name: String::new(),
+            new_name: function_name.top_level_fn_name,
+            generic_parameters: None,
+            parameters: sway::ParameterList::default(),
+            storage_struct_parameter: Some(Box::new(sway::Parameter {
+                is_ref: false,
+                is_mut: false,
+                name: "storage_struct".into(),
+                type_name: Some(sway::TypeName::Identifier {
+                    name: format!("{}Storage", contract_name),
+                    generic_parameters: None,
+                }),
+            })),
+            return_type: None,
+        },
+        implementation: Some(toplevel_function),
+    });
 }
