@@ -1157,8 +1157,8 @@ impl Project {
                     // set up a base constructor call
                     //
 
-                    print!("WARNING: Unused contract base constructor args: `{base}`; ");
-                    println!("This is for inherits and base constructor calls.")
+                    // print!("WARNING: Unused contract base constructor args: `{base}`; ");
+                    // println!("This is for inherits and base constructor calls.")
                 }
 
                 assert!(base.name.identifiers.len() == 1);

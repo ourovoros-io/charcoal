@@ -166,31 +166,54 @@ pub fn translate_function_name(
     signature.push(')');
 
     // Add the translated function name to the function names mapping if we haven't already
-    if !module.borrow().function_names.contains_key(&signature) {
-        let mut module = module.borrow_mut();
-        let mut new_name = translate_naming_convention(old_name.as_str(), Case::Snake);
+    let (function_name_counts, function_names) = match contract_name.as_ref() {
+        Some(contract_name) => {
+            let function_name_counts = module
+                .borrow_mut()
+                .contract_function_name_counts
+                .entry(contract_name.to_string())
+                .or_default()
+                .clone();
 
-        // Increase the function name count
-        let count = module
-            .function_name_counts
-            .entry(new_name.clone())
-            .or_insert(0);
-        *count += 1;
+            let function_names = module
+                .borrow_mut()
+                .contract_function_names
+                .entry(contract_name.to_string())
+                .or_default()
+                .clone();
 
-        // Append the function name count to the end of the function name if there is more than 1
-        if *count > 1 {
-            new_name = format!("{new_name}_{}", *count);
+            (function_name_counts, function_names)
         }
 
-        module.function_names.insert(signature.clone(), new_name);
+        None => (
+            module.borrow().function_name_counts.clone(),
+            module.borrow().function_names.clone(),
+        ),
+    };
+
+    if !function_names.borrow().contains_key(&signature) {
+        let mut new_name = translate_naming_convention(old_name.as_str(), Case::Snake);
+
+        {
+            let mut function_name_counts = function_name_counts.borrow_mut();
+
+            // Increase the function name count
+            let count = function_name_counts.entry(new_name.clone()).or_insert(0);
+            *count += 1;
+
+            // Append the function name count to the end of the function name if there is more than 1
+            if *count > 1 {
+                new_name = format!("{new_name}_{}", *count);
+            }
+        }
+
+        function_names
+            .borrow_mut()
+            .insert(signature.clone(), new_name);
     }
 
-    let abi_fn_name = module
-        .borrow()
-        .function_names
-        .get(&signature)
-        .unwrap()
-        .clone();
+    let function_names = function_names.borrow_mut();
+    let abi_fn_name = function_names.get(&signature).unwrap().clone();
 
     let (old_name, mut top_level_fn_name) = if matches!(
         function_ty,

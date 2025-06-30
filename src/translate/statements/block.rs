@@ -15,8 +15,8 @@ pub fn translate_block(
         let sway_statement =
             match translate_statement(project, module.clone(), scope.clone(), statement) {
                 Ok(statement) => statement,
-                Err(Error::IneffectualStatement(_, statement)) => {
-                    println!("WARNING: Skipping ineffectual statement: {statement}");
+                Err(Error::IneffectualStatement(_, _statement)) => {
+                    // println!("WARNING: Skipping ineffectual statement: {statement}");
                     continue;
                 }
                 Err(error) => return Err(error),

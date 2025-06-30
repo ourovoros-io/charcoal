@@ -285,8 +285,11 @@ pub struct Module {
     pub contracts: Vec<Item<Rc<RefCell<Contract>>>>,
     pub impls: Vec<sway::Impl>,
 
-    pub function_name_counts: HashMap<String, usize>,
-    pub function_names: HashMap<String, String>,
+    pub contract_function_name_counts: HashMap<String, Rc<RefCell<HashMap<String, usize>>>>,
+    pub contract_function_names: HashMap<String, Rc<RefCell<HashMap<String, String>>>>,
+
+    pub function_name_counts: Rc<RefCell<HashMap<String, usize>>>,
+    pub function_names: Rc<RefCell<HashMap<String, String>>>,
     pub function_constructor_calls: HashMap<String, Vec<sway::FunctionCall>>,
     pub function_modifiers: HashMap<String, Vec<sway::FunctionCall>>,
 
@@ -632,7 +635,11 @@ impl From<Module> for sway::Module {
             let contract = contract.borrow();
 
             items.push(sway::ModuleItem::Abi(contract.abi.clone()));
-            items.push(sway::ModuleItem::Impl(contract.abi_impl.clone()));
+
+            // Only add the abi's impl if both the abi and its impl are non-empty.
+            if !contract.abi.functions.is_empty() && !contract.abi_impl.items.is_empty() {
+                items.push(sway::ModuleItem::Impl(contract.abi_impl.clone()));
+            }
         }
 
         for x in module.impls {

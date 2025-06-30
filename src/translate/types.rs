@@ -50,7 +50,7 @@ pub fn translate_type_name(
             },
 
             solidity::Type::Payable => {
-                println!("WARNING: encountered payable cast, translating as Identity");
+                // println!("WARNING: encountered payable cast, translating as Identity");
 
                 sway::TypeName::Identifier {
                     name: "Identity".into(),
@@ -103,13 +103,13 @@ pub fn translate_type_name(
                     name: match *bits {
                         0..=8 => {
                             if *bits != 8 {
-                                eprintln!(
-                                    "{}: WARNING: unsupported signed integer type `int{bits}`, using `I8`...",
-                                    project.loc_to_file_location_string(
-                                        module.clone(),
-                                        &type_name.loc()
-                                    ),
-                                );
+                                // eprintln!(
+                                //     "{}: WARNING: unsupported signed integer type `int{bits}`, using `I8`...",
+                                //     project.loc_to_file_location_string(
+                                //         module.clone(),
+                                //         &type_name.loc()
+                                //     ),
+                                // );
                             }
                             module
                                 .borrow_mut()
@@ -118,13 +118,13 @@ pub fn translate_type_name(
                         }
                         9..=16 => {
                             if *bits != 16 {
-                                eprintln!(
-                                    "{}: WARNING: unsupported signed integer type `int{bits}`, using `I16`...",
-                                    project.loc_to_file_location_string(
-                                        module.clone(),
-                                        &type_name.loc()
-                                    ),
-                                );
+                                // eprintln!(
+                                //     "{}: WARNING: unsupported signed integer type `int{bits}`, using `I16`...",
+                                //     project.loc_to_file_location_string(
+                                //         module.clone(),
+                                //         &type_name.loc()
+                                //     ),
+                                // );
                             }
                             module
                                 .borrow_mut()
@@ -133,13 +133,13 @@ pub fn translate_type_name(
                         }
                         17..=32 => {
                             if *bits != 32 {
-                                eprintln!(
-                                    "{}: WARNING: unsupported signed integer type `int{bits}`, using `I32`...",
-                                    project.loc_to_file_location_string(
-                                        module.clone(),
-                                        &type_name.loc()
-                                    ),
-                                );
+                                // eprintln!(
+                                //     "{}: WARNING: unsupported signed integer type `int{bits}`, using `I32`...",
+                                //     project.loc_to_file_location_string(
+                                //         module.clone(),
+                                //         &type_name.loc()
+                                //     ),
+                                // );
                             }
                             module
                                 .borrow_mut()
@@ -148,13 +148,13 @@ pub fn translate_type_name(
                         }
                         33..=64 => {
                             if *bits != 64 {
-                                eprintln!(
-                                    "{}: WARNING: unsupported signed integer type `int{bits}`, using `I64`...",
-                                    project.loc_to_file_location_string(
-                                        module.clone(),
-                                        &type_name.loc()
-                                    ),
-                                );
+                                // eprintln!(
+                                //     "{}: WARNING: unsupported signed integer type `int{bits}`, using `I64`...",
+                                //     project.loc_to_file_location_string(
+                                //         module.clone(),
+                                //         &type_name.loc()
+                                //     ),
+                                // );
                             }
                             module
                                 .borrow_mut()
@@ -163,13 +163,13 @@ pub fn translate_type_name(
                         }
                         65..=128 => {
                             if *bits != 128 {
-                                eprintln!(
-                                    "{}: WARNING: unsupported signed integer type `int{bits}`, using `I128`...",
-                                    project.loc_to_file_location_string(
-                                        module.clone(),
-                                        &type_name.loc()
-                                    ),
-                                );
+                                // eprintln!(
+                                //     "{}: WARNING: unsupported signed integer type `int{bits}`, using `I128`...",
+                                //     project.loc_to_file_location_string(
+                                //         module.clone(),
+                                //         &type_name.loc()
+                                //     ),
+                                // );
                             }
                             module
                                 .borrow_mut()
@@ -178,13 +178,13 @@ pub fn translate_type_name(
                         }
                         129..=256 => {
                             if *bits != 256 {
-                                eprintln!(
-                                    "{}: WARNING: unsupported signed integer type `int{bits}`, using `I256`...",
-                                    project.loc_to_file_location_string(
-                                        module.clone(),
-                                        &type_name.loc()
-                                    ),
-                                );
+                                // eprintln!(
+                                //     "{}: WARNING: unsupported signed integer type `int{bits}`, using `I256`...",
+                                //     project.loc_to_file_location_string(
+                                //         module.clone(),
+                                //         &type_name.loc()
+                                //     ),
+                                // );
                             }
                             module
                                 .borrow_mut()
@@ -201,51 +201,51 @@ pub fn translate_type_name(
                 name: match *bits {
                     0..=8 => {
                         if *bits != 8 {
-                            eprintln!(
-                                "{}: WARNING: unsupported unsigned integer type `uint{bits}`, using `u8`...",
-                                project
-                                    .loc_to_file_location_string(module.clone(), &type_name.loc()),
-                            );
+                            // eprintln!(
+                            //     "{}: WARNING: unsupported unsigned integer type `uint{bits}`, using `u8`...",
+                            //     project
+                            //         .loc_to_file_location_string(module.clone(), &type_name.loc()),
+                            // );
                         }
                         "u8".into()
                     }
                     9..=16 => {
                         if *bits != 16 {
-                            eprintln!(
-                                "{}: WARNING: unsupported unsigned integer type `uint{bits}`, using `u16`...",
-                                project
-                                    .loc_to_file_location_string(module.clone(), &type_name.loc()),
-                            );
+                            // eprintln!(
+                            //     "{}: WARNING: unsupported unsigned integer type `uint{bits}`, using `u16`...",
+                            //     project
+                            //         .loc_to_file_location_string(module.clone(), &type_name.loc()),
+                            // );
                         }
                         "u16".into()
                     }
                     17..=32 => {
                         if *bits != 32 {
-                            eprintln!(
-                                "{}: WARNING: unsupported unsigned integer type `uint{bits}`, using `u32`...",
-                                project
-                                    .loc_to_file_location_string(module.clone(), &type_name.loc()),
-                            );
+                            // eprintln!(
+                            //     "{}: WARNING: unsupported unsigned integer type `uint{bits}`, using `u32`...",
+                            //     project
+                            //         .loc_to_file_location_string(module.clone(), &type_name.loc()),
+                            // );
                         }
                         "u32".into()
                     }
                     33..=64 => {
                         if *bits != 64 {
-                            eprintln!(
-                                "{}: WARNING: unsupported unsigned integer type `uint{bits}`, using `u64`...",
-                                project
-                                    .loc_to_file_location_string(module.clone(), &type_name.loc()),
-                            );
+                            // eprintln!(
+                            //     "{}: WARNING: unsupported unsigned integer type `uint{bits}`, using `u64`...",
+                            //     project
+                            //         .loc_to_file_location_string(module.clone(), &type_name.loc()),
+                            // );
                         }
                         "u64".into()
                     }
                     65..=256 => {
                         if *bits != 256 {
-                            eprintln!(
-                                "{}: WARNING: unsupported unsigned integer type `uint{bits}`, using `u256`...",
-                                project
-                                    .loc_to_file_location_string(module.clone(), &type_name.loc()),
-                            );
+                            // eprintln!(
+                            //     "{}: WARNING: unsupported unsigned integer type `uint{bits}`, using `u256`...",
+                            //     project
+                            //         .loc_to_file_location_string(module.clone(), &type_name.loc()),
+                            // );
                         }
                         "u256".into()
                     }
@@ -481,10 +481,10 @@ pub fn translate_type_name(
                                     | sway::Literal::HexInt(value, _),
                                 )) = constant.value.as_ref()
                             {
-                                println!(
-                                    "WARNING: Constants as array lengths are unsupported. Using `{}` instead of `{}`.",
-                                    value, ident
-                                );
+                                // println!(
+                                //     "WARNING: Constants as array lengths are unsupported. Using `{}` instead of `{}`.",
+                                //     value, ident
+                                // );
                                 value.clone().try_into().unwrap()
                             } else {
                                 panic!("Invalid array length expression: {length:#?}")
