@@ -31,6 +31,10 @@ pub enum SymbolData {
         namespace: Option<String>,
         field: sway::StorageField,
     },
+    StorageStructField {
+        parameter_name: String,
+        field: sway::StructField,
+    },
 }
 
 impl TryInto<sway::Expression> for SymbolData {
@@ -69,10 +73,15 @@ impl TryInto<sway::Expression> for SymbolData {
                 }))
             }
 
-            _ => Err(Error::Wrapped(Box::new(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                format!("Invalid symbol to expression input: {self:#?}"),
-            )))),
+            SymbolData::StorageStructField {
+                parameter_name,
+                field,
+            } => Ok(sway::Expression::from(sway::MemberAccess {
+                expression: sway::Expression::create_identifier(parameter_name),
+                member: field.new_name.clone(),
+            })),
+
+            _ => panic!("Invalid symbol to expression input: {self:#?}"),
         }
     }
 }
@@ -181,6 +190,48 @@ pub fn resolve_symbol(
                 && let Some(field) = configurable.fields.iter().find(|f| f.old_name == *name)
             {
                 return Some(SymbolData::ConfigurableField(field.clone()));
+            }
+
+            // Check to see if the current function has a storage struct parameter and the variable refers to a field of it
+            if let Some(function_name) = scope.borrow().get_function_name()
+                && let Some(function) = module
+                    .borrow()
+                    .functions
+                    .iter()
+                    .find(|f| {
+                        let sway::TypeName::Function { new_name, .. } = &f.signature else {
+                            unreachable!()
+                        };
+                        function_name == *new_name
+                    })
+                    .cloned()
+                && let sway::TypeName::Function {
+                    storage_struct_parameter: Some(storage_struct_parameter),
+                    ..
+                } = &function.signature
+            {
+                let storage_struct_name = storage_struct_parameter
+                    .type_name
+                    .as_ref()
+                    .unwrap()
+                    .to_string();
+
+                if let Some(SymbolData::Struct(storage_struct)) = resolve_symbol(
+                    project,
+                    module.clone(),
+                    scope.clone(),
+                    Symbol::Struct(storage_struct_name),
+                ) && let Some(field) = storage_struct
+                    .borrow()
+                    .fields
+                    .iter()
+                    .find(|f| f.old_name == *name)
+                {
+                    return Some(SymbolData::StorageStructField {
+                        parameter_name: storage_struct_parameter.name.clone(),
+                        field: field.clone(),
+                    });
+                }
             }
 
             // Check to see if the variable refers to a storage field
@@ -912,7 +963,7 @@ pub fn resolve_struct_constructor(
                 .iter()
                 .find(|a| {
                     let new_name = translate_naming_convention(&a.name.name, Case::Snake);
-                    new_name == field.name
+                    new_name == field.new_name
                 })
                 .unwrap();
 
@@ -973,7 +1024,7 @@ pub fn resolve_struct_constructor(
             .iter()
             .zip(parameters.iter())
             .map(|(field, value)| sway::ConstructorField {
-                name: field.name.clone(),
+                name: field.new_name.clone(),
                 value: value.clone(),
             })
             .collect(),

@@ -1578,7 +1578,7 @@ fn get_member_access_type(
                 .borrow()
                 .fields
                 .iter()
-                .find(|f| f.name == member_access.member)
+                .find(|f| f.new_name == member_access.member)
         {
             return Ok(field.type_name.clone());
         }

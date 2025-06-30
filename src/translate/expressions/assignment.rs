@@ -59,39 +59,6 @@ pub fn translate_assignment_expression(
 
     let expr_type_name = get_expression_type(project, module.clone(), scope.clone(), &expression)?;
 
-    // HACK: struct field lookup
-    if let sway::Expression::MemberAccess(member_access) = &expression {
-        let mut is_storage_keyword = false;
-
-        if let sway::Expression::PathExpr(path_expr) = &member_access.expression
-            && let sway::PathExprRoot::Identifier(id) = &path_expr.root
-            && *id == "storage"
-        {
-            is_storage_keyword = true;
-        }
-
-        if !is_storage_keyword {
-            let expression_type = get_expression_type(
-                project,
-                module.clone(),
-                scope.clone(),
-                &member_access.expression,
-            )?;
-
-            if let sway::TypeName::Identifier { name, .. } = expression_type
-                && let Some(struct_definition) =
-                    project.find_struct(module.clone(), scope.clone(), &name)
-                && struct_definition
-                    .borrow()
-                    .fields
-                    .iter()
-                    .any(|f| f.name == member_access.member)
-            {
-                return Ok(expression);
-            }
-        }
-    }
-
     if let Some(storage_key_type) = expr_type_name.storage_key_type() {
         let member = match &storage_key_type {
             sway::TypeName::Identifier {
@@ -438,7 +405,7 @@ pub fn create_assignment_expression(
                 return false;
             }
 
-            if !s.fields.iter().any(|f| f.name == member_access.member) {
+            if !s.fields.iter().any(|f| f.new_name == member_access.member) {
                 return false;
             }
 
@@ -449,7 +416,7 @@ pub fn create_assignment_expression(
             let field = struct_definition
                 .fields
                 .iter()
-                .find(|f| f.name == member_access.member)
+                .find(|f| f.new_name == member_access.member)
                 .unwrap();
 
             // Non-storage struct field assignment
@@ -458,7 +425,7 @@ pub fn create_assignment_expression(
                 operator: "=".into(),
                 lhs: sway::Expression::from(sway::MemberAccess {
                     expression: member_access.expression.clone(),
-                    member: field.name.clone(),
+                    member: field.new_name.clone(),
                 }),
                 rhs: coerce_expression(
                     project,

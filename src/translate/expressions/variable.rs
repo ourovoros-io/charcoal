@@ -364,7 +364,7 @@ pub fn translate_variable_access_expression(
                     .borrow()
                     .fields
                     .iter()
-                    .any(|f| f.name == field_name)
+                    .any(|f| f.new_name == field_name)
             {
                 return Ok(Some(ir::VariableAccess {
                     variable,

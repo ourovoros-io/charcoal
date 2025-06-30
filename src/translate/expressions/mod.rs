@@ -872,7 +872,7 @@ pub fn create_value_expression(
                             .fields
                             .iter()
                             .map(|f| sway::ConstructorField {
-                                name: f.name.clone(),
+                                name: f.new_name.clone(),
                                 value: create_value_expression(
                                     project,
                                     module.clone(),

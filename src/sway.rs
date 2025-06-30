@@ -1151,7 +1151,8 @@ impl TabbedDisplay for Struct {
 #[derive(Clone, Debug, PartialEq)]
 pub struct StructField {
     pub is_public: bool,
-    pub name: String,
+    pub new_name: String,
+    pub old_name: String,
     pub type_name: TypeName,
 }
 
@@ -1161,7 +1162,7 @@ impl Display for StructField {
             write!(f, "pub ")?;
         }
 
-        write!(f, "{}: {}", self.name, self.type_name)
+        write!(f, "{}: {}", self.new_name, self.type_name)
     }
 }
 

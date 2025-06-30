@@ -245,10 +245,10 @@ pub fn translate_state_variable(
                     .iter_mut()
                     .find(|m| m.0 == struct_name)
                     .unwrap();
-                mapping_names.1.push(field.name.clone());
+                mapping_names.1.push(field.new_name.clone());
 
                 let instance_field_name = format!("{struct_name}_instance_count");
-                let mapping_field_name = format!("{struct_name}_{}s", field.name);
+                let mapping_field_name = format!("{struct_name}_{}s", field.new_name);
 
                 let mut module = module.borrow_mut();
                 let storage = module.get_storage_namespace(value_scope.clone()).unwrap();
@@ -395,7 +395,8 @@ pub fn translate_state_variable(
             .fields
             .push(sway::StructField {
                 is_public: true,
-                name: new_name.clone(),
+                new_name: new_name.clone(),
+                old_name: old_name.clone(),
                 type_name: sway::TypeName::Identifier {
                     name: "StorageKey".to_string(),
                     generic_parameters: Some(sway::GenericParameterList {
@@ -606,7 +607,7 @@ pub fn generate_state_variable_getter_functions(
                     .fields
                     .iter()
                     .map(|f| sway::ConstructorField {
-                        name: f.name.clone(),
+                        name: f.new_name.clone(),
                         value: sway::Expression::from(sway::MemberAccess {
                             expression: sway::Expression::from(sway::PathExpr {
                                 root: sway::PathExprRoot::Identifier("storage".to_string()),
@@ -615,7 +616,7 @@ pub fn generate_state_variable_getter_functions(
                                     generic_parameters: None,
                                 }],
                             }),
-                            member: f.name.clone(),
+                            member: f.new_name.clone(),
                         }),
                     })
                     .collect(),

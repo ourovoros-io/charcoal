@@ -81,14 +81,17 @@ pub fn translate_member_access_expression(
                                 variable.borrow().new_name.clone(),
                             ));
                         }
+
                         SymbolData::Constant(constant) => {
                             return Ok(sway::Expression::create_identifier(constant.name.clone()));
                         }
+
                         SymbolData::ConfigurableField(configurable_field) => {
                             return Ok(sway::Expression::create_identifier(
                                 configurable_field.name.clone(),
                             ));
                         }
+
                         SymbolData::StorageField { namespace, field } => {
                             return Ok(sway::Expression::create_function_calls(
                                 None,
@@ -106,6 +109,16 @@ pub fn translate_member_access_expression(
                                     ),
                                     (field.name.as_str(), None),
                                 ],
+                            ));
+                        }
+
+                        SymbolData::StorageStructField {
+                            parameter_name,
+                            field,
+                        } => {
+                            return Ok(sway::Expression::create_member_access(
+                                sway::Expression::create_identifier(parameter_name),
+                                &[field.new_name.as_str()],
                             ));
                         }
 
@@ -203,7 +216,7 @@ pub fn translate_member_access_expression(
                 .borrow()
                 .fields
                 .iter()
-                .any(|f| f.name == field_name)
+                .any(|f| f.new_name == field_name)
         {
             return Ok(Some(sway::Expression::from(sway::MemberAccess {
                 expression: container.clone(),

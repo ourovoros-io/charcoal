@@ -15,10 +15,9 @@ pub fn translate_struct_definition(
     let scope = Rc::new(RefCell::new(ir::Scope::new(contract_name, None, None)));
 
     for field in struct_definition.fields.iter() {
-        // TODO: keep track of original struct name?
-        let name =
-            translate_naming_convention(field.name.as_ref().unwrap().name.as_str(), Case::Snake);
-            
+        let old_name = field.name.as_ref().unwrap().name.clone();
+        let new_name = translate_naming_convention(old_name.as_str(), Case::Snake);
+
         let mut type_name = translate_type_name(
             project,
             module.clone(),
@@ -64,7 +63,8 @@ pub fn translate_struct_definition(
 
         fields.push(sway::StructField {
             is_public: false,
-            name,
+            new_name,
+            old_name,
             type_name,
         });
     }
