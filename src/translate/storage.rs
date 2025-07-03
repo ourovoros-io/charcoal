@@ -2,6 +2,7 @@ use crate::{error::Error, ir, project::Project, translate::*};
 use solang_parser::pt as solidity;
 use std::{cell::RefCell, rc::Rc};
 
+#[derive(Clone, Debug)]
 pub struct StateVariableInfo {
     pub is_public: bool,
     pub is_storage: bool,
@@ -28,7 +29,7 @@ pub fn translate_state_variable(
     //     project.loc_to_file_location_string(module.clone(), &variable_definition.loc)
     // );
 
-    let value_scope = Rc::new(RefCell::new(ir::Scope::new(contract_name, None, None)));
+    let scope = Rc::new(RefCell::new(ir::Scope::new(contract_name, None, None)));
 
     // Collect information about the variable from its attributes
     let is_public = variable_definition.attrs.iter().any(|x| {
@@ -96,7 +97,7 @@ pub fn translate_state_variable(
     let mut variable_type_name = translate_type_name(
         project,
         module.clone(),
-        value_scope.clone(),
+        scope.clone(),
         &variable_definition.ty,
         if is_storage {
             Some(solidity::StorageLocation::Storage(Default::default()))
@@ -123,7 +124,7 @@ pub fn translate_state_variable(
             .as_ref()
             .map(|x| {
                 let mut value =
-                    translate_expression(project, module.clone(), value_scope.clone(), x);
+                    translate_expression(project, module.clone(), scope.clone(), x);
 
                 if let Ok(sway::Expression::Commented(comment, expression)) = &value
                     && let sway::Expression::FunctionCall(function_call) = expression.as_ref()
@@ -144,7 +145,7 @@ pub fn translate_state_variable(
         value = Some(create_value_expression(
             project,
             module.clone(),
-            value_scope.clone(),
+            scope.clone(),
             &variable_type_name,
             initializer.as_ref(),
         ));
@@ -155,7 +156,7 @@ pub fn translate_state_variable(
         && (variable_type_name.is_storage_string() || variable_type_name.is_storage_vec())
     {
         if let Some(x) = variable_definition.initializer.as_ref() {
-            let value = translate_expression(project, module.clone(), value_scope.clone(), x)?;
+            let value = translate_expression(project, module.clone(), scope.clone(), x)?;
 
             deferred_initializations.push(ir::DeferredInitialization {
                 name: new_name.clone(),
@@ -164,6 +165,8 @@ pub fn translate_state_variable(
                 is_configurable,
                 value,
             });
+
+            ensure_constructor_called_fields_exist(project, module.clone(), scope.clone());
         }
 
         value = Some(sway::Expression::from(sway::Constructor {
@@ -184,7 +187,7 @@ pub fn translate_state_variable(
         let initializer = translate_expression(
             project,
             module.clone(),
-            value_scope.clone(),
+            scope.clone(),
             variable_definition.initializer.as_ref().unwrap(),
         )?;
 
@@ -212,7 +215,7 @@ pub fn translate_state_variable(
         // HACK: Add to mapping names for toplevel structs in storage that contain storage mappings
         if let Some(struct_definition) = project.find_struct(
             module.clone(),
-            value_scope.clone(),
+            scope.clone(),
             &variable_type_name.to_string(),
         ) {
             for field in struct_definition.borrow().fields.iter() {
@@ -245,7 +248,7 @@ pub fn translate_state_variable(
                 let mapping_field_name = format!("{struct_name}_{}s", field.new_name);
 
                 let mut module = module.borrow_mut();
-                let storage = module.get_storage_namespace(value_scope.clone()).unwrap();
+                let storage = module.get_storage_namespace(scope.clone()).unwrap();
 
                 if let Some(field) = storage
                     .borrow()
@@ -321,11 +324,11 @@ pub fn translate_state_variable(
         }
 
         value = Some(if let Some(x) = variable_definition.initializer.as_ref() {
-            let value = translate_expression(project, module.clone(), value_scope.clone(), x)?;
+            let value = translate_expression(project, module.clone(), scope.clone(), x)?;
             create_value_expression(
                 project,
                 module.clone(),
-                value_scope.clone(),
+                scope.clone(),
                 &variable_type_name,
                 Some(&value),
             )
@@ -333,7 +336,7 @@ pub fn translate_state_variable(
             create_value_expression(
                 project,
                 module.clone(),
-                value_scope.clone(),
+                scope.clone(),
                 &variable_type_name,
                 None,
             )
@@ -384,7 +387,7 @@ pub fn translate_state_variable(
     else if storage_namespace.is_some() {
         module
             .borrow_mut()
-            .get_storage_struct(value_scope.clone())
+            .get_storage_struct(scope.clone())
             .borrow_mut()
             .fields
             .push(sway::StructField {
@@ -404,7 +407,7 @@ pub fn translate_state_variable(
 
         module
             .borrow_mut()
-            .get_storage_namespace(value_scope.clone())
+            .get_storage_namespace(scope.clone())
             .unwrap()
             .borrow_mut()
             .fields

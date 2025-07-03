@@ -148,29 +148,15 @@ pub fn translate_contract_definition(
         None,
     )));
 
+    // HACK: Add an implicit `constructor_called` state variable if we have a constructor function
+    if has_constructor {
+        ensure_constructor_called_fields_exist(project, module.clone(), scope.clone());
+    }
+
     // Translate contract state variables
     let mut deferred_initializations = vec![];
     let mut mapping_names = vec![];
     let mut state_variable_infos = vec![];
-
-    // HACK: Add an implicit `constructor_called` state variable if we have a constructor function
-    if has_constructor {
-        state_variable_infos.push(StateVariableInfo {
-            is_public: false,
-            is_storage: true,
-            is_immutable: false,
-            is_constant: false,
-            is_configurable: false,
-            old_name: String::new(),
-            new_name: "constructor_called".into(),
-            type_name: sway::TypeName::Identifier {
-                name: "bool".into(),
-                generic_parameters: None,
-            },
-            deferred_initializations: vec![],
-            mapping_names: vec![],
-        });
-    }
 
     for variable_definition in variable_definitions.iter() {
         let state_variable_info = translate_state_variable(
@@ -303,6 +289,7 @@ pub fn translate_contract_definition(
     // Propagate deferred initializations into the constructor
     if !deferred_initializations.is_empty() {
         let namespace_name = translate_naming_convention(&contract_name, Case::Snake);
+
         let scope = Rc::new(RefCell::new(ir::Scope::new(
             Some(contract_name.as_str()),
             None,
@@ -358,27 +345,21 @@ pub fn translate_contract_definition(
             }
         }
 
-        create_constructor_function(project, module.clone(), scope.clone(), contract.clone());
+        ensure_constructor_functions_exist(project, module.clone(), scope.clone(), contract.clone());
 
-        let mut contract = contract.borrow_mut();
+        let mut module = module.borrow_mut();
+        let constructor_name = format!("{namespace_name}_constructor");
 
-        let constructor_function = contract
-            .abi_impl
-            .items
+        let constructor_function = module
+            .functions
             .iter_mut()
-            .find(|i| {
-                let sway::ImplItem::Function(f) = i else {
-                    return false;
+            .find(|f| {
+                let sway::TypeName::Function { new_name, .. } = &f.signature else {
+                    unreachable!()
                 };
-
-                f.new_name == "constructor"
+                *new_name == constructor_name
             })
-            .map(|i| {
-                let sway::ImplItem::Function(f) = i else {
-                    return None;
-                };
-                Some(f)
-            })
+            .map(|f| f.implementation.as_mut())
             .flatten()
             .unwrap();
 

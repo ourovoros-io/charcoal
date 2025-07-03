@@ -1488,7 +1488,8 @@ pub fn translate_modifier_definition(
     Ok(())
 }
 
-pub fn create_constructor_function(
+#[inline(always)]
+pub fn ensure_constructor_functions_exist(
     project: &mut Project,
     module: Rc<RefCell<ir::Module>>,
     scope: Rc<RefCell<ir::Scope>>,
@@ -1528,49 +1529,6 @@ pub fn create_constructor_function(
             })
             .is_none()
     );
-
-    let constructor_called_field_name = "constructor_called".to_string();
-
-    // Add the `constructor_called` field to the storage struct
-    module
-        .borrow_mut()
-        .get_storage_struct(scope.clone())
-        .borrow_mut()
-        .fields
-        .push(sway::StructField {
-            is_public: true,
-            new_name: constructor_called_field_name.clone(),
-            old_name: String::new(),
-            type_name: sway::TypeName::Identifier {
-                name: "StorageKey".to_string(),
-                generic_parameters: Some(sway::GenericParameterList {
-                    entries: vec![sway::GenericParameter {
-                        type_name: sway::TypeName::Identifier {
-                            name: "bool".into(),
-                            generic_parameters: None,
-                        },
-                        implements: None,
-                    }],
-                }),
-            },
-        });
-
-    // Add the `constructor_called` field to the storage block
-    module
-        .borrow_mut()
-        .get_storage_namespace(scope.clone())
-        .unwrap()
-        .borrow_mut()
-        .fields
-        .push(sway::StorageField {
-            old_name: String::new(),
-            name: constructor_called_field_name.clone(),
-            type_name: sway::TypeName::Identifier {
-                name: "bool".into(),
-                generic_parameters: None,
-            },
-            value: sway::Expression::from(sway::Literal::Bool(false)),
-        });
 
     // Create the ABI function
     let abi_function = sway::Function {
@@ -1698,6 +1656,56 @@ pub fn create_constructor_function(
         },
         implementation: Some(toplevel_function),
     });
+}
+
+#[inline(always)]
+pub fn ensure_constructor_called_fields_exist(
+    _project: &mut Project,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
+) {
+    let constructor_called_field_name = "constructor_called".to_string();
+
+    // Add the `constructor_called` field to the storage struct
+    module
+        .borrow_mut()
+        .get_storage_struct(scope.clone())
+        .borrow_mut()
+        .fields
+        .push(sway::StructField {
+            is_public: true,
+            new_name: constructor_called_field_name.clone(),
+            old_name: String::new(),
+            type_name: sway::TypeName::Identifier {
+                name: "StorageKey".to_string(),
+                generic_parameters: Some(sway::GenericParameterList {
+                    entries: vec![sway::GenericParameter {
+                        type_name: sway::TypeName::Identifier {
+                            name: "bool".into(),
+                            generic_parameters: None,
+                        },
+                        implements: None,
+                    }],
+                }),
+            },
+        });
+
+    // Add the `constructor_called` field to the storage block
+    module
+        .borrow_mut()
+        .get_storage_namespace(scope.clone())
+        .unwrap()
+        .borrow_mut()
+        .fields
+        .push(sway::StorageField {
+            old_name: String::new(),
+            name: constructor_called_field_name.clone(),
+            type_name: sway::TypeName::Identifier {
+                name: "bool".into(),
+                generic_parameters: None,
+            },
+            value: sway::Expression::from(sway::Literal::Bool(false)),
+        });
 }
 
 #[inline(always)]
