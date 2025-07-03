@@ -93,12 +93,6 @@ pub fn translate_state_variable(
     }
 
     // Translate the variable's type name
-    // let storage_location = if is_storage {
-    //     Some(solidity::StorageLocation::Storage(Default::default()))
-    // } else {
-    //     None
-    // };
-
     let mut variable_type_name = translate_type_name(
         project,
         module.clone(),
@@ -441,9 +435,12 @@ pub fn generate_state_variable_getter_functions(
     module: Rc<RefCell<ir::Module>>,
     scope: Rc<RefCell<ir::Scope>>,
     contract_name: Option<&str>,
-    variable_definition: &solidity::VariableDefinition,
     state_variable_info: &StateVariableInfo,
-) -> Result<(sway::Function, sway::Function, sway::Function), Error> {
+) -> Result<Option<(sway::Function, sway::Function, sway::Function)>, Error> {
+    if !state_variable_info.is_public {
+        return Ok(None);
+    }
+
     // Generate parameters and return type for the public getter function
     let mut parameters = vec![];
     let mut return_type =
@@ -563,10 +560,7 @@ pub fn generate_state_variable_getter_functions(
         } else if state_variable_info.is_constant || state_variable_info.is_immutable {
             sway::Expression::create_identifier(state_variable_info.new_name.clone())
         } else {
-            todo!(
-                "Handle getter function for non-storage variables: {} - {variable_definition:#?}",
-                variable_definition.to_string()
-            )
+            todo!("Handle getter function for non-storage variables")
         }),
     });
 
@@ -578,6 +572,7 @@ pub fn generate_state_variable_getter_functions(
 
     if state_variable_info.is_storage {
         let contract_name = contract_name.unwrap();
+
         let storage_namespace_name = module
             .borrow()
             .get_storage_namespace_name(scope.clone())
@@ -653,5 +648,5 @@ pub fn generate_state_variable_getter_functions(
         )),
     });
 
-    Ok((abi_function, toplevel_function, impl_function))
+    Ok(Some((abi_function, toplevel_function, impl_function)))
 }

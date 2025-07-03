@@ -22,6 +22,8 @@ pub fn translate_contract_definition(
     let mut function_definitions = vec![];
     let mut variable_definitions = vec![];
 
+    let mut has_constructor = false;
+
     for part in contract_definition.parts.iter() {
         match part {
             solidity::ContractPart::EventDefinition(event_definition) => {
@@ -53,6 +55,10 @@ pub fn translate_contract_definition(
             }
 
             solidity::ContractPart::FunctionDefinition(function_definition) => {
+                if matches!(function_definition.ty, solidity::FunctionTy::Constructor) {
+                    has_constructor = true;
+                }
+
                 function_definitions.push(function_definition.clone())
             }
 
@@ -147,6 +153,25 @@ pub fn translate_contract_definition(
     let mut mapping_names = vec![];
     let mut state_variable_infos = vec![];
 
+    // HACK: Add an implicit `constructor_called` state variable if we have a constructor function
+    if has_constructor {
+        state_variable_infos.push(StateVariableInfo {
+            is_public: false,
+            is_storage: true,
+            is_immutable: false,
+            is_constant: false,
+            is_configurable: false,
+            old_name: String::new(),
+            new_name: "constructor_called".into(),
+            type_name: sway::TypeName::Identifier {
+                name: "bool".into(),
+                generic_parameters: None,
+            },
+            deferred_initializations: vec![],
+            mapping_names: vec![],
+        });
+    }
+
     for variable_definition in variable_definitions.iter() {
         let state_variable_info = translate_state_variable(
             project,
@@ -155,27 +180,23 @@ pub fn translate_contract_definition(
             &variable_definition,
         )?;
 
-        if !state_variable_info.deferred_initializations.is_empty() {
-            create_constructor_function(project, module.clone(), scope.clone(), contract.clone());
-        }
-
         deferred_initializations.extend(state_variable_info.deferred_initializations.clone());
         mapping_names.extend(state_variable_info.mapping_names.clone());
 
         state_variable_infos.push(state_variable_info);
     }
 
-    for (variable_definition, state_variable_info) in
-        variable_definitions.into_iter().zip(state_variable_infos)
-    {
-        let (abi_fn, toplevel_fn, impl_fn) = generate_state_variable_getter_functions(
+    for state_variable_info in state_variable_infos {
+        let Some((abi_fn, toplevel_fn, impl_fn)) = generate_state_variable_getter_functions(
             project,
             module.clone(),
             scope.clone(),
             Some(contract_name.as_str()),
-            &variable_definition,
             &state_variable_info,
-        )?;
+        )?
+        else {
+            continue;
+        };
 
         contract.borrow_mut().abi.functions.push(abi_fn);
 

@@ -1284,17 +1284,18 @@ impl Project {
                 None,
             )));
 
-            for (variable_definition, state_variable_info) in
-                variable_definitions.into_iter().zip(state_variable_infos)
-            {
-                let (abi_fn, toplevel_fn, impl_fn) = generate_state_variable_getter_functions(
-                    self,
-                    module.clone(),
-                    scope.clone(),
-                    Some(contract_name),
-                    variable_definition,
-                    &state_variable_info,
-                )?;
+            for state_variable_info in state_variable_infos {
+                let Some((abi_fn, toplevel_fn, impl_fn)) =
+                    generate_state_variable_getter_functions(
+                        self,
+                        module.clone(),
+                        scope.clone(),
+                        Some(contract_name),
+                        &state_variable_info,
+                    )?
+                else {
+                    continue;
+                };
 
                 contract.borrow_mut().abi.functions.push(abi_fn);
 
