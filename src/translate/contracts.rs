@@ -208,8 +208,23 @@ pub fn translate_contract_definition(
             .push(sway::ImplItem::Function(impl_fn));
     }
 
-    // Translate each function
+    // Translate each modifier
     for function_definition in function_definitions.iter() {
+        let is_modifier = matches!(function_definition.ty, solidity::FunctionTy::Modifier);
+        if !is_modifier || function_definition.body.is_none() {
+            continue;
+        }
+
+        translate_modifier_definition(
+            project,
+            module.clone(),
+            Some(&contract_name),
+            function_definition,
+        )?;
+    }
+
+    // Translate each function
+    for function_definition in function_definitions {
         let is_modifier = matches!(function_definition.ty, solidity::FunctionTy::Modifier);
         if is_modifier {
             continue;
@@ -269,21 +284,6 @@ pub fn translate_contract_definition(
         };
 
         function_entry.implementation = Some(function);
-    }
-
-    // Translate each modifier
-    for function_definition in function_definitions.iter() {
-        let is_modifier = matches!(function_definition.ty, solidity::FunctionTy::Modifier);
-        if !is_modifier || function_definition.body.is_none() {
-            continue;
-        }
-
-        translate_modifier_definition(
-            project,
-            module.clone(),
-            Some(&contract_name),
-            function_definition,
-        )?;
     }
 
     // Propagate deferred initializations into the constructor

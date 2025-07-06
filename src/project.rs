@@ -1116,6 +1116,15 @@ impl Project {
                     .push(constructor_call.clone());
             }
 
+            for modifier in declaration.modifiers.iter() {
+                module
+                    .borrow_mut()
+                    .function_modifiers
+                    .entry(new_name.clone())
+                    .or_default()
+                    .push(modifier.clone());
+            }
+
             module.borrow_mut().functions.push(ir::Item {
                 signature: declaration.type_name,
                 implementation: None,
@@ -1390,6 +1399,15 @@ impl Project {
                         .push(constructor_call.clone());
                 }
 
+                for modifier in declaration.modifiers.iter() {
+                    module
+                        .borrow_mut()
+                        .function_modifiers
+                        .entry(new_name.clone())
+                        .or_default()
+                        .push(modifier.clone());
+                }
+
                 module.borrow_mut().functions.push(ir::Item {
                     signature: declaration.type_name,
                     implementation: None,
@@ -1424,6 +1442,15 @@ impl Project {
 
         for error_definition in error_definitions {
             translate_error_definition(self, module.clone(), None, &error_definition)?;
+        }
+
+        // Translate modifiers before functions
+        for function_definition in function_definitions.iter() {
+            if !matches!(function_definition.ty, solidity::FunctionTy::Modifier) {
+                continue;
+            }
+
+            translate_modifier_definition(self, module.clone(), None, function_definition)?;
         }
 
         for function_definition in function_definitions {
