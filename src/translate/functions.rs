@@ -961,6 +961,171 @@ pub fn translate_function_definition(
                     generic_parameters: None,
                     parameters: modifier_invocation.parameters.clone(),
                 });
+            } else if let Some(mut block) = modifier.inline_body.clone() {
+                fn inline_expression(
+                    expression: &mut sway::Expression,
+                    inline_statements: &[sway::Statement],
+                ) {
+                    match expression {
+                        sway::Expression::Literal(literal) => {}
+                        sway::Expression::PathExpr(path_expr) => {}
+                        sway::Expression::FunctionCall(function_call) => {
+                            inline_expression(&mut function_call.function, inline_statements);
+
+                            for parameter in function_call.parameters.iter_mut() {
+                                inline_expression(parameter, inline_statements);
+                            }
+                        }
+                        sway::Expression::FunctionCallBlock(function_call_block) => {
+                            inline_expression(&mut function_call_block.function, inline_statements);
+
+                            for parameter in function_call_block.parameters.iter_mut() {
+                                inline_expression(parameter, inline_statements);
+                            }
+
+                            for field in function_call_block.fields.iter_mut() {
+                                inline_expression(&mut field.value, inline_statements);
+                            }
+                        }
+                        sway::Expression::Block(block) => {
+                            for i in 0..block.statements.len() {
+                                inline_statement(&mut block.statements, i, inline_statements);
+                            }
+
+                            if let Some(final_expr) = block.final_expr.as_mut() {
+                                inline_expression(final_expr, inline_statements);
+                            }
+                        }
+                        sway::Expression::Return(expression) => {
+                            if let Some(expression) = expression.as_mut() {
+                                inline_expression(expression, inline_statements);
+                            }
+                        }
+                        sway::Expression::Array(array) => {
+                            for expr in array.elements.iter_mut() {
+                                inline_expression(expr, inline_statements);
+                            }
+                        }
+                        sway::Expression::ArrayAccess(array_access) => {
+                            inline_expression(&mut array_access.expression, inline_statements);
+                            inline_expression(&mut array_access.index, inline_statements);
+                        }
+                        sway::Expression::MemberAccess(member_access) => {
+                            inline_expression(&mut member_access.expression, inline_statements);
+                        }
+                        sway::Expression::Tuple(expressions) => {
+                            for expression in expressions.iter_mut() {
+                                inline_expression(expression, inline_statements);
+                            }
+                        }
+                        sway::Expression::If(if_expr) => {
+                            let mut current_if = Some(if_expr);
+
+                            while let Some(if_expr) = current_if.take() {
+                                if let Some(condition) = if_expr.condition.as_mut() {
+                                    inline_expression(condition, inline_statements);
+                                }
+
+                                for i in 0..if_expr.then_body.statements.len() {
+                                    inline_statement(
+                                        &mut if_expr.then_body.statements,
+                                        i,
+                                        inline_statements,
+                                    );
+                                }
+
+                                if let Some(final_expr) = if_expr.then_body.final_expr.as_mut() {
+                                    inline_expression(final_expr, inline_statements);
+                                }
+
+                                current_if = if_expr.else_if.as_mut();
+                            }
+                        }
+                        sway::Expression::Match(match_expr) => {
+                            inline_expression(&mut match_expr.expression, inline_statements);
+
+                            for branch in match_expr.branches.iter_mut() {
+                                inline_expression(&mut branch.pattern, inline_statements);
+                                inline_expression(&mut branch.value, inline_statements);
+                            }
+                        }
+                        sway::Expression::While(while_expr) => {
+                            inline_expression(&mut while_expr.condition, inline_statements);
+
+                            for i in 0..while_expr.body.statements.len() {
+                                inline_statement(
+                                    &mut while_expr.body.statements,
+                                    i,
+                                    inline_statements,
+                                );
+                            }
+
+                            if let Some(final_expr) = while_expr.body.final_expr.as_mut() {
+                                inline_expression(final_expr, inline_statements);
+                            }
+                        }
+                        sway::Expression::UnaryExpression(unary_expression) => {
+                            inline_expression(&mut unary_expression.expression, inline_statements);
+                        }
+                        sway::Expression::BinaryExpression(binary_expression) => {
+                            inline_expression(&mut binary_expression.lhs, inline_statements);
+                            inline_expression(&mut binary_expression.rhs, inline_statements);
+                        }
+                        sway::Expression::Constructor(constructor) => {
+                            for field in constructor.fields.iter_mut() {
+                                inline_expression(&mut field.value, inline_statements);
+                            }
+                        }
+                        sway::Expression::Continue => {}
+                        sway::Expression::Break => {}
+                        sway::Expression::AsmBlock(asm_block) => {
+                            for register in asm_block.registers.iter_mut() {
+                                if let Some(value) = register.value.as_mut() {
+                                    inline_expression(value, inline_statements);
+                                }
+                            }
+                        }
+                        sway::Expression::Commented(_, expression) => {
+                            inline_expression(expression, inline_statements);
+                        }
+                    }
+                }
+
+                fn inline_statement(
+                    statements: &mut Vec<sway::Statement>,
+                    statement_index: usize,
+                    inline_statements: &[sway::Statement],
+                ) {
+                    match &mut statements[statement_index] {
+                        sway::Statement::Let(let_stmt) => {
+                            inline_expression(&mut let_stmt.value, inline_statements);
+                        }
+                        sway::Statement::Expression(expression) => {
+                            if let Some(ident) = expression.as_identifier()
+                                && ident == "_"
+                            {
+                                statements.remove(statement_index);
+
+                                for statement in inline_statements.iter().rev() {
+                                    statements.insert(statement_index, statement.clone());
+                                }
+
+                                return;
+                            }
+
+                            inline_expression(expression, inline_statements);
+                        }
+                        sway::Statement::Commented(_, statement) => {
+                            unimplemented!()
+                        }
+                    }
+                }
+
+                for i in 0..block.statements.len() {
+                    inline_statement(&mut block.statements, i, &function_body.statements);
+                }
+
+                function_body = block;
             }
         }
     }
@@ -1141,6 +1306,7 @@ pub fn translate_modifier_definition(
         parameters: sway::ParameterList::default(),
         attributes: None,
         has_underscore: false,
+        inline_body: None,
         pre_body: None,
         post_body: None,
     };
@@ -1230,12 +1396,6 @@ pub fn translate_modifier_definition(
             })
             .is_some()
         {
-            //
-            // TODO:
-            // We need to recursively check if the expression contains a `_` path expression anywhere.
-            // This probably means we need to make a filter function under the sway::Expression impl.
-            //
-
             modifier.has_underscore = true;
 
             if let Some(block) = current_body.as_mut() {
@@ -1377,7 +1537,7 @@ pub fn translate_modifier_definition(
                 },
                 implementation: Some(sway::Function {
                     attributes: create_attributes(has_pre_storage_read, has_pre_storage_write),
-                    is_public: false,
+                    is_public: true,
                     old_name: String::new(), // TODO
                     new_name: modifier_pre_function_name.clone(),
                     generic_parameters: None,
@@ -1401,7 +1561,7 @@ pub fn translate_modifier_definition(
                 },
                 implementation: Some(sway::Function {
                     attributes: create_attributes(has_post_storage_read, has_post_storage_write),
-                    is_public: false,
+                    is_public: true,
                     old_name: String::new(), // TODO
                     new_name: modifier_post_function_name.clone(),
                     generic_parameters: None,
@@ -1425,7 +1585,7 @@ pub fn translate_modifier_definition(
                 },
                 implementation: Some(sway::Function {
                     attributes: create_attributes(has_pre_storage_read, has_pre_storage_write),
-                    is_public: false,
+                    is_public: true,
                     old_name: modifier.old_name.clone(),
                     new_name: modifier.new_name.clone(),
                     generic_parameters: None,
@@ -1449,7 +1609,7 @@ pub fn translate_modifier_definition(
                 },
                 implementation: Some(sway::Function {
                     attributes: create_attributes(has_post_storage_read, has_post_storage_write),
-                    is_public: false,
+                    is_public: true,
                     old_name: modifier.old_name.clone(),
                     new_name: modifier.new_name.clone(),
                     generic_parameters: None,
@@ -1462,23 +1622,12 @@ pub fn translate_modifier_definition(
         }
 
         (None, None) => {
-            //
-            // TODO:
-            //
+            if !function_definition.params.is_empty() {
+                todo!("Support inlining modifier with parameters");
+            }
 
-            // let path = project
-            //     .root_folder
-            //     .clone()
-            //     .unwrap()
-            //     .join(module.borrow().path.clone())
-            //     .with_extension("sol");
-
-            // panic!(
-            //     "{}: ERROR: Malformed modifier missing pre and post bodies",
-            //     project.loc_to_file_location_string(module.clone(), &function_definition.loc),
-            // );
-
-            return Ok(());
+            let block = translate_block(project, module.clone(), scope.clone(), statements)?;
+            modifier.inline_body = Some(block);
         }
     }
 

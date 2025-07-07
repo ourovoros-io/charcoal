@@ -56,6 +56,7 @@ pub struct Modifier {
     pub parameters: sway::ParameterList,
     pub attributes: Option<sway::AttributeList>,
     pub has_underscore: bool,
+    pub inline_body: Option<sway::Block>,
     pub pre_body: Option<sway::Block>,
     pub post_body: Option<sway::Block>,
 }
@@ -619,7 +620,7 @@ impl From<Module> for sway::Module {
 
         for x in module.functions {
             let mut function = x.implementation.unwrap();
-            
+
             if let Some(storage_struct_parameter) = function.storage_struct_parameter.as_ref() {
                 function
                     .parameters

@@ -1667,7 +1667,7 @@ pub enum Statement {
 }
 
 impl Statement {
-    /// Applies a lamba to a statement and its child statements.
+    /// Applies a lambda to a statement and its child statements.
     pub fn filter_map<T, F>(&self, f: F) -> Option<T>
     where
         F: Clone + Fn(&&Statement) -> Option<T>,
