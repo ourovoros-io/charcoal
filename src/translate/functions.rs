@@ -926,10 +926,17 @@ pub fn translate_function_definition(
                 panic!("Malformed modifier invocation: {modifier_invocation:#?}");
             };
 
-            let module = module.borrow();
-            let Some(modifier) = module.modifiers.iter().find(|v| v.new_name == *new_name) else {
+            let Some(modifier) = module
+                .borrow()
+                .modifiers
+                .iter()
+                .find(|v| v.borrow().new_name == *new_name)
+                .cloned()
+            else {
                 panic!("Failed to find modifier: {new_name}");
             };
+
+            let modifier = modifier.borrow();
 
             if modifier.pre_body.is_some() && modifier.post_body.is_some() {
                 modifier_pre_calls.push(sway::FunctionCall {
@@ -967,8 +974,9 @@ pub fn translate_function_definition(
                     inline_statements: &[sway::Statement],
                 ) {
                     match expression {
-                        sway::Expression::Literal(literal) => {}
-                        sway::Expression::PathExpr(path_expr) => {}
+                        sway::Expression::Literal(_) => {}
+                        sway::Expression::PathExpr(_) => {}
+
                         sway::Expression::FunctionCall(function_call) => {
                             inline_expression(&mut function_call.function, inline_statements);
 
@@ -976,6 +984,7 @@ pub fn translate_function_definition(
                                 inline_expression(parameter, inline_statements);
                             }
                         }
+
                         sway::Expression::FunctionCallBlock(function_call_block) => {
                             inline_expression(&mut function_call_block.function, inline_statements);
 
@@ -987,6 +996,7 @@ pub fn translate_function_definition(
                                 inline_expression(&mut field.value, inline_statements);
                             }
                         }
+
                         sway::Expression::Block(block) => {
                             for i in 0..block.statements.len() {
                                 inline_statement(&mut block.statements, i, inline_statements);
@@ -996,28 +1006,34 @@ pub fn translate_function_definition(
                                 inline_expression(final_expr, inline_statements);
                             }
                         }
+
                         sway::Expression::Return(expression) => {
                             if let Some(expression) = expression.as_mut() {
                                 inline_expression(expression, inline_statements);
                             }
                         }
+
                         sway::Expression::Array(array) => {
                             for expr in array.elements.iter_mut() {
                                 inline_expression(expr, inline_statements);
                             }
                         }
+
                         sway::Expression::ArrayAccess(array_access) => {
                             inline_expression(&mut array_access.expression, inline_statements);
                             inline_expression(&mut array_access.index, inline_statements);
                         }
+
                         sway::Expression::MemberAccess(member_access) => {
                             inline_expression(&mut member_access.expression, inline_statements);
                         }
+
                         sway::Expression::Tuple(expressions) => {
                             for expression in expressions.iter_mut() {
                                 inline_expression(expression, inline_statements);
                             }
                         }
+
                         sway::Expression::If(if_expr) => {
                             let mut current_if = Some(if_expr);
 
@@ -1041,6 +1057,7 @@ pub fn translate_function_definition(
                                 current_if = if_expr.else_if.as_mut();
                             }
                         }
+
                         sway::Expression::Match(match_expr) => {
                             inline_expression(&mut match_expr.expression, inline_statements);
 
@@ -1049,6 +1066,7 @@ pub fn translate_function_definition(
                                 inline_expression(&mut branch.value, inline_statements);
                             }
                         }
+
                         sway::Expression::While(while_expr) => {
                             inline_expression(&mut while_expr.condition, inline_statements);
 
@@ -1064,20 +1082,25 @@ pub fn translate_function_definition(
                                 inline_expression(final_expr, inline_statements);
                             }
                         }
+
                         sway::Expression::UnaryExpression(unary_expression) => {
                             inline_expression(&mut unary_expression.expression, inline_statements);
                         }
+
                         sway::Expression::BinaryExpression(binary_expression) => {
                             inline_expression(&mut binary_expression.lhs, inline_statements);
                             inline_expression(&mut binary_expression.rhs, inline_statements);
                         }
+
                         sway::Expression::Constructor(constructor) => {
                             for field in constructor.fields.iter_mut() {
                                 inline_expression(&mut field.value, inline_statements);
                             }
                         }
+
                         sway::Expression::Continue => {}
                         sway::Expression::Break => {}
+
                         sway::Expression::AsmBlock(asm_block) => {
                             for register in asm_block.registers.iter_mut() {
                                 if let Some(value) = register.value.as_mut() {
@@ -1085,6 +1108,7 @@ pub fn translate_function_definition(
                                 }
                             }
                         }
+
                         sway::Expression::Commented(_, expression) => {
                             inline_expression(expression, inline_statements);
                         }
@@ -1100,6 +1124,7 @@ pub fn translate_function_definition(
                         sway::Statement::Let(let_stmt) => {
                             inline_expression(&mut let_stmt.value, inline_statements);
                         }
+
                         sway::Statement::Expression(expression) => {
                             if let Some(ident) = expression.as_identifier()
                                 && ident == "_"
@@ -1115,14 +1140,86 @@ pub fn translate_function_definition(
 
                             inline_expression(expression, inline_statements);
                         }
-                        sway::Statement::Commented(_, statement) => {
+
+                        sway::Statement::Commented(_, _) => {
                             unimplemented!()
                         }
                     }
                 }
 
+                // If the function's body ends in an expression, make it an explicit return statement
+                let mut needs_return = false;
+
+                if let Some(final_expr) = function_body.final_expr.take() {
+                    function_body
+                        .statements
+                        .push(sway::Statement::from(sway::Expression::Return(Some(
+                            Box::new(final_expr),
+                        ))));
+
+                    needs_return = true;
+                }
+
+                // Inline the function body into the copy of the modifier body
+                if let Some(final_expr) = block.final_expr.take() {
+                    block
+                        .statements
+                        .push(sway::Statement::from(sway::Expression::Return(Some(
+                            Box::new(final_expr),
+                        ))));
+                }
+
                 for i in 0..block.statements.len() {
                     inline_statement(&mut block.statements, i, &function_body.statements);
+                }
+
+                // Insert a comment above the inlined code
+                block.statements.insert(
+                    0,
+                    sway::Statement::Commented(
+                        format!(
+                            "inlined modifier invocation: {}",
+                            sway::TabbedDisplayer(modifier_invocation)
+                        ),
+                        None,
+                    ),
+                );
+
+                // Generate a return value at the end of the inlined code if necessary
+                if needs_return {
+                    let mut has_return = false;
+
+                    if let Some(statement) = block.statements.last()
+                        && let sway::Statement::Expression(expression) = statement
+                        && let sway::Expression::Return(_) = expression
+                    {
+                        has_return = true;
+                    }
+
+                    // If the last statement is a return with a value, make the value the final expression
+                    if has_return {
+                        assert!(block.final_expr.is_none() && !block.statements.is_empty());
+
+                        let Some(sway::Statement::Expression(sway::Expression::Return(value))) =
+                            block.statements.pop()
+                        else {
+                            unreachable!()
+                        };
+
+                        if let Some(value) = value {
+                            block.final_expr = Some(*value);
+                        }
+                    }
+                    // Otherwise if we have a return type, generate the default value for whatever the function returns
+                    else if let Some(return_type) = function_declaration.return_type.as_ref() {
+                        block.final_expr = Some(create_value_expression(
+                            project,
+                            module.clone(),
+                            scope.clone(),
+                            return_type,
+                            None,
+                        ));
+                    }
                 }
 
                 function_body = block;
@@ -1632,7 +1729,10 @@ pub fn translate_modifier_definition(
     }
 
     // Add the translated modifier to the translated definition
-    module.borrow_mut().modifiers.push(modifier);
+    module
+        .borrow_mut()
+        .modifiers
+        .push(Rc::new(RefCell::new(modifier)));
 
     Ok(())
 }
