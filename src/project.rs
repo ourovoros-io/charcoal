@@ -135,7 +135,11 @@ impl Project {
                 let path = entry.path();
 
                 if path.is_dir() {
-                    source_unit_paths.extend(Self::collect_source_unit_paths(&path, framework)?);
+                    for source_unit_path in Self::collect_source_unit_paths(&path, framework)? {
+                        if !source_unit_paths.contains(&source_unit_path) {
+                            source_unit_paths.push(source_unit_path);
+                        }
+                    }
                     continue;
                 }
 
@@ -1526,14 +1530,13 @@ impl Project {
             options: &Args,
             dependencies: &mut Vec<String>,
             modules: &mut Vec<(PathBuf, sway::Module)>,
-            contracts: &mut Vec<(
-                ir::Item<Rc<RefCell<ir::Contract>>>,
-                Vec<String>,
-                Vec<sway::Use>,
-            )>,
+            contract_modules: &mut Vec<ir::Module>,
             module: Rc<RefCell<ir::Module>>,
         ) {
-            let dirty_module_path = module.borrow().path.clone();
+            let mut module = module.borrow_mut();
+
+            // Construct the module path
+            let dirty_module_path = module.path.clone();
 
             let mut module_path = PathBuf::new();
             let mut first = true;
@@ -1557,11 +1560,14 @@ impl Project {
                 module_path.push(component);
             }
 
-            dependencies.extend(module.borrow().dependencies.clone());
+            // Extend the shared library project's dependencies
+            for dependency in module.dependencies.iter() {
+                if !dependencies.contains(dependency) {
+                    dependencies.push(dependency.clone());
+                }
+            }
 
-            let mut module = module.borrow_mut();
-
-            // Construct the use tree
+            // Construct the contract's shared library use tree
             let mut use_tree = sway::UseTree::Glob;
 
             for component in module.path.components().rev() {
@@ -1600,7 +1606,7 @@ impl Project {
 
             assert!(
                 use_tree != sway::UseTree::Glob,
-                "Invalid import path: {:#?}",
+                "Invalid module path: {:#?}",
                 module.path
             );
 
@@ -1609,64 +1615,92 @@ impl Project {
                 suffix: Box::new(use_tree),
             };
 
+            // Construct the contract project's dependencies
             let mut contract_dependencies = module.dependencies.clone();
 
-            contract_dependencies.push(format!(
+            let shared_dependency = format!(
                 "{} = {{ path = \"../../{}\" }}",
                 options.name.clone().unwrap(),
                 options.name.clone().unwrap()
-            ));
+            );
 
-            let mut storage_structs = vec![];
+            if !contract_dependencies.contains(&shared_dependency) {
+                contract_dependencies.push(shared_dependency);
+            }
 
-            for contract in module.contracts.iter() {
-                let mut contract = contract.implementation.as_ref().unwrap().borrow_mut();
+            // Move the storage and abi impls out of the contract IR and into the main modules of the new contract projects
+            for contract in module.contracts.iter_mut() {
+                let contract_signature = contract.signature.clone();
+                let mut contract = contract.implementation.as_mut().unwrap().borrow_mut();
 
-                if let Some(storage_struct) = contract.storage_struct.as_ref() {
-                    storage_structs.push(ir::Item {
-                        signature: sway::TypeName::Identifier {
-                            name: storage_struct.borrow().name.clone(),
-                            generic_parameters: storage_struct.borrow().generic_parameters.clone(),
-                        },
-                        implementation: Some(storage_struct.clone()),
-                    });
+                // Don't create projects for empty abi impls (interface translations)
+                if contract.abi_impl.items.is_empty() {
+                    continue;
                 }
 
-                contract.storage_struct = None;
-            }
+                let contract_project_name = contract.name.to_case(Case::Kebab);
 
-            for storage_struct in storage_structs {
-                module.structs.push(storage_struct);
-            }
+                let output_directory = options
+                    .output_directory
+                    .clone()
+                    .unwrap()
+                    .join("contracts")
+                    .join(contract_project_name.clone());
 
-            contracts.extend(module.contracts.iter().map(|c| {
-                (
-                    c.clone(),
-                    contract_dependencies.clone(),
-                    vec![sway::Use {
+                let src_dir_path = output_directory.join("src");
+                let module_path = src_dir_path.join("main.sw");
+
+                let storage = contract.storage.take();
+
+                let abi_impl = contract.abi_impl.clone();
+                contract.abi_impl.items.clear();
+
+                contract_modules.push(ir::Module {
+                    name: contract_project_name,
+                    path: module_path.clone(),
+                    dependencies: contract_dependencies.clone(),
+                    uses: vec![sway::Use {
                         is_public: true,
                         tree: use_tree.clone(),
                     }],
-                )
-            }));
-
-            module.contracts.clear();
+                    contracts: vec![ir::Item {
+                        signature: contract_signature,
+                        implementation: Some(Rc::new(RefCell::new(ir::Contract {
+                            storage,
+                            abi_impl,
+                            ..ir::Contract::new(
+                                contract.name.as_str(),
+                                contract.kind.clone(),
+                                contract.abi.inherits.as_slice(),
+                            )
+                        }))),
+                    }],
+                    ..Default::default()
+                });
+            }
 
             modules.push((module_path.with_extension("sw"), module.clone().into()));
 
             for submodule in module.submodules.iter() {
-                process_submodules(options, dependencies, modules, contracts, submodule.clone());
+                process_submodules(
+                    options,
+                    dependencies,
+                    modules,
+                    contract_modules,
+                    submodule.clone(),
+                );
             }
         }
 
+        // Process all of the modules in the project from the top down
         let mut lib_module = sway::Module {
             kind: sway::ModuleKind::Library,
             items: vec![],
         };
 
+        let mut shared_dependencies = vec![];
         let mut modules = vec![];
-        let mut contracts = vec![];
-        let mut dependencies = vec![];
+        let mut contract_modules = vec![];
 
         for module in self.translated_modules.iter() {
             lib_module
@@ -1676,19 +1710,24 @@ impl Project {
                     name: module.borrow().name.clone(),
                 }));
 
-            dependencies.extend(module.borrow().dependencies.clone());
+            for dependency in module.borrow().dependencies.iter() {
+                if !shared_dependencies.contains(dependency) {
+                    shared_dependencies.push(dependency.clone());
+                }
+            }
 
             process_submodules(
                 &self.options,
-                &mut dependencies,
+                &mut shared_dependencies,
                 &mut modules,
-                &mut contracts,
+                &mut contract_modules,
                 module.clone(),
             );
         }
 
         modules.push(("lib.sw".into(), lib_module));
 
+        // Generate the shared library project
         let output_directory = self
             .options
             .output_directory
@@ -1729,17 +1768,16 @@ impl Project {
                 \n\
                 ",
                 self.options.name.as_ref().unwrap(),
-                dependencies.join("\n"),
+                shared_dependencies.join("\n"),
             ),
         )
         .map_err(|e| Error::Wrapped(Box::new(e)))?;
 
-        for (contract, dependencies, uses) in contracts {
-            let contract_project_name = translate_naming_convention(
-                &contract.implementation.as_ref().unwrap().borrow().name,
-                Case::Kebab,
-            );
+        // Generate each of the contract projects
+        for module in contract_modules {
+            let contract_project_name = module.name.clone();
 
+            // Ensure the output directories exist
             let output_directory = self
                 .options
                 .output_directory
@@ -1748,71 +1786,45 @@ impl Project {
                 .join("contracts")
                 .join(contract_project_name.clone());
 
-            wrapped_err!(std::fs::create_dir_all(&output_directory))?;
+            std::fs::create_dir_all(&output_directory).unwrap();
+            std::fs::create_dir_all(&module.path.parent().unwrap()).unwrap();
 
-            let src_dir_path = output_directory.join("src");
-            wrapped_err!(std::fs::create_dir_all(&src_dir_path))?;
-
-            let module_path = src_dir_path.join("main.sw");
-            wrapped_err!(std::fs::create_dir_all(&module_path.parent().unwrap()))?;
-
-            let module = ir::Module {
-                name: "main.sw".into(),
-                path: module_path.clone(),
-                submodules: vec![],
-                dependencies: dependencies.clone(),
-                uses,
-                using_directives: vec![],
-                type_definitions: vec![],
-                structs: vec![],
-                enums: vec![],
-                events_enums: vec![],
-                errors_enums: vec![],
-                constants: vec![],
-                configurable: None,
-                modifiers: vec![],
-                functions: vec![],
-                contracts: vec![contract],
-                impls: vec![],
-                contract_function_name_counts: HashMap::new(),
-                contract_function_names: HashMap::new(),
-                function_name_counts: Rc::new(RefCell::new(HashMap::new())),
-                function_names: Rc::new(RefCell::new(HashMap::new())),
-                function_constructor_calls: HashMap::new(),
-                function_modifiers: HashMap::new(),
-                constant_name_counts: HashMap::new(),
-            };
-
-            std::fs::write(
-                module_path,
-                sway::TabbedDisplayer(&sway::Module::from(module)).to_string(),
-            )
-            .map_err(|e| Error::Wrapped(Box::new(e)))?;
-
+            // Write the project's `.gitignore` file
             std::fs::write(
                 output_directory.join(".gitignore"),
                 "out\ntarget\nForc.lock\n",
             )
-            .map_err(|e| Error::Wrapped(Box::new(e)))?;
+            .map_err(|e| Error::Wrapped(Box::new(e)))
+            .unwrap();
 
+            // Write the project's `Forc.toml` file
             std::fs::write(
                 output_directory.join("Forc.toml"),
                 format!(
                     "[project]\n\
-                authors = [\"\"]\n\
-                entry = \"main.sw\"\n\
-                license = \"Apache-2.0\"\n\
-                name = \"{}\"\n\
-                \n\
-                [dependencies]\n\
-                {}\
-                \n\
-                ",
+                    authors = [\"\"]\n\
+                    entry = \"main.sw\"\n\
+                    license = \"Apache-2.0\"\n\
+                    name = \"{}\"\n\
+                    \n\
+                    [dependencies]\n\
+                    {}\
+                    \n\
+                    ",
                     contract_project_name,
-                    dependencies.join("\n"),
+                    module.dependencies.join("\n"),
                 ),
             )
-            .map_err(|e| Error::Wrapped(Box::new(e)))?;
+            .map_err(|e| Error::Wrapped(Box::new(e)))
+            .unwrap();
+
+            // Write the project's `main.sw` file
+            std::fs::write(
+                module.path.clone(),
+                sway::TabbedDisplayer(&sway::Module::from(module)).to_string(),
+            )
+            .map_err(|e| Error::Wrapped(Box::new(e)))
+            .unwrap();
         }
 
         Ok(())

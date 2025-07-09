@@ -632,13 +632,17 @@ impl From<Module> for sway::Module {
         }
 
         for contract_item in module.contracts {
-            let contract = contract_item.implementation.clone().unwrap();
-            let contract = contract.borrow();
+            let contract = contract_item.implementation.as_ref().unwrap().borrow();
 
-            items.push(sway::ModuleItem::Abi(contract.abi.clone()));
+            if contract.abi.functions.is_empty() == contract.abi_impl.items.is_empty()
+                || !contract.abi.functions.is_empty()
+            {
+                items.push(sway::ModuleItem::Abi(contract.abi.clone()));
+            }
 
-            // Only add the abi's impl if both the abi and its impl are non-empty.
-            if !contract.abi.functions.is_empty() && !contract.abi_impl.items.is_empty() {
+            if contract.abi.functions.is_empty() == contract.abi_impl.items.is_empty()
+                || !contract.abi_impl.items.is_empty()
+            {
                 items.push(sway::ModuleItem::Impl(contract.abi_impl.clone()));
             }
         }
