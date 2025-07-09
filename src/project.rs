@@ -1522,12 +1522,15 @@ impl Project {
     }
 
     fn generate_forc_project(&mut self) -> Result<(), Error> {
-        let mut modules: Vec<(PathBuf, sway::Module)> = vec![];
-        let mut dependencies = vec![];
-
         fn process_submodules(
+            options: &Args,
             dependencies: &mut Vec<String>,
             modules: &mut Vec<(PathBuf, sway::Module)>,
+            contracts: &mut Vec<(
+                ir::Item<Rc<RefCell<ir::Contract>>>,
+                Vec<String>,
+                Vec<sway::Use>,
+            )>,
             module: Rc<RefCell<ir::Module>>,
         ) {
             let dirty_module_path = module.borrow().path.clone();
@@ -1556,13 +1559,103 @@ impl Project {
 
             dependencies.extend(module.borrow().dependencies.clone());
 
-            modules.push((
-                module_path.with_extension("sw"),
-                module.borrow().clone().into(),
+            let mut module = module.borrow_mut();
+
+            // Construct the use tree
+            let mut use_tree = sway::UseTree::Glob;
+
+            for component in module.path.components().rev() {
+                match component {
+                    std::path::Component::Prefix(_) => continue,
+                    std::path::Component::RootDir => continue,
+                    std::path::Component::CurDir => continue,
+
+                    std::path::Component::ParentDir => {
+                        // Discard the prefix of the use tree
+                        let sway::UseTree::Path { suffix, .. } = use_tree else {
+                            panic!("Malformed import path: {:#?}", module.path)
+                        };
+
+                        use_tree = *suffix;
+                    }
+
+                    std::path::Component::Normal(name) => {
+                        let mut name = name
+                            .to_string_lossy()
+                            .to_string()
+                            .replace(".", "_")
+                            .to_case(Case::Snake);
+
+                        if let "lib" | "src" | "main" = name.as_str() {
+                            name = format!("_{name}");
+                        }
+
+                        use_tree = sway::UseTree::Path {
+                            prefix: name,
+                            suffix: Box::new(use_tree),
+                        };
+                    }
+                }
+            }
+
+            assert!(
+                use_tree != sway::UseTree::Glob,
+                "Invalid import path: {:#?}",
+                module.path
+            );
+
+            use_tree = sway::UseTree::Path {
+                prefix: options.name.clone().unwrap().to_case(Case::Snake),
+                suffix: Box::new(use_tree),
+            };
+
+            let mut contract_dependencies = module.dependencies.clone();
+
+            contract_dependencies.push(format!(
+                "{} = {{ path = \"../../{}\" }}",
+                options.name.clone().unwrap(),
+                options.name.clone().unwrap()
             ));
 
-            for submodule in module.borrow().submodules.iter() {
-                process_submodules(dependencies, modules, submodule.clone());
+            let mut storage_structs = vec![];
+
+            for contract in module.contracts.iter() {
+                let mut contract = contract.implementation.as_ref().unwrap().borrow_mut();
+
+                if let Some(storage_struct) = contract.storage_struct.as_ref() {
+                    storage_structs.push(ir::Item {
+                        signature: sway::TypeName::Identifier {
+                            name: storage_struct.borrow().name.clone(),
+                            generic_parameters: storage_struct.borrow().generic_parameters.clone(),
+                        },
+                        implementation: Some(storage_struct.clone()),
+                    });
+                }
+
+                contract.storage_struct = None;
+            }
+
+            for storage_struct in storage_structs {
+                module.structs.push(storage_struct);
+            }
+
+            contracts.extend(module.contracts.iter().map(|c| {
+                (
+                    c.clone(),
+                    contract_dependencies.clone(),
+                    vec![sway::Use {
+                        is_public: true,
+                        tree: use_tree.clone(),
+                    }],
+                )
+            }));
+
+            module.contracts.clear();
+
+            modules.push((module_path.with_extension("sw"), module.clone().into()));
+
+            for submodule in module.submodules.iter() {
+                process_submodules(options, dependencies, modules, contracts, submodule.clone());
             }
         }
 
@@ -1570,6 +1663,10 @@ impl Project {
             kind: sway::ModuleKind::Library,
             items: vec![],
         };
+
+        let mut modules = vec![];
+        let mut contracts = vec![];
+        let mut dependencies = vec![];
 
         for module in self.translated_modules.iter() {
             lib_module
@@ -1581,7 +1678,13 @@ impl Project {
 
             dependencies.extend(module.borrow().dependencies.clone());
 
-            process_submodules(&mut dependencies, &mut modules, module.clone());
+            process_submodules(
+                &self.options,
+                &mut dependencies,
+                &mut modules,
+                &mut contracts,
+                module.clone(),
+            );
         }
 
         modules.push(("lib.sw".into(), lib_module));
@@ -1617,7 +1720,7 @@ impl Project {
             format!(
                 "[project]\n\
                 authors = [\"\"]\n\
-                entry = \"main.sw\"\n\
+                entry = \"lib.sw\"\n\
                 license = \"Apache-2.0\"\n\
                 name = \"{}\"\n\
                 \n\
@@ -1630,6 +1733,87 @@ impl Project {
             ),
         )
         .map_err(|e| Error::Wrapped(Box::new(e)))?;
+
+        for (contract, dependencies, uses) in contracts {
+            let contract_project_name = translate_naming_convention(
+                &contract.implementation.as_ref().unwrap().borrow().name,
+                Case::Kebab,
+            );
+
+            let output_directory = self
+                .options
+                .output_directory
+                .clone()
+                .unwrap()
+                .join("contracts")
+                .join(contract_project_name.clone());
+
+            wrapped_err!(std::fs::create_dir_all(&output_directory))?;
+
+            let src_dir_path = output_directory.join("src");
+            wrapped_err!(std::fs::create_dir_all(&src_dir_path))?;
+
+            let module_path = src_dir_path.join("main.sw");
+            wrapped_err!(std::fs::create_dir_all(&module_path.parent().unwrap()))?;
+
+            let module = ir::Module {
+                name: "main.sw".into(),
+                path: module_path.clone(),
+                submodules: vec![],
+                dependencies: dependencies.clone(),
+                uses,
+                using_directives: vec![],
+                type_definitions: vec![],
+                structs: vec![],
+                enums: vec![],
+                events_enums: vec![],
+                errors_enums: vec![],
+                constants: vec![],
+                configurable: None,
+                modifiers: vec![],
+                functions: vec![],
+                contracts: vec![contract],
+                impls: vec![],
+                contract_function_name_counts: HashMap::new(),
+                contract_function_names: HashMap::new(),
+                function_name_counts: Rc::new(RefCell::new(HashMap::new())),
+                function_names: Rc::new(RefCell::new(HashMap::new())),
+                function_constructor_calls: HashMap::new(),
+                function_modifiers: HashMap::new(),
+                constant_name_counts: HashMap::new(),
+            };
+
+            std::fs::write(
+                module_path,
+                sway::TabbedDisplayer(&sway::Module::from(module)).to_string(),
+            )
+            .map_err(|e| Error::Wrapped(Box::new(e)))?;
+
+            std::fs::write(
+                output_directory.join(".gitignore"),
+                "out\ntarget\nForc.lock\n",
+            )
+            .map_err(|e| Error::Wrapped(Box::new(e)))?;
+
+            std::fs::write(
+                output_directory.join("Forc.toml"),
+                format!(
+                    "[project]\n\
+                authors = [\"\"]\n\
+                entry = \"main.sw\"\n\
+                license = \"Apache-2.0\"\n\
+                name = \"{}\"\n\
+                \n\
+                [dependencies]\n\
+                {}\
+                \n\
+                ",
+                    contract_project_name,
+                    dependencies.join("\n"),
+                ),
+            )
+            .map_err(|e| Error::Wrapped(Box::new(e)))?;
+        }
 
         Ok(())
     }

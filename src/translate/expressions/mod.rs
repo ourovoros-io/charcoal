@@ -745,7 +745,7 @@ pub fn create_value_expression(
                 // Ensure `std::alloc::alloc_bytes` is imported
                 module
                     .borrow_mut()
-                    .ensure_dependency_declared("std::alloc::alloc_bytes");
+                    .ensure_use_declared("std::alloc::alloc_bytes");
 
                 // alloc_bytes(0)
                 sway::Expression::from(sway::FunctionCall {
