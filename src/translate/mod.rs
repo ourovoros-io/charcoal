@@ -468,15 +468,12 @@ pub fn coerce_expression(
                     (format!("as_u{rhs_bits}").as_str(), Some((None, vec![]))),
                 ],
             );
+        } else {
+            expression =
+                sway::Expression::create_function_calls(Some(expression), &[("underlying", None)])
         }
 
-        return Some(sway::Expression::create_function_calls(
-            None,
-            &[(
-                format!("I{rhs_bits}::from_uint").as_str(),
-                Some((None, vec![expression.clone()])),
-            )],
-        ));
+        return Some(expression);
     }
 
     // Check for uint/int coercions of different bit lengths
@@ -1268,29 +1265,25 @@ fn get_path_expr_type(
             if let Some(function_name) = scope.borrow().get_function_name() {
                 let module = module.borrow();
 
-                let function = module
-                    .functions
-                    .iter()
-                    .find(|f| {
-                        let sway::TypeName::Function { new_name, .. } = &f.signature else {
-                            unreachable!()
-                        };
-                        *new_name == function_name
-                    })
-                    .unwrap();
+                if let Some(function) = module.functions.iter().find(|f| {
+                    let sway::TypeName::Function { new_name, .. } = &f.signature else {
+                        unreachable!()
+                    };
+                    *new_name == function_name
+                }) {
+                    let sway::TypeName::Function {
+                        storage_struct_parameter,
+                        ..
+                    } = &function.signature
+                    else {
+                        unreachable!()
+                    };
 
-                let sway::TypeName::Function {
-                    storage_struct_parameter,
-                    ..
-                } = &function.signature
-                else {
-                    unreachable!()
-                };
-
-                if let Some(storage_struct_parameter) = storage_struct_parameter.as_ref()
-                    && name == storage_struct_parameter.name
-                {
-                    return storage_struct_parameter.type_name.clone();
+                    if let Some(storage_struct_parameter) = storage_struct_parameter.as_ref()
+                        && name == storage_struct_parameter.name
+                    {
+                        return storage_struct_parameter.type_name.clone();
+                    }
                 }
             }
 

@@ -906,6 +906,287 @@ pub fn resolve_function_call(
 }
 
 #[inline]
+pub fn resolve_modifier(
+    project: &mut Project,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
+    modifier_name: &str,
+    named_arguments: Option<&[solidity::NamedArgument]>,
+    mut parameters: Vec<sway::Expression>,
+    mut parameter_types: Vec<sway::TypeName>,
+) -> Result<Option<Rc<RefCell<ir::Modifier>>>, Error> {
+    let mut modifier = None;
+
+    if let Some(named_arguments) = named_arguments {
+        let mut named_parameters = vec![];
+
+        for arg in named_arguments {
+            named_parameters.push((
+                translate_naming_convention(&arg.name.name, Case::Snake),
+                translate_expression(project, module.clone(), scope.clone(), &arg.expr)?,
+            ));
+        }
+
+        let modifiers = module.borrow().modifiers.clone();
+
+        if let Some(f) = modifiers.iter().find(|f| {
+            let f = f.borrow();
+
+            if f.old_name != modifier_name {
+                return false;
+            }
+
+            if f.parameters.entries.len() != named_parameters.len() {
+                return false;
+            }
+
+            if !f
+                .parameters
+                .entries
+                .iter()
+                .all(|p| named_parameters.iter().any(|(name, _)| p.name == *name))
+            {
+                return false;
+            }
+
+            true
+        }) {
+            {
+                let f = f.borrow();
+
+                parameters.clear();
+                parameter_types.clear();
+
+                for parameter in f.parameters.entries.iter() {
+                    let arg = named_arguments
+                        .iter()
+                        .find(|a| {
+                            let new_name = translate_naming_convention(&a.name.name, Case::Snake);
+                            new_name == parameter.name
+                        })
+                        .unwrap();
+
+                    let mut value =
+                        translate_expression(project, module.clone(), scope.clone(), &arg.expr)?;
+
+                    let mut value_type =
+                        get_expression_type(project, module.clone(), scope.clone(), &value)?;
+
+                    if let Some(parameter_type_name) = parameter.type_name.as_ref() {
+                        value = coerce_expression(
+                            project,
+                            module.clone(),
+                            scope.clone(),
+                            &value,
+                            &value_type,
+                            parameter_type_name,
+                        )
+                        .unwrap();
+
+                        value_type = parameter_type_name.clone();
+                    }
+
+                    parameters.push(value);
+                    parameter_types.push(value_type);
+                }
+            }
+
+            modifier = Some(f.clone());
+        }
+    }
+
+    let parameters_cell = Rc::new(RefCell::new(parameters));
+
+    let mut check_parameters = |modifier_parameters: &sway::ParameterList| -> bool {
+        let mut parameters = parameters_cell.borrow_mut();
+
+        // Ensure the supplied modifier call args match the modifier's parameters
+        if parameters.len() != modifier_parameters.entries.len() {
+            return false;
+        }
+
+        for (i, value_type_name) in parameter_types.iter().enumerate() {
+            let Some(parameter_type_name) = modifier_parameters.entries[i].type_name.as_ref()
+            else {
+                continue;
+            };
+
+            // If `parameter_type_name` is `Identity`, but `container` is an abi cast expression,
+            // then we need to de-cast it, so `container` turns into the 2nd parameter of the abi cast,
+            // and `value_type_name` turns into `Identity`.
+            if parameter_type_name.is_identity()
+                && let sway::Expression::FunctionCall(modifier_call) = parameters[i].clone()
+                && let Some(modifier_name) = modifier_call.function.as_identifier()
+                && modifier_name == "abi"
+            {
+                parameters[i] = modifier_call.parameters[1].clone();
+                continue;
+            }
+
+            // HACK: str -> Bytes (is this still necessary?)
+            // Bytes::from(raw_slice::from_parts::<u8>(s.as_ptr(), s.len()))
+            if parameter_type_name.is_bytes() && value_type_name.is_string_slice() {
+                parameters[i] = sway::Expression::create_function_calls(
+                    None,
+                    &[(
+                        "Bytes::from",
+                        Some((
+                            None,
+                            vec![sway::Expression::create_function_calls(
+                                None,
+                                &[(
+                                    "raw_slice::from_parts",
+                                    Some((
+                                        Some(sway::GenericParameterList {
+                                            entries: vec![sway::GenericParameter {
+                                                type_name: sway::TypeName::Identifier {
+                                                    name: "u8".into(),
+                                                    generic_parameters: None,
+                                                },
+                                                implements: None,
+                                            }],
+                                        }),
+                                        vec![
+                                            sway::Expression::create_function_calls(
+                                                Some(parameters[i].clone()),
+                                                &[("as_ptr", Some((None, vec![])))],
+                                            ),
+                                            sway::Expression::create_function_calls(
+                                                Some(parameters[i].clone()),
+                                                &[("len", Some((None, vec![])))],
+                                            ),
+                                        ],
+                                    )),
+                                )],
+                            )],
+                        )),
+                    )],
+                );
+                continue;
+            }
+
+            // HACK: StorageKey<*> -> *
+            if let Some(value_type) = value_type_name.storage_key_type()
+                && !parameter_type_name.is_storage_key()
+                && parameter_type_name.is_compatible_with(&value_type)
+            {
+                parameters[i] = sway::Expression::create_function_calls(
+                    Some(parameters[i].clone()),
+                    &[("read", Some((None, vec![])))],
+                );
+                continue;
+            }
+
+            // HACK: [u8; 32] -> b256
+            if let Some(32) = value_type_name.u8_array_length()
+                && parameter_type_name.is_b256()
+            {
+                parameters[i] = sway::Expression::create_function_calls(
+                    None,
+                    &[(
+                        "b256::from_be_bytes",
+                        Some((None, vec![parameters[i].clone()])),
+                    )],
+                );
+                continue;
+            }
+
+            // HACK: [u*; N]
+            if let sway::TypeName::Array {
+                type_name: value_element_type,
+                length: value_element_length,
+            } = &value_type_name
+                && let sway::TypeName::Array {
+                    type_name: parameter_element_type,
+                    length: parameter_element_length,
+                } = &parameter_type_name
+            {
+                if value_element_length != parameter_element_length {
+                    return false;
+                }
+
+                if value_element_type.is_uint() && parameter_element_type.is_uint() {
+                    return true;
+                }
+
+                if value_element_type.is_compatible_with(parameter_element_type) {
+                    return true;
+                }
+            }
+
+            if let Some(expr) = coerce_expression(
+                project,
+                module.clone(),
+                scope.clone(),
+                &parameters[i],
+                value_type_name,
+                &parameter_type_name,
+            ) {
+                parameters[i] = expr;
+                continue;
+            }
+
+            if !value_type_name.is_compatible_with(&parameter_type_name) {
+                return false;
+            }
+        }
+
+        true
+    };
+
+    // Check to see if the modifier is defined in the current module
+    if modifier.is_none()
+        && let Some(f) = module.borrow().modifiers.iter().find(|f| {
+            if f.borrow().new_name != modifier_name {
+                return false;
+            }
+
+            check_parameters(&f.borrow().parameters)
+        })
+    {
+        modifier = Some(f.clone());
+    }
+
+    let Some(modifier) = modifier else {
+        // If we didn't find a modifier, check inherited modifiers
+        if let Some(contract_name) = scope.borrow().get_contract_name()
+            && let Some((module, contract)) =
+                project.find_module_and_contract(module.clone(), &contract_name)
+        {
+            for contract_name in contract.borrow().abi.inherits.iter() {
+                let Some(module) = project
+                    .find_module_containing_contract(module.clone(), &contract_name.to_string())
+                else {
+                    panic!("Failed to find module with contract `{contract_name}`")
+                };
+
+                let scope = Rc::new(RefCell::new(ir::Scope::new(
+                    Some(&contract_name.to_string()),
+                    None,
+                    Some(scope.clone()),
+                )));
+
+                if let Some(modifier) = resolve_modifier(
+                    project,
+                    module.clone(),
+                    scope,
+                    modifier_name,
+                    named_arguments,
+                    parameters_cell.borrow().clone(),
+                    parameter_types.clone(),
+                )? {
+                    return Ok(Some(modifier));
+                }
+            }
+        }
+
+        return Ok(None);
+    };
+
+    Ok(Some(modifier))
+}
+
+#[inline]
 pub fn resolve_struct_constructor(
     project: &mut Project,
     module: Rc<RefCell<ir::Module>>,

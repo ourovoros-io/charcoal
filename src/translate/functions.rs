@@ -336,6 +336,30 @@ pub fn translate_function_declaration(
     contract_name: Option<&str>,
     function_definition: &solidity::FunctionDefinition,
 ) -> Result<ir::Function, Error> {
+    // println!(
+    //     "Translating function declaration `{}` at {}",
+    //     match contract_name {
+    //         Some(contract_name) => format!(
+    //             "{}.{}",
+    //             contract_name,
+    //             function_definition
+    //                 .name
+    //                 .as_ref()
+    //                 .map(|s| s.name.as_str())
+    //                 .unwrap_or_else(|| "<unnamed>")
+    //         ),
+    //         None => format!(
+    //             "{}",
+    //             function_definition
+    //                 .name
+    //                 .as_ref()
+    //                 .map(|s| s.name.as_str())
+    //                 .unwrap_or_else(|| "<unnamed>")
+    //         ),
+    //     },
+    //     project.loc_to_file_location_string(module.clone(), &function_definition.loc),
+    // );
+
     let function_attributes = FunctionAttributes::from(function_definition);
 
     let function_name = translate_function_name(
@@ -926,12 +950,21 @@ pub fn translate_function_definition(
                 panic!("Malformed modifier invocation: {modifier_invocation:#?}");
             };
 
-            let Some(modifier) = module
-                .borrow()
-                .modifiers
+            let parameter_types = modifier_invocation
+                .parameters
                 .iter()
-                .find(|v| v.borrow().new_name == *new_name)
-                .cloned()
+                .map(|p| get_expression_type(project, module.clone(), scope.clone(), p))
+                .collect::<Result<Vec<_>, _>>()?;
+
+            let Some(modifier) = resolve_modifier(
+                project,
+                module.clone(),
+                scope.clone(),
+                new_name,
+                None,
+                modifier_invocation.parameters.clone(),
+                parameter_types,
+            )?
             else {
                 panic!("Failed to find modifier: {new_name}");
             };
