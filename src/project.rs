@@ -1679,7 +1679,11 @@ impl Project {
                 });
             }
 
-            modules.push((module_path.with_extension("sw"), module.clone().into()));
+            modules.push((module_path.with_extension("sw"), {
+                let mut module = sway::Module::from(module.clone());
+                module.kind = sway::ModuleKind::Library;
+                module
+            }));
 
             for submodule in module.submodules.iter() {
                 process_submodules(
@@ -1821,7 +1825,12 @@ impl Project {
             // Write the project's `main.sw` file
             std::fs::write(
                 module.path.clone(),
-                sway::TabbedDisplayer(&sway::Module::from(module)).to_string(),
+                sway::TabbedDisplayer(&{
+                    let mut module = sway::Module::from(module);
+                    module.kind = sway::ModuleKind::Contract;
+                    module
+                })
+                .to_string(),
             )
             .map_err(|e| Error::Wrapped(Box::new(e)))
             .unwrap();
