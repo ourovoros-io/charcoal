@@ -281,7 +281,7 @@ pub struct Module {
     pub errors_enums: Vec<(Rc<RefCell<sway::Enum>>, Rc<RefCell<sway::Impl>>)>,
     pub constants: Vec<sway::Constant>,
     pub configurable: Option<sway::Configurable>,
-    pub modifiers: Vec<Rc<RefCell<Modifier>>>,
+    pub modifiers: Vec<Item<Rc<RefCell<Modifier>>>>,
     pub functions: Vec<Item<sway::Function>>,
     pub contracts: Vec<Item<Rc<RefCell<Contract>>>>,
     pub impls: Vec<sway::Impl>,

@@ -193,8 +193,8 @@ pub fn resolve_symbol(
             }
 
             // Check to see if the current function has a storage struct parameter and the variable refers to a field of it
-            if let Some(function_name) = scope.borrow().get_function_name()
-                && let Some(function) = module
+            if let Some(function_name) = scope.borrow().get_function_name() {
+                let (parameter_name, storage_struct_name) = if let Some(function) = module
                     .borrow()
                     .functions
                     .iter()
@@ -205,16 +205,23 @@ pub fn resolve_symbol(
                         function_name == *new_name
                     })
                     .cloned()
-                && let sway::TypeName::Function {
-                    storage_struct_parameter: Some(storage_struct_parameter),
-                    ..
-                } = &function.signature
-            {
-                let storage_struct_name = storage_struct_parameter
-                    .type_name
-                    .as_ref()
-                    .unwrap()
-                    .to_string();
+                    && let sway::TypeName::Function {
+                        storage_struct_parameter: Some(storage_struct_parameter),
+                        ..
+                    } = &function.signature
+                {
+                    (
+                        storage_struct_parameter.name.clone(),
+                        storage_struct_parameter
+                            .type_name
+                            .as_ref()
+                            .unwrap()
+                            .to_string(),
+                    )
+                } else {
+                    let contract_name = scope.borrow().get_contract_name().unwrap();
+                    ("storage_struct".into(), format!("{contract_name}Storage"))
+                };
 
                 if let Some(SymbolData::Struct(storage_struct)) = resolve_symbol(
                     project,
@@ -228,7 +235,7 @@ pub fn resolve_symbol(
                     .find(|f| f.old_name == *name)
                 {
                     return Some(SymbolData::StorageStructField {
-                        parameter_name: storage_struct_parameter.name.clone(),
+                        parameter_name,
                         field: field.clone(),
                     });
                 }
@@ -718,18 +725,24 @@ pub fn resolve_modifier(
         let modifiers = module.borrow().modifiers.clone();
 
         if let Some(f) = modifiers.iter().find(|f| {
-            let f = f.borrow();
+            let sway::TypeName::Function {
+                old_name,
+                parameters,
+                ..
+            } = &f.signature
+            else {
+                unreachable!()
+            };
 
-            if f.old_name != modifier_name {
+            if old_name != modifier_name {
                 return false;
             }
 
-            if f.parameters.entries.len() != named_parameters.len() {
+            if parameters.entries.len() != named_parameters.len() {
                 return false;
             }
 
-            if !f
-                .parameters
+            if !parameters
                 .entries
                 .iter()
                 .all(|p| named_parameters.iter().any(|(name, _)| p.name == *name))
@@ -740,12 +753,18 @@ pub fn resolve_modifier(
             true
         }) {
             {
-                let f = f.borrow();
+                let sway::TypeName::Function {
+                    parameters: f_parameters,
+                    ..
+                } = &f.signature
+                else {
+                    unreachable!()
+                };
 
                 parameters.clear();
                 parameter_types.clear();
 
-                for parameter in f.parameters.entries.iter() {
+                for parameter in f_parameters.entries.iter() {
                     let arg = named_arguments
                         .iter()
                         .find(|a| {
@@ -819,11 +838,20 @@ pub fn resolve_modifier(
     // Check to see if the modifier is defined in the current module
     if modifier.is_none()
         && let Some(f) = module.borrow().modifiers.iter().find(|f| {
-            if f.borrow().new_name != modifier_name {
+            let sway::TypeName::Function {
+                new_name: f_new_name,
+                parameters: f_parameters,
+                ..
+            } = &f.signature
+            else {
+                unreachable!()
+            };
+
+            if f_new_name != modifier_name {
                 return false;
             }
 
-            check_parameters(&f.borrow().parameters)
+            check_parameters(&f_parameters)
         })
     {
         modifier = Some(f.clone());
@@ -865,7 +893,7 @@ pub fn resolve_modifier(
         return Ok(None);
     };
 
-    Ok(Some(modifier))
+    Ok(Some(modifier.implementation.clone().unwrap()))
 }
 
 #[inline]

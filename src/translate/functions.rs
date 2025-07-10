@@ -241,7 +241,7 @@ pub fn translate_function_name(
 }
 
 #[inline]
-fn translate_function_parameters(
+pub fn translate_function_parameters(
     project: &mut Project,
     module: Rc<RefCell<ir::Module>>,
     contract_name: Option<&str>,
@@ -1660,13 +1660,27 @@ pub fn translate_modifier_definition(
         (Some(pre_body), Some(post_body)) => {
             let modifier_pre_function_name = format!("{}_pre", modifier.new_name);
 
+            let modifier_pre_storage = if has_pre_storage_read || has_pre_storage_write {
+                Some(sway::Parameter {
+                    is_ref: false,
+                    is_mut: false,
+                    name: "storage_struct".into(),
+                    type_name: Some(sway::TypeName::Identifier {
+                        name: format!("{}Storage", contract_name.unwrap()),
+                        generic_parameters: None,
+                    }),
+                })
+            } else {
+                None
+            };
+
             module.borrow_mut().functions.push(ir::Item {
                 signature: sway::TypeName::Function {
                     old_name: String::new(),
                     new_name: String::new(),
                     generic_parameters: None,
                     parameters: modifier.parameters.clone(),
-                    storage_struct_parameter: None,
+                    storage_struct_parameter: modifier_pre_storage.clone().map(Box::new),
                     return_type: None,
                 },
                 implementation: Some(sway::Function {
@@ -1676,7 +1690,7 @@ pub fn translate_modifier_definition(
                     new_name: modifier_pre_function_name.clone(),
                     generic_parameters: None,
                     parameters: modifier.parameters.clone(),
-                    storage_struct_parameter: None,
+                    storage_struct_parameter: modifier_pre_storage,
                     return_type: None,
                     body: Some(pre_body.clone()),
                 }),
@@ -1684,13 +1698,27 @@ pub fn translate_modifier_definition(
 
             let modifier_post_function_name = format!("{}_post", modifier.new_name);
 
+            let modifier_post_storage = if has_post_storage_read || has_post_storage_write {
+                Some(sway::Parameter {
+                    is_ref: false,
+                    is_mut: false,
+                    name: "storage_struct".into(),
+                    type_name: Some(sway::TypeName::Identifier {
+                        name: format!("{}Storage", contract_name.unwrap()),
+                        generic_parameters: None,
+                    }),
+                })
+            } else {
+                None
+            };
+
             module.borrow_mut().functions.push(ir::Item {
                 signature: sway::TypeName::Function {
                     old_name: String::new(),
                     new_name: String::new(),
                     generic_parameters: None,
                     parameters: modifier.parameters.clone(),
-                    storage_struct_parameter: None,
+                    storage_struct_parameter: modifier_post_storage.clone().map(Box::new),
                     return_type: None,
                 },
                 implementation: Some(sway::Function {
@@ -1700,7 +1728,7 @@ pub fn translate_modifier_definition(
                     new_name: modifier_post_function_name.clone(),
                     generic_parameters: None,
                     parameters: modifier.parameters.clone(),
-                    storage_struct_parameter: None,
+                    storage_struct_parameter: modifier_post_storage,
                     return_type: None,
                     body: Some(post_body.clone()),
                 }),
@@ -1708,13 +1736,27 @@ pub fn translate_modifier_definition(
         }
 
         (Some(pre_body), None) => {
+            let modifier_pre_storage = if has_pre_storage_read || has_pre_storage_write {
+                Some(sway::Parameter {
+                    is_ref: false,
+                    is_mut: false,
+                    name: "storage_struct".into(),
+                    type_name: Some(sway::TypeName::Identifier {
+                        name: format!("{}Storage", contract_name.unwrap()),
+                        generic_parameters: None,
+                    }),
+                })
+            } else {
+                None
+            };
+
             module.borrow_mut().functions.push(ir::Item {
                 signature: sway::TypeName::Function {
                     old_name: String::new(),
                     new_name: String::new(),
                     generic_parameters: None,
                     parameters: modifier.parameters.clone(),
-                    storage_struct_parameter: None,
+                    storage_struct_parameter: modifier_pre_storage.clone().map(Box::new),
                     return_type: None,
                 },
                 implementation: Some(sway::Function {
@@ -1724,7 +1766,7 @@ pub fn translate_modifier_definition(
                     new_name: modifier.new_name.clone(),
                     generic_parameters: None,
                     parameters: modifier.parameters.clone(),
-                    storage_struct_parameter: None,
+                    storage_struct_parameter: modifier_pre_storage,
                     return_type: None,
                     body: Some(pre_body.clone()),
                 }),
@@ -1732,13 +1774,27 @@ pub fn translate_modifier_definition(
         }
 
         (None, Some(post_body)) => {
+            let modifier_post_storage = if has_post_storage_read || has_post_storage_write {
+                Some(sway::Parameter {
+                    is_ref: false,
+                    is_mut: false,
+                    name: "storage_struct".into(),
+                    type_name: Some(sway::TypeName::Identifier {
+                        name: format!("{}Storage", contract_name.unwrap()),
+                        generic_parameters: None,
+                    }),
+                })
+            } else {
+                None
+            };
+
             module.borrow_mut().functions.push(ir::Item {
                 signature: sway::TypeName::Function {
                     old_name: String::new(),
                     new_name: String::new(),
                     generic_parameters: None,
                     parameters: modifier.parameters.clone(),
-                    storage_struct_parameter: None,
+                    storage_struct_parameter: modifier_post_storage.clone().map(Box::new),
                     return_type: None,
                 },
                 implementation: Some(sway::Function {
@@ -1748,7 +1804,7 @@ pub fn translate_modifier_definition(
                     new_name: modifier.new_name.clone(),
                     generic_parameters: None,
                     parameters: modifier.parameters.clone(),
-                    storage_struct_parameter: None,
+                    storage_struct_parameter: modifier_post_storage,
                     return_type: None,
                     body: Some(post_body.clone()),
                 }),
@@ -1766,10 +1822,18 @@ pub fn translate_modifier_definition(
     }
 
     // Add the translated modifier to the translated definition
-    module
-        .borrow_mut()
-        .modifiers
-        .push(Rc::new(RefCell::new(modifier)));
+    let mut module = module.borrow_mut();
+
+    let Some(modifier_entry) = module.modifiers.iter_mut().find(|m| {
+        let sway::TypeName::Function { new_name, .. } = &m.signature else {
+            unreachable!()
+        };
+        *new_name == modifier.new_name
+    }) else {
+        panic!("Failed to find modifier: {}", modifier.new_name);
+    };
+
+    modifier_entry.implementation = Some(Rc::new(RefCell::new(modifier)));
 
     Ok(())
 }

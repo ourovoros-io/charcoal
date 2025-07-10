@@ -1098,6 +1098,42 @@ impl Project {
             })
         }
 
+        // Collect the modifier signatures ahead of time
+        for function_definition in function_definitions.iter() {
+            if !matches!(function_definition.ty, solidity::FunctionTy::Modifier) {
+                continue;
+            }
+            let function_name = translate_function_name(
+                self,
+                module.clone(),
+                None,
+                function_definition.name.as_ref().map(|n| n.name.as_str()),
+                &function_definition.params,
+                &function_definition.ty,
+            );
+
+            let parameters =
+                translate_function_parameters(self, module.clone(), None, function_definition);
+
+            module.borrow_mut().modifiers.push(ir::Item {
+                signature: sway::TypeName::Function {
+                    old_name: function_name.old_name,
+                    new_name: function_name.abi_fn_name,
+                    generic_parameters: None,
+                    parameters,
+                    storage_struct_parameter: None,
+                    return_type: translate_return_type_name(
+                        self,
+                        module.clone(),
+                        Rc::new(RefCell::new(ir::Scope::new(None, None, None))),
+                        function_definition,
+                    )
+                    .map(Box::new),
+                },
+                implementation: None,
+            })
+        }
+
         // Collect the function signatures ahead of time
         for function_definition in function_definitions.iter() {
             if matches!(function_definition.ty, solidity::FunctionTy::Modifier) {
@@ -1361,6 +1397,47 @@ impl Project {
                         Some(&contract_name),
                         struct_definition.as_ref(),
                     )?);
+            }
+
+            // Translate abi modifiers
+            for function_definition in function_definitions.iter() {
+                if !matches!(function_definition.ty, solidity::FunctionTy::Modifier) {
+                    continue;
+                }
+
+                let function_name = translate_function_name(
+                    self,
+                    module.clone(),
+                    Some(contract_name),
+                    function_definition.name.as_ref().map(|n| n.name.as_str()),
+                    &function_definition.params,
+                    &function_definition.ty,
+                );
+
+                let parameters = translate_function_parameters(
+                    self,
+                    module.clone(),
+                    Some(contract_name),
+                    function_definition,
+                );
+
+                module.borrow_mut().modifiers.push(ir::Item {
+                    signature: sway::TypeName::Function {
+                        old_name: function_name.old_name,
+                        new_name: function_name.abi_fn_name,
+                        generic_parameters: None,
+                        parameters,
+                        storage_struct_parameter: None,
+                        return_type: translate_return_type_name(
+                            self,
+                            module.clone(),
+                            scope.clone(),
+                            function_definition,
+                        )
+                        .map(Box::new),
+                    },
+                    implementation: None,
+                })
             }
 
             // Translate abi functions

@@ -1304,6 +1304,18 @@ fn get_path_expr_type(
                         return storage_struct_parameter.type_name.clone();
                     }
                 }
+
+                if module.modifiers.iter().any(|m| {
+                    let sway::TypeName::Function { new_name, .. } = &m.signature else {
+                        unreachable!()
+                    };
+                    *new_name == function_name
+                }) {
+                    return Some(sway::TypeName::Identifier {
+                        name: format!("{contract_name}Storage"),
+                        generic_parameters: None,
+                    });
+                }
             }
 
             for use_item in module.borrow().uses.iter() {
