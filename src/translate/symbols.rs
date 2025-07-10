@@ -424,124 +424,18 @@ pub fn resolve_abi_function_call(
                     continue;
                 };
 
-                // If `parameter_type_name` is `Identity`, but `container` is an abi cast expression,
-                // then we need to de-cast it, so `container` turns into the 2nd parameter of the abi cast,
-                // and `value_type_name` turns into `Identity`.
-                if parameter_type_name.is_identity()
-                    && let sway::Expression::FunctionCall(function_call) = parameters[i].clone()
-                    && let Some(function_name) = function_call.function.as_identifier()
-                    && function_name == "abi"
-                {
-                    parameters[i] = function_call.parameters[1].clone();
-                    continue;
-                }
-
-                // HACK: str -> Bytes (is this still necessary?)
-                // Bytes::from(raw_slice::from_parts::<u8>(s.as_ptr(), s.len()))
-                if parameter_type_name.is_bytes() && value_type_name.is_string_slice() {
-                    parameters[i] = sway::Expression::create_function_calls(
-                        None,
-                        &[(
-                            "Bytes::from",
-                            Some((
-                                None,
-                                vec![sway::Expression::create_function_calls(
-                                    None,
-                                    &[(
-                                        "raw_slice::from_parts",
-                                        Some((
-                                            Some(sway::GenericParameterList {
-                                                entries: vec![sway::GenericParameter {
-                                                    type_name: sway::TypeName::Identifier {
-                                                        name: "u8".into(),
-                                                        generic_parameters: None,
-                                                    },
-                                                    implements: None,
-                                                }],
-                                            }),
-                                            vec![
-                                                sway::Expression::create_function_calls(
-                                                    Some(parameters[i].clone()),
-                                                    &[("as_ptr", Some((None, vec![])))],
-                                                ),
-                                                sway::Expression::create_function_calls(
-                                                    Some(parameters[i].clone()),
-                                                    &[("len", Some((None, vec![])))],
-                                                ),
-                                            ],
-                                        )),
-                                    )],
-                                )],
-                            )),
-                        )],
-                    );
-                    continue;
-                }
-
-                // HACK: StorageKey<*> -> *
-                if let Some(value_type) = value_type_name.storage_key_type()
-                    && !parameter_type_name.is_storage_key()
-                    && parameter_type_name.is_compatible_with(&value_type)
-                {
-                    parameters[i] = sway::Expression::create_function_calls(
-                        Some(parameters[i].clone()),
-                        &[("read", Some((None, vec![])))],
-                    );
-                    continue;
-                }
-
-                // HACK: [u8; 32] -> b256
-                if let Some(32) = value_type_name.u8_array_length()
-                    && parameter_type_name.is_b256()
-                {
-                    parameters[i] = sway::Expression::create_function_calls(
-                        None,
-                        &[(
-                            "b256::from_be_bytes",
-                            Some((None, vec![parameters[i].clone()])),
-                        )],
-                    );
-                    continue;
-                }
-
-                // HACK: [u*; N]
-                if let sway::TypeName::Array {
-                    type_name: value_element_type,
-                    length: value_element_length,
-                } = &value_type_name
-                    && let sway::TypeName::Array {
-                        type_name: parameter_element_type,
-                        length: parameter_element_length,
-                    } = parameter_type_name
-                {
-                    if value_element_length != parameter_element_length {
-                        return false;
-                    }
-
-                    if value_element_type.is_uint() && parameter_element_type.is_uint() {
-                        return true;
-                    }
-
-                    if value_element_type.is_compatible_with(parameter_element_type) {
-                        return true;
-                    }
-                }
-
-                if let Some(expr) = coerce_expression(
+                let Some(expr) = coerce_expression(
                     project,
                     module.clone(),
                     scope.clone(),
                     &parameters[i],
-                    value_type_name,
-                    parameter_type_name,
-                ) {
-                    parameters[i] = expr;
-                    continue;
-                }
-
-                if !value_type_name.is_compatible_with(parameter_type_name) {
+                    &value_type_name,
+                    &parameter_type_name,
+                ) else {
                     return false;
-                }
+                };
+
+                parameters[i] = expr;
             }
 
             true
@@ -720,124 +614,18 @@ pub fn resolve_function_call(
                 continue;
             };
 
-            // If `parameter_type_name` is `Identity`, but `container` is an abi cast expression,
-            // then we need to de-cast it, so `container` turns into the 2nd parameter of the abi cast,
-            // and `value_type_name` turns into `Identity`.
-            if parameter_type_name.is_identity()
-                && let sway::Expression::FunctionCall(function_call) = parameters[i].clone()
-                && let Some(function_name) = function_call.function.as_identifier()
-                && function_name == "abi"
-            {
-                parameters[i] = function_call.parameters[1].clone();
-                continue;
-            }
-
-            // HACK: str -> Bytes (is this still necessary?)
-            // Bytes::from(raw_slice::from_parts::<u8>(s.as_ptr(), s.len()))
-            if parameter_type_name.is_bytes() && value_type_name.is_string_slice() {
-                parameters[i] = sway::Expression::create_function_calls(
-                    None,
-                    &[(
-                        "Bytes::from",
-                        Some((
-                            None,
-                            vec![sway::Expression::create_function_calls(
-                                None,
-                                &[(
-                                    "raw_slice::from_parts",
-                                    Some((
-                                        Some(sway::GenericParameterList {
-                                            entries: vec![sway::GenericParameter {
-                                                type_name: sway::TypeName::Identifier {
-                                                    name: "u8".into(),
-                                                    generic_parameters: None,
-                                                },
-                                                implements: None,
-                                            }],
-                                        }),
-                                        vec![
-                                            sway::Expression::create_function_calls(
-                                                Some(parameters[i].clone()),
-                                                &[("as_ptr", Some((None, vec![])))],
-                                            ),
-                                            sway::Expression::create_function_calls(
-                                                Some(parameters[i].clone()),
-                                                &[("len", Some((None, vec![])))],
-                                            ),
-                                        ],
-                                    )),
-                                )],
-                            )],
-                        )),
-                    )],
-                );
-                continue;
-            }
-
-            // HACK: StorageKey<*> -> *
-            if let Some(value_type) = value_type_name.storage_key_type()
-                && !parameter_type_name.is_storage_key()
-                && parameter_type_name.is_compatible_with(&value_type)
-            {
-                parameters[i] = sway::Expression::create_function_calls(
-                    Some(parameters[i].clone()),
-                    &[("read", Some((None, vec![])))],
-                );
-                continue;
-            }
-
-            // HACK: [u8; 32] -> b256
-            if let Some(32) = value_type_name.u8_array_length()
-                && parameter_type_name.is_b256()
-            {
-                parameters[i] = sway::Expression::create_function_calls(
-                    None,
-                    &[(
-                        "b256::from_be_bytes",
-                        Some((None, vec![parameters[i].clone()])),
-                    )],
-                );
-                continue;
-            }
-
-            // HACK: [u*; N]
-            if let sway::TypeName::Array {
-                type_name: value_element_type,
-                length: value_element_length,
-            } = &value_type_name
-                && let sway::TypeName::Array {
-                    type_name: parameter_element_type,
-                    length: parameter_element_length,
-                } = &parameter_type_name
-            {
-                if value_element_length != parameter_element_length {
-                    return false;
-                }
-
-                if value_element_type.is_uint() && parameter_element_type.is_uint() {
-                    return true;
-                }
-
-                if value_element_type.is_compatible_with(parameter_element_type) {
-                    return true;
-                }
-            }
-
-            if let Some(expr) = coerce_expression(
+            let Some(expr) = coerce_expression(
                 project,
                 module.clone(),
                 scope.clone(),
                 &parameters[i],
-                value_type_name,
+                &value_type_name,
                 &parameter_type_name,
-            ) {
-                parameters[i] = expr;
-                continue;
-            }
-
-            if !value_type_name.is_compatible_with(&parameter_type_name) {
+            ) else {
                 return false;
-            }
+            };
+
+            parameters[i] = expr;
         }
 
         true
@@ -1011,124 +799,18 @@ pub fn resolve_modifier(
                 continue;
             };
 
-            // If `parameter_type_name` is `Identity`, but `container` is an abi cast expression,
-            // then we need to de-cast it, so `container` turns into the 2nd parameter of the abi cast,
-            // and `value_type_name` turns into `Identity`.
-            if parameter_type_name.is_identity()
-                && let sway::Expression::FunctionCall(modifier_call) = parameters[i].clone()
-                && let Some(modifier_name) = modifier_call.function.as_identifier()
-                && modifier_name == "abi"
-            {
-                parameters[i] = modifier_call.parameters[1].clone();
-                continue;
-            }
-
-            // HACK: str -> Bytes (is this still necessary?)
-            // Bytes::from(raw_slice::from_parts::<u8>(s.as_ptr(), s.len()))
-            if parameter_type_name.is_bytes() && value_type_name.is_string_slice() {
-                parameters[i] = sway::Expression::create_function_calls(
-                    None,
-                    &[(
-                        "Bytes::from",
-                        Some((
-                            None,
-                            vec![sway::Expression::create_function_calls(
-                                None,
-                                &[(
-                                    "raw_slice::from_parts",
-                                    Some((
-                                        Some(sway::GenericParameterList {
-                                            entries: vec![sway::GenericParameter {
-                                                type_name: sway::TypeName::Identifier {
-                                                    name: "u8".into(),
-                                                    generic_parameters: None,
-                                                },
-                                                implements: None,
-                                            }],
-                                        }),
-                                        vec![
-                                            sway::Expression::create_function_calls(
-                                                Some(parameters[i].clone()),
-                                                &[("as_ptr", Some((None, vec![])))],
-                                            ),
-                                            sway::Expression::create_function_calls(
-                                                Some(parameters[i].clone()),
-                                                &[("len", Some((None, vec![])))],
-                                            ),
-                                        ],
-                                    )),
-                                )],
-                            )],
-                        )),
-                    )],
-                );
-                continue;
-            }
-
-            // HACK: StorageKey<*> -> *
-            if let Some(value_type) = value_type_name.storage_key_type()
-                && !parameter_type_name.is_storage_key()
-                && parameter_type_name.is_compatible_with(&value_type)
-            {
-                parameters[i] = sway::Expression::create_function_calls(
-                    Some(parameters[i].clone()),
-                    &[("read", Some((None, vec![])))],
-                );
-                continue;
-            }
-
-            // HACK: [u8; 32] -> b256
-            if let Some(32) = value_type_name.u8_array_length()
-                && parameter_type_name.is_b256()
-            {
-                parameters[i] = sway::Expression::create_function_calls(
-                    None,
-                    &[(
-                        "b256::from_be_bytes",
-                        Some((None, vec![parameters[i].clone()])),
-                    )],
-                );
-                continue;
-            }
-
-            // HACK: [u*; N]
-            if let sway::TypeName::Array {
-                type_name: value_element_type,
-                length: value_element_length,
-            } = &value_type_name
-                && let sway::TypeName::Array {
-                    type_name: parameter_element_type,
-                    length: parameter_element_length,
-                } = &parameter_type_name
-            {
-                if value_element_length != parameter_element_length {
-                    return false;
-                }
-
-                if value_element_type.is_uint() && parameter_element_type.is_uint() {
-                    return true;
-                }
-
-                if value_element_type.is_compatible_with(parameter_element_type) {
-                    return true;
-                }
-            }
-
-            if let Some(expr) = coerce_expression(
+            let Some(expr) = coerce_expression(
                 project,
                 module.clone(),
                 scope.clone(),
                 &parameters[i],
-                value_type_name,
+                &value_type_name,
                 &parameter_type_name,
-            ) {
-                parameters[i] = expr;
-                continue;
-            }
-
-            if !value_type_name.is_compatible_with(&parameter_type_name) {
+            ) else {
                 return false;
-            }
+            };
+
+            parameters[i] = expr;
         }
 
         true

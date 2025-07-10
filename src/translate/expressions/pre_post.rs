@@ -23,17 +23,7 @@ pub fn translate_pre_or_post_operator_value_expression(
             translate_post_operator_expression(project, module.clone(), scope.clone(), loc, x, "-=")
         }
 
-        _ => {
-            // use solang_parser::pt::CodeLocation;
-            // println!(
-            //     "Translating pre- or post-operator value expression: {expression}; from {} - {expression:#?}",
-            //     project.loc_to_file_location_string(module.clone(), &expression.loc()),
-            // );
-
-            let result = translate_expression(project, module.clone(), scope.clone(), expression)?;
-            // println!("Translated pre- or post-operator value expression: {}", sway::TabbedDisplayer(&result));
-            Ok(result)
-        }
+        _ => translate_expression(project, module.clone(), scope.clone(), expression),
     }
 }
 

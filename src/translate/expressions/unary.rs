@@ -88,9 +88,6 @@ pub fn translate_binary_expression(
         abi_check(&rhs_type, &mut lhs, &mut lhs_type);
     }
 
-    let lhs_type = get_underlying_type(project, module.clone(), &lhs_type);
-    let rhs_type = get_underlying_type(project, module.clone(), &rhs_type);
-
     rhs = coerce_expression(
         project,
         module.clone(),

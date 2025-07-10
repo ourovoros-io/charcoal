@@ -19,7 +19,6 @@ pub fn translate_assignment_expression(
 
     let rhs = match operator {
         "=" => {
-            // println!("taking translate_pre_or_post_operator_value_expression path...");
             translate_pre_or_post_operator_value_expression(
                 project,
                 module.clone(),
@@ -28,7 +27,6 @@ pub fn translate_assignment_expression(
             )?
         }
         _ => {
-            // println!("taking translate_expression path...");
             translate_expression(project, module.clone(), scope.clone(), rhs)?
         }
     };
@@ -754,7 +752,7 @@ pub fn create_assignment_expression(
         module.clone(),
         scope.clone(),
         rhs,
-        rhs_type_name,
+        &rhs_type_name,
         &expr_type_name,
     )
     .unwrap();

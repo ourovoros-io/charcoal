@@ -95,7 +95,7 @@ pub fn translate_array_slice_expression(
             module.clone(),
             scope.clone(),
             from_index,
-            from_index_type,
+            &from_index_type,
             &u64_type,
         )
         .unwrap();

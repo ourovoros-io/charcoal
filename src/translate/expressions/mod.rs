@@ -829,6 +829,7 @@ pub fn create_value_expression(
                 // Check to see if the type is a type definition
                 if project.is_type_definition_declared(module.clone(), name) {
                     let underlying_type = get_underlying_type(project, module.clone(), type_name);
+                    
                     return create_value_expression(
                         project,
                         module,
@@ -839,24 +840,24 @@ pub fn create_value_expression(
                 }
                 // Check to see if the type is a translated enum
                 else if let Some(translated_enum) = project.find_enum(module.clone(), name) {
-                    let Some(sway::ImplItem::Constant(value)) =
+                    if let Some(sway::ImplItem::Constant(value)) =
                         translated_enum.variants_impl.items.first()
-                    else {
-                        let underlying_type =
-                            get_underlying_type(project, module.clone(), type_name);
-                        return create_value_expression(
-                            project,
-                            module.clone(),
-                            scope.clone(),
-                            &underlying_type,
-                            None,
-                        );
-                    };
+                    {
+                        return sway::Expression::create_identifier(format!(
+                            "{}::{}",
+                            name, value.name
+                        ));
+                    }
 
-                    return sway::Expression::create_identifier(format!(
-                        "{}::{}",
-                        name, value.name
-                    ));
+                    let underlying_type = get_underlying_type(project, module.clone(), type_name);
+
+                    return create_value_expression(
+                        project,
+                        module.clone(),
+                        scope.clone(),
+                        &underlying_type,
+                        None,
+                    );
                 }
                 // Check to see if the type is a struct definition
                 else if let Some(struct_definition) =

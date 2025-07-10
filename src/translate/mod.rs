@@ -65,7 +65,10 @@ pub fn coerce_expression(
     from_type_name: &sway::TypeName,
     to_type_name: &sway::TypeName,
 ) -> Option<sway::Expression> {
-    if from_type_name.is_compatible_with(to_type_name) {
+    let from_type_name = get_underlying_type(project, module.clone(), from_type_name);
+    let to_type_name = get_underlying_type(project, module.clone(), to_type_name);
+
+    if from_type_name.is_compatible_with(&to_type_name) {
         return Some(expression.clone());
     }
 
@@ -244,6 +247,8 @@ pub fn coerce_expression(
 
     // Check for `StorageKey<T>` to `T` coercions
     if let Some(storage_key_type) = from_type_name.storage_key_type() {
+        let storage_key_type = get_underlying_type(project, module.clone(), &storage_key_type);
+
         if to_type_name.is_compatible_with(&storage_key_type) {
             return Some(sway::Expression::create_function_calls(
                 Some(expression),
@@ -253,14 +258,17 @@ pub fn coerce_expression(
     }
 
     // Check for `T` to `StorageKey<T>` coercions
-    if let Some(storage_key_type) = to_type_name.storage_key_type()
-        && storage_key_type.is_compatible_with(&from_type_name)
-        && let sway::Expression::FunctionCall(f) = &expression
-        && let sway::Expression::MemberAccess(m) = &f.function
-        && m.member == "read"
-        && f.parameters.len() == 0
-    {
-        return Some(m.expression.clone());
+    if let Some(storage_key_type) = to_type_name.storage_key_type() {
+        let storage_key_type = get_underlying_type(project, module.clone(), &storage_key_type);
+
+        if storage_key_type.is_compatible_with(&from_type_name)
+            && let sway::Expression::FunctionCall(f) = &expression
+            && let sway::Expression::MemberAccess(m) = &f.function
+            && m.member == "read"
+            && f.parameters.len() == 0
+        {
+            return Some(m.expression.clone());
+        }
     }
 
     // Check for `Identity` to `b256` coercions
@@ -336,7 +344,7 @@ pub fn coerce_expression(
                             f.parameters[1].clone()
                         },
                         &b256_type_name,
-                        to_type_name,
+                        &to_type_name,
                     )
                     .unwrap(),
                 );
@@ -2545,7 +2553,7 @@ fn get_path_expr_function_call_type(
             if *fn_name != name {
                 return false;
             }
-
+            
             // Ensure the supplied function call args match the function's parameters
             if parameters.len() != fn_parameters.entries.len() {
                 return false;
@@ -2555,6 +2563,10 @@ fn get_path_expr_function_call_type(
                 let Some(parameter_type_name) = fn_parameters.entries[i].type_name.as_ref() else {
                     continue;
                 };
+
+                let value_type_name = get_underlying_type(project, module.clone(), value_type_name);
+                let parameter_type_name =
+                    get_underlying_type(project, module.clone(), parameter_type_name);
 
                 // HACK: allow numeric literals for any uint types
                 if value_type_name.is_uint() && parameter_type_name.is_uint() {
@@ -2585,7 +2597,7 @@ fn get_path_expr_function_call_type(
                         type_name: parameter_type_name,
                         length: parameter_length,
                     },
-                ) = (value_type_name, parameter_type_name)
+                ) = (&value_type_name, &parameter_type_name)
                 {
                     if value_length != parameter_length {
                         return false;
@@ -2632,7 +2644,7 @@ fn get_path_expr_function_call_type(
                     }
                 }
 
-                if !value_type_name.is_compatible_with(parameter_type_name) {
+                if !value_type_name.is_compatible_with(&parameter_type_name) {
                     return false;
                 }
             }

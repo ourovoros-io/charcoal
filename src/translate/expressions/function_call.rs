@@ -161,12 +161,8 @@ fn translate_type_function_call(
     let from_type_name =
         get_expression_type(project, module.clone(), scope.clone(), &from_expression)?;
 
-    let from_type_name = get_underlying_type(project, module.clone(), &from_type_name);
-
     let to_type_name =
         translate_type_name(project, module.clone(), scope.clone(), expression, None);
-
-    let to_type_name = get_underlying_type(project, module.clone(), &to_type_name);
 
     Ok(coerce_expression(
         project,
