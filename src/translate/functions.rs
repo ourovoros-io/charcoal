@@ -696,15 +696,17 @@ pub fn translate_function_definition(
     // Create the function's storage struct parameter and add it to the scope if necessary
     let mut storage_struct_parameter = None;
 
-    if !function_attributes.is_pure
-        && let Some(contract_name) = contract_name.as_ref()
+    if !(function_attributes.is_constant || function_attributes.is_pure)
+        && let Some(contract_name) = contract_name
+        && let Some(contract) = project.find_contract(module.clone(), contract_name)
+        && let Some(storage_struct) = contract.borrow().storage_struct.as_ref()
     {
         storage_struct_parameter = Some(sway::Parameter {
             is_ref: false,
             is_mut: false,
             name: "storage_struct".to_string(),
             type_name: Some(sway::TypeName::Identifier {
-                name: format!("{contract_name}Storage"),
+                name: storage_struct.borrow().name.clone(),
                 generic_parameters: None,
             }),
         });
@@ -715,7 +717,7 @@ pub fn translate_function_definition(
                 old_name: "".into(),
                 new_name: "storage_struct".into(),
                 type_name: sway::TypeName::Identifier {
-                    name: format!("{contract_name}Storage"),
+                    name: storage_struct.borrow().name.clone(),
                     generic_parameters: None,
                 },
                 statement_index: Some(0),

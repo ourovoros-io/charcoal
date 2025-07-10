@@ -19,26 +19,30 @@ pub fn translate_expression_statement(
                     .iter()
                     .all(|(_, p)| p.as_ref().map_or(true, |p| p.name.is_none()))
                 {
-                    return Ok(sway::Statement::from(sway::Expression::from(
-                        sway::BinaryExpression {
-                            operator: "=".into(),
-                            lhs: sway::Expression::Tuple(
-                                parameters
-                                    .iter()
-                                    .map(|(_, p)| match p.as_ref() {
-                                        Some(p) => translate_expression(
-                                            project,
-                                            module.clone(),
-                                            scope.clone(),
-                                            &p.ty,
-                                        ),
-                                        None => Ok(sway::Expression::create_identifier("_".into())),
-                                    })
-                                    .collect::<Result<Vec<_>, _>>()?,
-                            ),
-                            rhs: translate_expression(project, module.clone(), scope.clone(), rhs)?,
-                        },
-                    )));
+                    let rhs = translate_expression(project, module.clone(), scope.clone(), rhs)?;
+                    let rhs_type_name =
+                        get_expression_type(project, module.clone(), scope.clone(), &rhs)?;
+
+                    let elements = parameters
+                        .iter()
+                        .map(|(_, p)| match p.as_ref() {
+                            Some(p) => {
+                                translate_expression(project, module.clone(), scope.clone(), &p.ty)
+                            }
+                            None => Ok(sway::Expression::create_identifier("_".into())),
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+
+                    return Ok(sway::Statement::from(create_assignment_expression(
+                        project,
+                        module.clone(),
+                        scope.clone(),
+                        "=",
+                        &sway::Expression::Tuple(elements),
+                        None,
+                        &rhs,
+                        &rhs_type_name,
+                    )?));
                 }
 
                 // Collect variable translations for the scope

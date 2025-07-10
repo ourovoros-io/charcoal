@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-contract ConversionContract {
+contract StorageMemory {
     struct MyStruct {
         uint value;
         string name;
@@ -17,10 +17,10 @@ contract ConversionContract {
     // Function to get a MyStruct from storage and convert it to memory
     function getStruct(uint index) public view returns (uint, string memory) {
         require(index < myStructs.length, "Index out of bounds");
-        
+
         // Copy the storage struct to memory
         MyStruct memory tempStruct = myStructs[index];
-        
+
         return (tempStruct.value, tempStruct.name);
     }
 }

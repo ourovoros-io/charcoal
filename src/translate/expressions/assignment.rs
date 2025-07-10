@@ -18,17 +18,13 @@ pub fn translate_assignment_expression(
     // );
 
     let rhs = match operator {
-        "=" => {
-            translate_pre_or_post_operator_value_expression(
-                project,
-                module.clone(),
-                scope.clone(),
-                rhs,
-            )?
-        }
-        _ => {
-            translate_expression(project, module.clone(), scope.clone(), rhs)?
-        }
+        "=" => translate_pre_or_post_operator_value_expression(
+            project,
+            module.clone(),
+            scope.clone(),
+            rhs,
+        )?,
+        _ => translate_expression(project, module.clone(), scope.clone(), rhs)?,
     };
 
     let rhs_type_name = get_expression_type(project, module.clone(), scope.clone(), &rhs)?;
@@ -623,21 +619,6 @@ pub fn create_assignment_expression(
                         }
                     }
 
-                    sway::Expression::PathExpr(path_expr) => {
-                        let Some(ident) = path_expr.as_identifier() else {
-                            todo!(
-                                "translation non-identifier assignment expression: {}",
-                                sway::TabbedDisplayer(expression)
-                            )
-                        };
-
-                        return Ok(sway::Expression::from(sway::BinaryExpression {
-                            operator: "=".into(),
-                            lhs: expression.clone(),
-                            rhs: sway::Expression::create_identifier(ident.into()),
-                        }));
-                    }
-
                     sway::Expression::FunctionCall(function_call) => {
                         match &function_call.function {
                             sway::Expression::MemberAccess(member_access) => {
@@ -735,10 +716,21 @@ pub fn create_assignment_expression(
                         }
                     }
 
-                    _ => todo!(
-                        "translation assignment expression: {}",
-                        sway::TabbedDisplayer(expression)
-                    ),
+                    _ => {
+                        return Ok(sway::Expression::from(sway::BinaryExpression {
+                            operator: "=".into(),
+                            lhs: expression.clone(),
+                            rhs: coerce_expression(
+                                project,
+                                module.clone(),
+                                scope.clone(),
+                                rhs,
+                                rhs_type_name,
+                                &expr_type_name,
+                            )
+                            .unwrap(),
+                        }));
+                    }
                 }
             }
 
@@ -779,10 +771,57 @@ pub fn create_assignment_expression(
             }))
         }
 
-        _ => Ok(sway::Expression::from(sway::BinaryExpression {
-            operator: operator.into(),
-            lhs: expression.clone(),
-            rhs: rhs.clone(),
-        })),
+        _ => {
+            if let sway::Expression::Tuple(elements) = &expression
+                && let (
+                    sway::TypeName::Tuple {
+                        type_names: lhs_type_names,
+                    },
+                    sway::TypeName::Tuple {
+                        type_names: rhs_type_names,
+                    },
+                ) = (expr_type_name, rhs_type_name)
+                && lhs_type_names.len() == rhs_type_names.len()
+            {
+                let variable_name = scope.borrow_mut().generate_unique_variable_name("x");
+                let mut statements = vec![];
+
+                statements.push(sway::Statement::from(sway::Let {
+                    pattern: sway::LetPattern::Identifier(sway::LetIdentifier {
+                        is_mutable: false,
+                        name: variable_name.clone(),
+                    }),
+                    type_name: None,
+                    value: rhs.clone(),
+                }));
+
+                for (i, element) in elements.iter().enumerate() {
+                    statements.push(sway::Statement::from(create_assignment_expression(
+                        project,
+                        module.clone(),
+                        scope.clone(),
+                        "=",
+                        element,
+                        None,
+                        &sway::Expression::from(sway::MemberAccess {
+                            expression: sway::Expression::create_identifier(variable_name.clone()),
+                            member: i.to_string(),
+                        }),
+                        &rhs_type_names[i],
+                    )?));
+                }
+
+                return Ok(sway::Expression::from(sway::Block {
+                    statements,
+                    final_expr: None,
+                }));
+            }
+
+            Ok(sway::Expression::from(sway::BinaryExpression {
+                operator: operator.into(),
+                lhs: expression.clone(),
+                rhs: rhs.clone(),
+            }))
+        }
     }
 }
