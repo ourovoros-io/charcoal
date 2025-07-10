@@ -123,8 +123,7 @@ pub fn translate_state_variable(
             .initializer
             .as_ref()
             .map(|x| {
-                let mut value =
-                    translate_expression(project, module.clone(), scope.clone(), x);
+                let mut value = translate_expression(project, module.clone(), scope.clone(), x);
 
                 if let Ok(sway::Expression::Commented(comment, expression)) = &value
                     && let sway::Expression::FunctionCall(function_call) = expression.as_ref()
@@ -495,7 +494,9 @@ pub fn generate_state_variable_getter_functions(
     toplevel_function.is_public = true;
     toplevel_function.new_name = function_name.top_level_fn_name;
 
-    if let Some(contract_name) = contract_name.as_ref() {
+    if let Some(contract_name) = contract_name.as_ref()
+        && state_variable_info.is_storage
+    {
         toplevel_function.storage_struct_parameter = Some(sway::Parameter {
             is_ref: false,
             is_mut: false,

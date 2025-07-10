@@ -1628,6 +1628,19 @@ impl Project {
                 contract_dependencies.push(shared_dependency);
             }
 
+            // Construct the contract main module's use statements
+            let mut uses = module
+                .uses
+                .iter()
+                .filter(|u| !u.is_public)
+                .cloned()
+                .collect::<Vec<_>>();
+
+            uses.push(sway::Use {
+                is_public: true,
+                tree: use_tree.clone(),
+            });
+
             // Move the storage and abi impls out of the contract IR and into the main modules of the new contract projects
             for contract in module.contracts.iter_mut() {
                 let contract_signature = contract.signature.clone();
@@ -1659,10 +1672,7 @@ impl Project {
                     name: contract_project_name,
                     path: module_path.clone(),
                     dependencies: contract_dependencies.clone(),
-                    uses: vec![sway::Use {
-                        is_public: true,
-                        tree: use_tree.clone(),
-                    }],
+                    uses: uses.clone(),
                     contracts: vec![ir::Item {
                         signature: contract_signature,
                         implementation: Some(Rc::new(RefCell::new(ir::Contract {
