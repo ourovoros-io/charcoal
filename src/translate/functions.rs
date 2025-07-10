@@ -1350,7 +1350,9 @@ pub fn translate_function_definition(
         }
 
         // If the contract has a storage struct, generate bindings and a storage struct parameter for the toplevel function call
-        if let Some(storage_struct) = contract.borrow().storage_struct.as_ref() {
+        if !(function_attributes.is_constant || function_attributes.is_pure)
+            && let Some(storage_struct) = contract.borrow().storage_struct.as_ref()
+        {
             let storage_namespace_name = module
                 .borrow()
                 .get_storage_namespace_name(scope.clone())

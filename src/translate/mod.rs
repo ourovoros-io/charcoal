@@ -568,6 +568,17 @@ pub fn coerce_expression(
 
     // Check for uint to `b256` coercions
     if from_type_name.is_uint() && to_type_name.is_b256() {
+        // Remove suffix from explicitly tagged `u256` literals
+        if let sway::Expression::Literal(
+            sway::Literal::DecInt(value, _) | sway::Literal::HexInt(value, _),
+        ) = &expression
+        {
+            return Some(sway::Expression::from(sway::Literal::HexInt(
+                value.clone(),
+                Some("b256".to_string()),
+            )));
+        }
+
         expression = coerce_expression(
             project,
             module.clone(),
@@ -2553,7 +2564,7 @@ fn get_path_expr_function_call_type(
             if *fn_name != name {
                 return false;
             }
-            
+
             // Ensure the supplied function call args match the function's parameters
             if parameters.len() != fn_parameters.entries.len() {
                 return false;

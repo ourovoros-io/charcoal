@@ -62,7 +62,7 @@ pub fn translate_struct_definition(
         }
 
         fields.push(sway::StructField {
-            is_public: false,
+            is_public: true,
             new_name,
             old_name,
             type_name,
@@ -71,7 +71,7 @@ pub fn translate_struct_definition(
 
     Ok(Rc::new(RefCell::new(sway::Struct {
         attributes: None,
-        is_public: false,
+        is_public: true,
         name: struct_definition.name.as_ref().unwrap().name.clone(),
         generic_parameters: None,
         fields,

@@ -1092,9 +1092,18 @@ impl TabbedDisplay for Literal {
 
             Literal::HexInt(x, suffix) => write!(
                 f,
-                "0x{x:X}{}",
+                "0x{}{}",
+                if suffix.as_ref().is_some_and(|s| s == "u256" || s == "b256") {
+                    format!("{x:064X}")
+                } else {
+                    format!("{x:X}")
+                },
                 if let Some(suffix) = suffix.as_ref() {
-                    suffix.as_str()
+                    if suffix != "b256" {
+                        suffix.as_str()
+                    } else {
+                        ""
+                    }
                 } else {
                     ""
                 },
