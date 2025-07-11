@@ -41,11 +41,29 @@ pub fn translate_binary_expression(
     let mut rhs_type = get_expression_type(project, module.clone(), scope.clone(), &rhs)?;
 
     if lhs_type.is_storage_key() {
+        if let Some(function_name) = scope.borrow().get_function_name() {
+            module
+                .borrow_mut()
+                .function_storage_accesses
+                .entry(function_name)
+                .or_default()
+                .0 = true;
+        }
+
         lhs = sway::Expression::create_function_calls(Some(lhs), &[("read", Some((None, vec![])))]);
         lhs_type = get_expression_type(project, module.clone(), scope.clone(), &lhs)?;
     }
 
     if rhs_type.is_storage_key() {
+        if let Some(function_name) = scope.borrow().get_function_name() {
+            module
+                .borrow_mut()
+                .function_storage_accesses
+                .entry(function_name)
+                .or_default()
+                .0 = true;
+        }
+
         rhs = sway::Expression::create_function_calls(Some(rhs), &[("read", Some((None, vec![])))]);
         rhs_type = get_expression_type(project, module.clone(), scope.clone(), &rhs)?;
     }

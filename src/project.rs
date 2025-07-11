@@ -1143,28 +1143,6 @@ impl Project {
             let declaration =
                 translate_function_declaration(self, module.clone(), None, function_definition)?;
 
-            let sway::TypeName::Function { new_name, .. } = &declaration.type_name else {
-                unreachable!()
-            };
-
-            for constructor_call in declaration.constructor_calls.iter() {
-                module
-                    .borrow_mut()
-                    .function_constructor_calls
-                    .entry(new_name.clone())
-                    .or_default()
-                    .push(constructor_call.clone());
-            }
-
-            for modifier in declaration.modifiers.iter() {
-                module
-                    .borrow_mut()
-                    .function_modifiers
-                    .entry(new_name.clone())
-                    .or_default()
-                    .push(modifier.clone());
-            }
-
             module.borrow_mut().functions.push(ir::Item {
                 signature: declaration.type_name,
                 implementation: None,
@@ -1466,28 +1444,6 @@ impl Project {
                     Some(&contract_name),
                     &function_definition,
                 )?;
-
-                let sway::TypeName::Function { new_name, .. } = &declaration.type_name else {
-                    unreachable!()
-                };
-
-                for constructor_call in declaration.constructor_calls.iter() {
-                    module
-                        .borrow_mut()
-                        .function_constructor_calls
-                        .entry(new_name.clone())
-                        .or_default()
-                        .push(constructor_call.clone());
-                }
-
-                for modifier in declaration.modifiers.iter() {
-                    module
-                        .borrow_mut()
-                        .function_modifiers
-                        .entry(new_name.clone())
-                        .or_default()
-                        .push(modifier.clone());
-                }
 
                 module.borrow_mut().functions.push(ir::Item {
                     signature: declaration.type_name,

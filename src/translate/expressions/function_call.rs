@@ -1056,6 +1056,15 @@ fn translate_member_access_function_call(
 
     // HACK: tack `.read()` onto the end if the container is a StorageKey
     if let Some(storage_key_type) = type_name.storage_key_type() {
+        if let Some(function_name) = scope.borrow().get_function_name() {
+            module
+                .borrow_mut()
+                .function_storage_accesses
+                .entry(function_name)
+                .or_default()
+                .0 = true;
+        }
+
         container = sway::Expression::create_function_calls(
             Some(container),
             &[("read", Some((None, vec![])))],
@@ -2062,6 +2071,7 @@ fn translate_storage_vec_member_access_function_call(
         )
     };
 
+    // HACK: remove `.read()`
     if let sway::Expression::FunctionCall(f) = &expression
         && let sway::Expression::MemberAccess(m) = &f.function
         && m.member == "read"
@@ -2084,6 +2094,15 @@ fn translate_storage_vec_member_access_function_call(
     }
 
     if let Some(storage_key_type) = type_name.storage_key_type() {
+        if let Some(function_name) = scope.borrow().get_function_name() {
+            module
+                .borrow_mut()
+                .function_storage_accesses
+                .entry(function_name)
+                .or_default()
+                .1 = true;
+        }
+
         match storage_key_type {
             sway::TypeName::Identifier {
                 name,

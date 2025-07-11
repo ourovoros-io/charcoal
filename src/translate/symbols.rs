@@ -270,7 +270,7 @@ pub fn resolve_symbol(
         }
     }
 
-    // If we didn't find it in the current contract, try checking inheritted contracts
+    // If we didn't find it in the current contract, try checking inherited contracts
     if let Some(contract_name) = scope.borrow().get_contract_name()
         && let Some(contract) = project.find_contract(module.clone(), &contract_name)
     {
@@ -804,19 +804,40 @@ pub fn resolve_modifier(
 
     let parameters_cell = Rc::new(RefCell::new(parameters));
 
-    let mut check_parameters = |modifier_parameters: &sway::ParameterList| -> bool {
+    let mut check_parameters = |modifier_parameters: &sway::ParameterList,
+                                storage_struct_parameter: Option<&sway::Parameter>|
+     -> bool {
         let mut parameters = parameters_cell.borrow_mut();
 
         // Ensure the supplied modifier call args match the modifier's parameters
-        if parameters.len() != modifier_parameters.entries.len() {
+        if parameters.len()
+            != modifier_parameters.entries.len()
+                + if storage_struct_parameter.is_some() {
+                    1
+                } else {
+                    0
+                }
+        {
             return false;
         }
 
-        for (i, value_type_name) in parameter_types.iter().enumerate() {
-            let Some(parameter_type_name) = modifier_parameters.entries[i].type_name.as_ref()
-            else {
+        if let Some(storage_struct_parameter) = storage_struct_parameter {
+            if !storage_struct_parameter
+                .type_name
+                .as_ref()
+                .unwrap()
+                .is_compatible_with(parameter_types.last().unwrap())
+            {
+                return false;
+            }
+        }
+
+        for (i, parameter) in modifier_parameters.entries.iter().enumerate() {
+            let Some(parameter_type_name) = parameter.type_name.as_ref() else {
                 continue;
             };
+
+            let value_type_name = &parameter_types[i];
 
             let Some(expr) = coerce_expression(
                 project,
@@ -851,7 +872,15 @@ pub fn resolve_modifier(
                 return false;
             }
 
-            check_parameters(&f_parameters)
+            check_parameters(
+                &f_parameters,
+                f.implementation
+                    .as_ref()
+                    .unwrap()
+                    .borrow()
+                    .storage_struct_parameter
+                    .as_ref(),
+            )
         })
     {
         modifier = Some(f.clone());

@@ -91,6 +91,15 @@ pub fn translate_variable_access_expression(
                     get_expression_type(project, module.clone(), scope.clone(), &expression)?;
 
                 if expression_type.is_storage_key() {
+                    if let Some(function_name) = scope.borrow().get_function_name() {
+                        module
+                            .borrow_mut()
+                            .function_storage_accesses
+                            .entry(function_name)
+                            .or_default()
+                            .0 = true;
+                    }
+
                     expression = sway::Expression::create_function_calls(
                         Some(expression),
                         &[("read", Some((None, vec![])))],
@@ -254,6 +263,16 @@ pub fn translate_variable_access_expression(
                                 },
 
                                 sway::TypeName::Array { .. } => {
+                                    if let Some(function_name) = scope.borrow().get_function_name()
+                                    {
+                                        module
+                                            .borrow_mut()
+                                            .function_storage_accesses
+                                            .entry(function_name)
+                                            .or_default()
+                                            .0 = true;
+                                    }
+
                                     sway::Expression::from(sway::ArrayAccess {
                                         expression: sway::Expression::create_function_calls(
                                             Some(expression),
@@ -336,6 +355,14 @@ pub fn translate_variable_access_expression(
             )?;
 
             if let Some(container_type) = container_type_name.storage_key_type() {
+                if let Some(function_name) = scope.borrow().get_function_name() {
+                    module
+                        .borrow_mut()
+                        .function_storage_accesses
+                        .entry(function_name)
+                        .or_default()
+                        .0 = true;
+                }
                 translated_container = sway::Expression::create_function_calls(
                     Some(translated_container),
                     &[("read", Some((None, vec![])))],

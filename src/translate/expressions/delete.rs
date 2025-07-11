@@ -32,6 +32,15 @@ pub fn translate_delete_expression(
                             generic_parameters,
                         } => match (name.as_str(), generic_parameters.as_ref()) {
                             ("StorageMap", Some(_)) => {
+                                if let Some(function_name) = scope.borrow().get_function_name() {
+                                    module
+                                        .borrow_mut()
+                                        .function_storage_accesses
+                                        .entry(function_name)
+                                        .or_default()
+                                        .1 = true;
+                                }
+
                                 return Ok(sway::Expression::create_function_calls(
                                     Some(m.expression.clone()),
                                     &[("remove", Some((None, vec![f.parameters[0].clone()])))],
@@ -66,6 +75,17 @@ pub fn translate_delete_expression(
                                         generic_parameters,
                                     } => match (name.as_str(), generic_parameters.as_ref()) {
                                         ("StorageVec", Some(_)) => {
+                                            if let Some(function_name) =
+                                                scope.borrow().get_function_name()
+                                            {
+                                                module
+                                                    .borrow_mut()
+                                                    .function_storage_accesses
+                                                    .entry(function_name)
+                                                    .or_default()
+                                                    .1 = true;
+                                            }
+
                                             return Ok(sway::Expression::create_function_calls(
                                                 Some(m.expression.clone()),
                                                 &[(

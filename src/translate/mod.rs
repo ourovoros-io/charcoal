@@ -112,6 +112,15 @@ pub fn coerce_expression(
     {
         // Check for `StorageKey<StorageString>` to `Bytes` coercions
         if to_type_name.is_bytes() {
+            if let Some(function_name) = scope.borrow().get_function_name() {
+                module
+                    .borrow_mut()
+                    .function_storage_accesses
+                    .entry(function_name)
+                    .or_default()
+                    .0 = true;
+            }
+
             return Some(sway::Expression::create_function_calls(
                 Some(expression),
                 &[
@@ -124,6 +133,15 @@ pub fn coerce_expression(
 
         // Check for `StorageKey<StorageString>` to `String` coercions
         if to_type_name.is_string() {
+            if let Some(function_name) = scope.borrow().get_function_name() {
+                module
+                    .borrow_mut()
+                    .function_storage_accesses
+                    .entry(function_name)
+                    .or_default()
+                    .0 = true;
+            }
+
             return Some(sway::Expression::create_function_calls(
                 Some(expression),
                 &[
@@ -139,6 +157,15 @@ pub fn coerce_expression(
         && let Some(storage_vec_type) = storage_key_type.storage_vec_type()
         && let Some(vec_type) = to_type_name.vec_type()
     {
+        if let Some(function_name) = scope.borrow().get_function_name() {
+            module
+                .borrow_mut()
+                .function_storage_accesses
+                .entry(function_name)
+                .or_default()
+                .0 = true;
+        }
+
         let get_expression = sway::Expression::create_function_calls(
             Some(expression.clone()),
             &[
@@ -250,6 +277,15 @@ pub fn coerce_expression(
         let storage_key_type = get_underlying_type(project, module.clone(), &storage_key_type);
 
         if to_type_name.is_compatible_with(&storage_key_type) {
+            if let Some(function_name) = scope.borrow().get_function_name() {
+                module
+                    .borrow_mut()
+                    .function_storage_accesses
+                    .entry(function_name)
+                    .or_default()
+                    .0 = true;
+            }
+
             return Some(sway::Expression::create_function_calls(
                 Some(expression),
                 &[("read", Some((None, vec![])))],

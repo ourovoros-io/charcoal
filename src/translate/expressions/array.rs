@@ -44,6 +44,15 @@ pub fn translate_array_subscript_expression(
     let type_name = get_expression_type(project, module.clone(), scope.clone(), &expression)?;
 
     if type_name.is_storage_key() {
+        if let Some(function_name) = scope.borrow().get_function_name() {
+            module
+                .borrow_mut()
+                .function_storage_accesses
+                .entry(function_name)
+                .or_default()
+                .0 = true;
+        }
+
         expression = sway::Expression::create_function_calls(
             Some(expression),
             &[("read", Some((None, vec![])))],
@@ -122,7 +131,7 @@ pub fn translate_array_slice_expression(
             &u64_type,
         )
         .unwrap();
-    
+
         *to_index_type = u64_type.clone();
     }
 

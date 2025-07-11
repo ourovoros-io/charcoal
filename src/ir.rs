@@ -37,8 +37,6 @@ pub struct Function {
     pub old_name: String,
     pub new_name: String,
     pub attributes: Option<sway::AttributeList>,
-    pub constructor_calls: Vec<sway::FunctionCall>,
-    pub modifiers: Vec<sway::FunctionCall>,
     pub type_name: sway::TypeName,
 }
 
@@ -54,6 +52,7 @@ pub struct Modifier {
     pub old_name: String,
     pub new_name: String,
     pub parameters: sway::ParameterList,
+    pub storage_struct_parameter: Option<sway::Parameter>,
     pub attributes: Option<sway::AttributeList>,
     pub has_underscore: bool,
     pub inline_body: Option<sway::Block>,
@@ -293,6 +292,7 @@ pub struct Module {
     pub function_names: Rc<RefCell<HashMap<String, String>>>,
     pub function_constructor_calls: HashMap<String, Vec<sway::FunctionCall>>,
     pub function_modifiers: HashMap<String, Vec<sway::FunctionCall>>,
+    pub function_storage_accesses: HashMap<String, (bool, bool)>,
 
     pub constant_name_counts: HashMap<String, usize>,
 }

@@ -362,6 +362,15 @@ pub fn translate_member_access_expression(
             ),
         )
     {
+        if let Some(function_name) = scope.borrow().get_function_name() {
+            module
+                .borrow_mut()
+                .function_storage_accesses
+                .entry(function_name)
+                .or_default()
+                .0 = true;
+        }
+
         return Ok(result);
     }
 
