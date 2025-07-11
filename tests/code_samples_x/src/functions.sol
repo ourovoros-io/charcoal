@@ -6,7 +6,7 @@ contract Functions {
         return 0;
     }
 
-    function addTwo(uint256 a, uint256 b) public returns (uint256) {
+    function addTwo(uint256 a, uint256 b) public pure returns (uint256) {
         return a + b;
     }
 }
