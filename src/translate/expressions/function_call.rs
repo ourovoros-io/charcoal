@@ -245,7 +245,7 @@ fn translate_variable_function_call(
                     generic_parameters,
                 } => match (type_name.as_str(), generic_parameters.as_ref()) {
                     ("Identity", None) => {
-                        // abi(T, x.as_contract_id().unwrap().into())
+                        // abi(T, x.bits())
                         return Ok(sway::Expression::create_function_calls(
                             None,
                             &[(
@@ -256,11 +256,7 @@ fn translate_variable_function_call(
                                         sway::Expression::create_identifier(name.into()),
                                         sway::Expression::create_function_calls(
                                             Some(parameters[0].clone()),
-                                            &[
-                                                ("as_contract_id", Some((None, vec![]))),
-                                                ("unwrap", Some((None, vec![]))),
-                                                ("into", Some((None, vec![]))),
-                                            ],
+                                            &[("bits", Some((None, vec![])))],
                                         ),
                                     ],
                                 )),
@@ -316,7 +312,7 @@ fn translate_variable_function_call(
                 },
 
                 sway::TypeName::Abi { .. } => {
-                    // abi(T, x.as_contract_id().unwrap().into())
+                    // abi(T, x.bits())
                     return Ok(sway::Expression::create_function_calls(
                         None,
                         &[(
@@ -327,11 +323,7 @@ fn translate_variable_function_call(
                                     sway::Expression::create_identifier(name.into()),
                                     sway::Expression::create_function_calls(
                                         Some(parameters[0].clone()),
-                                        &[
-                                            ("as_contract_id", Some((None, vec![]))),
-                                            ("unwrap", Some((None, vec![]))),
-                                            ("into", Some((None, vec![]))),
-                                        ],
+                                        &[("bits", Some((None, vec![])))],
                                     ),
                                 ],
                             )),

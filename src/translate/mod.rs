@@ -151,6 +151,14 @@ pub fn coerce_expression(
             .borrow_mut()
             .set_function_storage_accesses(module.clone(), true, false);
 
+        // Use `x.load_vec()` if the element types are compatible
+        if storage_vec_type.is_compatible_with(&vec_type) {
+            return Some(sway::Expression::create_function_calls(
+                Some(expression),
+                &[("load_vec", Some((None, vec![])))],
+            ));
+        }
+        
         let get_expression = sway::Expression::create_function_calls(
             Some(expression.clone()),
             &[
@@ -306,7 +314,7 @@ pub fn coerce_expression(
         ));
     }
 
-    // From uint to Identity
+    // Check for uint to `Identity` coercions
     if (from_type_name.is_uint() || from_type_name.is_b256()) && to_type_name.is_identity() {
         if from_type_name.is_uint() {
             expression = coerce_expression(
@@ -370,8 +378,9 @@ pub fn coerce_expression(
 
     // Check for `Identity` to abi cast coercions
     if from_type_name.is_identity()
+        && let Some(abi_type) = to_type_name.abi_type()
         && project
-            .find_contract(module.clone(), to_type_name.to_string().as_str())
+            .find_contract(module.clone(), abi_type.to_string().as_str())
             .is_some()
     {
         return Some(sway::Expression::create_function_calls(
@@ -384,11 +393,7 @@ pub fn coerce_expression(
                         sway::Expression::create_identifier(to_type_name.to_string()),
                         sway::Expression::create_function_calls(
                             Some(expression),
-                            &[
-                                ("as_contract_id", Some((None, vec![]))),
-                                ("unwrap", Some((None, vec![]))),
-                                ("into", Some((None, vec![]))),
-                            ],
+                            &[("bits", Some((None, vec![])))],
                         ),
                     ],
                 )),
@@ -700,55 +705,19 @@ pub fn coerce_expression(
                         name: "x".into(),
                     }),
                     type_name: None,
-                    value: sway::Expression::from(sway::Match {
-                        expression,
-                        branches: vec![
-                            sway::MatchBranch {
-                                pattern: sway::Expression::create_function_calls(
-                                    None,
-                                    &[(
-                                        "Identity::Address",
-                                        Some((
-                                            None,
-                                            vec![sway::Expression::create_identifier("x".into())],
-                                        )),
-                                    )],
-                                ),
-                                value: sway::Expression::create_function_calls(
-                                    None,
-                                    &[(
-                                        "Bytes::from",
-                                        Some((
-                                            None,
-                                            vec![sway::Expression::create_identifier("x".into())],
-                                        )),
-                                    )],
-                                ),
-                            },
-                            sway::MatchBranch {
-                                pattern: sway::Expression::create_function_calls(
-                                    None,
-                                    &[(
-                                        "Identity::ContractId",
-                                        Some((
-                                            None,
-                                            vec![sway::Expression::create_identifier("x".into())],
-                                        )),
-                                    )],
-                                ),
-                                value: sway::Expression::create_function_calls(
-                                    None,
-                                    &[(
-                                        "Bytes::from",
-                                        Some((
-                                            None,
-                                            vec![sway::Expression::create_identifier("x".into())],
-                                        )),
-                                    )],
-                                ),
-                            },
-                        ],
-                    }),
+                    value: sway::Expression::create_function_calls(
+                        None,
+                        &[(
+                            "Bytes::from",
+                            Some((
+                                None,
+                                vec![sway::Expression::create_function_calls(
+                                    Some(sway::Expression::create_identifier("x".into())),
+                                    &[("bits", Some((None, vec![])))],
+                                )],
+                            )),
+                        )],
+                    ),
                 })],
                 final_expr: Some(sway::Expression::from(sway::Array {
                     elements: (0..to_byte_count)

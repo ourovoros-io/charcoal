@@ -11,7 +11,7 @@ pub fn translate_binary_expression(
     lhs: &solidity::Expression,
     rhs: &solidity::Expression,
 ) -> Result<sway::Expression, Error> {
-    // Hack: x.code.length == 0 => x.as_contract_id().is_none()
+    // HACK: x.code.length == 0 => x.as_contract_id().is_none()
     if let solidity::Expression::MemberAccess(_, x, member2) = lhs
         && let solidity::Expression::MemberAccess(_, x, member1) = x.as_ref()
         && member1.name == "code"
@@ -73,13 +73,7 @@ pub fn translate_binary_expression(
 
             if let sway::Expression::FunctionCall(f) = &rhs
                 && let sway::Expression::MemberAccess(e) = &f.function
-                && e.member == "into"
-                && let sway::Expression::FunctionCall(f) = &e.expression
-                && let sway::Expression::MemberAccess(e) = &f.function
-                && e.member == "unwrap"
-                && let sway::Expression::FunctionCall(f) = &e.expression
-                && let sway::Expression::MemberAccess(e) = &f.function
-                && e.member == "as_contract_id"
+                && e.member == "bits"
             {
                 *rhs = e.expression.clone();
             }

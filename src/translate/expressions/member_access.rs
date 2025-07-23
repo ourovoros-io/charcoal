@@ -236,8 +236,8 @@ pub fn translate_member_access_expression(
                             sway::Expression::create_function_calls(
                                 Some(container.clone()),
                                 &[
-                                    ("as_contract_id", Some((None, vec![]))),
-                                    ("unwrap", Some((None, vec![]))),
+                                    ("bits", Some((None, vec![]))),
+                                    ("into", Some((None, vec![]))),
                                 ],
                             ),
                             sway::Expression::create_function_calls(
