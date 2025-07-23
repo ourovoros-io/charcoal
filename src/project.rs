@@ -55,7 +55,7 @@ impl Project {
                 std::io::ErrorKind::InvalidInput,
                 format!(
                     "Contracts folder should be a directory: {}",
-                    contracts_path.to_string_lossy()
+                    contracts_path.display()
                 ),
             ))));
         }

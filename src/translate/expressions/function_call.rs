@@ -942,19 +942,16 @@ fn translate_member_access_function_call(
 
         // Check to see if the member function is defined in the ABI type
         {
-            let mut abi_type_name = type_name.clone();
+            let mut abi_type_name = None;
 
             if let sway::TypeName::Abi {
                 type_name: abi_type_name2,
-            } = &abi_type_name
+            } = &type_name
             {
-                abi_type_name = abi_type_name2.as_ref().clone();
+                abi_type_name = Some(abi_type_name2.to_string());
             }
 
-            if let sway::TypeName::Identifier {
-                name: abi_type_name_string,
-                generic_parameters: None,
-            } = &abi_type_name
+            if let Some(abi_type_name_string) = abi_type_name
                 && let Some(contract) = project.find_contract(module.clone(), &abi_type_name_string)
             {
                 let abi = contract.borrow().abi.clone();
@@ -964,8 +961,11 @@ fn translate_member_access_function_call(
                     module.clone(),
                     scope.clone(),
                     &container,
+                    &sway::TypeName::Identifier {
+                        name: "Identity".to_string(),
+                        generic_parameters: None,
+                    },
                     &type_name,
-                    &abi_type_name,
                 )
                 .unwrap();
 
@@ -1991,7 +1991,10 @@ fn translate_identity_member_access_function_call(
     let type_name = get_expression_type(project, module.clone(), scope.clone(), &container)?;
 
     // Check to see if the type is located in an external ABI
-    if let Some((module, contract)) = project.find_module_and_contract(module.clone(), &name) {
+    if let Some(abi_type_name) = type_name.abi_type()
+        && let sway::TypeName::Identifier { name, .. } = abi_type_name
+        && let Some((module, contract)) = project.find_module_and_contract(module.clone(), &name)
+    {
         let abi = contract.borrow().abi.clone();
 
         let scope = Rc::new(RefCell::new(ir::Scope::new(
@@ -2000,18 +2003,6 @@ fn translate_identity_member_access_function_call(
             Some(scope.clone()),
         )));
 
-        let container = coerce_expression(
-            project,
-            module.clone(),
-            scope.clone(),
-            &container,
-            &type_name,
-            &sway::TypeName::Identifier {
-                name: abi.name.clone(),
-                generic_parameters: None,
-            },
-        )
-        .unwrap();
 
         if let Some(result) = resolve_abi_function_call(
             project,

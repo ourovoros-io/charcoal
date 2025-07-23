@@ -233,13 +233,23 @@ pub fn translate_member_access_expression(
                         ),
                         generic_parameters: None,
                         parameters: vec![
-                            sway::Expression::create_function_calls(
-                                Some(container.clone()),
-                                &[
-                                    ("bits", Some((None, vec![]))),
-                                    ("into", Some((None, vec![]))),
-                                ],
-                            ),
+                            if container_type_name.to_string() == "ContractId" {
+                                container.clone()
+                            } else {
+                                sway::Expression::create_function_calls(
+                                    None,
+                                    &[(
+                                        "ContractId::from",
+                                        Some((
+                                            None,
+                                            vec![sway::Expression::create_function_calls(
+                                                Some(container.clone()),
+                                                &[("bits", Some((None, vec![])))],
+                                            )],
+                                        )),
+                                    )],
+                                )
+                            },
                             sway::Expression::create_function_calls(
                                 None,
                                 &[("AssetId::default", Some((None, vec![])))],

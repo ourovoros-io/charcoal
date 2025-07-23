@@ -68,15 +68,6 @@ pub fn coerce_expression(
     let from_type_name = get_underlying_type(project, module.clone(), from_type_name);
     let to_type_name = get_underlying_type(project, module.clone(), to_type_name);
 
-    if from_type_name.is_compatible_with(&to_type_name) {
-        return Some(expression.clone());
-    }
-
-    // println!(
-    //     "Coercing from `{from_type_name}` to `{to_type_name}`: {}",
-    //     sway::TabbedDisplayer(expression)
-    // );
-
     let b256_type_name = sway::TypeName::Identifier {
         name: "b256".into(),
         generic_parameters: None,
@@ -86,6 +77,76 @@ pub fn coerce_expression(
         name: "u256".into(),
         generic_parameters: None,
     };
+
+    if from_type_name.is_compatible_with(&to_type_name) {
+        // Check for abi cast to `Identity` coercions
+        if to_type_name.is_identity() {
+            let mut comment = None;
+            let mut expression = expression.clone();
+
+            if let sway::Expression::Commented(c, e) = &expression {
+                comment = Some(c.clone());
+                expression = e.as_ref().clone();
+            }
+
+            if let sway::Expression::FunctionCall(f) = &expression
+                && let Some("abi") = f.function.as_identifier()
+            {
+                if f.parameters.len() == 2 {
+                    return Some(
+                        coerce_expression(
+                            project,
+                            module.clone(),
+                            scope.clone(),
+                            &if let Some(comment) = comment {
+                                sway::Expression::Commented(
+                                    comment,
+                                    Box::new(f.parameters[1].clone()),
+                                )
+                            } else {
+                                f.parameters[1].clone()
+                            },
+                            &b256_type_name,
+                            &to_type_name,
+                        )
+                        .unwrap(),
+                    );
+                }
+            }
+        }
+
+        // Check for `Identity` to abi cast coercions
+        if from_type_name.is_identity()
+            && let Some(abi_type) = to_type_name.abi_type()
+            && project
+                .find_contract(module.clone(), abi_type.to_string().as_str())
+                .is_some()
+        {
+            return Some(sway::Expression::create_function_calls(
+                None,
+                &[(
+                    "abi",
+                    Some((
+                        None,
+                        vec![
+                            sway::Expression::create_identifier(abi_type.to_string()),
+                            sway::Expression::create_function_calls(
+                                Some(expression.clone()),
+                                &[("bits", Some((None, vec![])))],
+                            ),
+                        ],
+                    )),
+                )],
+            ));
+        }
+
+        return Some(expression.clone());
+    }
+
+    // println!(
+    //     "Coercing from `{from_type_name:#?}` to `{to_type_name:#?}`: {}",
+    //     sway::TabbedDisplayer(expression)
+    // );
 
     let mut expression = expression.clone();
     let mut from_type_name = from_type_name.clone();
@@ -158,7 +219,7 @@ pub fn coerce_expression(
                 &[("load_vec", Some((None, vec![])))],
             ));
         }
-        
+
         let get_expression = sway::Expression::create_function_calls(
             Some(expression.clone()),
             &[
@@ -338,64 +399,6 @@ pub fn coerce_expression(
                         None,
                         &[("Address::from", Some((None, vec![expression])))],
                     )],
-                )),
-            )],
-        ));
-    }
-
-    // Check for abi cast to `Identity` coercions
-    if to_type_name.is_identity() {
-        let mut comment = None;
-        let mut expression = expression.clone();
-
-        if let sway::Expression::Commented(c, e) = &expression {
-            comment = Some(c.clone());
-            expression = e.as_ref().clone();
-        }
-
-        if let sway::Expression::FunctionCall(f) = &expression
-            && let Some("abi") = f.function.as_identifier()
-        {
-            if f.parameters.len() == 2 {
-                return Some(
-                    coerce_expression(
-                        project,
-                        module.clone(),
-                        scope.clone(),
-                        &if let Some(comment) = comment {
-                            sway::Expression::Commented(comment, Box::new(f.parameters[1].clone()))
-                        } else {
-                            f.parameters[1].clone()
-                        },
-                        &b256_type_name,
-                        &to_type_name,
-                    )
-                    .unwrap(),
-                );
-            }
-        }
-    }
-
-    // Check for `Identity` to abi cast coercions
-    if from_type_name.is_identity()
-        && let Some(abi_type) = to_type_name.abi_type()
-        && project
-            .find_contract(module.clone(), abi_type.to_string().as_str())
-            .is_some()
-    {
-        return Some(sway::Expression::create_function_calls(
-            None,
-            &[(
-                "abi",
-                Some((
-                    None,
-                    vec![
-                        sway::Expression::create_identifier(to_type_name.to_string()),
-                        sway::Expression::create_function_calls(
-                            Some(expression),
-                            &[("bits", Some((None, vec![])))],
-                        ),
-                    ],
                 )),
             )],
         ));
@@ -654,7 +657,7 @@ pub fn coerce_expression(
             from_bits = 32;
         }
 
-        // Check for uint to byte array coersions
+        // Check for uint to byte array coercions
         if from_bits != 0 {
             let from_byte_count = from_bits / 8;
             let to_bits = to_byte_count * 8;
@@ -696,7 +699,7 @@ pub fn coerce_expression(
             }
         }
 
-        // Check for `Identity` to `[u8; N]` coersions
+        // Check for `Identity` to `[u8; N]` coercions
         if from_type_name.is_identity() && to_byte_count <= 32 {
             return Some(sway::Expression::from(sway::Block {
                 statements: vec![sway::Statement::from(sway::Let {
@@ -712,7 +715,7 @@ pub fn coerce_expression(
                             Some((
                                 None,
                                 vec![sway::Expression::create_function_calls(
-                                    Some(sway::Expression::create_identifier("x".into())),
+                                    Some(expression),
                                     &[("bits", Some((None, vec![])))],
                                 )],
                             )),
@@ -1822,9 +1825,11 @@ fn get_path_expr_function_call_type(
                 );
             };
 
-            return Ok(Some(sway::TypeName::Identifier {
-                name: definition_name.into(),
-                generic_parameters: None,
+            return Ok(Some(sway::TypeName::Abi {
+                type_name: Box::new(sway::TypeName::Identifier {
+                    name: definition_name.into(),
+                    generic_parameters: None,
+                }),
             }));
         }
 
@@ -3763,20 +3768,6 @@ fn get_member_access_function_call_type(
             }
 
             (name, None) => {
-                if let Some(contract) = project.find_contract(module.clone(), name)
-                    && let Some(function_definition) = contract
-                        .borrow()
-                        .abi
-                        .functions
-                        .iter()
-                        .find(|f| f.new_name == member_access.member)
-                {
-                    return Ok(function_definition
-                        .return_type
-                        .clone()
-                        .unwrap_or_else(|| sway::TypeName::Tuple { type_names: vec![] }));
-                }
-
                 todo!(
                     "get type of {name} function call member_access: {}",
                     sway::TabbedDisplayer(member_access)
@@ -3814,6 +3805,28 @@ fn get_member_access_function_call_type(
 
             value => todo!("{value}"),
         },
+
+        sway::TypeName::Abi { type_name } => {
+            if let sway::TypeName::Identifier { name, .. } = type_name.as_ref()
+                && let Some(contract) = project.find_contract(module.clone(), name)
+                && let Some(function_definition) = contract
+                    .borrow()
+                    .abi
+                    .functions
+                    .iter()
+                    .find(|f| f.new_name == member_access.member)
+            {
+                return Ok(function_definition
+                    .return_type
+                    .clone()
+                    .unwrap_or_else(|| sway::TypeName::Tuple { type_names: vec![] }));
+            }
+
+            todo!(
+                "get type of {container_type} function call member_access: {}",
+                sway::TabbedDisplayer(member_access)
+            )
+        }
 
         _ => todo!(
             "get type of {container_type} function call member_access: {}",
