@@ -30,58 +30,34 @@ impl Framework {
             let foundry_toml: toml::Value = wrapped_err!(toml::from_str(&foundry_toml_contents))?;
 
             let src_path = find_in_toml_value(&foundry_toml, "profile.default", "src")
-                .map(|v| {
-                    let toml::Value::String(s) = v else {
-                        return None;
-                    };
-
-                    Some(PathBuf::from(s))
-                })
-                .flatten();
+                .and_then(|v| v.as_str())
+                .map(PathBuf::from);
 
             let remappings_filename = "remappings.txt";
+            let remappings_path = path.join(remappings_filename);
 
-            let lines: Vec<String> = if path.join(remappings_filename).exists() {
-                // Get the remappings.txt file from the root of the project folder
-                let remappings_content =
-                    wrapped_err!(std::fs::read_to_string(path.join(remappings_filename)))?;
-
+            let lines: Vec<String> = if remappings_path.exists() {
+                let remappings_content = wrapped_err!(std::fs::read_to_string(remappings_path))?;
                 remappings_content.lines().map(str::to_string).collect()
             } else {
-                // Get foundry toml file from the root of the project folder
-                let remappings_from_toml_str = wrapped_err!(std::fs::read_to_string(
-                    path.join(Framework::FOUNDRY_CONFIG_FILE)
-                ))?;
-
-                let remappings_from_toml: toml::Value =
-                    wrapped_err!(toml::from_str(&remappings_from_toml_str))?;
-
-                let value =
-                    find_in_toml_value(&remappings_from_toml, "profile.default", "remappings");
-
-                let Some(value) = value.as_ref() else {
-                    return Ok(Framework::Foundry {
-                        src_path,
-                        remappings: HashMap::new(),
-                    });
-                };
-
-                let toml::Value::Array(arr) = value else {
-                    panic!("remappings key in foundry.toml should be an array")
-                };
-
-                arr.iter()
-                    .map(|x| x.as_str().unwrap().to_string())
-                    .collect()
+                // Reuse the already parsed foundry_toml instead of reading again
+                find_in_toml_value(&foundry_toml, "profile.default", "remappings")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|x| x.as_str())
+                            .map(String::from)
+                            .collect()
+                    })
+                    .unwrap_or_default()
             };
 
             let mut remappings = HashMap::new();
 
             for line in lines {
-                let mut split = line.split('=');
-                let from = split.next().unwrap().to_string();
-                let to = split.next().unwrap().to_string();
-                remappings.insert(from, to);
+                if let Some((from, to)) = line.split_once('=') {
+                    remappings.insert(from.to_string(), to.to_string());
+                }
             }
 
             return Ok(Framework::Foundry {

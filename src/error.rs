@@ -1,4 +1,5 @@
 use solang_parser::diagnostics::Diagnostic;
+use std::fmt;
 use std::path::PathBuf;
 
 #[macro_export]
@@ -16,65 +17,66 @@ pub enum Error {
     SolangDiagnostics(PathBuf, Vec<(usize, usize)>, Vec<Diagnostic>),
     IneffectualStatement(PathBuf, String),
     UnknownFramework,
+    InvalidInput(String),
 }
 
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Error::Wrapped(e) => {
-                write!(f, "{e}")
-            }
-            Error::MissingContractFile => {
-                write!(f, "error: Contract file not specified")
-            }
-            Error::LineNotFound(path, offset) => {
-                write!(
-                    f,
-                    "error: Offset {offset} not found in file: \"{}\"",
-                    path.to_string_lossy()
-                )
-            }
+            Error::Wrapped(e) => write!(f, "{e}"),
+            Error::MissingContractFile => f.write_str("error: Contract file not specified"),
+            Error::LineNotFound(path, offset) => write!(
+                f,
+                "error: Offset {offset} not found in file: \"{}\"",
+                path.display()
+            ),
             Error::SolangDiagnostics(path, line_ranges, diagnostics) => {
-                let loc_offset_to_line = |offset: usize| -> usize {
-                    for (i, line_range) in line_ranges.iter().enumerate() {
-                        if offset >= line_range.0 && offset < line_range.1 {
-                            return i + 1;
-                        }
-                    }
-
-                    0
-                };
-
-                for (i, diagnostic) in diagnostics.iter().enumerate() {
-                    writeln!(
-                        f,
-                        "{} at {}:{}:",
-                        diagnostic.level,
-                        path.to_string_lossy(),
-                        loc_offset_to_line(diagnostic.loc.start()),
-                    )?;
-
-                    write!(f, "\t{}", diagnostic.message)?;
-
-                    if i < diagnostics.len() - 1 {
-                        writeln!(f)?;
-                    }
-                }
-
-                Ok(())
+                Self::format_diagnostics(f, path, line_ranges, diagnostics)
             }
-            Error::IneffectualStatement(path, statement) => {
-                write!(
-                    f,
-                    "error: Ineffectual statement in file: \"{}\" - {}",
-                    path.to_string_lossy(),
-                    statement
-                )
-            }
+            Error::IneffectualStatement(path, statement) => write!(
+                f,
+                "error: Ineffectual statement in file: \"{}\" - {statement}",
+                path.display()
+            ),
             Error::UnknownFramework => {
-                write!(f, "Could not detect a supported Solidity project kind.")
+                f.write_str("Could not detect a supported Solidity project kind.")
+            }
+            Error::InvalidInput(msg) => write!(f, "error: {msg}"),
+        }
+    }
+}
+
+impl Error {
+    fn format_diagnostics(
+        f: &mut fmt::Formatter<'_>,
+        path: &PathBuf,
+        line_ranges: &[(usize, usize)],
+        diagnostics: &[Diagnostic],
+    ) -> fmt::Result {
+        let loc_offset_to_line = |offset: usize| -> usize {
+            line_ranges
+                .iter()
+                .position(|(start, end)| offset >= *start && offset < *end)
+                .map_or(0, |i| i + 1)
+        };
+
+        for (i, diagnostic) in diagnostics.iter().enumerate() {
+            writeln!(
+                f,
+                "{} at {}:{}:",
+                diagnostic.level,
+                path.display(),
+                loc_offset_to_line(diagnostic.loc.start()),
+            )?;
+
+            write!(f, "\t{}", diagnostic.message)?;
+
+            if i < diagnostics.len() - 1 {
+                writeln!(f)?;
             }
         }
+
+        Ok(())
     }
 }
 

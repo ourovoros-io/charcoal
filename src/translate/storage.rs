@@ -545,14 +545,9 @@ pub fn generate_state_variable_getter_functions(
                 .borrow_mut()
                 .set_function_name(&toplevel_function.new_name);
 
-            if let Some(function_name) = scope.borrow().get_function_name() {
-                module
-                    .borrow_mut()
-                    .function_storage_accesses
-                    .entry(function_name)
-                    .or_default()
-                    .0 = true;
-            }
+            scope
+                .borrow_mut()
+                .set_function_storage_accesses(module.clone(), true, false);
 
             let value = sway::Expression::create_function_calls(
                 Some(expression),

@@ -81,14 +81,11 @@ pub fn translate_assignment_expression(
                         && member_access.member == "get"
                         && function_call.parameters.len() == 1
                     {
-                        if let Some(function_name) = scope.borrow().get_function_name() {
-                            module
-                                .borrow_mut()
-                                .function_storage_accesses
-                                .entry(function_name)
-                                .or_default()
-                                .1 = true;
-                        }
+                        scope.borrow_mut().set_function_storage_accesses(
+                            module.clone(),
+                            false,
+                            true,
+                        );
 
                         return Ok(sway::Expression::from(sway::FunctionCall {
                             function: sway::Expression::from(sway::MemberAccess {
@@ -139,14 +136,11 @@ pub fn translate_assignment_expression(
                         let vec_var_name = scope.borrow_mut().generate_unique_variable_name("v");
                         let i_var_name = scope.borrow_mut().generate_unique_variable_name("i");
 
-                        if let Some(function_name) = scope.borrow().get_function_name() {
-                            module
-                                .borrow_mut()
-                                .function_storage_accesses
-                                .entry(function_name)
-                                .or_default()
-                                .1 = true;
-                        }
+                        scope.borrow_mut().set_function_storage_accesses(
+                            module.clone(),
+                            false,
+                            true,
+                        );
 
                         return Ok(sway::Expression::from(sway::Block {
                             statements: vec![
@@ -324,14 +318,9 @@ pub fn translate_assignment_expression(
             },
 
             _ => {
-                if let Some(function_name) = scope.borrow().get_function_name() {
-                    module
-                        .borrow_mut()
-                        .function_storage_accesses
-                        .entry(function_name)
-                        .or_default()
-                        .0 = true;
-                }
+                scope
+                    .borrow_mut()
+                    .set_function_storage_accesses(module.clone(), true, false);
 
                 sway::Expression::from(sway::BinaryExpression {
                     operator: operator.trim_end_matches('=').into(),
@@ -352,14 +341,9 @@ pub fn translate_assignment_expression(
             }
         };
 
-        if let Some(function_name) = scope.borrow().get_function_name() {
-            module
-                .borrow_mut()
-                .function_storage_accesses
-                .entry(function_name)
-                .or_default()
-                .1 = true;
-        }
+        scope
+            .borrow_mut()
+            .set_function_storage_accesses(module.clone(), false, true);
 
         return Ok(sway::Expression::create_function_calls(
             Some(expression.clone()),
@@ -485,14 +469,11 @@ pub fn create_assignment_expression(
                         generic_parameters,
                     } => match (name.as_str(), generic_parameters.as_ref()) {
                         ("StorageString", None) => {
-                            if let Some(function_name) = scope.borrow().get_function_name() {
-                                module
-                                    .borrow_mut()
-                                    .function_storage_accesses
-                                    .entry(function_name)
-                                    .or_default()
-                                    .1 = true;
-                            }
+                            scope.borrow_mut().set_function_storage_accesses(
+                                module.clone(),
+                                false,
+                                true,
+                            );
 
                             return Ok(sway::Expression::create_function_calls(
                                 Some(expression.clone()),

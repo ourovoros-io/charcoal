@@ -699,74 +699,18 @@ pub fn translate_function_definition(
     };
 
     // Add the function parameters to the scope
-    let mut parameters = vec![];
-
-    for (_, p) in function_definition.params.iter() {
-        let old_name = p
-            .as_ref()
-            .unwrap()
-            .name
-            .as_ref()
-            .map_or("_".into(), |n| n.name.clone());
-        let new_name = translate_naming_convention(old_name.as_str(), Case::Snake);
-
-        let type_name = translate_type_name(
-            project,
-            module.clone(),
-            scope.clone(),
-            &p.as_ref().unwrap().ty,
-            p.as_ref().map(|p| p.storage.as_ref()).flatten(),
-        );
-
-        let translated_variable = ir::Variable {
-            old_name,
-            new_name,
-            type_name,
-            ..Default::default()
-        };
-
-        parameters.push(translated_variable.clone());
-
-        scope
-            .borrow_mut()
-            .add_variable(Rc::new(RefCell::new(translated_variable)));
-    }
+    let parameters = scope.borrow_mut().add_function_parameters(
+        project,
+        module.clone(),
+        function_definition.clone(),
+    );
 
     // Add the function's named return parameters to the scope
-    let mut return_parameters = vec![];
-
-    for (_, return_parameter) in function_definition.returns.iter() {
-        let Some(return_parameter) = return_parameter else {
-            continue;
-        };
-
-        let Some(old_name) = return_parameter.name.as_ref().map(|n| n.name.clone()) else {
-            continue;
-        };
-
-        let new_name = translate_naming_convention(old_name.as_str(), Case::Snake);
-
-        let type_name = translate_type_name(
-            project,
-            module.clone(),
-            scope.clone(),
-            &return_parameter.ty,
-            return_parameter.storage.as_ref(),
-        );
-
-        let translated_variable = ir::Variable {
-            old_name,
-            new_name,
-            type_name,
-            ..Default::default()
-        };
-
-        return_parameters.push(translated_variable.clone());
-
-        scope
-            .borrow_mut()
-            .add_variable(Rc::new(RefCell::new(translated_variable)));
-    }
+    let return_parameters = scope.borrow_mut().add_function_return_parameters(
+        project,
+        module.clone(),
+        function_definition.clone(),
+    );
 
     // Translate the body for the toplevel function
     let mut function_body = translate_block(

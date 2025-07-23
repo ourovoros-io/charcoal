@@ -1,18 +1,23 @@
 /// Find a key in a [toml::Table] and return the [toml::Value]
 #[inline(always)]
-pub fn find_in_toml_value(value: &toml::Value, section: &str, key: &str) -> Option<toml::Value> {
-    let mut section = section.split(".");
-    let toml::Value::Table(mut table) = value.clone() else {
-        return None;
+pub fn find_in_toml_value<'a>(
+    value: &'a toml::Value,
+    section: &str,
+    key: &str,
+) -> Option<&'a toml::Value> {
+    let mut section_iter = section.split(".");
+    // Attempt to extract the table from the provided TOML value
+    let mut incoming_table = match value {
+        toml::Value::Table(table) => table,
+        _ => return None,
     };
 
-    while let Some(section) = section.next() {
-        let Some(toml::Value::Table(table_2)) = table.get(section) else {
+    while let Some(section) = section_iter.next() {
+        let Some(toml::Value::Table(table)) = incoming_table.get(section) else {
             return None;
         };
-
-        table = table_2.clone();
+        incoming_table = table;
     }
 
-    table.get(key).cloned()
+    incoming_table.get(key)
 }

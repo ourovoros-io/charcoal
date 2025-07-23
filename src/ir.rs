@@ -1,4 +1,4 @@
-use crate::{sway, translate::*};
+use crate::{project::Project, sway, translate::*};
 use convert_case::Case;
 use solang_parser::pt as solidity;
 use std::{cell::RefCell, collections::HashMap, path::PathBuf, rc::Rc};
@@ -75,8 +75,8 @@ impl Scope {
         parent: Option<Rc<RefCell<Scope>>>,
     ) -> Self {
         Self {
-            contract_name: contract_name.map(|s| s.to_string()),
-            function_name: function_name.map(|f| f.to_string()),
+            contract_name: contract_name.map(str::to_string),
+            function_name: function_name.map(str::to_string),
             parent,
             variables: vec![],
         }
@@ -208,6 +208,113 @@ impl Scope {
         }
 
         None
+    }
+
+    pub fn set_function_storage_accesses(
+        &self,
+        module: Rc<RefCell<Module>>,
+        storage_read: bool,
+        storage_write: bool,
+    ) {
+        if let Some(function_name) = self.get_function_name() {
+            if storage_read {
+                module
+                    .borrow_mut()
+                    .function_storage_accesses
+                    .entry(function_name.clone())
+                    .or_default()
+                    .0 = true;
+            }
+
+            if storage_write {
+                module
+                    .borrow_mut()
+                    .function_storage_accesses
+                    .entry(function_name)
+                    .or_default()
+                    .1 = true;
+            }
+        }
+    }
+
+    pub fn add_function_parameters(
+        &mut self,
+        project: &mut Project,
+        module: Rc<RefCell<Module>>,
+        function_definition: solidity::FunctionDefinition,
+    ) -> Vec<crate::ir::Variable> {
+        let mut parameters = vec![];
+
+        for (_, p) in function_definition.params.iter() {
+            let old_name = p
+                .as_ref()
+                .unwrap()
+                .name
+                .as_ref()
+                .map_or("_".into(), |n| n.name.clone());
+            let new_name = translate_naming_convention(old_name.as_str(), Case::Snake);
+
+            let type_name = translate_type_name(
+                project,
+                module.clone(),
+                Rc::new(RefCell::new(self.clone())),
+                &p.as_ref().unwrap().ty,
+                p.as_ref().map(|p| p.storage.as_ref()).flatten(),
+            );
+
+            let translated_variable = crate::ir::Variable {
+                old_name,
+                new_name,
+                type_name,
+                ..Default::default()
+            };
+
+            parameters.push(translated_variable.clone());
+
+            self.add_variable(Rc::new(RefCell::new(translated_variable)));
+        }
+
+        parameters
+    }
+
+    pub fn add_function_return_parameters(
+        &mut self,
+        project: &mut Project,
+        module: Rc<RefCell<Module>>,
+        function_definition: solidity::FunctionDefinition,
+    ) -> Vec<crate::ir::Variable> {
+        let mut return_parameters = vec![];
+        for (_, return_parameter) in function_definition.returns.iter() {
+            let Some(return_parameter) = return_parameter else {
+                continue;
+            };
+
+            let Some(old_name) = return_parameter.name.as_ref().map(|n| n.name.clone()) else {
+                continue;
+            };
+
+            let new_name = translate_naming_convention(old_name.as_str(), Case::Snake);
+
+            let type_name = translate_type_name(
+                project,
+                module.clone(),
+                Rc::new(RefCell::new(self.clone())),
+                &return_parameter.ty,
+                return_parameter.storage.as_ref(),
+            );
+
+            let translated_variable = crate::ir::Variable {
+                old_name,
+                new_name,
+                type_name,
+                ..Default::default()
+            };
+
+            return_parameters.push(translated_variable.clone());
+
+            self.add_variable(Rc::new(RefCell::new(translated_variable)));
+        }
+        return_parameters
     }
 }
 
