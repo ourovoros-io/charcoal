@@ -31,21 +31,19 @@ pub fn translate_struct_definition(
             generic_parameters,
         } = &type_name
         {
-            match (name.as_str(), generic_parameters.as_ref()) {
-                ("StorageMap" | "StorageVec", Some(_)) => {
-                    // HACK: wrap storage types in a StorageKey
-                    type_name = sway::TypeName::Identifier {
-                        name: "StorageKey".into(),
-                        generic_parameters: Some(sway::GenericParameterList {
-                            entries: vec![sway::GenericParameter {
-                                type_name,
-                                implements: None,
-                            }],
-                        }),
-                    };
-                }
-
-                _ => {}
+            if let ("StorageMap" | "StorageVec", Some(_)) =
+                (name.as_str(), generic_parameters.as_ref())
+            {
+                // HACK: wrap storage types in a StorageKey
+                type_name = sway::TypeName::Identifier {
+                    name: "StorageKey".into(),
+                    generic_parameters: Some(sway::GenericParameterList {
+                        entries: vec![sway::GenericParameter {
+                            type_name,
+                            implements: None,
+                        }],
+                    }),
+                };
             }
         }
 

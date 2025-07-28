@@ -244,7 +244,7 @@ impl Project {
         source_unit_path: &Path,
     ) -> Result<Vec<PathBuf>, Error> {
         let mut import_paths = Vec::new();
-        if let Some(import_directives) = Self::get_contract_imports(&ast) {
+        if let Some(import_directives) = Self::get_contract_imports(ast) {
             for import_directive in &import_directives {
                 let import_path = match import_directive {
                     solang_parser::pt::Import::Plain(import_path, _) => import_path,
@@ -445,7 +445,7 @@ impl Project {
             use_tree = suffix.as_ref().clone();
         }
 
-        path = PathBuf::from(path).with_extension("");
+        path = path.with_extension("");
         let mut parent_module: Option<Rc<RefCell<ir::Module>>> = None;
         let mut first = true;
 
@@ -556,7 +556,7 @@ impl Project {
             .components()
             .filter(|c| !matches!(c, Component::RootDir))
             .collect::<Vec<_>>();
-        current_path.push(components[0].clone());
+        current_path.push(components[0]);
 
         let mut component = components[0]
             .as_os_str()
@@ -588,7 +588,7 @@ impl Project {
         };
 
         for component in &components[1..] {
-            current_path.push(component.clone());
+            current_path.push(*component);
             let mut component = component
                 .as_os_str()
                 .to_string_lossy()
@@ -1354,7 +1354,7 @@ impl Project {
                     Some(translate_type_definition(
                         self,
                         module.clone(),
-                        Some(&contract_name),
+                        Some(contract_name),
                         type_definition.as_ref(),
                     )?);
             }
@@ -1372,7 +1372,7 @@ impl Project {
                     Some(translate_struct_definition(
                         self,
                         module.clone(),
-                        Some(&contract_name),
+                        Some(contract_name),
                         struct_definition.as_ref(),
                     )?);
             }
@@ -1441,7 +1441,7 @@ impl Project {
                 let declaration = translate_function_declaration(
                     self,
                     module.clone(),
-                    Some(&contract_name),
+                    Some(contract_name),
                     &function_definition,
                 )?;
 
@@ -1789,7 +1789,7 @@ impl Project {
 
         for (module_path, module) in modules {
             let module_path = src_dir_path.join(&module_path);
-            wrapped_err!(std::fs::create_dir_all(&module_path.parent().unwrap()))?;
+            wrapped_err!(std::fs::create_dir_all(module_path.parent().unwrap()))?;
 
             std::fs::write(module_path, sway::TabbedDisplayer(&module).to_string())
                 .map_err(|e| Error::Wrapped(Box::new(e)))?;
@@ -1834,7 +1834,7 @@ impl Project {
                 .join(contract_project_name.clone());
 
             std::fs::create_dir_all(&output_directory).unwrap();
-            std::fs::create_dir_all(&module.path.parent().unwrap()).unwrap();
+            std::fs::create_dir_all(module.path.parent().unwrap()).unwrap();
 
             // Write the project's `.gitignore` file
             std::fs::write(

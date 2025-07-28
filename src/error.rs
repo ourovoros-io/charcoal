@@ -1,6 +1,6 @@
 use solang_parser::diagnostics::Diagnostic;
 use std::fmt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[macro_export]
 macro_rules! wrapped_err {
@@ -49,7 +49,7 @@ impl fmt::Display for Error {
 impl Error {
     fn format_diagnostics(
         f: &mut fmt::Formatter<'_>,
-        path: &PathBuf,
+        path: &Path,
         line_ranges: &[(usize, usize)],
         diagnostics: &[Diagnostic],
     ) -> fmt::Result {

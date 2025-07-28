@@ -565,7 +565,7 @@ pub fn translate_yul_variable_expression(
         scope.clone(),
         Symbol::ValueSource(name.into()),
     ) {
-        return Ok(symbol.try_into()?);
+        return symbol.try_into();
     }
 
     panic!(
@@ -1119,13 +1119,13 @@ pub fn translate_yul_function_call_expression(
                 );
             }
 
-            return Ok(sway::Expression::create_function_calls(
+            Ok(sway::Expression::create_function_calls(
                 None,
                 &[
                     ("std::block::timestamp", Some((None, vec![]))),
                     ("as_u256", Some((None, vec![]))),
                 ],
-            ));
+            ))
         }
 
         "gas" => {

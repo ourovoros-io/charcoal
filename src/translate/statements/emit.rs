@@ -162,14 +162,13 @@ pub fn translate_emit_statement(
                         generic_parameters: None,
                         parameters: vec![if arguments.is_empty() {
                             sway::Expression::create_identifier(format!(
-                                "{}::{}",
-                                event_type_name, event_variant_name,
+                                "{event_type_name}::{event_variant_name}",
                             ))
                         } else {
                             sway::Expression::create_function_calls(
                                 None,
                                 &[(
-                                    format!("{}::{}", event_type_name, event_variant_name).as_str(),
+                                    format!("{event_type_name}::{event_variant_name}").as_str(),
                                     Some((
                                         None,
                                         vec![if arguments.len() == 1 {

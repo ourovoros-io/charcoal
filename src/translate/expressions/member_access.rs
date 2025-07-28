@@ -61,7 +61,7 @@ pub fn translate_member_access_expression(
             }
 
             // Check to see if the variable is an external definition
-            if let Some(module) = project.find_module_containing_contract(module.clone(), &name) {
+            if let Some(module) = project.find_module_containing_contract(module.clone(), name) {
                 let scope = Rc::new(RefCell::new(ir::Scope::new(
                     Some(name),
                     None,
@@ -155,7 +155,7 @@ pub fn translate_member_access_expression(
                         // }
                     }
 
-                    if let Some(external_contract) = project.find_contract(module.clone(), &name)
+                    if let Some(external_contract) = project.find_contract(module.clone(), name)
                         && external_contract
                             .borrow()
                             .abi
@@ -299,30 +299,18 @@ pub fn translate_member_access_expression(
             }
         }
 
-        if container_type_name.is_vec() {
-            match member.name.as_str() {
-                "length" => {
-                    return Ok(Some(sway::Expression::create_function_calls(
-                        Some(container.clone()),
-                        &[("len", Some((None, vec![])))],
-                    )));
-                }
-
-                _ => {}
-            }
+        if container_type_name.is_vec() && member.name.as_str() == "length" {
+            return Ok(Some(sway::Expression::create_function_calls(
+                Some(container.clone()),
+                &[("len", Some((None, vec![])))],
+            )));
         }
 
-        if container_type_name.is_array() {
-            match member.name.as_str() {
-                "length" => {
-                    return Ok(Some(sway::Expression::create_function_calls(
-                        Some(container.clone()),
-                        &[("len", Some((None, vec![])))],
-                    )));
-                }
-
-                _ => {}
-            }
+        if container_type_name.is_array() && member.name.as_str() == "length" {
+            return Ok(Some(sway::Expression::create_function_calls(
+                Some(container.clone()),
+                &[("len", Some((None, vec![])))],
+            )));
         }
 
         Ok(None)
@@ -418,57 +406,47 @@ fn translate_builtin_function_call_member_access_expression(
 
             let type_name = get_underlying_type(project, module.clone(), &type_name);
 
-            match &type_name {
-                sway::TypeName::Identifier { name, .. } => {
-                    match (name.as_str(), member) {
-                        (
-                            "I8" | "I16" | "I32" | "I64" | "I128" | "I256" | "u8" | "u16" | "u32"
-                            | "u64" | "u256",
-                            "min",
-                        ) => {
-                            return Ok(Some(sway::Expression::from(sway::FunctionCall {
-                                function: sway::Expression::create_identifier(format!(
-                                    "{name}::min"
-                                )),
-                                generic_parameters: None,
-                                parameters: vec![],
-                            })));
+            if let sway::TypeName::Identifier { name, .. } = &type_name {
+                match (name.as_str(), member) {
+                    (
+                        "I8" | "I16" | "I32" | "I64" | "I128" | "I256" | "u8" | "u16" | "u32"
+                        | "u64" | "u256",
+                        "min",
+                    ) => {
+                        return Ok(Some(sway::Expression::from(sway::FunctionCall {
+                            function: sway::Expression::create_identifier(format!("{name}::min")),
+                            generic_parameters: None,
+                            parameters: vec![],
+                        })));
+                    }
+
+                    (
+                        "I8" | "I16" | "I32" | "I64" | "I128" | "I256" | "u8" | "u16" | "u32"
+                        | "u64" | "u256",
+                        "max",
+                    ) => {
+                        return Ok(Some(sway::Expression::from(sway::FunctionCall {
+                            function: sway::Expression::create_identifier(format!("{name}::max")),
+                            generic_parameters: None,
+                            parameters: vec![],
+                        })));
+                    }
+
+                    (_, member_name) => {
+                        if member_name == "interfaceId" {
+                            // TODO: type(X).interfaceId => ???
+                            return Ok(Some(sway::Expression::create_todo(Some(format!(
+                                "{}({})",
+                                function,
+                                parameters
+                                    .iter()
+                                    .map(|p| p.to_string())
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
+                            )))));
                         }
-
-                        (
-                            "I8" | "I16" | "I32" | "I64" | "I128" | "I256" | "u8" | "u16" | "u32"
-                            | "u64" | "u256",
-                            "max",
-                        ) => {
-                            return Ok(Some(sway::Expression::from(sway::FunctionCall {
-                                function: sway::Expression::create_identifier(format!(
-                                    "{name}::max"
-                                )),
-                                generic_parameters: None,
-                                parameters: vec![],
-                            })));
-                        }
-
-                        (_, member_name) => match member_name {
-                            "interfaceId" => {
-                                // TODO: type(X).interfaceId => ???
-                                return Ok(Some(sway::Expression::create_todo(Some(format!(
-                                    "{}({})",
-                                    function,
-                                    parameters
-                                        .iter()
-                                        .map(|p| p.to_string())
-                                        .collect::<Vec<_>>()
-                                        .join(", ")
-                                )))));
-                            }
-
-                            _ => {}
-                        },
                     }
                 }
-
-                _ => {}
             }
         }
 

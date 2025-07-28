@@ -269,7 +269,7 @@ pub fn translate_function_parameters(
             module.clone(),
             scope.clone(),
             &parameter.as_ref().unwrap().ty,
-            parameter.as_ref().map(|p| p.storage.as_ref()).flatten(),
+            parameter.as_ref().and_then(|p| p.storage.as_ref()),
         );
 
         parameters.entries.push(sway::Parameter {
@@ -321,7 +321,7 @@ pub fn translate_return_type_name(
                     module.clone(),
                     scope.clone(),
                     &p.as_ref().unwrap().ty,
-                    p.as_ref().map(|p| p.storage.as_ref()).flatten(),
+                    p.as_ref().and_then(|p| p.storage.as_ref()),
                 );
                 get_return_type_name(project, module.clone(), &type_name)
             })
@@ -1224,18 +1224,12 @@ pub fn translate_function_definition(
     toplevel_function.body = Some(function_body);
 
     // Remove `payable` attribute from toplevel function if present
-    if let Some((index, _)) = toplevel_function
-        .attributes
-        .as_ref()
-        .map(|a| {
-            a.attributes
-                .iter()
-                .enumerate()
-                .find(|(_, a)| a.name == "payable")
-        })
-        .flatten()
-        .clone()
-    {
+    if let Some((index, _)) = toplevel_function.attributes.as_ref().and_then(|a| {
+        a.attributes
+            .iter()
+            .enumerate()
+            .find(|(_, a)| a.name == "payable")
+    }) {
         toplevel_function
             .attributes
             .as_mut()
@@ -1308,7 +1302,7 @@ pub fn translate_function_definition(
                 type_name: None,
                 value: sway::Expression::from(sway::Constructor {
                     type_name: sway::TypeName::Identifier {
-                        name: format!("{}Storage", contract_name),
+                        name: format!("{contract_name}Storage"),
                         generic_parameters: None,
                     },
                     fields: storage_struct
@@ -1414,7 +1408,7 @@ pub fn translate_modifier_definition(
             module.clone(),
             scope.clone(),
             &p.as_ref().unwrap().ty,
-            p.as_ref().map(|p| p.storage.as_ref()).flatten(),
+            p.as_ref().and_then(|p| p.storage.as_ref()),
         );
 
         modifier.parameters.entries.push(sway::Parameter {
@@ -1496,11 +1490,7 @@ pub fn translate_modifier_definition(
             current_body = &mut modifier.post_body;
 
             let mut new_scope = ir::Scope::new(
-                scope
-                    .borrow()
-                    .get_contract_name()
-                    .as_ref()
-                    .map(|s| s.as_str()),
+                scope.borrow().get_contract_name().as_deref(),
                 Some(&new_name),
                 scope.borrow().get_parent(),
             );
@@ -1816,19 +1806,12 @@ pub fn ensure_constructor_functions_exist(
         &solidity::FunctionTy::Constructor,
     );
 
-    assert!(
-        module
-            .borrow()
-            .functions
-            .iter()
-            .find(|f| {
-                let sway::TypeName::Function { new_name, .. } = &f.signature else {
-                    unreachable!()
-                };
-                *new_name == function_name.top_level_fn_name
-            })
-            .is_none()
-    );
+    assert!(!module.borrow().functions.iter().any(|f| {
+        let sway::TypeName::Function { new_name, .. } = &f.signature else {
+            unreachable!()
+        };
+        *new_name == function_name.top_level_fn_name
+    }));
 
     // Create the ABI function
     let abi_function = sway::Function {
@@ -1860,7 +1843,7 @@ pub fn ensure_constructor_functions_exist(
             type_name: None,
             value: sway::Expression::from(sway::Constructor {
                 type_name: sway::TypeName::Identifier {
-                    name: format!("{}Storage", contract_name),
+                    name: format!("{contract_name}Storage"),
                     generic_parameters: None,
                 },
                 fields: contract
@@ -1909,7 +1892,7 @@ pub fn ensure_constructor_functions_exist(
         is_mut: false,
         name: "storage_struct".to_string(),
         type_name: Some(sway::TypeName::Identifier {
-            name: format!("{}Storage", contract_name),
+            name: format!("{contract_name}Storage"),
             generic_parameters: None,
         }),
     });
@@ -1948,7 +1931,7 @@ pub fn ensure_constructor_functions_exist(
                 is_mut: false,
                 name: "storage_struct".into(),
                 type_name: Some(sway::TypeName::Identifier {
-                    name: format!("{}Storage", contract_name),
+                    name: format!("{contract_name}Storage"),
                     generic_parameters: None,
                 }),
             })),

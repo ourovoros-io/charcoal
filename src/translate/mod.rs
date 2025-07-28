@@ -91,27 +91,23 @@ pub fn coerce_expression(
 
             if let sway::Expression::FunctionCall(f) = &expression
                 && let Some("abi") = f.function.as_identifier()
+                && f.parameters.len() == 2
             {
-                if f.parameters.len() == 2 {
-                    return Some(
-                        coerce_expression(
-                            project,
-                            module.clone(),
-                            scope.clone(),
-                            &if let Some(comment) = comment {
-                                sway::Expression::Commented(
-                                    comment,
-                                    Box::new(f.parameters[1].clone()),
-                                )
-                            } else {
-                                f.parameters[1].clone()
-                            },
-                            &b256_type_name,
-                            &to_type_name,
-                        )
-                        .unwrap(),
-                    );
-                }
+                return Some(
+                    coerce_expression(
+                        project,
+                        module.clone(),
+                        scope.clone(),
+                        &if let Some(comment) = comment {
+                            sway::Expression::Commented(comment, Box::new(f.parameters[1].clone()))
+                        } else {
+                            f.parameters[1].clone()
+                        },
+                        &b256_type_name,
+                        &to_type_name,
+                    )
+                    .unwrap(),
+                );
             }
         }
 
@@ -155,16 +151,16 @@ pub fn coerce_expression(
     // HACK: If the expression is reading from a `StorageKey<T>`, remove the `.read()` temporarily
     if let sway::Expression::FunctionCall(f) = &expression
         && let sway::Expression::MemberAccess(m) = &f.function
+        && m.member == "read"
+        && f.parameters.is_empty()
     {
-        if m.member == "read" && f.parameters.is_empty() {
-            let container_type =
-                get_expression_type(project, module.clone(), scope.clone(), &m.expression).unwrap();
+        let container_type =
+            get_expression_type(project, module.clone(), scope.clone(), &m.expression).unwrap();
 
-            if container_type.is_storage_key() {
-                expression = m.expression.clone();
-                from_type_name = container_type;
-                add_read_member_call = true;
-            }
+        if container_type.is_storage_key() {
+            expression = m.expression.clone();
+            from_type_name = container_type;
+            add_read_member_call = true;
         }
     }
 
@@ -350,7 +346,7 @@ pub fn coerce_expression(
             && let sway::Expression::FunctionCall(f) = &expression
             && let sway::Expression::MemberAccess(m) = &f.function
             && m.member == "read"
-            && f.parameters.len() == 0
+            && f.parameters.is_empty()
         {
             return Some(m.expression.clone());
         }
@@ -535,7 +531,7 @@ pub fn coerce_expression(
                         i.clone(),
                         Some(format!(
                             "{}{}",
-                            to_type_name.to_string().chars().nth(0).unwrap(),
+                            to_type_name.to_string().chars().next().unwrap(),
                             rhs_bits
                         )),
                     )));
@@ -1558,24 +1554,20 @@ fn get_member_access_type(
 
     // Check if field is a signed integer
     if let Some(bits) = container_type.int_bits() {
-        match member_access.member.as_str() {
-            "underlying" => {
-                return Ok(sway::TypeName::Identifier {
-                    name: match bits {
-                        8 => "u8",
-                        16 => "u16",
-                        32 => "u32",
-                        64 => "u64",
-                        128 => "U128",
-                        256 => "u256",
-                        _ => unimplemented!("I{bits}"),
-                    }
-                    .into(),
-                    generic_parameters: None,
-                });
-            }
-
-            _ => {}
+        if member_access.member.as_str() == "underlying" {
+            return Ok(sway::TypeName::Identifier {
+                name: match bits {
+                    8 => "u8",
+                    16 => "u16",
+                    32 => "u32",
+                    64 => "u64",
+                    128 => "U128",
+                    256 => "u256",
+                    _ => unimplemented!("I{bits}"),
+                }
+                .into(),
+                generic_parameters: None,
+            });
         }
     }
 
@@ -1652,9 +1644,9 @@ fn get_match_type(
         )));
 
         // Add branch pattern destructured variables to branch-specific scope
-        match &branch.pattern {
-            sway::Expression::FunctionCall(f) => match &f.function {
-                sway::Expression::PathExpr(path_expr) => match path_expr.to_string().as_str() {
+        if let sway::Expression::FunctionCall(f) = &branch.pattern {
+            if let sway::Expression::PathExpr(path_expr) = &f.function {
+                match path_expr.to_string().as_str() {
                     "Identity::Address" if f.parameters.len() == 1 => {
                         if let Some(ident) = f.parameters[0].as_identifier() {
                             branch_scope.borrow_mut().add_variable(Rc::new(RefCell::new(
@@ -1686,12 +1678,8 @@ fn get_match_type(
                     }
 
                     _ => {}
-                },
-
-                _ => {}
-            },
-
-            _ => {}
+                }
+            }
         }
 
         return get_expression_type(project, module.clone(), branch_scope, &branch.value);
@@ -2588,13 +2576,14 @@ fn get_path_expr_function_call_type(
                             sway::Literal::DecInt(_, None) | sway::Literal::HexInt(_, None),
                         ) => continue,
 
-                        sway::Expression::Commented(_, expression) => match expression.as_ref() {
-                            sway::Expression::Literal(
+                        sway::Expression::Commented(_, expression) => {
+                            if let sway::Expression::Literal(
                                 sway::Literal::DecInt(_, None) | sway::Literal::HexInt(_, None),
-                            ) => continue,
-
-                            _ => {}
-                        },
+                            ) = expression.as_ref()
+                            {
+                                continue;
+                            }
+                        }
 
                         _ => {}
                     }
@@ -2633,22 +2622,18 @@ fn get_path_expr_function_call_type(
                             }
 
                             sway::Expression::Commented(_, expression) => {
-                                match expression.as_ref() {
-                                    sway::Expression::Array(array) => {
-                                        if array.elements.iter().all(|e| {
-                                            matches!(
-                                                e,
-                                                sway::Expression::Literal(
-                                                    sway::Literal::DecInt(_, None)
-                                                        | sway::Literal::HexInt(_, None)
-                                                )
+                                if let sway::Expression::Array(array) = expression.as_ref() {
+                                    if array.elements.iter().all(|e| {
+                                        matches!(
+                                            e,
+                                            sway::Expression::Literal(
+                                                sway::Literal::DecInt(_, None)
+                                                    | sway::Literal::HexInt(_, None)
                                             )
-                                        }) {
-                                            continue;
-                                        }
+                                        )
+                                    }) {
+                                        continue;
                                     }
-
-                                    _ => {}
                                 }
                             }
 
@@ -2727,10 +2712,10 @@ fn get_path_expr_function_call_type(
                     project,
                     found_module.clone(),
                     scope.clone(),
-                    &name,
+                    name,
                     generic_parameters,
                     parameters,
-                    &parameter_types,
+                    parameter_types,
                 )?
             {
                 return Ok(Some(type_name));
@@ -2754,7 +2739,7 @@ fn get_path_expr_function_call_type(
 
     panic!(
         "Failed to find function or variable `{}({})` in scope",
-        path_expr.to_string(),
+        path_expr,
         parameter_types
             .iter()
             .map(|t| t.to_string())
@@ -2787,7 +2772,7 @@ fn get_member_access_function_call_type(
 
     if container_type.is_identity() {
         match member_access.member.as_str() {
-            "as_address" if parameters.len() == 0 => {
+            "as_address" if parameters.is_empty() => {
                 return Ok(sway::TypeName::Identifier {
                     name: "Option".into(),
                     generic_parameters: Some(sway::GenericParameterList {
@@ -2802,7 +2787,7 @@ fn get_member_access_function_call_type(
                 });
             }
 
-            "as_contract_id" if parameters.len() == 0 => {
+            "as_contract_id" if parameters.is_empty() => {
                 return Ok(sway::TypeName::Identifier {
                     name: "Option".into(),
                     generic_parameters: Some(sway::GenericParameterList {
@@ -2817,21 +2802,21 @@ fn get_member_access_function_call_type(
                 });
             }
 
-            "bits" if parameters.len() == 0 => {
+            "bits" if parameters.is_empty() => {
                 return Ok(sway::TypeName::Identifier {
                     name: "b256".into(),
                     generic_parameters: None,
                 });
             }
 
-            "is_address" if parameters.len() == 0 => {
+            "is_address" if parameters.is_empty() => {
                 return Ok(sway::TypeName::Identifier {
                     name: "bool".into(),
                     generic_parameters: None,
                 });
             }
 
-            "is_contract_id" if parameters.len() == 0 => {
+            "is_contract_id" if parameters.is_empty() => {
                 return Ok(sway::TypeName::Identifier {
                     name: "bool".into(),
                     generic_parameters: None,

@@ -50,7 +50,7 @@ pub fn translate_pre_operator_expression(
         expression,
     }) = translate_variable_access_expression(project, module.clone(), scope.clone(), x)?
     else {
-        panic!("Variable not found: {}", x);
+        panic!("Variable not found: {x}");
     };
 
     let mut variable = variable.borrow_mut();
@@ -85,7 +85,7 @@ pub fn translate_post_operator_expression(
         expression,
     }) = translate_variable_access_expression(project, module.clone(), scope.clone(), x)?
     else {
-        panic!("Variable not found: {}", x);
+        panic!("Variable not found: {x}");
     };
 
     if let Some(variable) = variable.as_ref() {

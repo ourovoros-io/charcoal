@@ -452,11 +452,7 @@ pub fn translate_type_name(
                 length: {
                     // Create an empty scope to translate the array length expression
                     let scope = Rc::new(RefCell::new(ir::Scope::new(
-                        scope
-                            .borrow()
-                            .get_contract_name()
-                            .as_ref()
-                            .map(|s| s.as_str()),
+                        scope.borrow().get_contract_name().as_deref(),
                         None,
                         Some(scope.clone()),
                     )));

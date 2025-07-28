@@ -279,7 +279,7 @@ pub fn resolve_symbol(
         for inherit in inherits {
             let inherit_type_name = inherit.to_string();
             let scope = Rc::new(RefCell::new(ir::Scope::new(
-                Some(&inherit_type_name.as_str()),
+                Some(inherit_type_name.as_str()),
                 None,
                 Some(scope.clone()),
             )));
@@ -436,8 +436,8 @@ pub fn resolve_abi_function_call(
                     module.clone(),
                     scope.clone(),
                     &parameters[i],
-                    &value_type_name,
-                    &parameter_type_name,
+                    value_type_name,
+                    parameter_type_name,
                 ) else {
                     return false;
                 };
@@ -626,8 +626,8 @@ pub fn resolve_function_call(
                 module.clone(),
                 scope.clone(),
                 &parameters[i],
-                &value_type_name,
-                &parameter_type_name,
+                value_type_name,
+                parameter_type_name,
             ) else {
                 return false;
             };
@@ -696,7 +696,7 @@ pub fn resolve_function_call(
 
     Ok(Some(sway::Expression::create_function_calls(
         None,
-        &[(&new_name, Some((None, parameters_cell.borrow().clone())))],
+        &[(new_name, Some((None, parameters_cell.borrow().clone())))],
     )))
 }
 
@@ -844,8 +844,8 @@ pub fn resolve_modifier(
                 module.clone(),
                 scope.clone(),
                 &parameters[i],
-                &value_type_name,
-                &parameter_type_name,
+                value_type_name,
+                parameter_type_name,
             ) else {
                 return false;
             };
@@ -873,7 +873,7 @@ pub fn resolve_modifier(
             }
 
             check_parameters(
-                &f_parameters,
+                f_parameters,
                 f.implementation
                     .as_ref()
                     .unwrap()

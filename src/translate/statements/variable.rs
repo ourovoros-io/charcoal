@@ -167,7 +167,7 @@ pub fn translate_variable_definition_statement(
         )
         .unwrap()
     } else if let Some(x) = initializer.as_ref() {
-        let mut x = translate_expression(project, module.clone(), scope.clone(), &x)?;
+        let mut x = translate_expression(project, module.clone(), scope.clone(), x)?;
 
         if let sway::Expression::FunctionCall(f) = &x
             && let sway::Expression::MemberAccess(m) = &f.function

@@ -26,28 +26,25 @@ pub fn translate_delete_expression(
                     get_expression_type(project, module.clone(), scope.clone(), &m.expression)?;
 
                 if let Some(storage_key_type) = container_type.storage_key_type() {
-                    match &storage_key_type {
-                        sway::TypeName::Identifier {
-                            name,
-                            generic_parameters,
-                        } => match (name.as_str(), generic_parameters.as_ref()) {
-                            ("StorageMap", Some(_)) => {
-                                scope.borrow_mut().set_function_storage_accesses(
-                                    module.clone(),
-                                    false,
-                                    true,
-                                );
+                    if let sway::TypeName::Identifier {
+                        name,
+                        generic_parameters,
+                    } = &storage_key_type
+                    {
+                        if let ("StorageMap", Some(_)) =
+                            (name.as_str(), generic_parameters.as_ref())
+                        {
+                            scope.borrow_mut().set_function_storage_accesses(
+                                module.clone(),
+                                false,
+                                true,
+                            );
 
-                                return Ok(sway::Expression::create_function_calls(
-                                    Some(m.expression.clone()),
-                                    &[("remove", Some((None, vec![f.parameters[0].clone()])))],
-                                ));
-                            }
-
-                            _ => {}
-                        },
-
-                        _ => {}
+                            return Ok(sway::Expression::create_function_calls(
+                                Some(m.expression.clone()),
+                                &[("remove", Some((None, vec![f.parameters[0].clone()])))],
+                            ));
+                        }
                     }
                 }
             }
@@ -66,31 +63,28 @@ pub fn translate_delete_expression(
                             )?;
 
                             if let Some(storage_key_type) = container_type.storage_key_type() {
-                                match &storage_key_type {
-                                    sway::TypeName::Identifier {
-                                        name,
-                                        generic_parameters,
-                                    } => match (name.as_str(), generic_parameters.as_ref()) {
-                                        ("StorageVec", Some(_)) => {
-                                            scope.borrow_mut().set_function_storage_accesses(
-                                                module.clone(),
-                                                false,
-                                                true,
-                                            );
+                                if let sway::TypeName::Identifier {
+                                    name,
+                                    generic_parameters,
+                                } = &storage_key_type
+                                {
+                                    if let ("StorageVec", Some(_)) =
+                                        (name.as_str(), generic_parameters.as_ref())
+                                    {
+                                        scope.borrow_mut().set_function_storage_accesses(
+                                            module.clone(),
+                                            false,
+                                            true,
+                                        );
 
-                                            return Ok(sway::Expression::create_function_calls(
-                                                Some(m.expression.clone()),
-                                                &[(
-                                                    "remove",
-                                                    Some((None, vec![f.parameters[0].clone()])),
-                                                )],
-                                            ));
-                                        }
-
-                                        _ => {}
-                                    },
-
-                                    _ => {}
+                                        return Ok(sway::Expression::create_function_calls(
+                                            Some(m.expression.clone()),
+                                            &[(
+                                                "remove",
+                                                Some((None, vec![f.parameters[0].clone()])),
+                                            )],
+                                        ));
+                                    }
                                 }
                             }
                         }

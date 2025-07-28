@@ -51,7 +51,7 @@ pub fn translate_import_directives(
                         std::path::Component::ParentDir => {
                             // Discard the prefix of the use tree
                             let sway::UseTree::Path { suffix, .. } = use_tree else {
-                                panic!("Malformed import path: {:#?}", import_path)
+                                panic!("Malformed import path: {import_path:#?}")
                             };
 
                             use_tree = *suffix;

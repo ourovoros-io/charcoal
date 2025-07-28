@@ -829,7 +829,7 @@ pub fn create_value_expression(
                 // Check to see if the type is a type definition
                 if project.is_type_definition_declared(module.clone(), name) {
                     let underlying_type = get_underlying_type(project, module.clone(), type_name);
-                    
+
                     return create_value_expression(
                         project,
                         module,

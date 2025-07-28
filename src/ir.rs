@@ -259,7 +259,7 @@ impl Scope {
                 module.clone(),
                 Rc::new(RefCell::new(self.clone())),
                 &p.as_ref().unwrap().ty,
-                p.as_ref().map(|p| p.storage.as_ref()).flatten(),
+                p.as_ref().and_then(|p| p.storage.as_ref()),
             );
 
             let translated_variable = crate::ir::Variable {

@@ -1,3 +1,5 @@
+#![warn(clippy::all)]
+
 pub mod cli;
 pub mod error;
 pub mod framework;

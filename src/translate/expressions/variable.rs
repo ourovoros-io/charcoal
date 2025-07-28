@@ -125,7 +125,7 @@ pub fn translate_variable_access_expression(
                 }));
             }
 
-            return Ok(None);
+            Ok(None)
         }
 
         solidity::Expression::ArraySubscript(_, array_expression, Some(index)) => {

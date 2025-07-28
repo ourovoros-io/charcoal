@@ -34,7 +34,7 @@ pub fn translate_assignment_expression(
         mut expression,
     }) = translate_variable_access_expression(project, module.clone(), scope.clone(), lhs)?
     else {
-        panic!("Failed to translate variable access expression: {}", lhs)
+        panic!("Failed to translate variable access expression: {lhs}")
     };
 
     // HACK: remove `.read()` if present
@@ -463,11 +463,12 @@ pub fn create_assignment_expression(
     {
         match (name.as_str(), generic_parameters.as_ref()) {
             ("StorageKey", Some(generic_parameters)) if generic_parameters.entries.len() == 1 => {
-                match &generic_parameters.entries[0].type_name {
-                    sway::TypeName::Identifier {
-                        name,
-                        generic_parameters,
-                    } => match (name.as_str(), generic_parameters.as_ref()) {
+                if let sway::TypeName::Identifier {
+                    name,
+                    generic_parameters,
+                } = &generic_parameters.entries[0].type_name
+                {
+                    match (name.as_str(), generic_parameters.as_ref()) {
                         ("StorageString", None) => {
                             scope.borrow_mut().set_function_storage_accesses(
                                 module.clone(),
@@ -494,9 +495,7 @@ pub fn create_assignment_expression(
                         }
 
                         _ => {}
-                    },
-
-                    _ => {}
+                    }
                 }
             }
 
@@ -680,7 +679,7 @@ pub fn create_assignment_expression(
                                                                 project,
                                                                 module.clone(),
                                                                 scope.clone(),
-                                                                &expression,
+                                                                expression,
                                                             )?;
 
                                                             let rhs_type = get_expression_type(
@@ -772,7 +771,7 @@ pub fn create_assignment_expression(
         module.clone(),
         scope.clone(),
         rhs,
-        &rhs_type_name,
+        rhs_type_name,
         &expr_type_name,
     )
     .unwrap();

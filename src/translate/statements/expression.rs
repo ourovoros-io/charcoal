@@ -17,7 +17,7 @@ pub fn translate_expression_statement(
                 // Check for a pure assignment without new variable declarations
                 if parameters
                     .iter()
-                    .all(|(_, p)| p.as_ref().map_or(true, |p| p.name.is_none()))
+                    .all(|(_, p)| p.as_ref().is_none_or(|p| p.name.is_none()))
                 {
                     let rhs = translate_expression(project, module.clone(), scope.clone(), rhs)?;
                     let rhs_type_name =

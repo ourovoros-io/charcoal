@@ -97,7 +97,7 @@ pub fn translate_contract_definition(
     }
 
     // Create the abi encoding function for the events enum (if any)
-    let events_enum_name = format!("{}Event", contract_name);
+    let events_enum_name = format!("{contract_name}Event");
 
     if let Some((events_enum, abi_encode_impl)) = module
         .borrow()
@@ -125,7 +125,7 @@ pub fn translate_contract_definition(
     }
 
     // Create the abi encoding function for the errors enum (if any)
-    let errors_enum_name = format!("{}Error", contract_name);
+    let errors_enum_name = format!("{contract_name}Error");
 
     if let Some((errors_enum, abi_encode_impl)) = module
         .borrow()
@@ -163,7 +163,7 @@ pub fn translate_contract_definition(
             project,
             module.clone(),
             Some(&contract_name),
-            &variable_definition,
+            variable_definition,
         )?;
 
         deferred_initializations.extend(state_variable_info.deferred_initializations.clone());
@@ -345,7 +345,12 @@ pub fn translate_contract_definition(
             }
         }
 
-        ensure_constructor_functions_exist(project, module.clone(), scope.clone(), contract.clone());
+        ensure_constructor_functions_exist(
+            project,
+            module.clone(),
+            scope.clone(),
+            contract.clone(),
+        );
 
         let mut module = module.borrow_mut();
         let constructor_name = format!("{namespace_name}_constructor");
@@ -359,8 +364,7 @@ pub fn translate_contract_definition(
                 };
                 *new_name == constructor_name
             })
-            .map(|f| f.implementation.as_mut())
-            .flatten()
+            .and_then(|f| f.implementation.as_mut())
             .unwrap();
 
         if constructor_function.body.is_none() {

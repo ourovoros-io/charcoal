@@ -35,10 +35,7 @@ pub fn translate_array_subscript_expression(
         mut expression,
     }) = translate_variable_access_expression(project, module.clone(), scope.clone(), expression)?
     else {
-        panic!(
-            "Failed to translate variable access expression: {}",
-            expression
-        )
+        panic!("Failed to translate variable access expression: {expression}")
     };
 
     let type_name = get_expression_type(project, module.clone(), scope.clone(), &expression)?;
@@ -99,7 +96,7 @@ pub fn translate_array_slice_expression(
             module.clone(),
             scope.clone(),
             from_index,
-            &from_index_type,
+            from_index_type,
             &u64_type,
         )
         .unwrap();

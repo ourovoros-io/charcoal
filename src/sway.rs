@@ -892,7 +892,7 @@ impl TypeName {
                     .zip(rhs_parameters.entries.iter())
                     .all(|(lhs, rhs)| {
                         lhs.type_name.is_some() == rhs.type_name.is_some()
-                            && lhs.type_name.as_ref().map_or(true, |x| {
+                            && lhs.type_name.as_ref().is_none_or(|x| {
                                 x.is_compatible_with(rhs.type_name.as_ref().unwrap())
                             })
                     })
@@ -2151,7 +2151,7 @@ impl Expression {
 
             let mut member_parts = member.split("::").collect::<Vec<_>>();
 
-            assert!(member.len() >= 1);
+            assert!(!member_parts.is_empty());
 
             let root = PathExprRoot::Identifier(member_parts[0].to_string());
             member_parts.remove(0);
@@ -2206,7 +2206,7 @@ impl Expression {
                 }
 
                 Statement::Expression(expression) => {
-                    if let Some(result) = check_expression(&expression, f) {
+                    if let Some(result) = check_expression(expression, f) {
                         return Some(result);
                     }
                 }
@@ -2238,7 +2238,7 @@ impl Expression {
                     }
 
                     for parameter in function_call.parameters.iter() {
-                        if let Some(result) = check_expression(&parameter, f) {
+                        if let Some(result) = check_expression(parameter, f) {
                             return Some(result);
                         }
                     }
@@ -2256,7 +2256,7 @@ impl Expression {
                     }
 
                     for parameter in function_call.parameters.iter() {
-                        if let Some(result) = check_expression(&parameter, f) {
+                        if let Some(result) = check_expression(parameter, f) {
                             return Some(result);
                         }
                     }
@@ -2270,7 +2270,7 @@ impl Expression {
                     }
 
                     if let Some(final_expr) = block.final_expr.as_ref()
-                        && let Some(result) = check_expression(&final_expr, f)
+                        && let Some(result) = check_expression(final_expr, f)
                     {
                         return Some(result);
                     }
@@ -2278,7 +2278,7 @@ impl Expression {
 
                 Expression::Return(expression) => {
                     if let Some(expression) = expression.as_ref()
-                        && let Some(result) = check_expression(&expression.as_ref(), f)
+                        && let Some(result) = check_expression(expression.as_ref(), f)
                     {
                         return Some(result);
                     }
@@ -2286,7 +2286,7 @@ impl Expression {
 
                 Expression::Array(array) => {
                     for element in array.elements.iter() {
-                        if let Some(result) = check_expression(&element, f) {
+                        if let Some(result) = check_expression(element, f) {
                             return Some(result);
                         }
                     }
@@ -2310,7 +2310,7 @@ impl Expression {
 
                 Expression::Tuple(expressions) => {
                     for expression in expressions.iter() {
-                        if let Some(result) = check_expression(&expression, f) {
+                        if let Some(result) = check_expression(expression, f) {
                             return Some(result);
                         }
                     }
@@ -2321,7 +2321,7 @@ impl Expression {
 
                     while let Some(if_expr) = next_if_expr.take() {
                         if let Some(condition) = if_expr.condition.as_ref()
-                            && let Some(result) = check_expression(&condition, f)
+                            && let Some(result) = check_expression(condition, f)
                         {
                             return Some(result);
                         }
@@ -2333,7 +2333,7 @@ impl Expression {
                         }
 
                         if let Some(final_expr) = if_expr.then_body.final_expr.as_ref()
-                            && let Some(result) = check_expression(&final_expr, f)
+                            && let Some(result) = check_expression(final_expr, f)
                         {
                             return Some(result);
                         }
@@ -2370,7 +2370,7 @@ impl Expression {
                     }
 
                     if let Some(final_expr) = while_expr.body.final_expr.as_ref()
-                        && let Some(result) = check_expression(&final_expr, f)
+                        && let Some(result) = check_expression(final_expr, f)
                     {
                         return Some(result);
                     }
@@ -2403,7 +2403,7 @@ impl Expression {
                 Expression::AsmBlock(asm_block) => {
                     for register in asm_block.registers.iter() {
                         if let Some(value) = register.value.as_ref()
-                            && let Some(result) = check_expression(&value, f)
+                            && let Some(result) = check_expression(value, f)
                         {
                             return Some(result);
                         }
@@ -2411,7 +2411,7 @@ impl Expression {
                 }
 
                 Expression::Commented(_, expression) => {
-                    if let Some(result) = check_expression(&expression.as_ref(), f) {
+                    if let Some(result) = check_expression(expression.as_ref(), f) {
                         return Some(result);
                     }
                 }

@@ -460,7 +460,7 @@ pub fn generate_state_variable_getter_functions(
         project,
         module.clone(),
         contract_name,
-        Some(&state_variable_info.old_name.as_str()),
+        Some(state_variable_info.old_name.as_str()),
         &Default::default(), // TODO: generate solidity parameter list for implicit getter functions...
         &solidity::FunctionTy::Function,
     );
