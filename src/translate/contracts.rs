@@ -11,7 +11,11 @@ pub fn translate_contract_definition(
 ) -> Result<(), Error> {
     // println!(
     //     "Translating contract `{}` at {}",
-    //     contract_definition.name.as_ref().map(|x| x.name.as_str()).unwrap(),
+    //     contract_definition
+    //         .name
+    //         .as_ref()
+    //         .map(|x| x.name.as_str())
+    //         .unwrap(),
     //     project.loc_to_file_location_string(module.clone(), &contract_definition.loc),
     // );
 
@@ -153,6 +157,71 @@ pub fn translate_contract_definition(
         ensure_constructor_called_fields_exist(project, module.clone(), scope.clone());
     }
 
+    fn collect_inherited_storage_namespaces(
+        project: &mut Project,
+        module: Rc<RefCell<ir::Module>>,
+        contract: Rc<RefCell<ir::Contract>>,
+        storage: &mut sway::Storage,
+    ) {
+        let inherits = contract.borrow().abi.inherits.clone();
+        for inherited_contract in inherits {
+            let inherited_contract_name = inherited_contract.to_string();
+            let inherited_contract = project
+                .find_contract(module.clone(), &inherited_contract_name)
+                .unwrap();
+
+            if let Some(inherited_storage) = inherited_contract.borrow().storage.as_ref() {
+                if contract.borrow().storage_struct.is_none() {
+                    contract.borrow_mut().storage_struct =
+                        Some(Rc::new(RefCell::new(sway::Struct {
+                            attributes: None,
+                            is_public: true,
+                            name: format!("{}Storage", contract.borrow().name),
+                            generic_parameters: None,
+                            fields: vec![],
+                        })))
+                }
+                contract
+                    .borrow_mut()
+                    .storage_struct
+                    .as_ref()
+                    .unwrap()
+                    .borrow_mut()
+                    .fields
+                    .push(sway::StructField {
+                        is_public: true,
+                        new_name: inherited_contract_name.to_case(Case::Snake),
+                        old_name: String::new(),
+                        type_name: sway::TypeName::Identifier {
+                            name: format!("{inherited_contract_name}Storage"),
+                            generic_parameters: None,
+                        },
+                    });
+                storage
+                    .namespaces
+                    .extend(inherited_storage.borrow().namespaces.clone());
+            }
+
+            collect_inherited_storage_namespaces(
+                project,
+                module.clone(),
+                inherited_contract,
+                storage,
+            );
+        }
+    }
+
+    let mut contract_storage = sway::Storage::default();
+
+    collect_inherited_storage_namespaces(
+        project,
+        module.clone(),
+        contract.clone(),
+        &mut contract_storage,
+    );
+
+    contract.borrow_mut().storage = Some(Rc::new(RefCell::new(contract_storage)));
+
     // Translate contract state variables
     let mut deferred_initializations = vec![];
     let mut mapping_names = vec![];
@@ -192,8 +261,12 @@ pub fn translate_contract_definition(
             .iter_mut()
             .find(|f| f.signature == toplevel_fn.get_type_name())
         {
-            assert!(function.implementation.is_none());
-            function.implementation = Some(toplevel_fn);
+            if let Some(function_implementation) = function.implementation.as_ref() {
+                assert!(*function_implementation == toplevel_fn);
+            } else {
+                assert!(function.implementation.is_none());
+                function.implementation = Some(toplevel_fn);
+            }
         } else {
             module.borrow_mut().functions.push(ir::Item {
                 signature: toplevel_fn.get_type_name(),
@@ -400,6 +473,13 @@ pub fn translate_contract_definition(
             constructor_body
                 .statements
                 .insert(statement_index, statement);
+        }
+    }
+
+    let mut contract = contract.borrow_mut();
+    if let Some(storage) = contract.storage.as_mut() {
+        if storage.borrow().fields.is_empty() && storage.borrow().namespaces.is_empty() {
+            contract.storage = None;
         }
     }
 

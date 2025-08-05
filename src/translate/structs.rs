@@ -75,3 +75,72 @@ pub fn translate_struct_definition(
         fields,
     })))
 }
+
+pub fn create_struct_constructor(
+    project: &mut Project,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
+    contract_name: &str,
+) -> Option<sway::Constructor> {
+    let mut fields = vec![];
+
+    let contract = project.find_contract(module.clone(), contract_name)?;
+
+    let storage_namespace_name = contract.borrow().name.to_case(Case::Snake);
+
+    let storage_namespace = contract
+        .borrow()
+        .storage
+        .as_ref()?
+        .borrow()
+        .namespaces
+        .iter()
+        .find(|s| s.borrow().name == storage_namespace_name)
+        .cloned()?;
+
+    let storage_struct = contract.borrow().storage_struct.clone()?;
+
+    for field in storage_struct.borrow().fields.iter() {
+        if !storage_namespace
+            .borrow()
+            .fields
+            .iter()
+            .any(|f| f.name == field.new_name)
+            && field.new_name != "constructor_called"
+        {
+            let inherited_contract_name = field.new_name.to_case(Case::Pascal);
+            let field = sway::ConstructorField {
+                name: field.new_name.clone(),
+                value: sway::Expression::from(create_struct_constructor(
+                    project,
+                    module.clone(),
+                    scope.clone(),
+                    &inherited_contract_name,
+                )?),
+            };
+            fields.push(field);
+        } else {
+            fields.push(sway::ConstructorField {
+                name: field.new_name.clone(),
+                value: sway::Expression::from(sway::MemberAccess {
+                    expression: sway::Expression::from(sway::PathExpr {
+                        root: sway::PathExprRoot::Identifier("storage".to_string()),
+                        segments: vec![sway::PathExprSegment {
+                            name: storage_namespace.borrow().name.clone(),
+                            generic_parameters: None,
+                        }],
+                    }),
+                    member: field.new_name.clone(),
+                }),
+            })
+        }
+    }
+
+    Some(sway::Constructor {
+        type_name: sway::TypeName::Identifier {
+            name: format!("{contract_name}Storage"),
+            generic_parameters: None,
+        },
+        fields,
+    })
+}

@@ -581,49 +581,16 @@ pub fn generate_state_variable_getter_functions(
     if state_variable_info.is_storage {
         let contract_name = contract_name.unwrap();
 
-        let storage_namespace_name = module
-            .borrow()
-            .get_storage_namespace_name(scope.clone())
-            .unwrap();
-
-        let contract = project
-            .find_contract(module.clone(), contract_name)
-            .unwrap();
-
         statements.push(sway::Statement::from(sway::Let {
             pattern: sway::LetPattern::from(sway::LetIdentifier {
                 is_mutable: false,
                 name: "storage_struct".to_string(),
             }),
             type_name: None,
-            value: sway::Expression::from(sway::Constructor {
-                type_name: sway::TypeName::Identifier {
-                    name: format!("{contract_name}Storage"),
-                    generic_parameters: None,
-                },
-                fields: contract
-                    .borrow()
-                    .storage_struct
-                    .as_ref()
-                    .unwrap()
-                    .borrow()
-                    .fields
-                    .iter()
-                    .map(|f| sway::ConstructorField {
-                        name: f.new_name.clone(),
-                        value: sway::Expression::from(sway::MemberAccess {
-                            expression: sway::Expression::from(sway::PathExpr {
-                                root: sway::PathExprRoot::Identifier("storage".to_string()),
-                                segments: vec![sway::PathExprSegment {
-                                    name: storage_namespace_name.clone(),
-                                    generic_parameters: None,
-                                }],
-                            }),
-                            member: f.new_name.clone(),
-                        }),
-                    })
-                    .collect(),
-            }),
+            value: sway::Expression::from(
+                create_struct_constructor(project, module.clone(), scope.clone(), contract_name)
+                    .unwrap(),
+            ),
         }));
 
         scope

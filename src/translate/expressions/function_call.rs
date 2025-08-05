@@ -1571,12 +1571,14 @@ fn translate_function_call_block_member_access_function_call(
     // Check to see if the type is a contract ABI
     {
         let mut abi_type_name = type_name.clone();
+        let mut was_abi = false;
 
         if let sway::TypeName::Abi {
             type_name: abi_type_name2,
         } = &abi_type_name
         {
             abi_type_name = abi_type_name2.as_ref().clone();
+            was_abi = true;
         }
 
         if let sway::TypeName::Identifier {
@@ -1603,7 +1605,13 @@ fn translate_function_call_block_member_access_function_call(
                 scope.clone(),
                 &container,
                 &type_name,
-                &abi_type_name,
+                &if was_abi {
+                    sway::TypeName::Abi {
+                        type_name: Box::new(abi_type_name),
+                    }
+                } else {
+                    abi_type_name
+                },
             )
             .unwrap();
 

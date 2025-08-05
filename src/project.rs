@@ -1043,6 +1043,35 @@ impl Project {
             }
         }
 
+        let mut sorted_contract_definitions = vec![];
+        let mut sorted_inherited_definitions = vec![];
+
+        for contract_definition in contract_definitions.iter() {
+            for base in contract_definition.base.iter() {
+                let inherited_name = base
+                    .name
+                    .identifiers
+                    .iter()
+                    .map(|i| i.name.clone())
+                    .collect::<Vec<_>>()
+                    .join(".");
+
+                if let Some(contract) = contract_definitions
+                    .iter()
+                    .find(|c| c.name.as_ref().unwrap().name == inherited_name)
+                {
+                    sorted_inherited_definitions.push(contract.clone());
+                }
+            }
+            if !sorted_inherited_definitions.contains(contract_definition) {
+                sorted_contract_definitions.push(contract_definition.clone());
+            }
+        }
+
+        contract_definitions.clear();
+        contract_definitions.extend(sorted_inherited_definitions);
+        contract_definitions.extend(sorted_contract_definitions);
+
         // Create a new module to store the translated items in
         let module = self.find_or_create_module(
             &PathBuf::from(
@@ -1332,8 +1361,12 @@ impl Project {
                     .iter_mut()
                     .find(|f| f.signature == toplevel_fn.get_type_name())
                 {
-                    assert!(function.implementation.is_none());
-                    function.implementation = Some(toplevel_fn);
+                    if let Some(function_implementation) = function.implementation.as_ref() {
+                        assert!(*function_implementation == toplevel_fn);
+                    } else {
+                        assert!(function.implementation.is_none());
+                        function.implementation = Some(toplevel_fn);
+                    }
                 } else {
                     module.borrow_mut().functions.push(ir::Item {
                         signature: toplevel_fn.get_type_name(),
@@ -1680,7 +1713,10 @@ impl Project {
                 let mut contract = contract.implementation.as_mut().unwrap().borrow_mut();
 
                 // Don't create projects for empty abi impls (interface translations)
-                if contract.abi_impl.items.is_empty() {
+                if let solidity::ContractTy::Abstract(_)
+                | solidity::ContractTy::Interface(_)
+                | solidity::ContractTy::Library(_) = contract.kind
+                {
                     continue;
                 }
 

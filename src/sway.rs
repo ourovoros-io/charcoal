@@ -914,6 +914,24 @@ impl TypeName {
             }
         }
 
+        if let (
+            TypeName::Tuple {
+                type_names: lhs_type_names,
+            },
+            TypeName::Tuple {
+                type_names: rhs_type_names,
+            },
+        ) = (self, other)
+        {
+            if lhs_type_names
+                .iter()
+                .zip(rhs_type_names.iter())
+                .all(|(lhs, rhs)| lhs.is_compatible_with(rhs))
+            {
+                return true;
+            }
+        }
+
         self == other
     }
 

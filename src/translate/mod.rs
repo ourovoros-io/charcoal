@@ -1319,6 +1319,13 @@ fn get_path_expr_type(
         return result;
     }
 
+    if path_expr.to_string() == "_" {
+        return sway::TypeName::Identifier {
+            name: "_".to_string(),
+            generic_parameters: None,
+        };
+    }
+
     panic!(
         "error: Variable not found in scope: \"{}\"",
         sway::TabbedDisplayer(path_expr)

@@ -853,11 +853,11 @@ pub fn translate_function_definition(
                 .or_default();
 
             if storage_read || storage_write {
-                let storage_struct_parameter = storage_struct_parameter.as_ref().unwrap();
-
-                parameters.push(sway::Expression::create_identifier(
-                    storage_struct_parameter.name.clone(),
-                ));
+                if let Some(storage_struct_parameter) = storage_struct_parameter.as_ref() {
+                    parameters.push(sway::Expression::create_identifier(
+                        storage_struct_parameter.name.clone(),
+                    ));
+                }
             }
         }
 
@@ -906,7 +906,7 @@ pub fn translate_function_definition(
             .map(|p| get_expression_type(project, module.clone(), scope.clone(), p))
             .collect::<Result<Vec<_>, _>>()?;
 
-        let Some(modifier) = resolve_modifier(
+        let Some((modifier_pre_call, modifier_post_call, modifier_body)) = resolve_modifier(
             project,
             module.clone(),
             scope.clone(),
@@ -914,291 +914,28 @@ pub fn translate_function_definition(
             None,
             modifier_invocation.parameters.clone(),
             parameter_types,
+            &function_body,
+            function_declaration.return_type.as_ref(),
         )?
         else {
             panic!("Failed to find modifier: {new_name}");
         };
 
-        let modifier = modifier.borrow();
+        assert!(
+            modifier_body.is_some()
+                != (modifier_pre_call.is_some() || modifier_post_call.is_some())
+        );
 
-        if modifier.pre_body.is_some() && modifier.post_body.is_some() {
-            modifier_pre_calls.push(sway::FunctionCall {
-                function: sway::Expression::create_identifier(format!("{}_pre", modifier.new_name)),
-                generic_parameters: None,
-                parameters: modifier_invocation.parameters.clone(),
-            });
+        if let Some(modifier_pre_call) = modifier_pre_call {
+            modifier_pre_calls.push(modifier_pre_call);
+        }
 
-            modifier_post_calls.push(sway::FunctionCall {
-                function: sway::Expression::create_identifier(format!(
-                    "{}_post",
-                    modifier.new_name
-                )),
-                generic_parameters: None,
-                parameters: modifier_invocation.parameters.clone(),
-            });
-        } else if modifier.pre_body.is_some() {
-            modifier_pre_calls.push(sway::FunctionCall {
-                function: sway::Expression::create_identifier(modifier.new_name.clone()),
-                generic_parameters: None,
-                parameters: modifier_invocation.parameters.clone(),
-            });
-        } else if modifier.post_body.is_some() {
-            modifier_post_calls.push(sway::FunctionCall {
-                function: sway::Expression::create_identifier(modifier.new_name.clone()),
-                generic_parameters: None,
-                parameters: modifier_invocation.parameters.clone(),
-            });
-        } else if let Some(mut block) = modifier.inline_body.clone() {
-            fn inline_expression(
-                expression: &mut sway::Expression,
-                inline_statements: &[sway::Statement],
-            ) {
-                match expression {
-                    sway::Expression::Literal(_) => {}
-                    sway::Expression::PathExpr(_) => {}
+        if let Some(modifier_post_call) = modifier_post_call {
+            modifier_post_calls.push(modifier_post_call);
+        }
 
-                    sway::Expression::FunctionCall(function_call) => {
-                        inline_expression(&mut function_call.function, inline_statements);
-
-                        for parameter in function_call.parameters.iter_mut() {
-                            inline_expression(parameter, inline_statements);
-                        }
-                    }
-
-                    sway::Expression::FunctionCallBlock(function_call_block) => {
-                        inline_expression(&mut function_call_block.function, inline_statements);
-
-                        for parameter in function_call_block.parameters.iter_mut() {
-                            inline_expression(parameter, inline_statements);
-                        }
-
-                        for field in function_call_block.fields.iter_mut() {
-                            inline_expression(&mut field.value, inline_statements);
-                        }
-                    }
-
-                    sway::Expression::Block(block) => {
-                        for i in 0..block.statements.len() {
-                            inline_statement(&mut block.statements, i, inline_statements);
-                        }
-
-                        if let Some(final_expr) = block.final_expr.as_mut() {
-                            inline_expression(final_expr, inline_statements);
-                        }
-                    }
-
-                    sway::Expression::Return(expression) => {
-                        if let Some(expression) = expression.as_mut() {
-                            inline_expression(expression, inline_statements);
-                        }
-                    }
-
-                    sway::Expression::Array(array) => {
-                        for expr in array.elements.iter_mut() {
-                            inline_expression(expr, inline_statements);
-                        }
-                    }
-
-                    sway::Expression::ArrayAccess(array_access) => {
-                        inline_expression(&mut array_access.expression, inline_statements);
-                        inline_expression(&mut array_access.index, inline_statements);
-                    }
-
-                    sway::Expression::MemberAccess(member_access) => {
-                        inline_expression(&mut member_access.expression, inline_statements);
-                    }
-
-                    sway::Expression::Tuple(expressions) => {
-                        for expression in expressions.iter_mut() {
-                            inline_expression(expression, inline_statements);
-                        }
-                    }
-
-                    sway::Expression::If(if_expr) => {
-                        let mut current_if = Some(if_expr);
-
-                        while let Some(if_expr) = current_if.take() {
-                            if let Some(condition) = if_expr.condition.as_mut() {
-                                inline_expression(condition, inline_statements);
-                            }
-
-                            for i in 0..if_expr.then_body.statements.len() {
-                                inline_statement(
-                                    &mut if_expr.then_body.statements,
-                                    i,
-                                    inline_statements,
-                                );
-                            }
-
-                            if let Some(final_expr) = if_expr.then_body.final_expr.as_mut() {
-                                inline_expression(final_expr, inline_statements);
-                            }
-
-                            current_if = if_expr.else_if.as_mut();
-                        }
-                    }
-
-                    sway::Expression::Match(match_expr) => {
-                        inline_expression(&mut match_expr.expression, inline_statements);
-
-                        for branch in match_expr.branches.iter_mut() {
-                            inline_expression(&mut branch.pattern, inline_statements);
-                            inline_expression(&mut branch.value, inline_statements);
-                        }
-                    }
-
-                    sway::Expression::While(while_expr) => {
-                        inline_expression(&mut while_expr.condition, inline_statements);
-
-                        for i in 0..while_expr.body.statements.len() {
-                            inline_statement(&mut while_expr.body.statements, i, inline_statements);
-                        }
-
-                        if let Some(final_expr) = while_expr.body.final_expr.as_mut() {
-                            inline_expression(final_expr, inline_statements);
-                        }
-                    }
-
-                    sway::Expression::UnaryExpression(unary_expression) => {
-                        inline_expression(&mut unary_expression.expression, inline_statements);
-                    }
-
-                    sway::Expression::BinaryExpression(binary_expression) => {
-                        inline_expression(&mut binary_expression.lhs, inline_statements);
-                        inline_expression(&mut binary_expression.rhs, inline_statements);
-                    }
-
-                    sway::Expression::Constructor(constructor) => {
-                        for field in constructor.fields.iter_mut() {
-                            inline_expression(&mut field.value, inline_statements);
-                        }
-                    }
-
-                    sway::Expression::Continue => {}
-                    sway::Expression::Break => {}
-
-                    sway::Expression::AsmBlock(asm_block) => {
-                        for register in asm_block.registers.iter_mut() {
-                            if let Some(value) = register.value.as_mut() {
-                                inline_expression(value, inline_statements);
-                            }
-                        }
-                    }
-
-                    sway::Expression::Commented(_, expression) => {
-                        inline_expression(expression, inline_statements);
-                    }
-                }
-            }
-
-            fn inline_statement(
-                statements: &mut Vec<sway::Statement>,
-                statement_index: usize,
-                inline_statements: &[sway::Statement],
-            ) {
-                match &mut statements[statement_index] {
-                    sway::Statement::Let(let_stmt) => {
-                        inline_expression(&mut let_stmt.value, inline_statements);
-                    }
-
-                    sway::Statement::Expression(expression) => {
-                        if let Some(ident) = expression.as_identifier()
-                            && ident == "_"
-                        {
-                            statements.remove(statement_index);
-
-                            for statement in inline_statements.iter().rev() {
-                                statements.insert(statement_index, statement.clone());
-                            }
-
-                            return;
-                        }
-
-                        inline_expression(expression, inline_statements);
-                    }
-
-                    sway::Statement::Commented(_, _) => {
-                        unimplemented!()
-                    }
-                }
-            }
-
-            // If the function's body ends in an expression, make it an explicit return statement
-            let mut needs_return = false;
-
-            if let Some(final_expr) = function_body.final_expr.take() {
-                function_body
-                    .statements
-                    .push(sway::Statement::from(sway::Expression::Return(Some(
-                        Box::new(final_expr),
-                    ))));
-
-                needs_return = true;
-            }
-
-            // Inline the function body into the copy of the modifier body
-            if let Some(final_expr) = block.final_expr.take() {
-                block
-                    .statements
-                    .push(sway::Statement::from(sway::Expression::Return(Some(
-                        Box::new(final_expr),
-                    ))));
-            }
-
-            for i in 0..block.statements.len() {
-                inline_statement(&mut block.statements, i, &function_body.statements);
-            }
-
-            // Insert a comment above the inlined code
-            block.statements.insert(
-                0,
-                sway::Statement::Commented(
-                    format!(
-                        "inlined modifier invocation: {}",
-                        sway::TabbedDisplayer(modifier_invocation)
-                    ),
-                    None,
-                ),
-            );
-
-            // Generate a return value at the end of the inlined code if necessary
-            if needs_return {
-                let mut has_return = false;
-
-                if let Some(statement) = block.statements.last()
-                    && let sway::Statement::Expression(expression) = statement
-                    && let sway::Expression::Return(_) = expression
-                {
-                    has_return = true;
-                }
-
-                // If the last statement is a return with a value, make the value the final expression
-                if has_return {
-                    assert!(block.final_expr.is_none() && !block.statements.is_empty());
-
-                    let Some(sway::Statement::Expression(sway::Expression::Return(value))) =
-                        block.statements.pop()
-                    else {
-                        unreachable!()
-                    };
-
-                    if let Some(value) = value {
-                        block.final_expr = Some(*value);
-                    }
-                }
-                // Otherwise if we have a return type, generate the default value for whatever the function returns
-                else if let Some(return_type) = function_declaration.return_type.as_ref() {
-                    block.final_expr = Some(create_value_expression(
-                        project,
-                        module.clone(),
-                        scope.clone(),
-                        return_type,
-                        None,
-                    ));
-                }
-            }
-
-            function_body = block;
+        if let Some(modifier_body) = modifier_body {
+            function_body = modifier_body;
         }
     }
 
@@ -1246,10 +983,6 @@ pub fn translate_function_definition(
 
         let contract_name = contract_name.unwrap();
 
-        let contract = project
-            .find_contract(module.clone(), contract_name)
-            .unwrap();
-
         let mut statements = vec![];
 
         let mut parameters = impl_function
@@ -1286,47 +1019,21 @@ pub fn translate_function_definition(
         }
 
         // If the contract has a storage struct, generate bindings and a storage struct parameter for the toplevel function call
-        if !(function_attributes.is_constant || function_attributes.is_pure)
-            && let Some(storage_struct) = contract.borrow().storage_struct.as_ref()
-        {
-            let storage_namespace_name = module
-                .borrow()
-                .get_storage_namespace_name(scope.clone())
-                .unwrap();
+        if !(function_attributes.is_constant || function_attributes.is_pure) {
+            if let Some(struct_constructor) =
+                create_struct_constructor(project, module, scope, contract_name)
+            {
+                statements.push(sway::Statement::from(sway::Let {
+                    pattern: sway::LetPattern::from(sway::LetIdentifier {
+                        is_mutable: false,
+                        name: "storage_struct".to_string(),
+                    }),
+                    type_name: None,
+                    value: sway::Expression::from(struct_constructor),
+                }));
 
-            statements.push(sway::Statement::from(sway::Let {
-                pattern: sway::LetPattern::from(sway::LetIdentifier {
-                    is_mutable: false,
-                    name: "storage_struct".to_string(),
-                }),
-                type_name: None,
-                value: sway::Expression::from(sway::Constructor {
-                    type_name: sway::TypeName::Identifier {
-                        name: format!("{contract_name}Storage"),
-                        generic_parameters: None,
-                    },
-                    fields: storage_struct
-                        .borrow()
-                        .fields
-                        .iter()
-                        .map(|f| sway::ConstructorField {
-                            name: f.new_name.clone(),
-                            value: sway::Expression::from(sway::MemberAccess {
-                                expression: sway::Expression::from(sway::PathExpr {
-                                    root: sway::PathExprRoot::Identifier("storage".to_string()),
-                                    segments: vec![sway::PathExprSegment {
-                                        name: storage_namespace_name.clone(),
-                                        generic_parameters: None,
-                                    }],
-                                }),
-                                member: f.new_name.clone(),
-                            }),
-                        })
-                        .collect(),
-                }),
-            }));
-
-            parameters.push(sway::Expression::create_identifier("storage_struct".into()));
+                parameters.push(sway::Expression::create_identifier("storage_struct".into()));
+            }
         }
 
         impl_function.body = Some(sway::Block {
@@ -1578,6 +1285,19 @@ pub fn translate_modifier_definition(
         );
     }
 
+    if let Some(contract_name) = contract_name {
+        let contract = project
+            .find_contract(module.clone(), contract_name)
+            .unwrap();
+
+        if contract.borrow().storage_struct.is_none() {
+            has_pre_storage_read = false;
+            has_pre_storage_write = false;
+            has_post_storage_read = false;
+            has_post_storage_write = false;
+        }
+    }
+
     // Create a storage struct parameter if necessary
     if has_pre_storage_read
         || has_pre_storage_write
@@ -1785,7 +1505,6 @@ pub fn ensure_constructor_functions_exist(
     scope: Rc<RefCell<ir::Scope>>,
     contract: Rc<RefCell<ir::Contract>>,
 ) {
-    // Create the constructor if it doesn't exist
     if contract.borrow().abi_impl.items.iter().any(|i| {
         let sway::ImplItem::Function(f) = i else {
             return false;
@@ -1806,12 +1525,14 @@ pub fn ensure_constructor_functions_exist(
         &solidity::FunctionTy::Constructor,
     );
 
-    assert!(!module.borrow().functions.iter().any(|f| {
+    if module.borrow().functions.iter().any(|f| {
         let sway::TypeName::Function { new_name, .. } = &f.signature else {
             unreachable!()
         };
         *new_name == function_name.top_level_fn_name
-    }));
+    }) {
+        return;
+    }
 
     // Create the ABI function
     let abi_function = sway::Function {
