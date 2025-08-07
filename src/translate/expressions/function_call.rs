@@ -1126,7 +1126,8 @@ fn translate_member_access_function_call(
                 get_expression_type(project, module.clone(), scope.clone(), &container)?,
             );
 
-            for using_directive in module.borrow().using_directives.clone() {
+            let using_directives = module.borrow().using_directives.clone();
+            for using_directive in using_directives {
                 // Make sure the type names match
                 if let Some(for_type) = using_directive.for_type.as_ref()
                     && *for_type != type_name

@@ -1069,8 +1069,18 @@ impl Project {
         }
 
         contract_definitions.clear();
-        contract_definitions.extend(sorted_inherited_definitions);
-        contract_definitions.extend(sorted_contract_definitions);
+
+        for definition in sorted_inherited_definitions {
+            if !contract_definitions.contains(&definition) {
+                contract_definitions.push(definition);
+            }
+        }
+
+        for definition in sorted_contract_definitions {
+            if !contract_definitions.contains(&definition) {
+                contract_definitions.push(definition);
+            }
+        }
 
         // Create a new module to store the translated items in
         let module = self.find_or_create_module(
@@ -1204,6 +1214,7 @@ impl Project {
         // Collect the contract's toplevel item signatures ahead of time
         for (i, contract_definition) in contract_definitions.iter().enumerate() {
             let contract_name = contract_definition.name.as_ref().unwrap().name.as_str();
+
             let mut inherits = vec![];
 
             for base in contract_definition.base.iter() {
@@ -1416,7 +1427,7 @@ impl Project {
                     continue;
                 }
 
-                let function_name = translate_function_name(
+                let function_names = translate_function_name(
                     self,
                     module.clone(),
                     Some(contract_name),
@@ -1434,8 +1445,8 @@ impl Project {
 
                 module.borrow_mut().modifiers.push(ir::Item {
                     signature: sway::TypeName::Function {
-                        old_name: function_name.old_name,
-                        new_name: function_name.abi_fn_name,
+                        old_name: function_names.old_name,
+                        new_name: function_names.top_level_fn_name,
                         generic_parameters: None,
                         parameters,
                         storage_struct_parameter: None,

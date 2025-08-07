@@ -41,7 +41,7 @@ pub struct Function {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct FunctionName {
+pub struct FunctionNames {
     pub old_name: String,
     pub top_level_fn_name: String,
     pub abi_fn_name: String,
