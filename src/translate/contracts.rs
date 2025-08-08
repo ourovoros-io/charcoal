@@ -160,6 +160,7 @@ pub fn translate_contract_definition(
     fn collect_inherited_storage_namespaces(
         project: &mut Project,
         module: Rc<RefCell<ir::Module>>,
+        scope: Rc<RefCell<ir::Scope>>,
         contract: Rc<RefCell<ir::Contract>>,
         storage: &mut sway::Storage,
     ) {
@@ -172,21 +173,32 @@ pub fn translate_contract_definition(
 
             if let Some(inherited_storage) = inherited_contract.borrow().storage.as_ref() {
                 if contract.borrow().storage_struct.is_none() {
-                    contract.borrow_mut().storage_struct =
-                        Some(Rc::new(RefCell::new(sway::Struct {
+                    contract.borrow_mut().storage_struct = Some(Rc::new(RefCell::new(ir::Struct {
+                        name: format!("{}Storage", contract.borrow().name),
+                        memory: sway::Struct {
                             attributes: None,
                             is_public: true,
                             name: format!("{}Storage", contract.borrow().name),
                             generic_parameters: None,
                             fields: vec![],
-                        })))
+                        },
+                        storage: sway::Struct {
+                            attributes: None,
+                            is_public: true,
+                            name: format!("{}Storage", contract.borrow().name),
+                            generic_parameters: None,
+                            fields: vec![],
+                        },
+                    })))
                 }
+
                 contract
                     .borrow_mut()
                     .storage_struct
                     .as_ref()
                     .unwrap()
                     .borrow_mut()
+                    .memory
                     .fields
                     .push(sway::StructField {
                         is_public: true,
@@ -205,6 +217,7 @@ pub fn translate_contract_definition(
             collect_inherited_storage_namespaces(
                 project,
                 module.clone(),
+                scope.clone(),
                 inherited_contract,
                 storage,
             );
@@ -216,6 +229,7 @@ pub fn translate_contract_definition(
     collect_inherited_storage_namespaces(
         project,
         module.clone(),
+        scope.clone(),
         contract.clone(),
         &mut contract_storage,
     );

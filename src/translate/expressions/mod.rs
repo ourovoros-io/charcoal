@@ -870,6 +870,7 @@ pub fn create_value_expression(
                         },
                         fields: struct_definition
                             .borrow()
+                            .memory
                             .fields
                             .iter()
                             .map(|f| sway::ConstructorField {

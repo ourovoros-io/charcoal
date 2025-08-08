@@ -908,7 +908,7 @@ impl Project {
         module: Rc<RefCell<ir::Module>>,
         scope: Rc<RefCell<ir::Scope>>,
         name: &str,
-    ) -> Option<Rc<RefCell<sway::Struct>>> {
+    ) -> Option<Rc<RefCell<ir::Struct>>> {
         // Check to see if the struct was defined in the current file
         if let Some(x) = module
             .borrow()
@@ -920,7 +920,8 @@ impl Project {
         }
 
         // Check to see if the struct is a storage struct
-        if let Some(contract_name) = scope.borrow().get_contract_name()
+        let contract_name = scope.borrow().get_contract_name();
+        if let Some(contract_name) = contract_name
             && let Some(contract) = self.find_contract(module.clone(), &contract_name)
             && let Some(x) = contract.borrow().storage_struct.as_ref()
             && x.borrow().name == name
@@ -1765,6 +1766,26 @@ impl Project {
                             )
                         }))),
                     }],
+                    functions: contract
+                        .storage_struct_constructor_fn
+                        .as_ref()
+                        .map(|s| {
+                            vec![ir::Item {
+                                signature: sway::TypeName::Function {
+                                    old_name: s.old_name.clone(),
+                                    new_name: s.new_name.clone(),
+                                    generic_parameters: s.generic_parameters.clone(),
+                                    parameters: s.parameters.clone(),
+                                    storage_struct_parameter: s
+                                        .storage_struct_parameter
+                                        .clone()
+                                        .map(Box::new),
+                                    return_type: s.return_type.clone().map(Box::new),
+                                },
+                                implementation: Some(s.clone()),
+                            }]
+                        })
+                        .unwrap_or_default(),
                     ..Default::default()
                 });
             }

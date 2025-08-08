@@ -118,7 +118,9 @@ pub fn finalize_block_translation(
                 };
 
                 let mut check_let_identifier = |identifier: &sway::LetIdentifier| {
-                    if let Some(scope) = scope.borrow().get_parent()
+                    let parent = scope.borrow().get_parent();
+
+                    if let Some(scope) = parent
                         && scope
                             .borrow()
                             .get_variable_from_new_name(&identifier.name)

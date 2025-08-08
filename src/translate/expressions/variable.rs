@@ -376,6 +376,7 @@ pub fn translate_variable_access_expression(
                 project.find_struct(module.clone(), scope.clone(), &container_type_name_string)
                 && struct_definition
                     .borrow()
+                    .memory
                     .fields
                     .iter()
                     .any(|f| f.new_name == field_name)

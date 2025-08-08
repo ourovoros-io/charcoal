@@ -23,7 +23,7 @@ pub enum SymbolData {
         type_name: sway::TypeName,
         variant: sway::EnumVariant,
     },
-    Struct(Rc<RefCell<sway::Struct>>),
+    Struct(Rc<RefCell<ir::Struct>>),
     Variable(Rc<RefCell<ir::Variable>>),
     Constant(sway::Constant),
     ConfigurableField(sway::ConfigurableField),
@@ -106,7 +106,8 @@ pub fn resolve_symbol(
         }
 
         Symbol::Event(name) => {
-            if let Some(contract_name) = scope.borrow().get_contract_name() {
+            let contract_name = scope.borrow().get_contract_name();
+            if let Some(contract_name) = contract_name {
                 let event_name = format!("{contract_name}Event");
 
                 if let Some(event_enum) = module.borrow().events_enums.iter().find(|e| {
@@ -134,7 +135,8 @@ pub fn resolve_symbol(
         }
 
         Symbol::Error(name) => {
-            if let Some(contract_name) = scope.borrow().get_contract_name() {
+            let contract_name = scope.borrow().get_contract_name();
+            if let Some(contract_name) = contract_name {
                 let error_name = format!("{contract_name}Error");
 
                 if let Some(error_enum) = module.borrow().errors_enums.iter().find(|e| {
@@ -193,7 +195,8 @@ pub fn resolve_symbol(
             }
 
             // Check to see if the current function has a storage struct parameter and the variable refers to a field of it
-            if let Some(function_name) = scope.borrow().get_function_name() {
+            let function_name = scope.borrow().get_function_name();
+            if let Some(function_name) = function_name {
                 let (parameter_name, storage_struct_name) = if let Some(function) = module
                     .borrow()
                     .functions
@@ -230,6 +233,7 @@ pub fn resolve_symbol(
                     Symbol::Struct(storage_struct_name),
                 ) && let Some(field) = storage_struct
                     .borrow()
+                    .memory
                     .fields
                     .iter()
                     .find(|f| f.old_name == *name)
@@ -242,7 +246,8 @@ pub fn resolve_symbol(
             }
 
             // Check to see if the variable refers to a storage field
-            if let Some(contract_name) = scope.borrow().get_contract_name()
+            let contract_name = scope.borrow().get_contract_name();
+            if let Some(contract_name) = contract_name
                 && let Some(contract) =
                     project.find_contract(module.clone(), contract_name.as_str())
             {
@@ -271,7 +276,8 @@ pub fn resolve_symbol(
     }
 
     // If we didn't find it in the current contract, try checking inherited contracts
-    if let Some(contract_name) = scope.borrow().get_contract_name()
+    let contract_name = scope.borrow().get_contract_name();
+    if let Some(contract_name) = contract_name
         && let Some(contract) = project.find_contract(module.clone(), &contract_name)
     {
         let inherits = contract.borrow().abi.inherits.clone();
@@ -490,8 +496,9 @@ pub fn resolve_abi_function_call(
         .get(&function.new_name)
         .cloned();
 
+    let current_function_name = scope.borrow().get_function_name();
     if let Some(function_storage_access) = function_storage_access
-        && let Some(current_function_name) = scope.borrow().get_function_name()
+        && let Some(current_function_name) = current_function_name
     {
         let mut module = module.borrow_mut();
         let current_function_storage_access = module
@@ -684,8 +691,9 @@ pub fn resolve_function_call(
     }
 
     let Some(function) = function else {
+        let contract_name = scope.borrow().get_contract_name();
         // If we didn't find a function, check inherited functions
-        if let Some(contract_name) = scope.borrow().get_contract_name()
+        if let Some(contract_name) = contract_name
             && let Some(contract) = project.find_contract(module.clone(), &contract_name)
         {
             let abi = contract.borrow().abi.clone();
@@ -1054,7 +1062,7 @@ pub fn resolve_struct_constructor(
     project: &mut Project,
     module: Rc<RefCell<ir::Module>>,
     scope: Rc<RefCell<ir::Scope>>,
-    structs: &[ir::Item<Rc<RefCell<sway::Struct>>>],
+    structs: &[ir::Item<Rc<RefCell<ir::Struct>>>],
     struct_name: &str,
     named_arguments: Option<&[solidity::NamedArgument]>,
     mut parameters: Vec<sway::Expression>,
@@ -1073,6 +1081,7 @@ pub fn resolve_struct_constructor(
             .as_ref()
             .unwrap()
             .borrow()
+            .memory
             .fields
             .len()
     {
@@ -1086,6 +1095,7 @@ pub fn resolve_struct_constructor(
                 .as_ref()
                 .unwrap()
                 .borrow()
+                .memory
                 .fields
                 .len()
         {
@@ -1100,6 +1110,7 @@ pub fn resolve_struct_constructor(
             .as_ref()
             .unwrap()
             .borrow()
+            .memory
             .fields
             .iter()
         {
@@ -1130,6 +1141,7 @@ pub fn resolve_struct_constructor(
                 .as_ref()
                 .unwrap()
                 .borrow()
+                .memory
                 .fields
                 .iter(),
         )
@@ -1143,7 +1155,9 @@ pub fn resolve_struct_constructor(
             &field.type_name,
         ) {
             Some(expression) => *parameter = expression,
-            None => return Ok(None),
+            None => {
+                return Ok(None);
+            }
         }
     }
 
@@ -1164,6 +1178,7 @@ pub fn resolve_struct_constructor(
             .as_ref()
             .unwrap()
             .borrow()
+            .memory
             .fields
             .iter()
             .zip(parameters.iter())

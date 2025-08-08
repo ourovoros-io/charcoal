@@ -136,12 +136,12 @@ pub fn translate_unary_expression(
                 ("u8" | "u16" | "u32" | "u64" | "u256", None) => {
                     let bits: usize = name.trim_start_matches('u').parse().unwrap();
 
-                    module.borrow_mut().ensure_dependency_declared(
-                        "sway_libs = { git = \"https://github.com/FuelLabs/sway-libs\", tag = \"v0.25.2\" }"
-                    );
-                    module.borrow_mut().ensure_use_declared(
-                        format!("sway_libs::signed_integers::i{bits}::*").as_str(),
-                    );
+                    module
+                        .borrow_mut()
+                        .ensure_dependency_declared("signed_int = \"0.26.0\"");
+                    module
+                        .borrow_mut()
+                        .ensure_use_declared(format!("signed_int::i{bits}::*").as_str());
 
                     return Ok(sway::Expression::create_function_calls(
                         None,

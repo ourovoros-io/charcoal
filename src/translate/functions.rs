@@ -1051,21 +1051,97 @@ pub fn translate_function_definition(
         }
 
         // If the contract has a storage struct, generate bindings and a storage struct parameter for the toplevel function call
-        if !(function_attributes.is_constant || function_attributes.is_pure) {
-            if let Some(struct_constructor) =
-                create_struct_constructor(project, module, scope, contract_name)
-            {
-                statements.push(sway::Statement::from(sway::Let {
-                    pattern: sway::LetPattern::from(sway::LetIdentifier {
-                        is_mutable: false,
-                        name: "storage_struct".to_string(),
-                    }),
-                    type_name: None,
-                    value: sway::Expression::from(struct_constructor),
-                }));
+        let has_storage_struct = {
+            let contract = project
+                .find_contract(module.clone(), contract_name)
+                .unwrap();
+            contract.borrow().storage_struct.is_some()
+        };
+        if !(function_attributes.is_constant || function_attributes.is_pure) && has_storage_struct {
+            let contract = project
+                .find_contract(module.clone(), contract_name)
+                .unwrap();
 
-                parameters.push(sway::Expression::create_identifier("storage_struct".into()));
+            if contract.borrow().storage_struct_constructor_fn.is_none() {
+                let storage_namespace_name = module
+                    .borrow_mut()
+                    .get_storage_namespace_name(scope.clone())
+                    .unwrap();
+
+                let constructor = sway::Constructor {
+                    type_name: sway::TypeName::Identifier {
+                        name: format!("{contract_name}Storage"),
+                        generic_parameters: None,
+                    },
+                    fields: contract
+                        .borrow()
+                        .storage_struct
+                        .as_ref()
+                        .unwrap()
+                        .borrow()
+                        .memory
+                        .fields
+                        .iter()
+                        .map(|f| sway::ConstructorField {
+                            name: f.new_name.clone(),
+                            value: sway::Expression::from(sway::MemberAccess {
+                                expression: sway::Expression::from(sway::PathExpr {
+                                    root: sway::PathExprRoot::Identifier("storage".to_string()),
+                                    segments: vec![sway::PathExprSegment {
+                                        name: storage_namespace_name.clone(),
+                                        generic_parameters: None,
+                                    }],
+                                }),
+                                member: f.new_name.clone(),
+                            }),
+                        })
+                        .collect(),
+                };
+
+                contract.borrow_mut().storage_struct_constructor_fn = Some(sway::Function {
+                    attributes: None,
+                    is_public: true,
+                    old_name: String::new(),
+                    new_name: format!(
+                        "create_{}_storage_struct",
+                        contract_name.to_case(Case::Snake)
+                    ),
+                    generic_parameters: None,
+                    parameters: sway::ParameterList::default(),
+                    storage_struct_parameter: None,
+                    return_type: Some(sway::TypeName::Identifier {
+                        name: format!("{contract_name}Storage"),
+                        generic_parameters: None,
+                    }),
+                    body: Some(sway::Block {
+                        statements: vec![],
+                        final_expr: Some(sway::Expression::from(constructor)),
+                    }),
+                });
             }
+
+            statements.push(sway::Statement::from(sway::Let {
+                pattern: sway::LetPattern::from(sway::LetIdentifier {
+                    is_mutable: false,
+                    name: "storage_struct".to_string(),
+                }),
+                type_name: None,
+                value: sway::Expression::create_function_calls(
+                    None,
+                    &[(
+                        contract
+                            .borrow()
+                            .storage_struct_constructor_fn
+                            .as_ref()
+                            .unwrap()
+                            .new_name
+                            .as_str(),
+                        Some((None, vec![])),
+                    )],
+                ),
+            }));
+
+            parameters.push(sway::Expression::create_identifier("storage_struct".into()));
         }
 
         impl_function.body = Some(sway::Block {
@@ -1622,6 +1698,7 @@ pub fn ensure_constructor_functions_exist(
                     .as_ref()
                     .unwrap()
                     .borrow()
+                    .memory
                     .fields
                     .iter()
                     .map(|f| sway::ConstructorField {
@@ -1724,6 +1801,7 @@ pub fn ensure_constructor_called_fields_exist(
         .borrow_mut()
         .get_storage_struct(scope.clone())
         .borrow_mut()
+        .memory
         .fields
         .push(sway::StructField {
             is_public: true,
@@ -1787,6 +1865,7 @@ pub fn update_constructor_function_body(
             .borrow_mut()
             .get_storage_struct(scope.clone())
             .borrow_mut()
+            .memory
             .fields
             .push(sway::StructField {
                 is_public: true,

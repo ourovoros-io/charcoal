@@ -348,7 +348,8 @@ fn translate_variable_function_call(
     }
 
     // Try to resolve the function call under the current contract
-    if let Some(contract_name) = scope.borrow().get_contract_name()
+    let contract_name = scope.borrow().get_contract_name();
+    if let Some(contract_name) = contract_name
         && let Some(contract) = project.find_contract(module.clone(), &contract_name)
     {
         let abi = contract.borrow().abi.clone();
@@ -2631,7 +2632,8 @@ fn translate_super_member_access_function_call(
         .map(|p| get_expression_type(project, module.clone(), scope.clone(), p))
         .collect::<Result<Vec<_>, _>>()?;
 
-    if let Some(contract_name) = scope.borrow().get_contract_name()
+    let contract_name = scope.borrow().get_contract_name();
+    if let Some(contract_name) = contract_name
         && let Some((module, contract)) =
             project.find_module_and_contract(module.clone(), &contract_name)
     {

@@ -9,8 +9,9 @@ pub fn translate_struct_definition(
     module: Rc<RefCell<ir::Module>>,
     contract_name: Option<&str>,
     struct_definition: &solidity::StructDefinition,
-) -> Result<Rc<RefCell<sway::Struct>>, Error> {
-    let mut fields = vec![];
+) -> Result<Rc<RefCell<ir::Struct>>, Error> {
+    let mut memory_fields = vec![];
+    let mut storage_fields = vec![];
 
     let scope = Rc::new(RefCell::new(ir::Scope::new(contract_name, None, None)));
 
@@ -59,20 +60,119 @@ pub fn translate_struct_definition(
             }
         }
 
-        fields.push(sway::StructField {
+        memory_fields.push(sway::StructField {
+            is_public: true,
+            new_name: new_name.clone(),
+            old_name: old_name.clone(),
+            type_name: type_name.clone(),
+        });
+
+        fn memory_to_storage_type(type_name: sway::TypeName) -> sway::TypeName {
+            if let Some(mut vec_type) = type_name.vec_type() {
+                vec_type = memory_to_storage_type(vec_type);
+
+                return sway::TypeName::Identifier {
+                    name: "Option".into(),
+                    generic_parameters: Some(sway::GenericParameterList {
+                        entries: vec![sway::GenericParameter {
+                            type_name: sway::TypeName::Identifier {
+                                name: "StorageKey".to_string(),
+                                generic_parameters: Some(sway::GenericParameterList {
+                                    entries: vec![sway::GenericParameter {
+                                        type_name: sway::TypeName::Identifier {
+                                            name: "StorageVec".to_string(),
+                                            generic_parameters: Some(sway::GenericParameterList {
+                                                entries: vec![sway::GenericParameter {
+                                                    type_name: vec_type,
+                                                    implements: None,
+                                                }],
+                                            }),
+                                        },
+                                        implements: None,
+                                    }],
+                                }),
+                            },
+                            implements: None,
+                        }],
+                    }),
+                };
+            }
+
+            if type_name.is_bytes() {
+                return sway::TypeName::Identifier {
+                    name: "Option".into(),
+                    generic_parameters: Some(sway::GenericParameterList {
+                        entries: vec![sway::GenericParameter {
+                            type_name: sway::TypeName::Identifier {
+                                name: "StorageKey".to_string(),
+                                generic_parameters: Some(sway::GenericParameterList {
+                                    entries: vec![sway::GenericParameter {
+                                        type_name: sway::TypeName::Identifier {
+                                            name: "StorageBytes".to_string(),
+                                            generic_parameters: None,
+                                        },
+                                        implements: None,
+                                    }],
+                                }),
+                            },
+                            implements: None,
+                        }],
+                    }),
+                };
+            }
+
+            if type_name.is_string() {
+                return sway::TypeName::Identifier {
+                    name: "Option".into(),
+                    generic_parameters: Some(sway::GenericParameterList {
+                        entries: vec![sway::GenericParameter {
+                            type_name: sway::TypeName::Identifier {
+                                name: "StorageKey".to_string(),
+                                generic_parameters: Some(sway::GenericParameterList {
+                                    entries: vec![sway::GenericParameter {
+                                        type_name: sway::TypeName::Identifier {
+                                            name: "StorageString".to_string(),
+                                            generic_parameters: None,
+                                        },
+                                        implements: None,
+                                    }],
+                                }),
+                            },
+                            implements: None,
+                        }],
+                    }),
+                };
+            }
+
+            type_name
+        }
+
+        storage_fields.push(sway::StructField {
             is_public: true,
             new_name,
             old_name,
-            type_name,
+            type_name: memory_to_storage_type(type_name),
         });
     }
 
-    Ok(Rc::new(RefCell::new(sway::Struct {
-        attributes: None,
-        is_public: true,
-        name: struct_definition.name.as_ref().unwrap().name.clone(),
-        generic_parameters: None,
-        fields,
+    let struct_name = struct_definition.name.as_ref().unwrap().name.clone();
+
+    Ok(Rc::new(RefCell::new(ir::Struct {
+        name: struct_name.clone(),
+        memory: sway::Struct {
+            attributes: None,
+            is_public: true,
+            name: struct_name.clone(),
+            generic_parameters: None,
+            fields: memory_fields,
+        },
+        storage: sway::Struct {
+            attributes: None,
+            is_public: true,
+            name: format!("Storage{struct_name}"),
+            generic_parameters: None,
+            fields: storage_fields,
+        },
     })))
 }
 
@@ -100,7 +200,7 @@ pub fn create_struct_constructor(
 
     let storage_struct = contract.borrow().storage_struct.clone()?;
 
-    for field in storage_struct.borrow().fields.iter() {
+    for field in storage_struct.borrow().memory.fields.iter() {
         if !storage_namespace
             .borrow()
             .fields

@@ -860,6 +860,29 @@ pub fn coerce_expression(
         ));
     }
 
+    // Check for `Bytes` to `str` coercions
+    if from_type_name.is_bytes() && to_type_name.is_string_slice() {
+        module.borrow_mut().ensure_use_declared("std::string::*");
+
+        return Some(sway::Expression::create_function_calls(
+            None,
+            &[
+                ("String::from_ascii", Some((None, vec![expression]))),
+                ("as_str", Some((None, vec![]))),
+            ],
+        ));
+    }
+
+    // Check for `Bytes` to `String` coercions
+    if from_type_name.is_bytes() && to_type_name.is_string() {
+        module.borrow_mut().ensure_use_declared("std::string::*");
+
+        return Some(sway::Expression::create_function_calls(
+            None,
+            &[("String::from_ascii", Some((None, vec![expression])))],
+        ));
+    }
+
     // Check for `[u8; 32]` to `b256` coercions
     if let Some(length) = from_type_name.u8_array_length()
         && length == 32
@@ -1261,11 +1284,13 @@ fn get_path_expr_type(
             return Some(field.type_name.clone());
         }
 
-        if let Some(contract_name) = scope.borrow().get_contract_name()
+        let contract_name = scope.borrow().get_contract_name();
+        if let Some(contract_name) = contract_name
             && let Some(module) =
                 project.find_module_containing_contract(module.clone(), &contract_name)
         {
-            if let Some(function_name) = scope.borrow().get_function_name() {
+            let function_name = scope.borrow().get_function_name();
+            if let Some(function_name) = function_name {
                 let module = module.borrow();
 
                 if let Some(function) = module.functions.iter().find(|f| {
@@ -1587,6 +1612,7 @@ fn get_member_access_type(
         if let Some(struct_definition) = project.find_struct(module.clone(), scope.clone(), name)
             && let Some(field) = struct_definition
                 .borrow()
+                .memory
                 .fields
                 .iter()
                 .find(|f| f.new_name == member_access.member)
@@ -3478,10 +3504,7 @@ fn get_member_access_function_call_type(
                     generic_parameters: None,
                 }),
 
-                "as_str" => Ok(sway::TypeName::Identifier {
-                    name: "str".into(),
-                    generic_parameters: None,
-                }),
+                "as_str" => Ok(sway::TypeName::StringSlice),
 
                 _ => todo!(
                     "get type of function call expression: {}",
@@ -3669,15 +3692,15 @@ fn get_member_access_function_call_type(
                 }),
 
                 "wrapping_neg" => {
-                    module.borrow_mut().ensure_dependency_declared(
-                        "sway_libs = { git = \"https://github.com/FuelLabs/sway-libs\", tag = \"v0.25.2\" }"
-                    );
+                    module
+                        .borrow_mut()
+                        .ensure_dependency_declared("signed_int = \"0.26.0\"");
 
                     Ok(sway::TypeName::Identifier {
                         name: {
                             module
                                 .borrow_mut()
-                                .ensure_use_declared("sway_libs::signed_integers::i64::*");
+                                .ensure_use_declared("signed_int::i64::*");
                             "I64".into()
                         },
                         generic_parameters: None,

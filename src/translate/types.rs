@@ -95,9 +95,9 @@ pub fn translate_type_name(
             }
 
             solidity::Type::Int(bits) => {
-                module.borrow_mut().ensure_dependency_declared(
-                    "sway_libs = { git = \"https://github.com/FuelLabs/sway-libs\", tag = \"v0.25.2\" }"
-                );
+                module
+                    .borrow_mut()
+                    .ensure_dependency_declared("signed_int = \"0.26.0\"");
 
                 sway::TypeName::Identifier {
                     name: match *bits {
@@ -111,9 +111,7 @@ pub fn translate_type_name(
                                 //     ),
                                 // );
                             }
-                            module
-                                .borrow_mut()
-                                .ensure_use_declared("sway_libs::signed_integers::i8::*");
+                            module.borrow_mut().ensure_use_declared("signed_int::i8::*");
                             "I8".into()
                         }
                         9..=16 => {
@@ -128,7 +126,7 @@ pub fn translate_type_name(
                             }
                             module
                                 .borrow_mut()
-                                .ensure_use_declared("sway_libs::signed_integers::i16::*");
+                                .ensure_use_declared("signed_int::i16::*");
                             "I16".into()
                         }
                         17..=32 => {
@@ -143,7 +141,7 @@ pub fn translate_type_name(
                             }
                             module
                                 .borrow_mut()
-                                .ensure_use_declared("sway_libs::signed_integers::i32::*");
+                                .ensure_use_declared("signed_int::i32::*");
                             "I32".into()
                         }
                         33..=64 => {
@@ -158,7 +156,7 @@ pub fn translate_type_name(
                             }
                             module
                                 .borrow_mut()
-                                .ensure_use_declared("sway_libs::signed_integers::i64::*");
+                                .ensure_use_declared("signed_int::i64::*");
                             "I64".into()
                         }
                         65..=128 => {
@@ -173,7 +171,7 @@ pub fn translate_type_name(
                             }
                             module
                                 .borrow_mut()
-                                .ensure_use_declared("sway_libs::signed_integers::i128::*");
+                                .ensure_use_declared("signed_int::i128::*");
                             "I128".into()
                         }
                         129..=256 => {
@@ -188,7 +186,7 @@ pub fn translate_type_name(
                             }
                             module
                                 .borrow_mut()
-                                .ensure_use_declared("sway_libs::signed_integers::i256::*");
+                                .ensure_use_declared("signed_int::i256::*");
                             "I256".into()
                         }
                         _ => panic!("Invalid uint type: {bits}"),
@@ -627,6 +625,7 @@ pub fn translate_type_name(
                             name: struct_definition.borrow().name.clone(),
                             generic_parameters: struct_definition
                                 .borrow()
+                                .memory
                                 .generic_parameters
                                 .clone(),
                         }

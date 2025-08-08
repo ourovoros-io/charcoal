@@ -410,18 +410,26 @@ pub fn create_assignment_expression(
                 return false;
             };
 
-            if s.name != *name || s.generic_parameters.is_some() != generic_parameters.is_some() {
-                return false;
-            }
-
-            if let (Some(lhs_generic_parameters), Some(rhs_generic_parameters)) =
-                (s.generic_parameters.as_ref(), generic_parameters.as_ref())
-                && lhs_generic_parameters.entries.len() != rhs_generic_parameters.entries.len()
+            if s.name != *name
+                || s.memory.generic_parameters.is_some() != generic_parameters.is_some()
             {
                 return false;
             }
 
-            if !s.fields.iter().any(|f| f.new_name == member_access.member) {
+            if let (Some(lhs_generic_parameters), Some(rhs_generic_parameters)) = (
+                s.memory.generic_parameters.as_ref(),
+                generic_parameters.as_ref(),
+            ) && lhs_generic_parameters.entries.len() != rhs_generic_parameters.entries.len()
+            {
+                return false;
+            }
+
+            if !s
+                .memory
+                .fields
+                .iter()
+                .any(|f| f.new_name == member_access.member)
+            {
                 return false;
             }
 
@@ -430,6 +438,7 @@ pub fn create_assignment_expression(
             let struct_definition = struct_definition.implementation.as_ref().unwrap().borrow();
 
             let field = struct_definition
+                .memory
                 .fields
                 .iter()
                 .find(|f| f.new_name == member_access.member)
