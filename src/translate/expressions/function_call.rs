@@ -1044,8 +1044,25 @@ fn translate_member_access_function_call(
     //     sway::TabbedDisplayer(&type_name),
     // );
 
+    // HACK: tack `.unwrap().read()` if the container is a Option<StorageKey>
+    if let Some(option_type) = type_name.option_type()
+        && let Some(storage_key_type) = option_type.storage_key_type()
+    {
+        scope
+            .borrow_mut()
+            .set_function_storage_accesses(module.clone(), true, false);
+
+        container = sway::Expression::create_function_calls(
+            Some(container),
+            &[
+                ("unwrap", Some((None, vec![]))),
+                ("read", Some((None, vec![]))),
+            ],
+        );
+        type_name = storage_key_type;
+    }
     // HACK: tack `.read()` onto the end if the container is a StorageKey
-    if let Some(storage_key_type) = type_name.storage_key_type() {
+    else if let Some(storage_key_type) = type_name.storage_key_type() {
         scope
             .borrow_mut()
             .set_function_storage_accesses(module.clone(), true, false);
@@ -1133,7 +1150,39 @@ fn translate_member_access_function_call(
                 if let Some(for_type) = using_directive.for_type.as_ref()
                     && *for_type != type_name
                 {
-                    continue;
+                    let sway::TypeName::Identifier {
+                        name: for_name,
+                        generic_parameters: None,
+                    } = &for_type
+                    else {
+                        continue;
+                    };
+
+                    let sway::TypeName::Identifier {
+                        name: struct_name,
+                        generic_parameters: None,
+                    } = &type_name
+                    else {
+                        continue;
+                    };
+
+                    if let (Some(for_struct_definition), Some(struct_definition)) = (
+                        project.find_struct(module.clone(), scope.clone(), &for_name),
+                        project.find_struct(module.clone(), scope.clone(), &struct_name),
+                    ) && for_struct_definition == struct_definition
+                    {
+                        container = coerce_expression(
+                            project,
+                            module.clone(),
+                            scope.clone(),
+                            &container,
+                            for_type,
+                            &type_name,
+                        )
+                        .unwrap();
+                    } else {
+                        continue;
+                    }
                 }
 
                 // Look up the definition of the using directive
@@ -2072,7 +2121,17 @@ fn translate_storage_vec_member_access_function_call(
         ),
     }
 
-    if let Some(storage_key_type) = type_name.storage_key_type() {
+    let mut storage_key_type = None;
+
+    if let Some(s) = type_name.storage_key_type() {
+        storage_key_type = Some(s);
+    } else if let Some(option_type) = type_name.option_type()
+        && let Some(s) = option_type.storage_key_type()
+    {
+        storage_key_type = Some(s);
+    }
+
+    if let Some(storage_key_type) = storage_key_type {
         scope
             .borrow_mut()
             .set_function_storage_accesses(module.clone(), false, true);

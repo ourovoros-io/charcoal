@@ -424,22 +424,34 @@ pub fn create_assignment_expression(
                 return false;
             }
 
-            if !s
-                .memory
-                .fields
-                .iter()
-                .any(|f| f.new_name == member_access.member)
-            {
+            let fields = if s.memory.name == *name {
+                s.memory.fields.as_slice()
+            } else if s.storage.name == *name {
+                s.storage.fields.as_slice()
+            } else {
+                todo!()
+            };
+
+            if !fields.iter().any(|f| f.new_name == member_access.member) {
                 return false;
             }
 
             true
         }) {
             let struct_definition = struct_definition.implementation.as_ref().unwrap().borrow();
+            let sway::TypeName::Identifier { name, .. } = &type_name else {
+                unreachable!()
+            };
 
-            let field = struct_definition
-                .memory
-                .fields
+            let fields = if struct_definition.memory.name == *name {
+                struct_definition.memory.fields.as_slice()
+            } else if struct_definition.storage.name == *name {
+                struct_definition.storage.fields.as_slice()
+            } else {
+                todo!()
+            };
+
+            let field = fields
                 .iter()
                 .find(|f| f.new_name == member_access.member)
                 .unwrap();

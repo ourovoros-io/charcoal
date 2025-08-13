@@ -13,6 +13,12 @@ pub fn translate_return_statement(
         return Ok(sway::Statement::from(sway::Expression::Return(None)));
     };
 
+    // use solang_parser::helpers::CodeLocation;
+    // println!(
+    //     "Translating return statement at: {}",
+    //     project.loc_to_file_location_string(module.clone(), &expression.loc())
+    // );
+
     let current_function_name = scope.borrow().get_function_name().unwrap();
     let function = module
         .borrow()

@@ -1079,7 +1079,7 @@ pub fn translate_function_definition(
                         .as_ref()
                         .unwrap()
                         .borrow()
-                        .memory
+                        .storage
                         .fields
                         .iter()
                         .map(|f| sway::ConstructorField {
@@ -1698,7 +1698,7 @@ pub fn ensure_constructor_functions_exist(
                     .as_ref()
                     .unwrap()
                     .borrow()
-                    .memory
+                    .storage
                     .fields
                     .iter()
                     .map(|f| sway::ConstructorField {
@@ -1801,7 +1801,7 @@ pub fn ensure_constructor_called_fields_exist(
         .borrow_mut()
         .get_storage_struct(scope.clone())
         .borrow_mut()
-        .memory
+        .storage
         .fields
         .push(sway::StructField {
             is_public: true,
@@ -1865,7 +1865,7 @@ pub fn update_constructor_function_body(
             .borrow_mut()
             .get_storage_struct(scope.clone())
             .borrow_mut()
-            .memory
+            .storage
             .fields
             .push(sway::StructField {
                 is_public: true,

@@ -863,15 +863,22 @@ pub fn create_value_expression(
                 else if let Some(struct_definition) =
                     project.find_struct(module.clone(), scope.clone(), name)
                 {
+                    let struct_definition = struct_definition.borrow();
+
+                    let fields = if struct_definition.memory.name == *name {
+                        struct_definition.memory.fields.as_slice()
+                    } else if struct_definition.storage.name == *name {
+                        struct_definition.storage.fields.as_slice()
+                    } else {
+                        todo!()
+                    };
+
                     return sway::Expression::from(sway::Constructor {
                         type_name: sway::TypeName::Identifier {
                             name: name.to_string(),
                             generic_parameters: None,
                         },
-                        fields: struct_definition
-                            .borrow()
-                            .memory
-                            .fields
+                        fields: fields
                             .iter()
                             .map(|f| sway::ConstructorField {
                                 name: f.new_name.clone(),

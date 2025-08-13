@@ -147,6 +147,7 @@ pub fn coerce_expression(
     let mut expression = expression.clone();
     let mut from_type_name = from_type_name.clone();
     let mut add_read_member_call = false;
+    let mut remove_unwrap_member_call = false;
 
     // HACK: If the expression is reading from a `StorageKey<T>`, remove the `.read()` temporarily
     if let sway::Expression::FunctionCall(f) = &expression
@@ -161,6 +162,198 @@ pub fn coerce_expression(
             expression = m.expression.clone();
             from_type_name = container_type;
             add_read_member_call = true;
+        }
+    }
+
+    // HACK: if the expression is a `Option<T>`, add a `.unwrap()` temporarily
+    if let Some(option_type) = from_type_name.option_type() {
+        expression = sway::Expression::create_function_calls(
+            Some(expression.clone()),
+            &[("unwrap", Some((None, vec![])))],
+        );
+        from_type_name = option_type;
+        remove_unwrap_member_call = true;
+    }
+
+    // Check for `Struct` to `StorageStruct` coercion
+    if let (
+        sway::TypeName::Identifier { name: lhs_name, .. },
+        sway::TypeName::Identifier { name: rhs_name, .. },
+    ) = (&from_type_name, &to_type_name)
+    {
+        let mut expression = expression.clone();
+        let mut lhs_name = lhs_name.clone();
+        let mut skip = false;
+
+        if let Some(storage_key_type) = from_type_name.storage_key_type() {
+            expression = sway::Expression::create_function_calls(
+                Some(expression),
+                &[("read", Some((None, vec![])))],
+            );
+
+            if let sway::TypeName::Identifier {
+                name,
+                generic_parameters,
+            } = storage_key_type
+            {
+                if generic_parameters.is_some() {
+                    skip = true;
+                }
+
+                lhs_name = name;
+            } else {
+                skip = true;
+            }
+        }
+
+        if !skip
+            && let (Some(lhs_struct_definition), Some(rhs_struct_definition)) = (
+                project.find_struct(module.clone(), scope.clone(), &lhs_name),
+                project.find_struct(module.clone(), scope.clone(), &rhs_name),
+            )
+            && lhs_struct_definition == rhs_struct_definition
+        {
+            if lhs_name == *rhs_name {
+                return Some(expression);
+            }
+
+            // Check for memory to storage coercions
+            if *lhs_name == lhs_struct_definition.borrow().memory.name
+                && *rhs_name == rhs_struct_definition.borrow().storage.name
+            {
+                let struct_definition = lhs_struct_definition.borrow();
+
+                match expression {
+                    sway::Expression::Constructor(constructor) => {
+                        return Some(sway::Expression::from(sway::Constructor {
+                            type_name: to_type_name.clone(),
+                            fields: struct_definition
+                                .memory
+                                .fields
+                                .iter()
+                                .zip(struct_definition.storage.fields.iter())
+                                .zip(constructor.fields.iter())
+                                .map(|((lhs_field, rhs_field), constructor_field)| {
+                                    sway::ConstructorField {
+                                        name: rhs_field.new_name.clone(),
+                                        value: coerce_expression(
+                                            project,
+                                            module.clone(),
+                                            scope.clone(),
+                                            &constructor_field.value,
+                                            &lhs_field.type_name,
+                                            &rhs_field.type_name,
+                                        )
+                                        .unwrap(),
+                                    }
+                                })
+                                .collect(),
+                        }));
+                    }
+
+                    _ => {
+                        let variable_name = scope.borrow_mut().generate_unique_variable_name("x");
+
+                        return Some(sway::Expression::from(sway::Block {
+                            statements: vec![sway::Statement::from(sway::Let {
+                                pattern: sway::LetPattern::Identifier(sway::LetIdentifier {
+                                    is_mutable: false,
+                                    name: variable_name.clone(),
+                                }),
+                                type_name: None,
+                                value: expression.clone(),
+                            })],
+                            final_expr: Some(sway::Expression::from(sway::Constructor {
+                                type_name: to_type_name,
+                                fields: struct_definition
+                                    .memory
+                                    .fields
+                                    .iter()
+                                    .zip(struct_definition.storage.fields.iter())
+                                    .map(|(lhs_field, rhs_field)| sway::ConstructorField {
+                                        name: rhs_field.new_name.clone(),
+                                        value: sway::Expression::from(sway::MemberAccess {
+                                            expression: sway::Expression::create_identifier(
+                                                variable_name.clone(),
+                                            ),
+                                            member: lhs_field.new_name.clone(),
+                                        }),
+                                    })
+                                    .collect(),
+                            })),
+                        }));
+                    }
+                }
+            }
+
+            // Check for storage to memory coercions
+            if *lhs_name == lhs_struct_definition.borrow().storage.name
+                && *rhs_name == rhs_struct_definition.borrow().memory.name
+            {
+                let struct_definition = lhs_struct_definition.borrow();
+
+                match expression {
+                    sway::Expression::Constructor(constructor) => {
+                        return Some(sway::Expression::from(sway::Constructor {
+                            type_name: to_type_name.clone(),
+                            fields: struct_definition
+                                .storage
+                                .fields
+                                .iter()
+                                .zip(struct_definition.memory.fields.iter())
+                                .zip(constructor.fields.iter())
+                                .map(|((lhs_field, rhs_field), constructor_field)| {
+                                    sway::ConstructorField {
+                                        name: rhs_field.new_name.clone(),
+                                        value: coerce_expression(
+                                            project,
+                                            module.clone(),
+                                            scope.clone(),
+                                            &constructor_field.value,
+                                            &lhs_field.type_name,
+                                            &rhs_field.type_name,
+                                        )
+                                        .unwrap(),
+                                    }
+                                })
+                                .collect(),
+                        }));
+                    }
+
+                    _ => {
+                        let variable_name = scope.borrow_mut().generate_unique_variable_name("x");
+
+                        return Some(sway::Expression::from(sway::Block {
+                            statements: vec![sway::Statement::from(sway::Let {
+                                pattern: sway::LetPattern::Identifier(sway::LetIdentifier {
+                                    is_mutable: false,
+                                    name: variable_name.clone(),
+                                }),
+                                type_name: None,
+                                value: expression.clone(),
+                            })],
+                            final_expr: Some(sway::Expression::from(sway::Constructor {
+                                type_name: to_type_name,
+                                fields: struct_definition
+                                    .storage
+                                    .fields
+                                    .iter()
+                                    .zip(struct_definition.memory.fields.iter())
+                                    .map(|(lhs_field, rhs_field)| sway::ConstructorField {
+                                        name: rhs_field.new_name.clone(),
+                                        value: sway::Expression::from(sway::MemberAccess {
+                                            expression: sway::Expression::create_identifier(
+                                                variable_name.clone(),
+                                            ),
+                                            member: lhs_field.new_name.clone(),
+                                        }),
+                                    })
+                                    .collect(),
+                            })),
+                        }));
+                    }
+                }
+            }
         }
     }
 
@@ -311,6 +504,29 @@ pub fn coerce_expression(
         }));
     }
 
+    // Check for `StorageKey<StorageBytes>` to `Bytes` coercion
+    if let Some(storage_key_type) = from_type_name.storage_key_type()
+        && storage_key_type.is_storage_bytes()
+        && to_type_name.is_bytes()
+    {
+        return Some(sway::Expression::create_function_calls(
+            Some(expression),
+            &[
+                ("read_slice", Some((None, vec![]))),
+                (
+                    "unwrap_or",
+                    Some((
+                        None,
+                        vec![sway::Expression::create_function_calls(
+                            None,
+                            &[("Bytes::new", Some((None, vec![])))],
+                        )],
+                    )),
+                ),
+            ],
+        ));
+    }
+
     // HACK: Restore the `.read()` if we removed it
     if add_read_member_call {
         expression = sway::Expression::create_function_calls(
@@ -320,6 +536,34 @@ pub fn coerce_expression(
 
         from_type_name =
             get_expression_type(project, module.clone(), scope.clone(), &expression).unwrap();
+    }
+
+    // HACK: Remove the `.unwrap()` if we added it
+    if remove_unwrap_member_call {
+        expression = sway::Expression::create_function_calls(
+            None,
+            &[("Some", Some((None, vec![expression])))],
+        );
+
+        from_type_name = sway::TypeName::Identifier {
+            name: "Option".to_string(),
+            generic_parameters: Some(sway::GenericParameterList {
+                entries: vec![sway::GenericParameter {
+                    type_name: from_type_name,
+                    implements: None,
+                }],
+            }),
+        };
+    }
+
+    // Check for `Option<T>` to `T` coercions
+    if let Some(option_type) = from_type_name.option_type()
+        && option_type.is_compatible_with(&to_type_name)
+    {
+        return Some(sway::Expression::create_function_calls(
+            Some(expression.clone()),
+            &[("unwrap", Some((None, vec![])))],
+        ));
     }
 
     // Check for `StorageKey<T>` to `T` coercions
@@ -1577,12 +1821,18 @@ fn get_member_access_type(
         }
     }
 
-    let container_type = get_expression_type(
-        project,
-        module.clone(),
-        scope.clone(),
-        &member_access.expression,
-    )?;
+    let mut container = member_access.expression.clone();
+
+    let mut container_type =
+        get_expression_type(project, module.clone(), scope.clone(), &container)?;
+
+    if let Some(storage_key_type) = container_type.storage_key_type() {
+        container_type = storage_key_type;
+        container = sway::Expression::create_function_calls(
+            Some(container),
+            &[("read", Some((None, vec![])))],
+        )
+    }
 
     // Check if field is a signed integer
     if let Some(bits) = container_type.int_bits() {
@@ -1609,19 +1859,27 @@ fn get_member_access_type(
         generic_parameters: None,
     } = &container_type
     {
-        if let Some(struct_definition) = project.find_struct(module.clone(), scope.clone(), name)
-            && let Some(field) = struct_definition
-                .borrow()
-                .memory
-                .fields
-                .iter()
-                .find(|f| f.new_name == member_access.member)
-        {
-            return Ok(field.type_name.clone());
+        if let Some(struct_definition) = project.find_struct(module.clone(), scope.clone(), name) {
+            let struct_definition = struct_definition.borrow();
+
+            let fields = if struct_definition.memory.name == *name {
+                struct_definition.memory.fields.as_slice()
+            } else if struct_definition.storage.name == *name {
+                struct_definition.storage.fields.as_slice()
+            } else {
+                todo!()
+            };
+
+            if let Some(field) = fields.iter().find(|f| f.new_name == member_access.member) {
+                return Ok(field.type_name.clone());
+            }
         }
     }
 
-    todo!("get type of {container_type} member access expression: {expression:#?}")
+    todo!(
+        "get type of {container_type} member access expression: {}",
+        sway::TabbedDisplayer(expression)
+    )
 }
 
 #[inline(always)]
@@ -2090,6 +2348,23 @@ fn get_path_expr_function_call_type(
             return Ok(Some(sway::TypeName::Identifier {
                 name: "Secp256k1".into(),
                 generic_parameters: None,
+            }));
+        }
+
+        "Some" if generic_parameters.is_none() && parameters.len() == 1 => {
+            return Ok(Some(sway::TypeName::Identifier {
+                name: "Option".to_string(),
+                generic_parameters: Some(sway::GenericParameterList {
+                    entries: vec![sway::GenericParameter {
+                        type_name: get_expression_type(
+                            project,
+                            module.clone(),
+                            scope.clone(),
+                            &parameters[0],
+                        )?,
+                        implements: None,
+                    }],
+                }),
             }));
         }
 

@@ -875,13 +875,35 @@ impl Project {
         None
     }
 
-    pub fn is_struct_declared(&mut self, module: Rc<RefCell<ir::Module>>, name: &str) -> bool {
+    pub fn is_struct_declared(
+        &mut self,
+        module: Rc<RefCell<ir::Module>>,
+        scope: Rc<RefCell<ir::Scope>>,
+        name: &str,
+    ) -> bool {
         // Check to see if the struct was defined in the current file
-        if module
-            .borrow()
-            .structs
-            .iter()
-            .any(|x| x.signature.to_string() == name)
+        if module.borrow().structs.iter().any(|x| {
+            let sway::TypeName::Identifier {
+                name: struct_name,
+                generic_parameters: None,
+            } = &x.signature
+            else {
+                return false;
+            };
+
+            let storage_name = format!("Storage{}", struct_name);
+
+            struct_name == name || storage_name == name
+        }) {
+            return true;
+        }
+
+        // Check to see if the struct is a storage struct
+        let contract_name = scope.borrow().get_contract_name();
+        if let Some(contract_name) = contract_name
+            && let Some(contract) = self.find_contract(module.clone(), &contract_name)
+            && let Some(x) = contract.borrow().storage_struct.as_ref()
+            && x.borrow().name == name
         {
             return true;
         }
@@ -890,11 +912,7 @@ impl Project {
         // find the module being imported, then check if the struct lives there.
         for use_item in module.borrow().uses.iter() {
             if let Some(found_module) = self.resolve_use(use_item)
-                && found_module
-                    .borrow()
-                    .structs
-                    .iter()
-                    .any(|x| x.signature.to_string() == name)
+                && self.is_struct_declared(found_module.clone(), scope.clone(), name)
             {
                 return true;
             }
@@ -910,12 +928,14 @@ impl Project {
         name: &str,
     ) -> Option<Rc<RefCell<ir::Struct>>> {
         // Check to see if the struct was defined in the current file
-        if let Some(x) = module
-            .borrow()
-            .structs
-            .iter()
-            .find(|x| x.signature.to_string() == name)
-        {
+        if let Some(x) = module.borrow().structs.iter().find(|x| {
+            let Some(implementation) = x.implementation.as_ref() else {
+                return false;
+            };
+
+            implementation.borrow().memory.name == name
+                || implementation.borrow().storage.name == name
+        }) {
             return x.implementation.clone();
         }
 
@@ -933,13 +953,10 @@ impl Project {
         // find the module being imported, then check if the struct lives there.
         for use_item in module.borrow().uses.iter() {
             if let Some(found_module) = self.resolve_use(use_item)
-                && let Some(x) = found_module
-                    .borrow()
-                    .structs
-                    .iter()
-                    .find(|x| x.signature.to_string() == name)
+                && let Some(struct_definition) =
+                    self.find_struct(found_module.clone(), scope.clone(), name)
             {
-                return x.implementation.clone();
+                return Some(struct_definition.clone());
             }
         }
 

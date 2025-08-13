@@ -186,17 +186,29 @@ pub fn translate_variable_access_expression(
                         {
                             if let Some(storage_key_type) =
                                 generic_parameters.entries[0].type_name.storage_key_type()
-                                && storage_key_type.is_storage_map()
                             {
-                                sway::Expression::create_function_calls(
-                                    Some(expression),
-                                    &[
-                                        ("unwrap", Some((None, vec![]))),
-                                        ("get", Some((None, vec![index]))),
-                                    ],
-                                )
+                                if storage_key_type.is_storage_map() {
+                                    sway::Expression::create_function_calls(
+                                        Some(expression),
+                                        &[
+                                            ("unwrap", Some((None, vec![]))),
+                                            ("get", Some((None, vec![index]))),
+                                        ],
+                                    )
+                                } else if storage_key_type.is_storage_vec() {
+                                    sway::Expression::create_function_calls(
+                                        Some(expression),
+                                        &[
+                                            ("unwrap", Some((None, vec![]))),
+                                            ("get", Some((None, vec![index]))),
+                                            ("unwrap", Some((None, vec![]))),
+                                        ],
+                                    )
+                                } else {
+                                    todo!("option type: {}", generic_parameters.entries[0])
+                                }
                             } else {
-                                todo!()
+                                todo!("option type: {}", generic_parameters.entries[0])
                             }
                         }
 
@@ -374,20 +386,26 @@ pub fn translate_variable_access_expression(
 
             if let Some(struct_definition) =
                 project.find_struct(module.clone(), scope.clone(), &container_type_name_string)
-                && struct_definition
-                    .borrow()
-                    .memory
-                    .fields
-                    .iter()
-                    .any(|f| f.new_name == field_name)
             {
-                return Ok(Some(ir::VariableAccess {
-                    variable,
-                    expression: sway::Expression::from(sway::MemberAccess {
-                        expression: translated_container,
-                        member: field_name,
-                    }),
-                }));
+                let struct_definition = struct_definition.borrow();
+
+                let fields = if struct_definition.memory.name == container_type_name_string {
+                    struct_definition.memory.fields.as_slice()
+                } else if struct_definition.storage.name == container_type_name_string {
+                    struct_definition.storage.fields.as_slice()
+                } else {
+                    todo!()
+                };
+
+                if fields.iter().any(|f| f.new_name == field_name) {
+                    return Ok(Some(ir::VariableAccess {
+                        variable,
+                        expression: sway::Expression::from(sway::MemberAccess {
+                            expression: translated_container,
+                            member: field_name,
+                        }),
+                    }));
+                }
             }
 
             panic!(

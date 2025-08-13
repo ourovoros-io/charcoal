@@ -36,6 +36,58 @@ pub fn translate_type_name(
     //     project.loc_to_file_location_string(module.clone(), &type_name.loc())
     // );
 
+    fn translate_variable_type_name(
+        project: &mut Project,
+        module: Rc<RefCell<ir::Module>>,
+        scope: Rc<RefCell<ir::Scope>>,
+        name: String,
+        type_name: &solidity::Expression,
+        storage_location: Option<&solidity::StorageLocation>,
+    ) -> sway::TypeName {
+        // Check if type is a type definition
+        if project.is_type_definition_declared(module.clone(), &name) {
+            sway::TypeName::Identifier {
+                name: name.clone(),
+                generic_parameters: None,
+            }
+        }
+        // Check if type is a struct
+        else if project.is_struct_declared(module.clone(), scope.clone(), &name) {
+            let name = match &storage_location {
+                Some(solidity::StorageLocation::Storage(_)) => format!("Storage{}", name),
+
+                _ => name.clone(),
+            };
+
+            sway::TypeName::Identifier {
+                name,
+                generic_parameters: None,
+            }
+        }
+        // Check if type is an enum
+        else if project.is_enum_declared(module.clone(), &name) {
+            sway::TypeName::Identifier {
+                name: name.clone(),
+                generic_parameters: None,
+            }
+        }
+        // Check if type is an ABI
+        else if project.is_contract_declared(module.clone(), &name) {
+            sway::TypeName::Abi {
+                type_name: Box::new(sway::TypeName::Identifier {
+                    name: name.clone(),
+                    generic_parameters: None,
+                }),
+            }
+        } else {
+            todo!(
+                "{} - translate variable type expression: {} - {type_name:#?}",
+                project.loc_to_file_location_string(module.clone(), &type_name.loc()),
+                type_name.to_string(),
+            )
+        }
+    }
+
     let mut type_name = match type_name {
         solidity::Expression::Type(_, type_expression) => match type_expression {
             solidity::Type::Address => sway::TypeName::Identifier {
@@ -392,42 +444,14 @@ pub fn translate_type_name(
         },
 
         solidity::Expression::Variable(solidity::Identifier { name, .. }) => {
-            // Check if type is a type definition
-            if project.is_type_definition_declared(module.clone(), name) {
-                sway::TypeName::Identifier {
-                    name: name.clone(),
-                    generic_parameters: None,
-                }
-            }
-            // Check if type is a struct
-            else if project.is_struct_declared(module.clone(), name) {
-                sway::TypeName::Identifier {
-                    name: name.clone(),
-                    generic_parameters: None,
-                }
-            }
-            // Check if type is an enum
-            else if project.is_enum_declared(module.clone(), name) {
-                sway::TypeName::Identifier {
-                    name: name.clone(),
-                    generic_parameters: None,
-                }
-            }
-            // Check if type is an ABI
-            else if project.is_contract_declared(module.clone(), name) {
-                sway::TypeName::Abi {
-                    type_name: Box::new(sway::TypeName::Identifier {
-                        name: name.clone(),
-                        generic_parameters: None,
-                    }),
-                }
-            } else {
-                todo!(
-                    "{} - translate variable type expression: {} - {type_name:#?}",
-                    project.loc_to_file_location_string(module.clone(), &type_name.loc()),
-                    type_name.to_string(),
-                )
-            }
+            translate_variable_type_name(
+                project,
+                module.clone(),
+                scope.clone(),
+                name.to_string(),
+                type_name,
+                storage_location,
+            )
         }
 
         solidity::Expression::ArraySubscript(_, type_name, length) => match length.as_ref() {
@@ -593,49 +617,17 @@ pub fn translate_type_name(
 
         solidity::Expression::MemberAccess(_, container, member) => match container.as_ref() {
             solidity::Expression::Variable(solidity::Identifier { name, .. }) => {
-                if let Some((external_module, external_contract)) =
-                    project.find_module_and_contract(module.clone(), name.as_str())
+                if let Some(external_module) =
+                    project.find_module_containing_contract(module.clone(), name.as_str())
                 {
-                    // Check if type refers to a type definition
-                    if let Some(SymbolData::TypeDefinition(type_definition)) = resolve_symbol(
+                    translate_variable_type_name(
                         project,
                         external_module.clone(),
                         scope.clone(),
-                        Symbol::TypeDefinition(member.name.clone()),
-                    ) {
-                        type_definition.name.clone()
-                    }
-                    // Check if type refers to an enum definition
-                    else if let Some(SymbolData::Enum(enum_definition)) = resolve_symbol(
-                        project,
-                        external_module.clone(),
-                        scope.clone(),
-                        Symbol::Enum(member.name.clone()),
-                    ) {
-                        enum_definition.type_definition.name.clone()
-                    }
-                    // Check if type refers to a struct definition
-                    else if let Some(SymbolData::Struct(struct_definition)) = resolve_symbol(
-                        project,
-                        external_module.clone(),
-                        scope.clone(),
-                        Symbol::Struct(member.name.clone()),
-                    ) {
-                        sway::TypeName::Identifier {
-                            name: struct_definition.borrow().name.clone(),
-                            generic_parameters: struct_definition
-                                .borrow()
-                                .memory
-                                .generic_parameters
-                                .clone(),
-                        }
-                    } else {
-                        todo!(
-                            "found contract `{}` in module `{}`",
-                            external_contract.borrow().name,
-                            external_module.borrow().path.to_string_lossy()
-                        )
-                    }
+                        member.to_string(),
+                        type_name,
+                        storage_location,
+                    )
                 } else {
                     todo!(
                         "{} - member access type name expression: {type_name}",

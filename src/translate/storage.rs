@@ -217,7 +217,17 @@ pub fn translate_state_variable(
             scope.clone(),
             &variable_type_name.to_string(),
         ) {
-            for field in struct_definition.borrow().memory.fields.iter() {
+            let struct_definition = struct_definition.borrow();
+
+            let fields = if struct_definition.memory.name == variable_type_name.to_string() {
+                struct_definition.memory.fields.as_slice()
+            } else if struct_definition.storage.name == variable_type_name.to_string() {
+                struct_definition.storage.fields.as_slice()
+            } else {
+                todo!()
+            };
+
+            for field in fields.iter() {
                 let Some(option_type) = field.type_name.option_type() else {
                     continue;
                 };
@@ -228,10 +238,8 @@ pub fn translate_state_variable(
                     continue;
                 };
 
-                let struct_name = translate_naming_convention(
-                    struct_definition.borrow().name.as_str(),
-                    Case::Snake,
-                );
+                let struct_name =
+                    translate_naming_convention(&variable_type_name.to_string(), Case::Snake);
 
                 if !mapping_names.iter().any(|(n, _)| *n == struct_name) {
                     mapping_names.push((struct_name.clone(), vec![]));
@@ -388,7 +396,7 @@ pub fn translate_state_variable(
             .borrow_mut()
             .get_storage_struct(scope.clone())
             .borrow_mut()
-            .memory
+            .storage
             .fields
             .push(sway::StructField {
                 is_public: true,
@@ -630,7 +638,7 @@ pub fn generate_state_variable_getter_functions(
                     .as_ref()
                     .unwrap()
                     .borrow()
-                    .memory
+                    .storage
                     .fields
                     .iter()
                     .map(|f| sway::ConstructorField {

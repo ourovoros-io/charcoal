@@ -233,7 +233,7 @@ pub fn resolve_symbol(
                     Symbol::Struct(storage_struct_name),
                 ) && let Some(field) = storage_struct
                     .borrow()
-                    .memory
+                    .storage
                     .fields
                     .iter()
                     .find(|f| f.old_name == *name)
@@ -622,7 +622,7 @@ pub fn resolve_function_call(
         }
     }
 
-    let parameters_cell = Rc::new(RefCell::new(parameters));
+    let parameters_cell = Rc::new(RefCell::new(parameters.clone()));
 
     let mut check_type_name = |type_name: &sway::TypeName| -> bool {
         let sway::TypeName::Function {
@@ -1075,45 +1075,29 @@ pub fn resolve_struct_constructor(
         return Ok(None);
     };
 
-    if parameters.len()
-        != struct_definition
-            .implementation
-            .as_ref()
-            .unwrap()
-            .borrow()
-            .memory
-            .fields
-            .len()
-    {
+    let struct_definition = struct_definition.implementation.as_ref().unwrap().borrow();
+
+    let fields = if struct_definition.memory.name == struct_name {
+        struct_definition.memory.fields.as_slice()
+    } else if struct_definition.storage.name == struct_name {
+        struct_definition.storage.fields.as_slice()
+    } else {
+        todo!()
+    };
+
+    if parameters.len() != fields.len() {
         let Some(named_arguments) = named_arguments else {
             return Ok(None);
         };
 
-        if named_arguments.len()
-            != struct_definition
-                .implementation
-                .as_ref()
-                .unwrap()
-                .borrow()
-                .memory
-                .fields
-                .len()
-        {
+        if named_arguments.len() != fields.len() {
             return Ok(None);
         }
 
         parameters = vec![];
         parameter_types = vec![];
 
-        for field in struct_definition
-            .implementation
-            .as_ref()
-            .unwrap()
-            .borrow()
-            .memory
-            .fields
-            .iter()
-        {
+        for field in fields.iter() {
             let arg = named_arguments
                 .iter()
                 .find(|a| {
@@ -1134,17 +1118,10 @@ pub fn resolve_struct_constructor(
     }
 
     // Attempt to coerce each parameter value to the struct's field type
-    for ((parameter, parameter_type), field) in
-        parameters.iter_mut().zip(parameter_types.iter_mut()).zip(
-            struct_definition
-                .implementation
-                .as_ref()
-                .unwrap()
-                .borrow()
-                .memory
-                .fields
-                .iter(),
-        )
+    for ((parameter, parameter_type), field) in parameters
+        .iter_mut()
+        .zip(parameter_types.iter_mut())
+        .zip(fields.iter())
     {
         match coerce_expression(
             project,
@@ -1163,23 +1140,11 @@ pub fn resolve_struct_constructor(
 
     Ok(Some(sway::Expression::from(sway::Constructor {
         type_name: sway::TypeName::Identifier {
-            name: struct_definition
-                .implementation
-                .as_ref()
-                .unwrap()
-                .borrow()
-                .name
-                .clone(),
+            name: struct_name.to_string(),
             generic_parameters: None,
         },
 
-        fields: struct_definition
-            .implementation
-            .as_ref()
-            .unwrap()
-            .borrow()
-            .memory
-            .fields
+        fields: fields
             .iter()
             .zip(parameters.iter())
             .map(|(field, value)| sway::ConstructorField {

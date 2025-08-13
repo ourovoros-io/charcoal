@@ -210,19 +210,51 @@ pub fn translate_member_access_expression(
         let field_name = translate_naming_convention(member.name.as_str(), Case::Snake);
 
         // Check if container is a struct
+        let check_struct = |struct_definition: Rc<RefCell<ir::Struct>>,
+                            container_type_name_string: String|
+         -> Option<sway::Expression> {
+            let struct_definition = struct_definition.borrow();
+
+            let fields = if struct_definition.memory.name == container_type_name_string {
+                struct_definition.memory.fields.as_slice()
+            } else if struct_definition.storage.name == container_type_name_string {
+                struct_definition.storage.fields.as_slice()
+            } else {
+                todo!(
+                    "{} - {} - {}",
+                    container_type_name_string,
+                    struct_definition.memory.name,
+                    struct_definition.storage.name
+                )
+            };
+
+            if fields.iter().any(|f| f.new_name == field_name) {
+                return Some(sway::Expression::from(sway::MemberAccess {
+                    expression: container.clone(),
+                    member: field_name.clone(),
+                }));
+            }
+
+            None
+        };
+
         if let Some(struct_definition) =
             project.find_struct(module.clone(), scope.clone(), &container_type_name_string)
-            && struct_definition
-                .borrow()
-                .memory
-                .fields
-                .iter()
-                .any(|f| f.new_name == field_name)
         {
-            return Ok(Some(sway::Expression::from(sway::MemberAccess {
-                expression: container.clone(),
-                member: field_name,
-            })));
+            if let Some(result) = check_struct(struct_definition, container_type_name_string) {
+                return Ok(Some(result));
+            }
+        }
+
+        if let Some(storage_key_type) = container_type_name.storage_key_type() {
+            if let Some(struct_definition) =
+                project.find_struct(module.clone(), scope.clone(), &storage_key_type.to_string())
+            {
+                if let Some(result) = check_struct(struct_definition, storage_key_type.to_string())
+                {
+                    return Ok(Some(result));
+                }
+            }
         }
 
         if container_type_name.is_identity() {
@@ -351,16 +383,30 @@ pub fn translate_member_access_expression(
         return Ok(sway::Expression::create_todo(Some(format!("{s}.{member}"))));
     }
 
-    // HACK: try tacking `.read()` onto the end and checking again
-    if container_type_name.is_storage_key()
-        && let Ok(Some(result)) = check_container(
-            project,
-            &sway::Expression::create_function_calls(
-                Some(container.clone()),
-                &[("read", Some((None, vec![])))],
-            ),
-        )
+    let mut container = container.clone();
+
+    if let Some(option_type) = container_type_name.option_type()
+        && option_type.is_storage_key()
     {
+        container = sway::Expression::create_function_calls(
+            Some(container.clone()),
+            &[("unwrap", Some((None, vec![])))],
+        );
+    }
+
+    if let Ok(Some(result)) = check_container(project, &container) {
+        scope
+            .borrow_mut()
+            .set_function_storage_accesses(module.clone(), true, false);
+
+        return Ok(result);
+    }
+
+    // HACK: tack on `.read()` and try again
+    container =
+        sway::Expression::create_function_calls(Some(container), &[("read", Some((None, vec![])))]);
+
+    if let Ok(Some(result)) = check_container(project, &container) {
         scope
             .borrow_mut()
             .set_function_storage_accesses(module.clone(), true, false);

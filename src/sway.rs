@@ -769,6 +769,18 @@ impl TypeName {
     }
 
     #[inline(always)]
+    pub fn is_storage_bytes(&self) -> bool {
+        match self {
+            TypeName::Identifier {
+                name,
+                generic_parameters: None,
+            } => name == "StorageBytes",
+
+            _ => false,
+        }
+    }
+
+    #[inline(always)]
     pub fn abi_type(&self) -> Option<TypeName> {
         match self {
             TypeName::Abi { type_name } => Some(type_name.as_ref().clone()),

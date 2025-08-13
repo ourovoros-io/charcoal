@@ -178,7 +178,7 @@ pub fn translate_contract_definition(
                         memory: sway::Struct {
                             attributes: None,
                             is_public: true,
-                            name: format!("{}Storage", contract.borrow().name),
+                            name: String::new(),
                             generic_parameters: None,
                             fields: vec![],
                         },
@@ -198,7 +198,7 @@ pub fn translate_contract_definition(
                     .as_ref()
                     .unwrap()
                     .borrow_mut()
-                    .memory
+                    .storage
                     .fields
                     .push(sway::StructField {
                         is_public: true,

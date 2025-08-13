@@ -506,7 +506,7 @@ impl Module {
                 memory: sway::Struct {
                     attributes: None,
                     is_public: true,
-                    name: format!("{contract_name}Storage"),
+                    name: String::new(),
                     generic_parameters: None,
                     fields: vec![],
                 },
@@ -683,9 +683,9 @@ impl From<Module> for sway::Module {
 
             if let Some(storage_struct) = contract.storage_struct.as_ref() {
                 items.push(sway::ModuleItem::Struct(
-                    storage_struct.borrow().memory.clone(),
+                    storage_struct.borrow().storage.clone(),
                 ));
-                assert!(storage_struct.borrow().storage.fields.is_empty());
+                assert!(storage_struct.borrow().memory.fields.is_empty());
             }
 
             let Some(storage) = contract.storage.as_ref() else {

@@ -200,7 +200,7 @@ pub fn create_struct_constructor(
 
     let storage_struct = contract.borrow().storage_struct.clone()?;
 
-    for field in storage_struct.borrow().memory.fields.iter() {
+    for field in storage_struct.borrow().storage.fields.iter() {
         if !storage_namespace
             .borrow()
             .fields
