@@ -388,6 +388,87 @@ pub fn create_assignment_expression(
 
     let expr_type_name = get_expression_type(project, module.clone(), scope.clone(), expression)?;
 
+    // Check for assignments to fields of storage keys of storage structs
+    if let sway::Expression::MemberAccess(member_access) = expression
+        && let sway::Expression::FunctionCall(f) = &member_access.expression
+        && let sway::Expression::MemberAccess(m) = &f.function
+        && m.member == "read"
+        && f.parameters.is_empty()
+    {
+        let container_type =
+            get_expression_type(project, module.clone(), scope.clone(), &m.expression)?;
+
+        if let Some(storage_key_type) = container_type.storage_key_type()
+            && let sway::TypeName::Identifier {
+                name,
+                generic_parameters: None,
+            } = storage_key_type
+            && let Some(struct_definition) =
+                project.find_struct(module.clone(), scope.clone(), &name)
+        {
+            let struct_definition = struct_definition.borrow();
+
+            let fields = if name == struct_definition.memory.name {
+                struct_definition.memory.fields.as_slice()
+            } else if name == struct_definition.storage.name {
+                struct_definition.storage.fields.as_slice()
+            } else {
+                todo!()
+            };
+
+            let Some(field) = fields.iter().find(|f| f.new_name == member_access.member) else {
+                panic!(
+                    "Failed to find {} field: {}",
+                    struct_definition.name, member_access.member
+                );
+            };
+
+            return Ok(sway::Expression::from(sway::Block {
+                statements: vec![
+                    sway::Statement::from(sway::Let {
+                        pattern: sway::LetPattern::Identifier(sway::LetIdentifier {
+                            is_mutable: true,
+                            name: variable_name.clone(),
+                        }),
+                        type_name: None,
+                        value: sway::Expression::from(f.as_ref().clone()),
+                    }),
+                    sway::Statement::from(sway::Expression::from(sway::BinaryExpression {
+                        operator: match operator {
+                            "=" => "=".to_string(),
+
+                            _ => todo!(),
+                        },
+                        lhs: sway::Expression::from(sway::MemberAccess {
+                            expression: sway::Expression::create_identifier(variable_name.clone()),
+                            member: member_access.member.clone(),
+                        }),
+                        rhs: coerce_expression(
+                            project,
+                            module.clone(),
+                            scope.clone(),
+                            rhs,
+                            rhs_type_name,
+                            &field.type_name,
+                        )
+                        .unwrap(),
+                    })),
+                    sway::Statement::from(sway::Expression::create_function_calls(
+                        Some(m.expression.clone()),
+                        &[(
+                            "write",
+                            Some((
+                                None,
+                                vec![sway::Expression::create_identifier(variable_name)],
+                            )),
+                        )],
+                    )),
+                ],
+                final_expr: None,
+            }));
+        }
+    }
+
     // Check for assignments to fields of struct variables defined in scope
     if !type_name.is_compatible_with(&expr_type_name)
         && let sway::Expression::MemberAccess(member_access) = expression

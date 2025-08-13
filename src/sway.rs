@@ -962,7 +962,16 @@ impl TypeName {
                     let mut parameters = vec![(
                         Parameter {
                             name: "_".into(),
-                            type_name: Some(generic_parameters.entries[0].type_name.clone()),
+                            type_name: Some(
+                                if generic_parameters.entries[0].type_name.is_storage_string() {
+                                    TypeName::Identifier {
+                                        name: "String".to_string(),
+                                        generic_parameters: None,
+                                    }
+                                } else {
+                                    generic_parameters.entries[0].type_name.clone()
+                                },
+                            ),
                             ..Default::default()
                         },
                         false,

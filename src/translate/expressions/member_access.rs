@@ -228,6 +228,15 @@ pub fn translate_member_access_expression(
                 )
             };
 
+            let mut container = container.clone();
+
+            if container_type_name.is_storage_key() {
+                container = sway::Expression::create_function_calls(
+                    Some(container),
+                    &[("read", Some((None, vec![])))],
+                )
+            }
+
             if fields.iter().any(|f| f.new_name == field_name) {
                 return Some(sway::Expression::from(sway::MemberAccess {
                     expression: container.clone(),

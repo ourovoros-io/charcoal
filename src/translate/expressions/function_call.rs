@@ -2128,6 +2128,10 @@ fn translate_storage_vec_member_access_function_call(
     } else if let Some(option_type) = type_name.option_type()
         && let Some(s) = option_type.storage_key_type()
     {
+        expression = sway::Expression::create_function_calls(
+            Some(expression),
+            &[("unwrap", Some((None, vec![])))],
+        );
         storage_key_type = Some(s);
     }
 
@@ -2153,14 +2157,33 @@ fn translate_storage_vec_member_access_function_call(
                                 arguments
                                     .iter()
                                     .map(|a| {
-                                        translate_expression(
+                                        let expr = translate_expression(
                                             project,
                                             module.clone(),
                                             scope.clone(),
                                             a,
                                         )
+                                        .unwrap();
+
+                                        let from_type_name = get_expression_type(
+                                            project,
+                                            module.clone(),
+                                            scope.clone(),
+                                            &expr,
+                                        )
+                                        .unwrap();
+
+                                        coerce_expression(
+                                            project,
+                                            module.clone(),
+                                            scope.clone(),
+                                            &expr,
+                                            &from_type_name,
+                                            &generic_parameters.entries[0].type_name,
+                                        )
+                                        .unwrap()
                                     })
-                                    .collect::<Result<Vec<_>, _>>()?,
+                                    .collect::<Vec<_>>(),
                             )),
                         )],
                     ));
