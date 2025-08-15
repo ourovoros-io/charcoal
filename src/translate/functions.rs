@@ -386,6 +386,8 @@ pub fn translate_function_declaration(
 
     if !function_attributes.is_pure
         && let Some(contract_name) = contract_name.as_ref()
+        && let Some(contract) = project.find_contract(module.clone(), &contract_name)
+        && matches!(contract.borrow().kind, solidity::ContractTy::Library(_))
     {
         storage_struct_parameter = Some(Box::new(sway::Parameter {
             is_ref: false,
@@ -1796,74 +1798,18 @@ pub fn ensure_constructor_called_fields_exist(
 ) {
     let constructor_called_field_name = "constructor_called".to_string();
 
-    // Add the `constructor_called` field to the storage struct
-    module
-        .borrow_mut()
-        .get_storage_struct(scope.clone())
-        .borrow_mut()
+    let mut module = module.borrow_mut();
+    let storage_struct = module.get_storage_struct(scope.clone());
+
+    if !storage_struct
+        .borrow()
         .storage
         .fields
-        .push(sway::StructField {
-            is_public: true,
-            new_name: constructor_called_field_name.clone(),
-            old_name: String::new(),
-            type_name: sway::TypeName::Identifier {
-                name: "StorageKey".to_string(),
-                generic_parameters: Some(sway::GenericParameterList {
-                    entries: vec![sway::GenericParameter {
-                        type_name: sway::TypeName::Identifier {
-                            name: "bool".into(),
-                            generic_parameters: None,
-                        },
-                        implements: None,
-                    }],
-                }),
-            },
-        });
-
-    // Add the `constructor_called` field to the storage block
-    module
-        .borrow_mut()
-        .get_storage_namespace(scope.clone())
-        .unwrap()
-        .borrow_mut()
-        .fields
-        .push(sway::StorageField {
-            old_name: String::new(),
-            name: constructor_called_field_name.clone(),
-            type_name: sway::TypeName::Identifier {
-                name: "bool".into(),
-                generic_parameters: None,
-            },
-            value: sway::Expression::from(sway::Literal::Bool(false)),
-        });
-}
-
-#[inline(always)]
-pub fn update_constructor_function_body(
-    _project: &mut Project,
-    module: Rc<RefCell<ir::Module>>,
-    scope: Rc<RefCell<ir::Scope>>,
-    contract_name: Option<&str>,
-    function_body: &mut sway::Block,
-) {
-    let constructor_called_field_name = "constructor_called".to_string();
-
-    let storage_namespace = module
-        .borrow_mut()
-        .get_storage_namespace(scope.clone())
-        .unwrap();
-
-    if !storage_namespace
-        .borrow()
-        .fields
         .iter()
-        .any(|s| s.name == constructor_called_field_name)
+        .any(|f| f.new_name == constructor_called_field_name)
     {
         // Add the `constructor_called` field to the storage struct
-        module
-            .borrow_mut()
-            .get_storage_struct(scope.clone())
+        storage_struct
             .borrow_mut()
             .storage
             .fields
@@ -1884,8 +1830,17 @@ pub fn update_constructor_function_body(
                     }),
                 },
             });
+    }
 
-        // Add the `constructor_called` field to the storage block
+    // Add the `constructor_called` field to the storage block
+    let storage_namespace = module.get_storage_namespace(scope.clone()).unwrap();
+
+    if !storage_namespace
+        .borrow()
+        .fields
+        .iter()
+        .any(|s| s.name == constructor_called_field_name)
+    {
         storage_namespace
             .borrow_mut()
             .fields
@@ -1899,6 +1854,19 @@ pub fn update_constructor_function_body(
                 value: sway::Expression::from(sway::Literal::Bool(false)),
             });
     }
+}
+
+#[inline(always)]
+pub fn update_constructor_function_body(
+    project: &mut Project,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
+    contract_name: Option<&str>,
+    function_body: &mut sway::Block,
+) {
+    let constructor_called_field_name = "constructor_called".to_string();
+
+    ensure_constructor_called_fields_exist(project, module.clone(), scope.clone());
 
     // Add the `constructor_called` requirement to the beginning of the function
     // require(!storage.initialized.read(), "The Contract constructor has already been called");

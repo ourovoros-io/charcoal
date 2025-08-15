@@ -2589,7 +2589,21 @@ pub struct MemberAccess {
 
 impl TabbedDisplay for MemberAccess {
     fn tabbed_fmt(&self, depth: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let needs_parens = match self.expression {
+            Expression::UnaryExpression(_) | Expression::BinaryExpression(_) => true,
+            _ => false,
+        };
+
+        if needs_parens {
+            "(".tabbed_fmt(depth, f)?;
+        }
+
         self.expression.tabbed_fmt(depth, f)?;
+
+        if needs_parens {
+            ")".tabbed_fmt(depth, f)?;
+        }
+
         write!(f, ".{}", self.member)
     }
 }

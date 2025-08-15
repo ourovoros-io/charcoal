@@ -1764,7 +1764,6 @@ impl Project {
                 let storage = contract.storage.take();
 
                 let abi_impl = contract.abi_impl.clone();
-                contract.abi_impl.items.clear();
 
                 contract_modules.push(ir::Module {
                     name: contract_project_name,
@@ -1807,13 +1806,118 @@ impl Project {
                 });
             }
 
-            modules.push((module_path.with_extension("sw"), {
-                let mut module = sway::Module::from(module.clone());
-                module.kind = sway::ModuleKind::Library;
-                module
-            }));
+            for contract_module in contract_modules.iter_mut() {
+                // If the contract has a fallback function remove fallback attribute from the shared code
+                // and add a fallback function on the contract and call the shared fallback function
+                let fallback_function_name =
+                    format!("{}_fallback", contract_module.name).to_case(Case::Snake);
 
-            for submodule in module.submodules.iter() {
+                if let Some(fallback_function) = module.functions.iter_mut().find(|f| {
+                    let sway::TypeName::Function { new_name, .. } = &f.signature else {
+                        unreachable!()
+                    };
+
+                    *new_name == fallback_function_name
+                }) {
+                    let fallback_function_signature = fallback_function.signature.clone();
+                    let fallback_function = fallback_function.implementation.as_mut().unwrap();
+                    let fallback_function_attributes = fallback_function.attributes.clone();
+
+                    let Some(attributes) = fallback_function.attributes.as_mut() else {
+                        continue;
+                    };
+
+                    let Some((index, _)) = attributes
+                        .attributes
+                        .iter()
+                        .enumerate()
+                        .find(|(_, a)| a.name == "fallback")
+                    else {
+                        continue;
+                    };
+
+                    attributes.attributes.remove(index);
+
+                    let mut statements = vec![];
+                    let mut parameters = vec![];
+
+                    if contract_module
+                        .contracts
+                        .last()
+                        .unwrap()
+                        .implementation
+                        .as_ref()
+                        .unwrap()
+                        .borrow()
+                        .storage
+                        .is_some()
+                    {
+                        statements.push(sway::Statement::from(sway::Let {
+                            pattern: sway::LetPattern::from(sway::LetIdentifier {
+                                is_mutable: false,
+                                name: "storage_struct".to_string(),
+                            }),
+                            type_name: None,
+                            value: sway::Expression::create_function_calls(
+                                None,
+                                &[(
+                                    format!("create_{}_storage_struct", contract_module.name)
+                                        .as_str(),
+                                    Some((None, vec![])),
+                                )],
+                            ),
+                        }));
+
+                        parameters.push(sway::Expression::create_identifier(
+                            "storage_struct".to_string(),
+                        ));
+                    }
+
+                    contract_module.functions.push(ir::Item {
+                        signature: fallback_function_signature,
+                        implementation: Some(sway::Function {
+                            attributes: fallback_function_attributes,
+                            is_public: false,
+                            old_name: String::new(),
+                            new_name: "fallback".to_string(),
+                            generic_parameters: None,
+                            parameters: sway::ParameterList::default(),
+                            storage_struct_parameter: None,
+                            return_type: None,
+                            body: Some(sway::Block {
+                                statements,
+                                final_expr: Some(sway::Expression::create_function_calls(
+                                    None,
+                                    &[(fallback_function_name.as_str(), Some((None, parameters)))],
+                                )),
+                            }),
+                        }),
+                    })
+                }
+            }
+
+            let submodules = module.submodules.clone();
+            let mut module = sway::Module::from(module.clone());
+            module.kind = sway::ModuleKind::Library;
+
+            let mut remove_indices = vec![];
+
+            for (i, item) in module.items.iter().enumerate() {
+                if let sway::ModuleItem::Impl(abi_impl) = item
+                    && let Some(for_type_name) = abi_impl.for_type_name.as_ref()
+                    && for_type_name.to_string() == "Contract"
+                {
+                    remove_indices.push(i);
+                }
+            }
+
+            for i in remove_indices.iter().rev() {
+                module.items.remove(*i);
+            }
+
+            modules.push((module_path.with_extension("sw"), module));
+
+            for submodule in submodules.iter() {
                 process_submodules(
                     options,
                     dependencies,
@@ -1951,17 +2055,24 @@ impl Project {
             .unwrap();
 
             // Write the project's `main.sw` file
-            std::fs::write(
-                module.path.clone(),
-                sway::TabbedDisplayer(&{
-                    let mut module = sway::Module::from(module);
-                    module.kind = sway::ModuleKind::Contract;
-                    module
-                })
-                .to_string(),
-            )
-            .map_err(|e| Error::Wrapped(Box::new(e)))
-            .unwrap();
+            let module_path = module.path.clone();
+            let mut module = sway::Module::from(module);
+            module.kind = sway::ModuleKind::Contract;
+            let mut remove_indices = vec![];
+
+            for (i, item) in module.items.iter().enumerate() {
+                if let sway::ModuleItem::Abi(_) = item {
+                    remove_indices.push(i);
+                }
+            }
+
+            for i in remove_indices.iter().rev() {
+                module.items.remove(*i);
+            }
+
+            std::fs::write(module_path, sway::TabbedDisplayer(&{ module }).to_string())
+                .map_err(|e| Error::Wrapped(Box::new(e)))
+                .unwrap();
         }
 
         Ok(())

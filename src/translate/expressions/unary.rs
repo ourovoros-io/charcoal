@@ -196,7 +196,22 @@ pub fn translate_power_expression(
     module.borrow_mut().ensure_use_declared("std::math::Power");
 
     let lhs = translate_expression(project, module.clone(), scope.clone(), lhs)?;
-    let rhs = translate_expression(project, module.clone(), scope.clone(), rhs)?;
+
+    let mut rhs = translate_expression(project, module.clone(), scope.clone(), rhs)?;
+    let rhs_type = get_expression_type(project, module.clone(), scope.clone(), &rhs)?;
+
+    rhs = coerce_expression(
+        project,
+        module.clone(),
+        scope.clone(),
+        &rhs,
+        &rhs_type,
+        &sway::TypeName::Identifier {
+            name: "u32".to_string(),
+            generic_parameters: None,
+        },
+    )
+    .unwrap();
 
     Ok(sway::Expression::create_function_calls(
         Some(lhs),

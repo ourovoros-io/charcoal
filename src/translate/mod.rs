@@ -999,6 +999,8 @@ pub fn coerce_expression(
 
     // Check for `str` to `String` coercions
     if from_type_name.is_string_slice() && to_type_name.is_string() {
+        module.borrow_mut().ensure_use_declared("std::string::*");
+
         // String::from_ascii_str(x)
         return Some(sway::Expression::create_function_calls(
             None,
@@ -1011,6 +1013,8 @@ pub fn coerce_expression(
 
     // Check for `str` to `Bytes` coercions
     if from_type_name.is_string_slice() && to_type_name.is_bytes() {
+        module.borrow_mut().ensure_use_declared("std::string::*");
+
         // String::from_ascii_str(input).as_bytes()
         return Some(sway::Expression::create_function_calls(
             None,
@@ -1026,6 +1030,8 @@ pub fn coerce_expression(
 
     // Check for `str[]` to `String` coercions
     if from_type_name.is_string_array() && to_type_name.is_string() {
+        module.borrow_mut().ensure_use_declared("std::string::*");
+
         // String::from_ascii_str(from_str_array(x))
         return Some(sway::Expression::create_function_calls(
             None,
@@ -1044,6 +1050,8 @@ pub fn coerce_expression(
 
     // Check for `str[n]` to `Bytes` coercions
     if from_type_name.is_string_array() && to_type_name.is_bytes() {
+        module.borrow_mut().ensure_use_declared("std::string::*");
+
         // String::from_ascii_str(from_str_array(input)).as_bytes()
         return Some(sway::Expression::create_function_calls(
             None,
@@ -1262,6 +1270,104 @@ pub fn coerce_expression(
         }
     }
 
+    // Check for storage struct inheritance coercions
+    if let Some(from_storage_struct) = project.find_struct(
+        module.clone(),
+        scope.clone(),
+        from_type_name.to_string().as_str(),
+    ) {
+        let to_contract_name = to_type_name
+            .to_string()
+            .trim_end_matches("Storage")
+            .to_string();
+        if let Some(external_module) =
+            project.find_module_containing_contract(module.clone(), to_contract_name.as_str())
+        {
+            let external_scope = Rc::new(RefCell::new(ir::Scope::new(
+                Some(&to_contract_name),
+                None,
+                Some(scope.clone()),
+            )));
+
+            if let Some(to_storage_struct) = project.find_struct(
+                external_module.clone(),
+                external_scope.clone(),
+                to_type_name.to_string().as_str(),
+            ) {
+                let from_contract_name = from_storage_struct
+                    .borrow()
+                    .name
+                    .trim_end_matches("Storage")
+                    .to_string();
+
+                let to_contract_name = to_storage_struct
+                    .borrow()
+                    .name
+                    .trim_end_matches("Storage")
+                    .to_string();
+
+                fn get_inheritance_storage_struct_field(
+                    project: &mut Project,
+                    module: Rc<RefCell<ir::Module>>,
+                    scope: Rc<RefCell<ir::Scope>>,
+                    from_contract_name: &str,
+                    to_contract_name: &str,
+                    expression: sway::Expression,
+                ) -> Option<sway::Expression> {
+                    let Some(module) =
+                        project.find_module_containing_contract(module.clone(), from_contract_name)
+                    else {
+                        return None;
+                    };
+
+                    let scope = Rc::new(RefCell::new(ir::Scope::new(
+                        Some(from_contract_name),
+                        None,
+                        Some(scope.clone()),
+                    )));
+
+                    let Some(from_contract) =
+                        project.find_contract(module.clone(), &from_contract_name)
+                    else {
+                        return None;
+                    };
+
+                    for inherited_contract_name in from_contract.borrow().abi.inherits.clone() {
+                        if to_contract_name == inherited_contract_name.to_string() {
+                            return Some(sway::Expression::from(sway::MemberAccess {
+                                expression: expression.clone(),
+                                member: inherited_contract_name.to_string().to_case(Case::Snake),
+                            }));
+                        }
+
+                        if let Some(result) = get_inheritance_storage_struct_field(
+                            project,
+                            module.clone(),
+                            scope.clone(),
+                            inherited_contract_name.to_string().as_str(),
+                            to_contract_name,
+                            expression.clone(),
+                        ) {
+                            return Some(result);
+                        }
+                    }
+                    None
+                }
+
+                if let Some(result) = get_inheritance_storage_struct_field(
+                    project,
+                    module.clone(),
+                    scope.clone(),
+                    &from_contract_name,
+                    &to_contract_name,
+                    expression,
+                ) {
+                    return Some(result);
+                }
+            }
+        }
+    }
+
     None
 }
 
@@ -1311,6 +1417,13 @@ pub fn get_return_type_name(
 
         return sway::TypeName::Identifier {
             name: "String".into(),
+            generic_parameters: None,
+        };
+    }
+
+    if let sway::TypeName::Abi { .. } = &type_name {
+        return sway::TypeName::Identifier {
+            name: "Identity".to_string(),
             generic_parameters: None,
         };
     }
@@ -2852,6 +2965,7 @@ fn get_path_expr_function_call_type(
             let sway::TypeName::Function {
                 new_name: fn_name,
                 parameters: fn_parameters,
+                storage_struct_parameter,
                 ..
             } = &f.signature
             else {
@@ -2863,13 +2977,20 @@ fn get_path_expr_function_call_type(
                 return false;
             }
 
+            // Add the storage struct parameter if necessary
+            let mut fn_parameters_entries = fn_parameters.entries.clone();
+
+            if let Some(storage_struct_parameter) = storage_struct_parameter {
+                fn_parameters_entries.push(*storage_struct_parameter.clone());
+            }
+
             // Ensure the supplied function call args match the function's parameters
-            if parameters.len() != fn_parameters.entries.len() {
+            if parameters.len() != fn_parameters_entries.len() {
                 return false;
             }
 
             for (i, value_type_name) in parameter_types.iter().enumerate() {
-                let Some(parameter_type_name) = fn_parameters.entries[i].type_name.as_ref() else {
+                let Some(parameter_type_name) = fn_parameters_entries[i].type_name.as_ref() else {
                     continue;
                 };
 

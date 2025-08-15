@@ -265,7 +265,26 @@ pub fn translate_assignment_expression(
 
                         sway::Expression::create_function_calls(
                             None,
-                            &[("String::from_ascii_str", Some((None, vec![rhs.clone()])))],
+                            &[(
+                                "String::from_ascii_str",
+                                Some((
+                                    None,
+                                    vec![
+                                        coerce_expression(
+                                            project,
+                                            module.clone(),
+                                            scope.clone(),
+                                            &rhs,
+                                            &rhs_type_name,
+                                            &sway::TypeName::Identifier {
+                                                name: "String".to_string(),
+                                                generic_parameters: None,
+                                            },
+                                        )
+                                        .unwrap(),
+                                    ],
+                                )),
+                            )],
                         )
                     }
 
@@ -435,23 +454,42 @@ pub fn create_assignment_expression(
                     }),
                     sway::Statement::from(sway::Expression::from(sway::BinaryExpression {
                         operator: match operator {
-                            "=" => "=".to_string(),
+                            "&=" | "|=" | "^=" | "=" => "=".to_string(),
 
-                            _ => todo!(),
+                            _ => operator.to_string(),
                         },
                         lhs: sway::Expression::from(sway::MemberAccess {
                             expression: sway::Expression::create_identifier(variable_name.clone()),
                             member: member_access.member.clone(),
                         }),
-                        rhs: coerce_expression(
-                            project,
-                            module.clone(),
-                            scope.clone(),
-                            rhs,
-                            rhs_type_name,
-                            &field.type_name,
-                        )
-                        .unwrap(),
+                        rhs: {
+                            let rhs = coerce_expression(
+                                project,
+                                module.clone(),
+                                scope.clone(),
+                                rhs,
+                                rhs_type_name,
+                                &field.type_name,
+                            )
+                            .unwrap();
+
+                            match operator {
+                                "&=" | "|=" | "^=" => {
+                                    sway::Expression::from(sway::BinaryExpression {
+                                        operator: operator.trim_end_matches("=").to_string(),
+                                        lhs: sway::Expression::from(sway::MemberAccess {
+                                            expression: sway::Expression::create_identifier(
+                                                variable_name.clone(),
+                                            ),
+                                            member: member_access.member.clone(),
+                                        }),
+                                        rhs,
+                                    })
+                                }
+
+                                _ => rhs,
+                            }
+                        },
                     })),
                     sway::Statement::from(sway::Expression::create_function_calls(
                         Some(m.expression.clone()),
@@ -585,7 +623,18 @@ pub fn create_assignment_expression(
                                     Some((
                                         None,
                                         vec![match operator {
-                                            "=" => rhs.clone(),
+                                            "=" => coerce_expression(
+                                                project,
+                                                module.clone(),
+                                                scope.clone(),
+                                                rhs,
+                                                &rhs_type_name,
+                                                &sway::TypeName::Identifier {
+                                                    name: "String".to_string(),
+                                                    generic_parameters: None,
+                                                },
+                                            )
+                                            .unwrap(),
 
                                             _ => {
                                                 todo!()

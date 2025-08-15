@@ -113,11 +113,11 @@ pub fn translate_member_access_expression(
                         }
 
                         SymbolData::StorageStructField {
-                            parameter_name,
+                            parameter_expression,
                             field,
                         } => {
                             return Ok(sway::Expression::create_member_access(
-                                sway::Expression::create_identifier(parameter_name),
+                                parameter_expression,
                                 &[field.new_name.as_str()],
                             ));
                         }

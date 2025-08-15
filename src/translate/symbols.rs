@@ -32,7 +32,7 @@ pub enum SymbolData {
         field: sway::StorageField,
     },
     StorageStructField {
-        parameter_name: String,
+        parameter_expression: sway::Expression,
         field: sway::StructField,
     },
 }
@@ -74,10 +74,10 @@ impl TryInto<sway::Expression> for SymbolData {
             }
 
             SymbolData::StorageStructField {
-                parameter_name,
+                parameter_expression,
                 field,
             } => Ok(sway::Expression::from(sway::MemberAccess {
-                expression: sway::Expression::create_identifier(parameter_name),
+                expression: parameter_expression,
                 member: field.new_name.clone(),
             })),
 
@@ -230,7 +230,7 @@ pub fn resolve_symbol(
                     project,
                     module.clone(),
                     scope.clone(),
-                    Symbol::Struct(storage_struct_name),
+                    Symbol::Struct(storage_struct_name.clone()),
                 ) && let Some(field) = storage_struct
                     .borrow()
                     .storage
@@ -239,10 +239,12 @@ pub fn resolve_symbol(
                     .find(|f| f.old_name == *name)
                 {
                     return Some(SymbolData::StorageStructField {
-                        parameter_name,
+                        parameter_expression: sway::Expression::create_identifier(parameter_name),
                         field: field.clone(),
                     });
                 }
+
+                todo!("Find inherited storage struct field: {name}");
             }
 
             // Check to see if the variable refers to a storage field
@@ -449,6 +451,28 @@ pub fn resolve_abi_function_call(
                 };
 
                 parameters[i] = expr;
+            }
+
+            if let Some(storage_struct_parameter) = function.storage_struct_parameter.as_ref()
+                && let Some(function_storage_struct_type) =
+                    storage_struct_parameter.type_name.clone()
+            {
+                let contract_storage_struct_type = sway::TypeName::Identifier {
+                    name: format!("{}Storage", abi.name),
+                    generic_parameters: None,
+                };
+
+                parameters.push(
+                    coerce_expression(
+                        project,
+                        module.clone(),
+                        scope.clone(),
+                        &sway::Expression::create_identifier("storage_struct".to_string()),
+                        &contract_storage_struct_type,
+                        &function_storage_struct_type,
+                    )
+                    .unwrap(),
+                );
             }
 
             true
@@ -727,6 +751,46 @@ pub fn resolve_function_call(
         .cloned();
 
     let current_function_name = scope.borrow().get_function_name();
+    let current_function = module
+        .borrow()
+        .functions
+        .iter()
+        .find(|f| {
+            let sway::TypeName::Function { new_name, .. } = &f.signature else {
+                unreachable!()
+            };
+            Some(new_name.clone()) == current_function_name
+        })
+        .cloned();
+
+    if let Some(sway::TypeName::Function {
+        storage_struct_parameter: Some(storage_struct_parameter),
+        ..
+    }) = &current_function.as_ref().map(|f| f.signature.clone())
+        && let Some(function_struct_parameter) = {
+            let sway::TypeName::Function {
+                storage_struct_parameter,
+                ..
+            } = &function.signature
+            else {
+                unreachable!()
+            };
+            storage_struct_parameter.clone()
+        }
+    {
+        parameters_cell.borrow_mut().push(
+            coerce_expression(
+                project,
+                module.clone(),
+                scope.clone(),
+                &sway::Expression::create_identifier(storage_struct_parameter.name.clone()),
+                storage_struct_parameter.type_name.as_ref().unwrap(),
+                function_struct_parameter.type_name.as_ref().unwrap(),
+            )
+            .unwrap(),
+        );
+    }
+
     if let Some(function_storage_access) = function_storage_access
         && let Some(current_function_name) = current_function_name
     {

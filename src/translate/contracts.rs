@@ -385,10 +385,24 @@ pub fn translate_contract_definition(
 
         let mut assignment_statements = vec![];
 
+        scope
+            .borrow_mut()
+            .add_variable(Rc::new(RefCell::new(ir::Variable {
+                old_name: String::new(),
+                new_name: "storage_struct".to_string(),
+                type_name: sway::TypeName::Identifier {
+                    name: format!("{}Storage", contract.borrow().name),
+                    generic_parameters: None,
+                },
+                statement_index: None,
+                read_count: 0,
+                mutation_count: 0,
+            })));
+
         // Create assignment statements for all of the deferred initializations
         for deferred_initialization in deferred_initializations.iter().rev() {
             let lhs = sway::Expression::create_member_access(
-                sway::Expression::create_identifier(format!("storage::{namespace_name}")),
+                sway::Expression::create_identifier("storage_struct".to_string()),
                 &[deferred_initialization.name.as_str()],
             );
 
@@ -406,7 +420,7 @@ pub fn translate_contract_definition(
                             sway::Expression::create_function_calls(
                                 None,
                                 &[
-                                    (format!("storage::{namespace_name}").as_str(), None),
+                                    ("storage_struct", None),
                                     (deferred_initialization.name.as_str(), None),
                                     ("push", Some((None, vec![element.clone()]))),
                                 ],
