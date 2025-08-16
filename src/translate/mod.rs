@@ -1934,18 +1934,12 @@ fn get_member_access_type(
         }
     }
 
-    let mut container = member_access.expression.clone();
-
-    let mut container_type =
-        get_expression_type(project, module.clone(), scope.clone(), &container)?;
-
-    if let Some(storage_key_type) = container_type.storage_key_type() {
-        container_type = storage_key_type;
-        container = sway::Expression::create_function_calls(
-            Some(container),
-            &[("read", Some((None, vec![])))],
-        )
-    }
+    let container_type = get_expression_type(
+        project,
+        module.clone(),
+        scope.clone(),
+        &member_access.expression,
+    )?;
 
     // Check if field is a signed integer
     if let Some(bits) = container_type.int_bits() {

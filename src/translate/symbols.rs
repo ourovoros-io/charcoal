@@ -195,8 +195,7 @@ pub fn resolve_symbol(
             }
 
             // Check to see if the current function has a storage struct parameter and the variable refers to a field of it
-            let function_name = scope.borrow().get_function_name();
-            if let Some(function_name) = function_name {
+            if let Some(function_name) = scope.borrow().get_function_name() {
                 let (parameter_name, storage_struct_name) = if let Some(function) = module
                     .borrow()
                     .functions
@@ -226,30 +225,78 @@ pub fn resolve_symbol(
                     ("storage_struct".into(), format!("{contract_name}Storage"))
                 };
 
-                if let Some(SymbolData::Struct(storage_struct)) = resolve_symbol(
+                fn find_storage_struct_field(
+                    project: &mut Project,
+                    module: Rc<RefCell<ir::Module>>,
+                    scope: Rc<RefCell<ir::Scope>>,
+                    contract_name: &str,
+                    field_name: &str,
+                    expression: sway::Expression,
+                ) -> Option<SymbolData> {
+                    let storage_struct_name = format!("{contract_name}Storage");
+
+                    // Find the requested contract and the module containing it
+                    let Some((module, contract)) =
+                        project.find_module_and_contract(module.clone(), contract_name)
+                    else {
+                        return None;
+                    };
+
+                    // Attempt to find the field within the contract's storage struct
+                    if let Some(SymbolData::Struct(storage_struct)) = resolve_symbol(
+                        project,
+                        module.clone(),
+                        scope.clone(),
+                        Symbol::Struct(storage_struct_name.clone()),
+                    ) && let Some(field) = storage_struct
+                        .borrow()
+                        .storage
+                        .fields
+                        .iter()
+                        .find(|f| f.old_name == field_name)
+                    {
+                        return Some(SymbolData::StorageStructField {
+                            parameter_expression: expression,
+                            field: field.clone(),
+                        });
+                    }
+
+                    // If not found in the current contract, check inherited contracts
+                    for inherited_contract_type_name in contract.borrow().abi.inherits.clone() {
+                        let inherited_contract_name = inherited_contract_type_name.to_string();
+
+                        if let Some(result) = find_storage_struct_field(
+                            project,
+                            module.clone(),
+                            scope.clone(),
+                            inherited_contract_name.as_str(),
+                            field_name,
+                            sway::Expression::create_member_access(
+                                expression.clone(),
+                                &[inherited_contract_name.to_case(Case::Snake).as_str()],
+                            ),
+                        ) {
+                            return Some(result);
+                        }
+                    }
+
+                    None
+                }
+
+                if let Some(result) = find_storage_struct_field(
                     project,
                     module.clone(),
                     scope.clone(),
-                    Symbol::Struct(storage_struct_name.clone()),
-                ) && let Some(field) = storage_struct
-                    .borrow()
-                    .storage
-                    .fields
-                    .iter()
-                    .find(|f| f.old_name == *name)
-                {
-                    return Some(SymbolData::StorageStructField {
-                        parameter_expression: sway::Expression::create_identifier(parameter_name),
-                        field: field.clone(),
-                    });
+                    storage_struct_name.trim_end_matches("Storage").to_string().as_str(),
+                    name,
+                    sway::Expression::create_identifier(parameter_name),
+                ) {
+                    return Some(result);
                 }
-
-                todo!("Find inherited storage struct field: {name}");
             }
 
             // Check to see if the variable refers to a storage field
-            let contract_name = scope.borrow().get_contract_name();
-            if let Some(contract_name) = contract_name
+            if let Some(contract_name) = scope.borrow().get_contract_name()
                 && let Some(contract) =
                     project.find_contract(module.clone(), contract_name.as_str())
             {
@@ -278,8 +325,7 @@ pub fn resolve_symbol(
     }
 
     // If we didn't find it in the current contract, try checking inherited contracts
-    let contract_name = scope.borrow().get_contract_name();
-    if let Some(contract_name) = contract_name
+    if let Some(contract_name) = scope.borrow().get_contract_name()
         && let Some(contract) = project.find_contract(module.clone(), &contract_name)
     {
         let inherits = contract.borrow().abi.inherits.clone();

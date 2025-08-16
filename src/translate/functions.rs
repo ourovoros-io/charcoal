@@ -926,7 +926,7 @@ pub fn translate_function_definition(
             .map(|p| get_expression_type(project, module.clone(), scope.clone(), p))
             .collect::<Result<Vec<_>, _>>()?;
 
-        let Some((modifier, parameters, parameter_types)) = resolve_modifier(
+        let Some((modifier, parameters, _parameter_types)) = resolve_modifier(
             project,
             module.clone(),
             scope.clone(),

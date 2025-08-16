@@ -940,13 +940,13 @@ impl Project {
         }
 
         // Check to see if the struct is a storage struct
-        let contract_name = scope.borrow().get_contract_name();
-        if let Some(contract_name) = contract_name
-            && let Some(contract) = self.find_contract(module.clone(), &contract_name)
-            && let Some(x) = contract.borrow().storage_struct.as_ref()
-            && x.borrow().name == name
-        {
-            return Some(x.clone());
+        for contract in module.borrow().contracts.iter() {
+            if let Some(contract) = contract.implementation.as_ref()
+                && let Some(storage_struct) = contract.borrow().storage_struct.as_ref()
+                && storage_struct.borrow().name == name
+            {
+                return Some(storage_struct.clone());
+            }
         }
 
         // Check all of the module's `use` statements for crate-local imports,
