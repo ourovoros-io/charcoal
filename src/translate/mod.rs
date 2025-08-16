@@ -183,6 +183,7 @@ pub fn coerce_expression(
     {
         let mut expression = expression.clone();
         let mut lhs_name = lhs_name.clone();
+        let rhs_name = rhs_name.clone();
         let mut skip = false;
 
         if let Some(storage_key_type) = from_type_name.storage_key_type() {
@@ -213,150 +214,109 @@ pub fn coerce_expression(
             )
             && lhs_struct_definition == rhs_struct_definition
         {
-            if lhs_name == *rhs_name {
+            if lhs_name == rhs_name {
                 return Some(expression);
             }
 
-            // Check for memory to storage coercions
-            if *lhs_name == lhs_struct_definition.borrow().memory.name
-                && *rhs_name == rhs_struct_definition.borrow().storage.name
-            {
+            let mut check_struct_memory_to_storage = |memory: bool| -> Option<sway::Expression> {
+                let lhs_struct_name = if memory {
+                    lhs_struct_definition.borrow().memory.name.clone()
+                } else {
+                    lhs_struct_definition.borrow().storage.name.clone()
+                };
+
+                let rhs_struct_name = if memory {
+                    rhs_struct_definition.borrow().storage.name.clone()
+                } else {
+                    rhs_struct_definition.borrow().memory.name.clone()
+                };
+
+                if lhs_name != lhs_struct_name || rhs_name != rhs_struct_name {
+                    return None;
+                }
+
                 let struct_definition = lhs_struct_definition.borrow();
 
-                match expression {
-                    sway::Expression::Constructor(constructor) => {
-                        return Some(sway::Expression::from(sway::Constructor {
-                            type_name: to_type_name.clone(),
-                            fields: struct_definition
-                                .memory
-                                .fields
-                                .iter()
-                                .zip(struct_definition.storage.fields.iter())
-                                .zip(constructor.fields.iter())
-                                .map(|((lhs_field, rhs_field), constructor_field)| {
-                                    sway::ConstructorField {
-                                        name: rhs_field.new_name.clone(),
-                                        value: coerce_expression(
-                                            project,
-                                            module.clone(),
-                                            scope.clone(),
-                                            &constructor_field.value,
-                                            &lhs_field.type_name,
-                                            &rhs_field.type_name,
-                                        )
-                                        .unwrap(),
-                                    }
-                                })
-                                .collect(),
-                        }));
-                    }
+                let lhs_fields = if memory {
+                    struct_definition.memory.fields.as_slice()
+                } else {
+                    struct_definition.storage.fields.as_slice()
+                };
 
-                    _ => {
-                        let variable_name = scope.borrow_mut().generate_unique_variable_name("x");
+                let rhs_fields = if memory {
+                    struct_definition.storage.fields.as_slice()
+                } else {
+                    struct_definition.memory.fields.as_slice()
+                };
 
-                        return Some(sway::Expression::from(sway::Block {
-                            statements: vec![sway::Statement::from(sway::Let {
-                                pattern: sway::LetPattern::Identifier(sway::LetIdentifier {
-                                    is_mutable: false,
-                                    name: variable_name.clone(),
-                                }),
-                                type_name: None,
-                                value: expression.clone(),
-                            })],
-                            final_expr: Some(sway::Expression::from(sway::Constructor {
-                                type_name: to_type_name,
-                                fields: struct_definition
-                                    .memory
-                                    .fields
-                                    .iter()
-                                    .zip(struct_definition.storage.fields.iter())
-                                    .map(|(lhs_field, rhs_field)| sway::ConstructorField {
-                                        name: rhs_field.new_name.clone(),
-                                        value: sway::Expression::from(sway::MemberAccess {
-                                            expression: sway::Expression::create_identifier(
-                                                variable_name.clone(),
-                                            ),
-                                            member: lhs_field.new_name.clone(),
-                                        }),
-                                    })
-                                    .collect(),
-                            })),
-                        }));
-                    }
+                if let sway::Expression::Constructor(constructor) = &expression {
+                    return Some(sway::Expression::from(sway::Constructor {
+                        type_name: to_type_name.clone(),
+                        fields: lhs_fields
+                            .iter()
+                            .zip(rhs_fields.iter())
+                            .zip(constructor.fields.iter())
+                            .map(|((lhs_field, rhs_field), constructor_field)| {
+                                sway::ConstructorField {
+                                    name: rhs_field.new_name.clone(),
+                                    value: coerce_expression(
+                                        project,
+                                        module.clone(),
+                                        scope.clone(),
+                                        &constructor_field.value,
+                                        &lhs_field.type_name,
+                                        &rhs_field.type_name,
+                                    )
+                                    .unwrap(),
+                                }
+                            })
+                            .collect(),
+                    }));
                 }
+
+                let variable_name = scope.borrow_mut().generate_unique_variable_name("x");
+
+                return Some(sway::Expression::from(sway::Block {
+                    statements: vec![sway::Statement::from(sway::Let {
+                        pattern: sway::LetPattern::Identifier(sway::LetIdentifier {
+                            is_mutable: false,
+                            name: variable_name.clone(),
+                        }),
+                        type_name: None,
+                        value: expression.clone(),
+                    })],
+                    final_expr: Some(sway::Expression::from(sway::Constructor {
+                        type_name: to_type_name.clone(),
+                        fields: lhs_fields
+                            .iter()
+                            .zip(rhs_fields.iter())
+                            .map(|(lhs_field, rhs_field)| sway::ConstructorField {
+                                name: rhs_field.new_name.clone(),
+                                value: sway::Expression::from(sway::MemberAccess {
+                                    expression: sway::Expression::create_identifier(
+                                        variable_name.clone(),
+                                    ),
+                                    member: lhs_field.new_name.clone(),
+                                }),
+                            })
+                            .collect(),
+                    })),
+                }));
+            };
+
+            // Check for memory to storage coercions
+            if let Some(result) = check_struct_memory_to_storage(true) {
+                return Some(result);
             }
 
             // Check for storage to memory coercions
-            if *lhs_name == lhs_struct_definition.borrow().storage.name
-                && *rhs_name == rhs_struct_definition.borrow().memory.name
-            {
-                let struct_definition = lhs_struct_definition.borrow();
-
-                match expression {
-                    sway::Expression::Constructor(constructor) => {
-                        return Some(sway::Expression::from(sway::Constructor {
-                            type_name: to_type_name.clone(),
-                            fields: struct_definition
-                                .storage
-                                .fields
-                                .iter()
-                                .zip(struct_definition.memory.fields.iter())
-                                .zip(constructor.fields.iter())
-                                .map(|((lhs_field, rhs_field), constructor_field)| {
-                                    sway::ConstructorField {
-                                        name: rhs_field.new_name.clone(),
-                                        value: coerce_expression(
-                                            project,
-                                            module.clone(),
-                                            scope.clone(),
-                                            &constructor_field.value,
-                                            &lhs_field.type_name,
-                                            &rhs_field.type_name,
-                                        )
-                                        .unwrap(),
-                                    }
-                                })
-                                .collect(),
-                        }));
-                    }
-
-                    _ => {
-                        let variable_name = scope.borrow_mut().generate_unique_variable_name("x");
-
-                        return Some(sway::Expression::from(sway::Block {
-                            statements: vec![sway::Statement::from(sway::Let {
-                                pattern: sway::LetPattern::Identifier(sway::LetIdentifier {
-                                    is_mutable: false,
-                                    name: variable_name.clone(),
-                                }),
-                                type_name: None,
-                                value: expression.clone(),
-                            })],
-                            final_expr: Some(sway::Expression::from(sway::Constructor {
-                                type_name: to_type_name,
-                                fields: struct_definition
-                                    .storage
-                                    .fields
-                                    .iter()
-                                    .zip(struct_definition.memory.fields.iter())
-                                    .map(|(lhs_field, rhs_field)| sway::ConstructorField {
-                                        name: rhs_field.new_name.clone(),
-                                        value: sway::Expression::from(sway::MemberAccess {
-                                            expression: sway::Expression::create_identifier(
-                                                variable_name.clone(),
-                                            ),
-                                            member: lhs_field.new_name.clone(),
-                                        }),
-                                    })
-                                    .collect(),
-                            })),
-                        }));
-                    }
-                }
+            if let Some(result) = check_struct_memory_to_storage(false) {
+                return Some(result);
             }
         }
     }
 
+    // Check for `StorageKey<StorageString>` to `T` coercions
     if let Some(storage_key_type) = from_type_name.storage_key_type()
         && storage_key_type.is_storage_string()
     {
