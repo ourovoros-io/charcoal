@@ -140,17 +140,13 @@ fn translate_type_function_call(
         && let solidity::Expression::Variable(ident) = &arguments[0]
         && ident.name == "this"
     {
-        return Ok(sway::Expression::create_function_calls(
+        return Ok(sway::Expression::create_function_call(
+            "Identity::ContractId",
             None,
-            &[(
-                "Identity::ContractId",
-                Some((
-                    None,
-                    vec![sway::Expression::create_function_calls(
-                        None,
-                        &[("ContractId::this", Some((None, vec![])))],
-                    )],
-                )),
+            vec![sway::Expression::create_function_call(
+                "ContractId::this",
+                None,
+                vec![],
             )],
         ));
     }
@@ -245,41 +241,25 @@ fn translate_variable_function_call(
             } => match (type_name.as_str(), generic_parameters.as_ref()) {
                 ("Identity", None) => {
                     // abi(T, x.bits())
-                    return Ok(sway::Expression::create_function_calls(
+                    return Ok(sway::Expression::create_function_call(
+                        "abi",
                         None,
-                        &[(
-                            "abi",
-                            Some((
-                                None,
-                                vec![
-                                    sway::Expression::create_identifier(name.into()),
-                                    sway::Expression::create_function_calls(
-                                        Some(parameters[0].clone()),
-                                        &[("bits", Some((None, vec![])))],
-                                    ),
-                                ],
-                            )),
-                        )],
+                        vec![
+                            sway::Expression::create_identifier(name.into()),
+                            parameters[0].with_bits_call(),
+                        ],
                     ));
                 }
 
                 ("ContractId", None) => {
                     // abi(T, x.into())
-                    return Ok(sway::Expression::create_function_calls(
+                    return Ok(sway::Expression::create_function_call(
+                        "abi",
                         None,
-                        &[(
-                            "abi",
-                            Some((
-                                None,
-                                vec![
-                                    sway::Expression::create_identifier(name.into()),
-                                    sway::Expression::create_function_calls(
-                                        Some(parameters[0].clone()),
-                                        &[("into", Some((None, vec![])))],
-                                    ),
-                                ],
-                            )),
-                        )],
+                        vec![
+                            sway::Expression::create_identifier(name.into()),
+                            parameters[0].with_into_call(),
+                        ],
                     ));
                 }
 
@@ -288,22 +268,14 @@ fn translate_variable_function_call(
                     let mut value = parameters[0].clone();
 
                     if type_name == "u256" {
-                        value = sway::Expression::create_function_calls(
-                            Some(value),
-                            &[("into", Some((None, vec![])))],
-                        )
+                        value = value.with_into_call();
                     }
 
                     // abi(T, Identity::from(ContractId::from(x)))
-                    return Ok(sway::Expression::create_function_calls(
+                    return Ok(sway::Expression::create_function_call(
+                        "abi",
                         None,
-                        &[(
-                            "abi",
-                            Some((
-                                None,
-                                vec![sway::Expression::create_identifier(name.into()), value],
-                            )),
-                        )],
+                        vec![sway::Expression::create_identifier(name.into()), value],
                     ));
                 }
 
@@ -312,21 +284,13 @@ fn translate_variable_function_call(
 
             sway::TypeName::Abi { .. } => {
                 // abi(T, x.bits())
-                return Ok(sway::Expression::create_function_calls(
+                return Ok(sway::Expression::create_function_call(
+                    "abi",
                     None,
-                    &[(
-                        "abi",
-                        Some((
-                            None,
-                            vec![
-                                sway::Expression::create_identifier(name.into()),
-                                sway::Expression::create_function_calls(
-                                    Some(parameters[0].clone()),
-                                    &[("bits", Some((None, vec![])))],
-                                ),
-                            ],
-                        )),
-                    )],
+                    vec![
+                        sway::Expression::create_identifier(name.into()),
+                        parameters[0].with_bits_call(),
+                    ],
                 ));
             }
 
@@ -421,22 +385,16 @@ fn translate_builtin_function_call(
                 panic!("Invalid blockhash call: {expression:#?}");
             }
 
-            Ok(Some(sway::Expression::create_function_calls(
-                None,
-                &[
-                    ("std::block::block_header_hash", Some((None, parameters))),
-                    (
-                        "unwrap_or",
-                        Some((
-                            None,
-                            vec![sway::Expression::from(sway::Literal::DecInt(
-                                BigUint::zero(),
-                                None,
-                            ))],
-                        )),
-                    ),
-                ],
-            )))
+            Ok(Some(
+                sway::Expression::create_function_call(
+                    "std::block::block_header_hash",
+                    None,
+                    parameters,
+                )
+                .with_unwrap_or_call(sway::Expression::from(
+                    sway::Literal::DecInt(BigUint::zero(), None),
+                )),
+            ))
         }
 
         "gasleft" => {
@@ -446,9 +404,10 @@ fn translate_builtin_function_call(
                 panic!("Invalid gasleft call: {expression:#?}");
             }
 
-            Ok(Some(sway::Expression::create_function_calls(
+            Ok(Some(sway::Expression::create_function_call(
+                "std::registers::global_gas",
                 None,
-                &[("std::registers::global_gas", Some((None, parameters)))],
+                parameters,
             )))
         }
 
@@ -499,9 +458,10 @@ fn translate_builtin_function_call(
                 panic!("Invalid keccak256 call: {expression:#?}");
             }
 
-            Ok(Some(sway::Expression::create_function_calls(
+            Ok(Some(sway::Expression::create_function_call(
+                "std::hash::keccak256",
                 None,
-                &[("std::hash::keccak256", Some((None, parameters)))],
+                parameters,
             )))
         }
 
@@ -512,9 +472,10 @@ fn translate_builtin_function_call(
                 panic!("Invalid sha256 call: {expression:#?}");
             }
 
-            Ok(Some(sway::Expression::create_function_calls(
+            Ok(Some(sway::Expression::create_function_call(
+                "std::hash::sha256",
                 None,
-                &[("std::hash::sha256", Some((None, parameters)))],
+                parameters,
             )))
         }
 
@@ -539,58 +500,37 @@ fn translate_builtin_function_call(
             module
                 .borrow_mut()
                 .ensure_use_declared("std::crypto::secp256k1::Secp256k1");
+
             module
                 .borrow_mut()
                 .ensure_use_declared("std::crypto::message::Message");
 
-            Ok(Some(sway::Expression::create_function_calls(
+            Ok(Some(sway::Expression::create_function_call(
+                "Identity::Address",
                 None,
-                &[(
-                    "Identity::Address",
-                    Some((
-                        None,
-                        vec![sway::Expression::create_function_calls(
+                vec![sway::Expression::create_function_call(
+                    "Address::from",
+                    None,
+                    vec![
+                        sway::Expression::create_function_call(
+                            "Secp256k1::from",
                             None,
-                            &[(
-                                "Address::from",
-                                Some((
-                                    None,
-                                    vec![sway::Expression::create_function_calls(
-                                        None,
-                                        &[
-                                            (
-                                                "Secp256k1::from",
-                                                Some((
-                                                    None,
-                                                    vec![sway::Expression::Tuple(vec![
-                                                        parameters[2].clone(),
-                                                        parameters[3].clone(),
-                                                    ])],
-                                                )),
-                                            ),
-                                            (
-                                                "address",
-                                                Some((
-                                                    None,
-                                                    vec![sway::Expression::create_function_calls(
-                                                        None,
-                                                        &[(
-                                                            "Message::from",
-                                                            Some((
-                                                                None,
-                                                                vec![parameters[0].clone()],
-                                                            )),
-                                                        )],
-                                                    )],
-                                                )),
-                                            ),
-                                            ("unwrap", Some((None, vec![]))),
-                                        ],
-                                    )],
-                                )),
+                            vec![sway::Expression::Tuple(vec![
+                                parameters[2].clone(),
+                                parameters[3].clone(),
+                            ])],
+                        )
+                        .with_function_call(
+                            "address",
+                            None,
+                            vec![sway::Expression::create_function_call(
+                                "Message::from",
+                                None,
+                                vec![parameters[0].clone()],
                             )],
-                        )],
-                    )),
+                        )
+                        .with_unwrap_call(),
+                    ],
                 )],
             )))
         }
@@ -612,9 +552,8 @@ fn translate_builtin_function_call(
                 panic!("Invalid assert call: {expression:#?}");
             }
 
-            Ok(Some(sway::Expression::create_function_calls(
-                None,
-                &[("assert", Some((None, parameters)))],
+            Ok(Some(sway::Expression::create_function_call(
+                "assert", None, parameters,
             )))
         }
 
@@ -642,16 +581,12 @@ fn translate_builtin_function_call(
                 scope.clone(),
                 &parameters[0],
                 &parameter_type,
-                &sway::TypeName::Identifier {
-                    name: "bool".into(),
-                    generic_parameters: None,
-                },
+                &sway::TypeName::create_identifier("bool"),
             )
             .unwrap();
 
-            Ok(Some(sway::Expression::create_function_calls(
-                None,
-                &[("require", Some((None, parameters)))],
+            Ok(Some(sway::Expression::create_function_call(
+                "require", None, parameters,
             )))
         }
 
@@ -663,18 +598,13 @@ fn translate_builtin_function_call(
             // }
 
             if parameters.is_empty() {
-                return Ok(Some(sway::Expression::create_function_calls(
+                return Ok(Some(sway::Expression::create_function_call(
+                    "assert",
                     None,
-                    &[(
-                        "assert",
-                        Some((
-                            None,
-                            vec![sway::Expression::from(sway::Literal::DecInt(
-                                BigUint::zero(),
-                                None,
-                            ))],
-                        )),
-                    )],
+                    vec![sway::Expression::from(sway::Literal::DecInt(
+                        BigUint::zero(),
+                        None,
+                    ))],
                 )));
             }
 
@@ -684,22 +614,16 @@ fn translate_builtin_function_call(
 
             Ok(Some(sway::Expression::from(sway::Block {
                 statements: vec![
-                    sway::Statement::from(sway::Expression::create_function_calls(
-                        None,
-                        &[("log", Some((None, parameters)))],
+                    sway::Statement::from(sway::Expression::create_function_call(
+                        "log", None, parameters,
                     )),
-                    sway::Statement::from(sway::Expression::create_function_calls(
+                    sway::Statement::from(sway::Expression::create_function_call(
+                        "revert",
                         None,
-                        &[(
-                            "revert",
-                            Some((
-                                None,
-                                vec![sway::Expression::from(sway::Literal::DecInt(
-                                    BigUint::zero(),
-                                    None,
-                                ))],
-                            )),
-                        )],
+                        vec![sway::Expression::from(sway::Literal::DecInt(
+                            BigUint::zero(),
+                            None,
+                        ))],
                     )),
                 ],
 
@@ -959,10 +883,7 @@ fn translate_member_access_function_call(
                     module.clone(),
                     scope.clone(),
                     &container,
-                    &sway::TypeName::Identifier {
-                        name: "Identity".to_string(),
-                        generic_parameters: None,
-                    },
+                    &sway::TypeName::create_identifier("Identity"),
                     &type_name,
                 )
                 .unwrap();
@@ -1027,9 +948,7 @@ fn translate_member_access_function_call(
         // TODO
         // Check to see if the function is from using library
         // if let Some(f) =  module.borrow().using_directives.iter().find_map(|using| using.functions.iter().find(|fnc| fnc.old_name == member.name)) {
-        //     return Ok(sway::Expression::create_function_calls(Some(container), &[
-        //         (&f.new_name, Some((None, parameters)))
-        //     ]))
+        //     return Ok(container.with_function_call(f.new_name.as_str(), None, parameters));
         // }
     }
 
@@ -1052,13 +971,7 @@ fn translate_member_access_function_call(
             .borrow_mut()
             .set_function_storage_accesses(module.clone(), true, false);
 
-        container = sway::Expression::create_function_calls(
-            Some(container),
-            &[
-                ("unwrap", Some((None, vec![]))),
-                ("read", Some((None, vec![]))),
-            ],
-        );
+        container = container.with_unwrap_call().with_read_call();
         type_name = storage_key_type;
     }
     // HACK: tack `.read()` onto the end if the container is a StorageKey
@@ -1067,10 +980,7 @@ fn translate_member_access_function_call(
             .borrow_mut()
             .set_function_storage_accesses(module.clone(), true, false);
 
-        container = sway::Expression::create_function_calls(
-            Some(container),
-            &[("read", Some((None, vec![])))],
-        );
+        container = container.with_read_call();
         type_name = storage_key_type;
     }
 
@@ -1212,10 +1122,7 @@ fn translate_member_access_function_call(
                     scope.clone(),
                     &container,
                     &type_name,
-                    &sway::TypeName::Identifier {
-                        name: abi.name.clone(),
-                        generic_parameters: None,
-                    },
+                    &sway::TypeName::create_identifier(abi.name.as_str()),
                 )
                 .unwrap();
 
@@ -1652,13 +1559,11 @@ fn translate_identity_member_access_function_call(
         "transfer" if arguments.len() == 1 => {
             let argument =
                 translate_expression(project, module.clone(), scope.clone(), &arguments[0])?;
+
             let argument_type_name =
                 get_expression_type(project, module.clone(), scope.clone(), &argument)?;
 
-            let container_type = sway::TypeName::Identifier {
-                name: "u64".to_string(),
-                generic_parameters: None,
-            };
+            let container_type = sway::TypeName::create_identifier("u64");
 
             let argument = coerce_expression(
                 project,
@@ -1670,22 +1575,14 @@ fn translate_identity_member_access_function_call(
             )
             .unwrap();
 
-            return Ok(sway::Expression::create_function_calls(
+            return Ok(sway::Expression::create_function_call(
+                "std::asset::transfer",
                 None,
-                &[(
-                    "std::asset::transfer",
-                    Some((
-                        None,
-                        vec![
-                            container,
-                            sway::Expression::create_function_calls(
-                                None,
-                                &[("AssetId::default", Some((None, vec![])))],
-                            ),
-                            argument,
-                        ],
-                    )),
-                )],
+                vec![
+                    container,
+                    sway::Expression::create_function_call("AssetId::default", None, vec![]),
+                    argument,
+                ],
             ));
         }
 
@@ -1696,13 +1593,11 @@ fn translate_identity_member_access_function_call(
         "send" if arguments.len() == 1 => {
             let argument =
                 translate_expression(project, module.clone(), scope.clone(), &arguments[0])?;
+
             let argument_type_name =
                 get_expression_type(project, module.clone(), scope.clone(), &argument)?;
 
-            let u64_type = sway::TypeName::Identifier {
-                name: "u64".to_string(),
-                generic_parameters: None,
-            };
+            let u64_type = sway::TypeName::create_identifier("u64");
 
             let argument = coerce_expression(
                 project,
@@ -1716,22 +1611,18 @@ fn translate_identity_member_access_function_call(
 
             return Ok(sway::Expression::from(sway::Block {
                 statements: vec![sway::Statement::from(
-                    sway::Expression::create_function_calls(
+                    sway::Expression::create_function_call(
+                        "std::asset::transfer",
                         None,
-                        &[(
-                            "std::asset::transfer",
-                            Some((
+                        vec![
+                            container,
+                            sway::Expression::create_function_call(
+                                "AssetId::default",
                                 None,
-                                vec![
-                                    container,
-                                    sway::Expression::create_function_calls(
-                                        None,
-                                        &[("AssetId::default", Some((None, vec![])))],
-                                    ),
-                                    argument,
-                                ],
-                            )),
-                        )],
+                                vec![],
+                            ),
+                            argument,
+                        ],
                     ),
                 )],
                 final_expr: Some(sway::Expression::from(sway::Literal::Bool(true))),
@@ -1867,10 +1758,7 @@ fn translate_storage_vec_member_access_function_call(
     } else if let Some(option_type) = type_name.option_type()
         && let Some(s) = option_type.storage_key_type()
     {
-        expression = sway::Expression::create_function_calls(
-            Some(expression),
-            &[("unwrap", Some((None, vec![])))],
-        );
+        expression = expression.with_unwrap_call();
         storage_key_type = Some(s);
     }
 
@@ -1887,44 +1775,35 @@ fn translate_storage_vec_member_access_function_call(
                 ("StorageVec", Some(generic_parameters))
                     if generic_parameters.entries.len() == 1 =>
                 {
-                    return Ok(sway::Expression::create_function_calls(
-                        Some(expression),
-                        &[(
-                            member.name.as_str(),
-                            Some((
-                                None,
-                                arguments
-                                    .iter()
-                                    .map(|a| {
-                                        let expr = translate_expression(
-                                            project,
-                                            module.clone(),
-                                            scope.clone(),
-                                            a,
-                                        )
+                    return Ok(expression.with_function_call(
+                        member.name.as_str(),
+                        None,
+                        arguments
+                            .iter()
+                            .map(|a| {
+                                let expr =
+                                    translate_expression(project, module.clone(), scope.clone(), a)
                                         .unwrap();
 
-                                        let from_type_name = get_expression_type(
-                                            project,
-                                            module.clone(),
-                                            scope.clone(),
-                                            &expr,
-                                        )
-                                        .unwrap();
+                                let from_type_name = get_expression_type(
+                                    project,
+                                    module.clone(),
+                                    scope.clone(),
+                                    &expr,
+                                )
+                                .unwrap();
 
-                                        coerce_expression(
-                                            project,
-                                            module.clone(),
-                                            scope.clone(),
-                                            &expr,
-                                            &from_type_name,
-                                            &generic_parameters.entries[0].type_name,
-                                        )
-                                        .unwrap()
-                                    })
-                                    .collect::<Vec<_>>(),
-                            )),
-                        )],
+                                coerce_expression(
+                                    project,
+                                    module.clone(),
+                                    scope.clone(),
+                                    &expr,
+                                    &from_type_name,
+                                    &generic_parameters.entries[0].type_name,
+                                )
+                                .unwrap()
+                            })
+                            .collect::<Vec<_>>(),
                     ));
                 }
 
@@ -1952,7 +1831,7 @@ fn translate_vec_member_access_function_call(
     container: &sway::Expression,
 ) -> Result<sway::Expression, Error> {
     match member.name.as_str() {
-        "push" => {
+        "push" if arguments.len() == 1 => {
             let (variable, container_access) = match translate_variable_access_expression(
                 project,
                 module.clone(),
@@ -1970,21 +1849,10 @@ fn translate_vec_member_access_function_call(
                 panic!("Vec is not a variable");
             };
 
-            Ok(sway::Expression::create_function_calls(
-                Some(container_access),
-                &[(
-                    "push",
-                    Some((
-                        None,
-                        arguments
-                            .iter()
-                            .map(|a| {
-                                translate_expression(project, module.clone(), scope.clone(), a)
-                            })
-                            .collect::<Result<Vec<_>, _>>()?,
-                    )),
-                )],
-            ))
+            let value =
+                translate_expression(project, module.clone(), scope.clone(), &arguments[0])?;
+
+            Ok(container_access.with_push_call(value))
         }
 
         "pop" => {
@@ -2005,13 +1873,10 @@ fn translate_vec_member_access_function_call(
                 panic!("Vec is not a variable");
             };
 
-            Ok(sway::Expression::create_function_calls(
-                Some(container_access),
-                &[("pop", Some((None, vec![])))],
-            ))
+            Ok(container_access.with_pop_call())
         }
 
-        "remove" => {
+        "remove" if arguments.len() == 1 => {
             let (variable, container_access) = match translate_variable_access_expression(
                 project,
                 module.clone(),
@@ -2029,21 +1894,10 @@ fn translate_vec_member_access_function_call(
                 panic!("Vec is not a variable");
             };
 
-            Ok(sway::Expression::create_function_calls(
-                Some(container_access),
-                &[(
-                    "remove",
-                    Some((
-                        None,
-                        arguments
-                            .iter()
-                            .map(|a| {
-                                translate_expression(project, module.clone(), scope.clone(), a)
-                            })
-                            .collect::<Result<Vec<_>, _>>()?,
-                    )),
-                )],
-            ))
+            let index =
+                translate_expression(project, module.clone(), scope.clone(), &arguments[0])?;
+
+            Ok(container_access.with_remove_call(index))
         }
 
         _ => todo!(
@@ -2126,25 +1980,21 @@ fn translate_builtin_abi_member_access_function_call(
             // If we only have 1 parameter to decode, just decode it directly
             if parameter_types.len() == 1 {
                 // encoded_data.as_raw_slice().ptr().read::<u256>()
-                return Ok(Some(sway::Expression::create_function_calls(
-                    Some(encoded_data.clone()),
-                    &[
-                        ("as_raw_slice", Some((None, vec![]))),
-                        ("ptr", Some((None, vec![]))),
-                        (
+                return Ok(Some(
+                    encoded_data
+                        .with_as_raw_slice_call()
+                        .with_ptr_call()
+                        .with_function_call(
                             "read",
-                            Some((
-                                Some(sway::GenericParameterList {
-                                    entries: vec![sway::GenericParameter {
-                                        type_name: parameter_types[0].clone(),
-                                        implements: None,
-                                    }],
-                                }),
-                                vec![],
-                            )),
+                            Some(sway::GenericParameterList {
+                                entries: vec![sway::GenericParameter {
+                                    type_name: parameter_types[0].clone(),
+                                    implements: None,
+                                }],
+                            }),
+                            vec![],
                         ),
-                    ],
-                )));
+                ));
             }
 
             let mut block = sway::Block {
@@ -2157,19 +2007,13 @@ fn translate_builtin_abi_member_access_function_call(
                             name: "ptr".into(),
                         }),
                         type_name: None,
-                        value: sway::Expression::create_function_calls(
-                            Some(encoded_data.clone()),
-                            &[
-                                ("as_raw_slice", Some((None, vec![]))),
-                                ("ptr", Some((None, vec![]))),
-                            ],
-                        ),
+                        value: encoded_data.with_as_raw_slice_call().with_ptr_call(),
                     }),
                 ],
                 final_expr: Some(sway::Expression::Tuple(
                     parameter_names
                         .iter()
-                        .map(|p| sway::Expression::create_identifier(p.clone()))
+                        .map(|p| sway::Expression::create_identifier(p.as_str()))
                         .collect(),
                 )),
             };
@@ -2186,24 +2030,17 @@ fn translate_builtin_abi_member_access_function_call(
                         name: parameter_name.clone(),
                     }),
                     type_name: None,
-                    value: sway::Expression::create_function_calls(
-                        None,
-                        &[
-                            ("ptr", None),
-                            (
-                                "read",
-                                Some((
-                                    Some(sway::GenericParameterList {
-                                        entries: vec![sway::GenericParameter {
-                                            type_name: parameter_type.clone(),
-                                            implements: None,
-                                        }],
-                                    }),
-                                    vec![],
-                                )),
-                            ),
-                        ],
-                    ),
+                    value: sway::Expression::create_identifier("ptr")
+                        .with_function_call(
+                            "read",
+                            Some(sway::GenericParameterList {
+                                entries: vec![sway::GenericParameter {
+                                    type_name: parameter_type.clone(),
+                                    implements: None,
+                                }],
+                            }),
+                            vec![],
+                        ),
                 }));
 
                 // If we have more parameters to decode, increase the ptr
@@ -2215,26 +2052,20 @@ fn translate_builtin_abi_member_access_function_call(
                             sway::BinaryExpression {
                                 operator: "=".into(),
                                 lhs: sway::Expression::create_identifier("ptr".into()),
-                                rhs: sway::Expression::create_function_calls(
-                                    None,
-                                    &[
-                                        ("ptr", None),
-                                        (
-                                            "add",
-                                            Some((
-                                                Some(sway::GenericParameterList {
-                                                    entries: vec![sway::GenericParameter {
-                                                        type_name: parameter_type.clone(),
-                                                        implements: None,
-                                                    }],
-                                                }),
-                                                vec![sway::Expression::from(
-                                                    sway::Literal::DecInt(BigUint::one(), None),
-                                                )],
-                                            )),
-                                        ),
-                                    ],
-                                ),
+                                rhs: sway::Expression::create_identifier("ptr".into())
+                                    .with_function_call(
+                                        "add",
+                                        Some(sway::GenericParameterList {
+                                            entries: vec![sway::GenericParameter {
+                                                type_name: parameter_type.clone(),
+                                                implements: None,
+                                            }],
+                                        }),
+                                        vec![sway::Expression::from(sway::Literal::DecInt(
+                                            BigUint::one(),
+                                            None,
+                                        ))],
+                                    ),
                             },
                         )));
                 }
@@ -2271,107 +2102,88 @@ fn translate_builtin_abi_member_access_function_call(
                         name: variable_name.clone(),
                     }),
                     type_name: None,
-                    value: sway::Expression::create_function_calls(
-                        None,
-                        &[("Bytes::new", Some((None, vec![])))],
-                    ),
+                    value: sway::Expression::create_function_call("Bytes::new", None, vec![]),
                 })],
-                final_expr: Some(sway::Expression::create_identifier(variable_name.clone())),
+                final_expr: Some(sway::Expression::create_identifier(variable_name.as_str())),
             };
 
             // Add the encoding statements to the block
             for parameter in parameters {
-                block.statements.push(sway::Statement::from(
-                    sway::Expression::create_function_calls(
-                        None,
-                        &[
-                            (variable_name.as_str(), None),
-                            (
-                                "append",
-                                Some((
-                                    None,
-                                    vec![sway::Expression::create_function_calls(
+                let value = match get_expression_type(
+                    project,
+                    module.clone(),
+                    scope.clone(),
+                    &parameter,
+                )? {
+                    sway::TypeName::Identifier {
+                        name,
+                        generic_parameters,
+                    } => match (name.as_str(), generic_parameters.as_ref()) {
+                        ("Identity", None) => {
+                            let identity_variant_branch = |name: &str| -> sway::MatchBranch {
+                                sway::MatchBranch {
+                                    pattern: sway::Expression::create_function_call(
+                                        format!("Identity::{name}").as_str(),
                                         None,
-                                        &[(
-                                            "Bytes::from",
-                                            Some((
-                                                None,
-                                                vec![sway::Expression::create_function_calls(
-                                                    None,
-                                                    &[(
-                                                        "std::codec::encode",
-                                                        Some((None, vec![
-                                                            match get_expression_type(project, module.clone(), scope.clone(), &parameter)? {
-                                                                sway::TypeName::Identifier { name, generic_parameters } => {
-                                                                    match (name.as_str(), generic_parameters.as_ref()) {
-                                                                        ("Identity", None) => {
-                                                                            let identity_variant_branch = |name: &str| -> sway::MatchBranch {
-                                                                                sway::MatchBranch {
-                                                                                    pattern: sway::Expression::create_function_calls(None, &[
-                                                                                        (format!("Identity::{name}").as_str(), Some((None, vec![
-                                                                                            sway::Expression::create_identifier("x".into()),
-                                                                                        ]))),
-                                                                                    ]),
-                                                                                    value: sway::Expression::create_function_calls(None, &[
-                                                                                        ("x", None),
-                                                                                        ("bits", Some((None, vec![]))),
-                                                                                    ]),
-                                                                                }
-                                                                            };
+                                        vec![sway::Expression::create_identifier("x".into())],
+                                    ),
+                                    value: sway::Expression::create_identifier("x")
+                                        .with_bits_call(),
+                                }
+                            };
 
-                                                                            sway::Expression::from(sway::Match {
-                                                                                expression: parameter,
-                                                                                branches: vec![
-                                                                                    identity_variant_branch("Address"),
-                                                                                    identity_variant_branch("ContractId"),
-                                                                                ],
-                                                                            })
-                                                                        },
+                            sway::Expression::from(sway::Match {
+                                expression: parameter,
+                                branches: vec![
+                                    identity_variant_branch("Address"),
+                                    identity_variant_branch("ContractId"),
+                                ],
+                            })
+                        }
 
-                                                                        ("I8" | "I16" | "I32" | "I64" | "I128" | "I256", None) => {
-                                                                            sway::Expression::create_function_calls(Some(parameter), &[
-                                                                                ("underlying", Some((None, vec![])))
-                                                                            ])
-                                                                        }
+                        ("I8" | "I16" | "I32" | "I64" | "I128" | "I256", None) => {
+                            parameter.with_function_call("underlying", None, vec![])
+                        }
 
-                                                                        _ => parameter
-                                                                    }
-                                                                }
+                        _ => parameter,
+                    },
 
-                                                                sway::TypeName::Abi { .. } => {
-                                                                    let identity_variant_branch = |name: &str| -> sway::MatchBranch {
-                                                                        sway::MatchBranch {
-                                                                            pattern: sway::Expression::create_function_calls(None, &[
-                                                                                (format!("Identity::{name}").as_str(), Some((None, vec![
-                                                                                    sway::Expression::create_identifier("x".into()),
-                                                                                ]))),
-                                                                            ]),
-                                                                            value: sway::Expression::create_function_calls(None, &[
-                                                                                ("x", None),
-                                                                                ("bits", Some((None, vec![]))),
-                                                                            ]),
-                                                                        }
-                                                                    };
+                    sway::TypeName::Abi { .. } => {
+                        let identity_variant_branch = |name: &str| -> sway::MatchBranch {
+                            sway::MatchBranch {
+                                pattern: sway::Expression::create_function_call(
+                                    format!("Identity::{name}").as_str(),
+                                    None,
+                                    vec![sway::Expression::create_identifier("x".into())],
+                                ),
+                                value: sway::Expression::create_identifier("x").with_bits_call(),
+                            }
+                        };
 
-                                                                    sway::Expression::from(sway::Match {
-                                                                        expression: parameter,
-                                                                        branches: vec![
-                                                                            identity_variant_branch("Address"),
-                                                                            identity_variant_branch("ContractId"),
-                                                                        ],
-                                                                    })
-                                                                }
-                                                                _ => parameter
-                                                            }
-                                                        ])),
-                                                    )],
-                                                )],
-                                            )),
-                                        )],
-                                    )],
-                                )),
-                            ),
-                        ],
+                        sway::Expression::from(sway::Match {
+                            expression: parameter,
+                            branches: vec![
+                                identity_variant_branch("Address"),
+                                identity_variant_branch("ContractId"),
+                            ],
+                        })
+                    }
+                    _ => parameter,
+                };
+
+                block.statements.push(sway::Statement::from(
+                    sway::Expression::create_identifier(variable_name.as_str()).with_function_call(
+                        "append",
+                        None,
+                        vec![sway::Expression::create_function_call(
+                            "Bytes::from",
+                            None,
+                            vec![sway::Expression::create_function_call(
+                                "std::codec::encode",
+                                None,
+                                vec![value],
+                            )],
+                        )],
                     ),
                 ));
             }

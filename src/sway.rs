@@ -379,6 +379,43 @@ impl Display for TypeName {
 }
 
 impl TypeName {
+    #[inline(always)]
+    pub fn create_identifier(name: &str) -> Self {
+        Self::Identifier {
+            name: name.to_string(),
+            generic_parameters: None,
+        }
+    }
+
+    #[inline(always)]
+    pub fn create_generic(name: &str, generic_parameters: Vec<TypeName>) -> Self {
+        Self::Identifier {
+            name: name.to_string(),
+            generic_parameters: Some(GenericParameterList {
+                entries: generic_parameters
+                    .iter()
+                    .map(|g| GenericParameter {
+                        type_name: g.clone(),
+                        implements: None,
+                    })
+                    .collect(),
+            }),
+        }
+    }
+
+    #[inline(always)]
+    pub fn create_array(element_type: TypeName, length: usize) -> Self {
+        Self::Array {
+            type_name: Box::new(element_type),
+            length,
+        }
+    }
+
+    #[inline(always)]
+    pub fn create_tuple(type_names: Vec<TypeName>) -> Self {
+        Self::Tuple { type_names }
+    }
+
     /// Checks if the type name is an unsigned integer type
     #[inline(always)]
     pub fn is_uint(&self) -> bool {
@@ -651,6 +688,38 @@ impl TypeName {
     }
 
     #[inline(always)]
+    pub fn to_option(&self) -> TypeName {
+        TypeName::Identifier {
+            name: "Option".to_string(),
+            generic_parameters: Some(GenericParameterList {
+                entries: vec![GenericParameter {
+                    type_name: self.clone(),
+                    implements: None,
+                }],
+            }),
+        }
+    }
+
+    #[inline(always)]
+    pub fn create_result_type(ok_type: TypeName, error_type: TypeName) -> TypeName {
+        TypeName::Identifier {
+            name: "Result".to_string(),
+            generic_parameters: Some(GenericParameterList {
+                entries: vec![
+                    GenericParameter {
+                        type_name: ok_type,
+                        implements: None,
+                    },
+                    GenericParameter {
+                        type_name: error_type,
+                        implements: None,
+                    },
+                ],
+            }),
+        }
+    }
+
+    #[inline(always)]
     pub fn storage_key_type(&self) -> Option<TypeName> {
         match self {
             TypeName::Identifier {
@@ -671,6 +740,19 @@ impl TypeName {
     #[inline(always)]
     pub fn is_storage_key(&self) -> bool {
         self.storage_key_type().is_some()
+    }
+
+    #[inline(always)]
+    pub fn to_storage_key(&self) -> TypeName {
+        TypeName::Identifier {
+            name: "StorageKey".to_string(),
+            generic_parameters: Some(GenericParameterList {
+                entries: vec![GenericParameter {
+                    type_name: self.clone(),
+                    implements: None,
+                }],
+            }),
+        }
     }
 
     #[inline(always)]
@@ -723,6 +805,19 @@ impl TypeName {
     }
 
     #[inline(always)]
+    pub fn to_storage_vec(&self) -> TypeName {
+        TypeName::Identifier {
+            name: "StorageVec".to_string(),
+            generic_parameters: Some(GenericParameterList {
+                entries: vec![GenericParameter {
+                    type_name: self.clone(),
+                    implements: None,
+                }],
+            }),
+        }
+    }
+
+    #[inline(always)]
     pub fn is_storage_string(&self) -> bool {
         match self {
             TypeName::Identifier {
@@ -754,6 +849,19 @@ impl TypeName {
     #[inline(always)]
     pub fn is_vec(&self) -> bool {
         self.vec_type().is_some()
+    }
+
+    #[inline(always)]
+    pub fn to_vec(&self) -> TypeName {
+        TypeName::Identifier {
+            name: "Vec".to_string(),
+            generic_parameters: Some(GenericParameterList {
+                entries: vec![GenericParameter {
+                    type_name: self.clone(),
+                    implements: None,
+                }],
+            }),
+        }
     }
 
     #[inline(always)]
@@ -945,6 +1053,63 @@ impl TypeName {
         }
 
         self == other
+    }
+
+    /// Gets a storage-compatible version of the type name
+    pub fn to_storage_compatible_type(self) -> TypeName {
+        if let Some(mut vec_type) = self.vec_type() {
+            vec_type = vec_type.to_storage_compatible_type();
+
+            return TypeName::Identifier {
+                name: "StorageKey".to_string(),
+                generic_parameters: Some(GenericParameterList {
+                    entries: vec![GenericParameter {
+                        type_name: TypeName::Identifier {
+                            name: "StorageVec".to_string(),
+                            generic_parameters: Some(GenericParameterList {
+                                entries: vec![GenericParameter {
+                                    type_name: vec_type,
+                                    implements: None,
+                                }],
+                            }),
+                        },
+                        implements: None,
+                    }],
+                }),
+            };
+        }
+
+        if self.is_bytes() {
+            return TypeName::Identifier {
+                name: "StorageKey".to_string(),
+                generic_parameters: Some(GenericParameterList {
+                    entries: vec![GenericParameter {
+                        type_name: TypeName::Identifier {
+                            name: "StorageBytes".to_string(),
+                            generic_parameters: None,
+                        },
+                        implements: None,
+                    }],
+                }),
+            };
+        }
+
+        if self.is_string() {
+            return TypeName::Identifier {
+                name: "StorageKey".to_string(),
+                generic_parameters: Some(GenericParameterList {
+                    entries: vec![GenericParameter {
+                        type_name: TypeName::Identifier {
+                            name: "StorageString".to_string(),
+                            generic_parameters: None,
+                        },
+                        implements: None,
+                    }],
+                }),
+            };
+        }
+
+        self
     }
 
     /// Gets the parameters and return type name for the getter function of the type name
@@ -2095,48 +2260,38 @@ impl_expr_box_from!(AsmBlock);
 impl Expression {
     #[inline(always)]
     pub fn create_todo(msg: Option<String>) -> Expression {
-        Expression::create_function_calls(
+        Expression::create_function_call(
+            "todo!",
             None,
-            &[(
-                "todo!",
-                Some((
-                    None,
-                    if let Some(msg) = msg {
-                        vec![Expression::Literal(Literal::String(
-                            msg.replace('\\', "\\\\").replace('\"', "\\\""),
-                        ))]
-                    } else {
-                        vec![]
-                    },
-                )),
-            )],
+            if let Some(msg) = msg {
+                vec![Expression::Literal(Literal::String(
+                    msg.replace('\\', "\\\\").replace('\"', "\\\""),
+                ))]
+            } else {
+                vec![]
+            },
         )
     }
 
     #[inline(always)]
     pub fn create_unimplemented(msg: Option<String>) -> Expression {
-        Expression::create_function_calls(
+        Expression::create_function_call(
+            "unimplemented!",
             None,
-            &[(
-                "unimplemented!",
-                Some((
-                    None,
-                    if let Some(msg) = msg {
-                        vec![Expression::Literal(Literal::String(msg))]
-                    } else {
-                        vec![]
-                    },
-                )),
-            )],
+            if let Some(msg) = msg {
+                vec![Expression::Literal(Literal::String(msg))]
+            } else {
+                vec![]
+            },
         )
     }
 
     #[inline(always)]
-    pub fn create_identifier(name: String) -> Expression {
+    pub fn create_identifier(name: &str) -> Expression {
         assert!(!name.is_empty());
 
         Expression::PathExpr(PathExpr {
-            root: PathExprRoot::Identifier(name),
+            root: PathExprRoot::Identifier(name.to_string()),
             segments: vec![],
         })
     }
@@ -2155,6 +2310,7 @@ impl Expression {
         self.as_identifier().is_some()
     }
 
+    #[inline(always)]
     pub fn create_member_access(container: Expression, members: &[&str]) -> Expression {
         assert!(!members.is_empty());
 
@@ -2170,7 +2326,238 @@ impl Expression {
         result
     }
 
-    pub fn create_function_calls(
+    #[inline(always)]
+    pub fn with_member(&self, member: &str) -> Self {
+        Self::from(MemberAccess {
+            expression: self.clone(),
+            member: member.to_string(),
+        })
+    }
+
+    #[inline(always)]
+    pub fn with_function_calls(
+        &self,
+        member_calls: &[(&str, Option<(Option<GenericParameterList>, Vec<Self>)>)],
+    ) -> Self {
+        Self::create_function_calls(Some(self.clone()), member_calls)
+    }
+
+    #[inline(always)]
+    pub fn with_function_call(
+        &self,
+        name: &str,
+        generic_parameters: Option<GenericParameterList>,
+        parameters: Vec<Self>,
+    ) -> Self {
+        self.with_function_calls(&[(name, Some((generic_parameters, parameters)))])
+    }
+
+    #[inline(always)]
+    pub fn to_some(&self) -> Self {
+        Self::create_function_call("Some", None, vec![self.clone()])
+    }
+
+    #[inline(always)]
+    pub fn with_into_call(&self) -> Self {
+        self.with_function_calls(&[("into", Some((None, vec![])))])
+    }
+
+    #[inline(always)]
+    pub fn with_len_call(&self) -> Self {
+        self.with_function_calls(&[("len", Some((None, vec![])))])
+    }
+
+    #[inline(always)]
+    pub fn with_push_call(&self, value: Expression) -> Self {
+        self.with_function_calls(&[("push", Some((None, vec![value])))])
+    }
+
+    #[inline(always)]
+    pub fn with_pop_call(&self) -> Self {
+        self.with_function_calls(&[("pop", Some((None, vec![])))])
+    }
+
+    #[inline(always)]
+    pub fn with_bits_call(&self) -> Self {
+        self.with_function_calls(&[("bits", Some((None, vec![])))])
+    }
+
+    #[inline(always)]
+    pub fn with_as_contract_id_call(&self) -> Self {
+        self.with_function_calls(&[("as_contract_id", Some((None, vec![])))])
+    }
+
+    #[inline(always)]
+    pub fn with_as_address_call(&self) -> Self {
+        self.with_function_calls(&[("as_address", Some((None, vec![])))])
+    }
+
+    #[inline(always)]
+    pub fn with_is_some_call(&self) -> Self {
+        self.with_function_calls(&[("is_some", Some((None, vec![])))])
+    }
+
+    #[inline(always)]
+    pub fn with_is_none_call(&self) -> Self {
+        self.with_function_calls(&[("is_none", Some((None, vec![])))])
+    }
+
+    #[inline(always)]
+    pub fn with_as_bytes_call(&self) -> Self {
+        self.with_function_calls(&[("as_bytes", Some((None, vec![])))])
+    }
+
+    #[inline(always)]
+    pub fn with_as_str_call(&self) -> Self {
+        self.with_function_calls(&[("as_str", Some((None, vec![])))])
+    }
+
+    #[inline(always)]
+    pub fn with_as_ptr_call(&self) -> Self {
+        self.with_function_calls(&[("as_ptr", Some((None, vec![])))])
+    }
+
+    #[inline(always)]
+    pub fn with_ptr_call(&self) -> Self {
+        self.with_function_calls(&[("ptr", Some((None, vec![])))])
+    }
+
+    #[inline(always)]
+    pub fn with_as_raw_slice_call(&self) -> Self {
+        self.with_function_calls(&[("as_raw_slice", Some((None, vec![])))])
+    }
+
+    #[inline(always)]
+    pub fn with_to_be_bytes_call(&self) -> Self {
+        self.with_function_calls(&[("to_be_bytes", Some((None, vec![])))])
+    }
+
+    #[inline(always)]
+    pub fn with_as_u8_call(&self) -> Self {
+        self.with_function_calls(&[("as_u8", Some((None, vec![])))])
+    }
+
+    #[inline(always)]
+    pub fn with_as_u16_call(&self) -> Self {
+        self.with_function_calls(&[("as_u16", Some((None, vec![])))])
+    }
+
+    #[inline(always)]
+    pub fn with_as_u32_call(&self) -> Self {
+        self.with_function_calls(&[("as_u32", Some((None, vec![])))])
+    }
+
+    #[inline(always)]
+    pub fn with_as_u64_call(&self) -> Self {
+        self.with_function_calls(&[("as_u64", Some((None, vec![])))])
+    }
+
+    #[inline(always)]
+    pub fn with_as_u256_call(&self) -> Self {
+        self.with_function_calls(&[("as_u256", Some((None, vec![])))])
+    }
+
+    #[inline(always)]
+    pub fn with_as_b256_call(&self) -> Self {
+        self.with_function_calls(&[("as_b256", Some((None, vec![])))])
+    }
+
+    #[inline(always)]
+    pub fn with_unwrap_call(&self) -> Self {
+        self.with_function_calls(&[("unwrap", Some((None, vec![])))])
+    }
+
+    #[inline(always)]
+    pub fn is_unwrap_call(&self) -> bool {
+        if let Self::FunctionCall(f) = self
+            && let Self::MemberAccess(m) = &f.function
+            && m.member == "unwrap"
+            && f.parameters.is_empty()
+        {
+            return true;
+        }
+
+        false
+    }
+
+    #[inline(always)]
+    pub fn with_unwrap_or_call(&self, value: Expression) -> Self {
+        self.with_function_calls(&[("unwrap_or", Some((None, vec![value])))])
+    }
+
+    #[inline(always)]
+    pub fn with_get_call(&self, value: Expression) -> Self {
+        self.with_function_calls(&[("get", Some((None, vec![value])))])
+    }
+
+    #[inline(always)]
+    pub fn with_set_call(&self, index: Expression, value: Expression) -> Self {
+        self.with_function_calls(&[("set", Some((None, vec![index, value])))])
+    }
+
+    #[inline(always)]
+    pub fn with_remove_call(&self, index: Expression) -> Self {
+        self.with_function_calls(&[("remove", Some((None, vec![index])))])
+    }
+
+    #[inline(always)]
+    pub fn with_read_call(&self) -> Self {
+        self.with_function_calls(&[("read", Some((None, vec![])))])
+    }
+
+    #[inline(always)]
+    pub fn is_read_call(&self) -> bool {
+        if let Self::FunctionCall(f) = self
+            && let Self::MemberAccess(m) = &f.function
+            && m.member == "read"
+            && f.parameters.is_empty()
+        {
+            return true;
+        }
+
+        false
+    }
+
+    #[inline(always)]
+    pub fn with_read_slice_call(&self) -> Self {
+        self.with_function_calls(&[("read_slice", Some((None, vec![])))])
+    }
+
+    #[inline(always)]
+    pub fn with_load_vec_call(&self) -> Self {
+        self.with_function_calls(&[("load_vec", Some((None, vec![])))])
+    }
+
+    #[inline(always)]
+    pub fn with_write_call(&self, value: Expression) -> Self {
+        self.with_function_calls(&[("write", Some((None, vec![value])))])
+    }
+
+    #[inline(always)]
+    pub fn with_write_slice_call(&self, value: Expression) -> Self {
+        self.with_function_calls(&[("write_slice", Some((None, vec![value])))])
+    }
+
+    #[inline(always)]
+    pub fn with_store_vec_call(&self, value: Expression) -> Self {
+        self.with_function_calls(&[("store_vec", Some((None, vec![value])))])
+    }
+
+    #[inline(always)]
+    pub fn with_abi_encode_call(&self, buffer_expression: Expression) -> Self {
+        self.with_function_calls(&[("abi_encode", Some((None, vec![buffer_expression])))])
+    }
+
+    #[inline(always)]
+    pub fn create_function_call(
+        name: &str,
+        generic_parameters: Option<GenericParameterList>,
+        parameters: Vec<Expression>,
+    ) -> Expression {
+        Expression::create_function_calls(None, &[(name, Some((generic_parameters, parameters)))])
+    }
+
+    fn create_function_calls(
         container: Option<Expression>,
         member_calls: &[(
             &str,

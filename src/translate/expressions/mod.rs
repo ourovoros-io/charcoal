@@ -15,9 +15,9 @@ mod list;
 mod literals;
 mod member_access;
 mod new;
+mod operators;
 mod parenthesis;
 mod pre_post;
-mod unary;
 mod variable;
 pub use address_call::*;
 pub use array::*;
@@ -30,9 +30,9 @@ pub use list::*;
 pub use literals::*;
 pub use member_access::*;
 pub use new::*;
+pub use operators::*;
 pub use parenthesis::*;
 pub use pre_post::*;
-pub use unary::*;
 pub use variable::*;
 
 pub fn evaluate_expression(
@@ -49,10 +49,9 @@ pub fn evaluate_expression(
                     name,
                     generic_parameters,
                 } => match (name.as_str(), generic_parameters.as_ref()) {
-                    ("b256", None) if value.is_zero() => sway::Expression::create_function_calls(
-                        None,
-                        &[("b256::zero", Some((None, vec![])))],
-                    ),
+                    ("b256", None) if value.is_zero() => {
+                        sway::Expression::create_function_call("b256::zero", None, vec![])
+                    }
 
                     _ => expression.clone(),
                 },
@@ -145,9 +144,10 @@ pub fn evaluate_expression(
                                     return sway::Expression::Commented(
                                         format!("{}", sway::TabbedDisplayer(expression)),
                                         Box::new(if value.is_zero() {
-                                            sway::Expression::create_function_calls(
+                                            sway::Expression::create_function_call(
+                                                "b256::zero",
                                                 None,
-                                                &[("b256::zero", Some((None, vec![])))],
+                                                vec![],
                                             )
                                         } else {
                                             sway::Expression::from(sway::Literal::HexInt(
@@ -696,25 +696,18 @@ pub fn create_value_expression(
             name,
             generic_parameters,
         } => match (name.as_str(), generic_parameters.as_ref()) {
-            ("todo!", None) => {
-                sway::Expression::create_function_calls(None, &[("todo!", Some((None, vec![])))])
-            }
+            ("todo!", None) => sway::Expression::create_function_call("todo!", None, vec![]),
 
             ("bool", None) => sway::Expression::Literal(sway::Literal::Bool(false)),
 
-            ("b256", None) => sway::Expression::create_function_calls(
-                None,
-                &[("b256::zero", Some((None, vec![])))],
-            ),
+            ("b256", None) => sway::Expression::create_function_call("b256::zero", None, vec![]),
 
             ("I8" | "I16" | "I32" | "I64" | "I128" | "I256", None) => {
                 let value = match name.as_str() {
                     "I128" => {
                         module.borrow_mut().ensure_use_declared("std::u128::*");
-                        sway::Expression::create_function_calls(
-                            None,
-                            &[("U128::zero", Some((None, vec![])))],
-                        )
+
+                        sway::Expression::create_function_call("U128::zero", None, vec![])
                     }
 
                     _ => sway::Expression::from(sway::Literal::DecInt(
@@ -775,9 +768,10 @@ pub fn create_value_expression(
                 parameters: vec![sway::Expression::from(sway::FunctionCall {
                     function: sway::Expression::create_identifier("Address::from".into()),
                     generic_parameters: None,
-                    parameters: vec![sway::Expression::create_function_calls(
+                    parameters: vec![sway::Expression::create_function_call(
+                        "b256::zero",
                         None,
-                        &[("b256::zero", Some((None, vec![])))],
+                        vec![],
                     )],
                 })],
             }),
@@ -791,33 +785,21 @@ pub fn create_value_expression(
             }
 
             ("StorageMap", Some(_)) => sway::Expression::from(sway::Constructor {
-                type_name: sway::TypeName::Identifier {
-                    name: "StorageMap".into(),
-                    generic_parameters: None,
-                },
+                type_name: sway::TypeName::create_identifier("StorageMap"),
                 fields: vec![],
             }),
 
             ("StorageString", None) => sway::Expression::from(sway::Constructor {
-                type_name: sway::TypeName::Identifier {
-                    name: "StorageString".into(),
-                    generic_parameters: None,
-                },
+                type_name: sway::TypeName::create_identifier("StorageString"),
                 fields: vec![],
             }),
 
             ("StorageVec", Some(_)) => sway::Expression::from(sway::Constructor {
-                type_name: sway::TypeName::Identifier {
-                    name: "StorageVec".into(),
-                    generic_parameters: None,
-                },
+                type_name: sway::TypeName::create_identifier("StorageVec"),
                 fields: vec![],
             }),
 
-            ("String", None) => sway::Expression::create_function_calls(
-                None,
-                &[("String::new", Some((None, vec![])))],
-            ),
+            ("String", None) => sway::Expression::create_function_call("String::new", None, vec![]),
 
             ("Vec", Some(_)) => sway::Expression::from(sway::FunctionCall {
                 function: sway::Expression::create_identifier("Vec::new".into()),
@@ -843,10 +825,9 @@ pub fn create_value_expression(
                     if let Some(sway::ImplItem::Constant(value)) =
                         translated_enum.variants_impl.items.first()
                     {
-                        return sway::Expression::create_identifier(format!(
-                            "{}::{}",
-                            name, value.name
-                        ));
+                        return sway::Expression::create_identifier(
+                            format!("{}::{}", name, value.name).as_str(),
+                        );
                     }
 
                     let underlying_type = get_underlying_type(project, module.clone(), type_name);
@@ -874,10 +855,7 @@ pub fn create_value_expression(
                     };
 
                     return sway::Expression::from(sway::Constructor {
-                        type_name: sway::TypeName::Identifier {
-                            name: name.to_string(),
-                            generic_parameters: None,
-                        },
+                        type_name: sway::TypeName::create_identifier(name),
                         fields: fields
                             .iter()
                             .map(|f| sway::ConstructorField {
@@ -935,9 +913,10 @@ pub fn create_value_expression(
             parameters: vec![sway::Expression::from(sway::FunctionCall {
                 function: sway::Expression::create_identifier("Address::from".into()),
                 generic_parameters: None,
-                parameters: vec![sway::Expression::create_function_calls(
+                parameters: vec![sway::Expression::create_function_call(
+                    "b256::zero",
                     None,
-                    &[("b256::zero", Some((None, vec![])))],
+                    vec![],
                 )],
             })],
         }),

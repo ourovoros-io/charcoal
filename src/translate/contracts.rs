@@ -204,10 +204,9 @@ pub fn translate_contract_definition(
                         is_public: true,
                         new_name: inherited_contract_name.to_case(Case::Snake),
                         old_name: String::new(),
-                        type_name: sway::TypeName::Identifier {
-                            name: format!("{inherited_contract_name}Storage"),
-                            generic_parameters: None,
-                        },
+                        type_name: sway::TypeName::create_identifier(
+                            format!("{inherited_contract_name}Storage").as_str(),
+                        ),
                     });
                 storage
                     .namespaces
@@ -390,10 +389,9 @@ pub fn translate_contract_definition(
             .add_variable(Rc::new(RefCell::new(ir::Variable {
                 old_name: String::new(),
                 new_name: "storage_struct".to_string(),
-                type_name: sway::TypeName::Identifier {
-                    name: format!("{}Storage", contract.borrow().name),
-                    generic_parameters: None,
-                },
+                type_name: sway::TypeName::create_identifier(
+                    format!("{}Storage", contract.borrow().name).as_str(),
+                ),
                 statement_index: None,
                 read_count: 0,
                 mutation_count: 0,
@@ -402,7 +400,7 @@ pub fn translate_contract_definition(
         // Create assignment statements for all of the deferred initializations
         for deferred_initialization in deferred_initializations.iter().rev() {
             let lhs = sway::Expression::create_member_access(
-                sway::Expression::create_identifier("storage_struct".to_string()),
+                sway::Expression::create_identifier("storage_struct"),
                 &[deferred_initialization.name.as_str()],
             );
 
@@ -417,14 +415,9 @@ pub fn translate_contract_definition(
                 sway::Expression::Array(sway::Array { elements }) => {
                     for element in elements {
                         assignment_statements.push(sway::Statement::from(
-                            sway::Expression::create_function_calls(
-                                None,
-                                &[
-                                    ("storage_struct", None),
-                                    (deferred_initialization.name.as_str(), None),
-                                    ("push", Some((None, vec![element.clone()]))),
-                                ],
-                            ),
+                            sway::Expression::create_identifier("storage_struct")
+                                .with_member(deferred_initialization.name.as_str())
+                                .with_function_call("push", None, vec![element.clone()]),
                         ));
                     }
                 }

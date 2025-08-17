@@ -78,16 +78,14 @@ pub fn translate_revert_statement(
                     function: sway::Expression::create_identifier("log".into()),
                     generic_parameters: None,
                     parameters: vec![if parameters.is_empty() {
-                        sway::Expression::create_identifier(format!(
-                            "{}::{}",
-                            error_type_name, error_variant.name,
-                        ))
+                        sway::Expression::create_identifier(
+                            format!("{}::{}", error_type_name, error_variant.name).as_str(),
+                        )
                     } else {
                         sway::Expression::from(sway::FunctionCall {
-                            function: sway::Expression::create_identifier(format!(
-                                "{}::{}",
-                                error_type_name, error_variant.name,
-                            )),
+                            function: sway::Expression::create_identifier(
+                                format!("{}::{}", error_type_name, error_variant.name).as_str(),
+                            ),
                             generic_parameters: None,
                             parameters: vec![if parameters.len() == 1 {
                                 let parameter_expression = translate_expression(

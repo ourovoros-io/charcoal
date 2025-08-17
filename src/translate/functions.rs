@@ -393,10 +393,9 @@ pub fn translate_function_declaration(
             is_ref: false,
             is_mut: false,
             name: "storage_struct".to_string(),
-            type_name: Some(sway::TypeName::Identifier {
-                name: format!("{contract_name}Storage"),
-                generic_parameters: None,
-            }),
+            type_name: Some(sway::TypeName::create_identifier(
+                format!("{contract_name}Storage").as_str(),
+            )),
         }));
 
         scope
@@ -404,10 +403,9 @@ pub fn translate_function_declaration(
             .add_variable(Rc::new(RefCell::new(ir::Variable {
                 old_name: "".into(),
                 new_name: "storage_struct".into(),
-                type_name: sway::TypeName::Identifier {
-                    name: format!("{contract_name}Storage"),
-                    generic_parameters: None,
-                },
+                type_name: sway::TypeName::create_identifier(
+                    format!("{contract_name}Storage").as_str(),
+                ),
                 statement_index: Some(0),
                 read_count: 0,
                 mutation_count: 0,
@@ -511,10 +509,9 @@ pub fn translate_abi_function(
             is_ref: false,
             is_mut: false,
             name: "storage_struct".to_string(),
-            type_name: Some(sway::TypeName::Identifier {
-                name: format!("{contract_name}Storage"),
-                generic_parameters: None,
-            }),
+            type_name: Some(sway::TypeName::create_identifier(
+                format!("{contract_name}Storage").as_str(),
+            )),
         });
 
         scope
@@ -522,10 +519,9 @@ pub fn translate_abi_function(
             .add_variable(Rc::new(RefCell::new(ir::Variable {
                 old_name: "".into(),
                 new_name: "storage_struct".into(),
-                type_name: sway::TypeName::Identifier {
-                    name: format!("{contract_name}Storage"),
-                    generic_parameters: None,
-                },
+                type_name: sway::TypeName::create_identifier(
+                    format!("{contract_name}Storage").as_str(),
+                ),
                 statement_index: Some(0),
                 read_count: 0,
                 mutation_count: 0,
@@ -562,10 +558,7 @@ pub fn translate_abi_function(
             for p in abi_function.parameters.entries.iter_mut() {
                 if p.type_name == Some(sway::TypeName::StringSlice) {
                     use_string = true;
-                    p.type_name = Some(sway::TypeName::Identifier {
-                        name: "String".into(),
-                        generic_parameters: None,
-                    });
+                    p.type_name = Some(sway::TypeName::create_identifier("String"));
                 }
             }
 
@@ -655,10 +648,9 @@ pub fn translate_function_definition(
             is_ref: false,
             is_mut: false,
             name: "storage_struct".to_string(),
-            type_name: Some(sway::TypeName::Identifier {
-                name: storage_struct.borrow().name.clone(),
-                generic_parameters: None,
-            }),
+            type_name: Some(sway::TypeName::create_identifier(
+                storage_struct.borrow().name.as_str(),
+            )),
         });
 
         scope
@@ -666,10 +658,7 @@ pub fn translate_function_definition(
             .add_variable(Rc::new(RefCell::new(ir::Variable {
                 old_name: "".into(),
                 new_name: "storage_struct".into(),
-                type_name: sway::TypeName::Identifier {
-                    name: storage_struct.borrow().name.clone(),
-                    generic_parameters: None,
-                },
+                type_name: sway::TypeName::create_identifier(storage_struct.borrow().name.as_str()),
                 statement_index: Some(0),
                 read_count: 0,
                 mutation_count: 0,
@@ -754,7 +743,7 @@ pub fn translate_function_definition(
                         name: parameter.new_name.clone(),
                     }),
                     type_name: Some(parameter.type_name.clone()),
-                    value: sway::Expression::create_identifier(parameter.new_name.clone()),
+                    value: sway::Expression::create_identifier(parameter.new_name.as_str()),
                 }),
             );
         }
@@ -798,12 +787,12 @@ pub fn translate_function_definition(
             .statements
             .push(sway::Statement::from(sway::Expression::Return(Some(
                 Box::new(if return_parameters.len() == 1 {
-                    sway::Expression::create_identifier(return_parameters[0].new_name.clone())
+                    sway::Expression::create_identifier(return_parameters[0].new_name.as_str())
                 } else {
                     sway::Expression::Tuple(
                         return_parameters
                             .iter()
-                            .map(|p| sway::Expression::create_identifier(p.new_name.clone()))
+                            .map(|p| sway::Expression::create_identifier(p.new_name.as_str()))
                             .collect(),
                     )
                 }),
@@ -860,7 +849,7 @@ pub fn translate_function_definition(
             if storage_read || storage_write {
                 if let Some(storage_struct_parameter) = storage_struct_parameter.as_ref() {
                     parameters.push(sway::Expression::create_identifier(
-                        storage_struct_parameter.name.clone(),
+                        storage_struct_parameter.name.as_str(),
                     ));
                 }
             }
@@ -885,7 +874,7 @@ pub fn translate_function_definition(
                 unreachable!()
             };
             modifiers.push(sway::FunctionCall {
-                function: sway::Expression::create_identifier(new_name.clone()),
+                function: sway::Expression::create_identifier(new_name.as_str()),
                 generic_parameters: None,
                 parameters,
             });
@@ -896,7 +885,7 @@ pub fn translate_function_definition(
             let name = format!("{prefix}_constructor");
 
             constructor_calls.push(sway::FunctionCall {
-                function: sway::Expression::create_identifier(name),
+                function: sway::Expression::create_identifier(name.as_str()),
                 generic_parameters: None,
                 parameters,
             });
@@ -1023,7 +1012,7 @@ pub fn translate_function_definition(
             .parameters
             .entries
             .iter()
-            .map(|p| sway::Expression::create_identifier(p.name.clone()))
+            .map(|p| sway::Expression::create_identifier(p.name.as_str()))
             .collect::<Vec<_>>();
 
         // Convert parameters of `str` to `String`, since they are not allowed in abi function signatures
@@ -1034,10 +1023,7 @@ pub fn translate_function_definition(
 
             module.borrow_mut().ensure_use_declared("std::string::*");
 
-            p.type_name = Some(sway::TypeName::Identifier {
-                name: "String".into(),
-                generic_parameters: None,
-            });
+            p.type_name = Some(sway::TypeName::create_identifier("String"));
 
             statements.push(sway::Statement::from(sway::Let {
                 pattern: sway::LetPattern::Identifier(sway::LetIdentifier {
@@ -1045,10 +1031,7 @@ pub fn translate_function_definition(
                     name: p.name.clone(),
                 }),
                 type_name: None,
-                value: sway::Expression::create_function_calls(
-                    None,
-                    &[(p.name.as_str(), None), ("as_str", Some((None, vec![])))],
-                ),
+                value: sway::Expression::create_identifier(p.name.as_str()).with_as_str_call(),
             }));
         }
 
@@ -1071,10 +1054,9 @@ pub fn translate_function_definition(
                     .unwrap();
 
                 let constructor = sway::Constructor {
-                    type_name: sway::TypeName::Identifier {
-                        name: format!("{contract_name}Storage"),
-                        generic_parameters: None,
-                    },
+                    type_name: sway::TypeName::create_identifier(
+                        format!("{contract_name}Storage").as_str(),
+                    ),
                     fields: contract
                         .borrow()
                         .storage_struct
@@ -1111,10 +1093,9 @@ pub fn translate_function_definition(
                     generic_parameters: None,
                     parameters: sway::ParameterList::default(),
                     storage_struct_parameter: None,
-                    return_type: Some(sway::TypeName::Identifier {
-                        name: format!("{contract_name}Storage"),
-                        generic_parameters: None,
-                    }),
+                    return_type: Some(sway::TypeName::create_identifier(
+                        format!("{contract_name}Storage").as_str(),
+                    )),
                     body: Some(sway::Block {
                         statements: vec![],
                         final_expr: Some(sway::Expression::from(constructor)),
@@ -1128,18 +1109,16 @@ pub fn translate_function_definition(
                     name: "storage_struct".to_string(),
                 }),
                 type_name: None,
-                value: sway::Expression::create_function_calls(
+                value: sway::Expression::create_function_call(
+                    contract
+                        .borrow()
+                        .storage_struct_constructor_fn
+                        .as_ref()
+                        .unwrap()
+                        .new_name
+                        .as_str(),
                     None,
-                    &[(
-                        contract
-                            .borrow()
-                            .storage_struct_constructor_fn
-                            .as_ref()
-                            .unwrap()
-                            .new_name
-                            .as_str(),
-                        Some((None, vec![])),
-                    )],
+                    vec![],
                 ),
             }));
 
@@ -1148,12 +1127,10 @@ pub fn translate_function_definition(
 
         impl_function.body = Some(sway::Block {
             statements,
-            final_expr: Some(sway::Expression::create_function_calls(
+            final_expr: Some(sway::Expression::create_function_call(
+                toplevel_function.new_name.as_str(),
                 None,
-                &[(
-                    toplevel_function.new_name.as_str(),
-                    Some((None, parameters)),
-                )],
+                parameters,
             )),
         });
 
@@ -1422,10 +1399,9 @@ pub fn translate_modifier_definition(
             is_ref: false,
             is_mut: false,
             name: "storage_struct".into(),
-            type_name: Some(sway::TypeName::Identifier {
-                name: format!("{}Storage", contract_name.unwrap()),
-                generic_parameters: None,
-            }),
+            type_name: Some(sway::TypeName::create_identifier(
+                format!("{}Storage", contract_name.unwrap()).as_str(),
+            )),
         });
     }
 
@@ -1439,10 +1415,9 @@ pub fn translate_modifier_definition(
                     is_ref: false,
                     is_mut: false,
                     name: "storage_struct".into(),
-                    type_name: Some(sway::TypeName::Identifier {
-                        name: format!("{}Storage", contract_name.unwrap()),
-                        generic_parameters: None,
-                    }),
+                    type_name: Some(sway::TypeName::create_identifier(
+                        format!("{}Storage", contract_name.unwrap()).as_str(),
+                    )),
                 })
             } else {
                 None
@@ -1477,10 +1452,9 @@ pub fn translate_modifier_definition(
                     is_ref: false,
                     is_mut: false,
                     name: "storage_struct".into(),
-                    type_name: Some(sway::TypeName::Identifier {
-                        name: format!("{}Storage", contract_name.unwrap()),
-                        generic_parameters: None,
-                    }),
+                    type_name: Some(sway::TypeName::create_identifier(
+                        format!("{}Storage", contract_name.unwrap()).as_str(),
+                    )),
                 })
             } else {
                 None
@@ -1515,10 +1489,9 @@ pub fn translate_modifier_definition(
                     is_ref: false,
                     is_mut: false,
                     name: "storage_struct".into(),
-                    type_name: Some(sway::TypeName::Identifier {
-                        name: format!("{}Storage", contract_name.unwrap()),
-                        generic_parameters: None,
-                    }),
+                    type_name: Some(sway::TypeName::create_identifier(
+                        format!("{}Storage", contract_name.unwrap()).as_str(),
+                    )),
                 })
             } else {
                 None
@@ -1553,10 +1526,9 @@ pub fn translate_modifier_definition(
                     is_ref: false,
                     is_mut: false,
                     name: "storage_struct".into(),
-                    type_name: Some(sway::TypeName::Identifier {
-                        name: format!("{}Storage", contract_name.unwrap()),
-                        generic_parameters: None,
-                    }),
+                    type_name: Some(sway::TypeName::create_identifier(
+                        format!("{}Storage", contract_name.unwrap()).as_str(),
+                    )),
                 })
             } else {
                 None
@@ -1690,10 +1662,9 @@ pub fn ensure_constructor_functions_exist(
             }),
             type_name: None,
             value: sway::Expression::from(sway::Constructor {
-                type_name: sway::TypeName::Identifier {
-                    name: format!("{contract_name}Storage"),
-                    generic_parameters: None,
-                },
+                type_name: sway::TypeName::create_identifier(
+                    format!("{contract_name}Storage").as_str(),
+                ),
                 fields: contract
                     .borrow()
                     .storage_struct
@@ -1719,15 +1690,10 @@ pub fn ensure_constructor_functions_exist(
                     .collect(),
             }),
         })],
-        final_expr: Some(sway::Expression::create_function_calls(
+        final_expr: Some(sway::Expression::create_function_call(
+            function_name.top_level_fn_name.as_str(),
             None,
-            &[(
-                function_name.top_level_fn_name.as_str(),
-                Some((
-                    None,
-                    vec![sway::Expression::create_identifier("storage_struct".into())],
-                )),
-            )],
+            vec![sway::Expression::create_identifier("storage_struct".into())],
         )),
     });
 
@@ -1740,10 +1706,9 @@ pub fn ensure_constructor_functions_exist(
         is_ref: false,
         is_mut: false,
         name: "storage_struct".to_string(),
-        type_name: Some(sway::TypeName::Identifier {
-            name: format!("{contract_name}Storage"),
-            generic_parameters: None,
-        }),
+        type_name: Some(sway::TypeName::create_identifier(
+            format!("{contract_name}Storage").as_str(),
+        )),
     });
 
     toplevel_function.body = Some(sway::Block::default());
@@ -1779,10 +1744,9 @@ pub fn ensure_constructor_functions_exist(
                 is_ref: false,
                 is_mut: false,
                 name: "storage_struct".into(),
-                type_name: Some(sway::TypeName::Identifier {
-                    name: format!("{contract_name}Storage"),
-                    generic_parameters: None,
-                }),
+                type_name: Some(sway::TypeName::create_identifier(
+                    format!("{contract_name}Storage").as_str(),
+                )),
             })),
             return_type: None,
         },
@@ -1817,18 +1781,7 @@ pub fn ensure_constructor_called_fields_exist(
                 is_public: true,
                 new_name: constructor_called_field_name.clone(),
                 old_name: String::new(),
-                type_name: sway::TypeName::Identifier {
-                    name: "StorageKey".to_string(),
-                    generic_parameters: Some(sway::GenericParameterList {
-                        entries: vec![sway::GenericParameter {
-                            type_name: sway::TypeName::Identifier {
-                                name: "bool".into(),
-                                generic_parameters: None,
-                            },
-                            implements: None,
-                        }],
-                    }),
-                },
+                type_name: sway::TypeName::create_identifier("bool").to_storage_key(),
             });
     }
 
@@ -1847,10 +1800,7 @@ pub fn ensure_constructor_called_fields_exist(
             .push(sway::StorageField {
                 old_name: String::new(),
                 name: constructor_called_field_name.clone(),
-                type_name: sway::TypeName::Identifier {
-                    name: "bool".into(),
-                    generic_parameters: None,
-                },
+                type_name: sway::TypeName::create_identifier("bool"),
                 value: sway::Expression::from(sway::Literal::Bool(false)),
             });
     }
@@ -1872,53 +1822,32 @@ pub fn update_constructor_function_body(
     // require(!storage.initialized.read(), "The Contract constructor has already been called");
     function_body.statements.insert(
         0,
-        sway::Statement::from(sway::Expression::create_function_calls(
+        sway::Statement::from(sway::Expression::create_function_call(
+            "require",
             None,
-            &[(
-                "require",
-                Some((
-                    None,
-                    vec![
-                        sway::Expression::from(sway::UnaryExpression {
-                            operator: "!".into(),
-                            expression: sway::Expression::create_function_calls(
-                                None,
-                                &[
-                                    ("storage_struct", None),
-                                    (constructor_called_field_name.as_str(), None),
-                                    ("read", Some((None, vec![]))),
-                                ],
-                            ),
-                        }),
-                        sway::Expression::from(sway::Literal::String(format!(
-                            "The {} constructor has already been called",
-                            contract_name
-                                .map(|s| s.to_string())
-                                .unwrap_or_else(|| module.borrow().name.clone()),
-                        ))),
-                    ],
-                )),
-            )],
+            vec![
+                sway::Expression::from(sway::UnaryExpression {
+                    operator: "!".into(),
+                    expression: sway::Expression::create_identifier("storage_struct")
+                        .with_member(constructor_called_field_name.as_str())
+                        .with_read_call(),
+                }),
+                sway::Expression::from(sway::Literal::String(format!(
+                    "The {} constructor has already been called",
+                    contract_name
+                        .map(|s| s.to_string())
+                        .unwrap_or_else(|| module.borrow().name.clone()),
+                ))),
+            ],
         )),
     );
 
     // Set the `constructor_called` storage field to `true` at the end of the function
     // storage.initialized.write(true);
     function_body.statements.push(sway::Statement::from(
-        sway::Expression::create_function_calls(
-            None,
-            &[
-                ("storage_struct", None),
-                (constructor_called_field_name.as_str(), None),
-                (
-                    "write",
-                    Some((
-                        None,
-                        vec![sway::Expression::from(sway::Literal::Bool(true))],
-                    )),
-                ),
-            ],
-        ),
+        sway::Expression::create_identifier("storage_struct")
+            .with_member(constructor_called_field_name.as_str())
+            .with_write_call(sway::Expression::from(sway::Literal::Bool(true))),
     ));
 }
 
@@ -1942,15 +1871,16 @@ fn resolve_modifier_invocation(
     if modifier.pre_body.is_some() && modifier.post_body.is_some() {
         return Ok(Some((
             Some(sway::FunctionCall {
-                function: sway::Expression::create_identifier(format!("{}_pre", modifier.new_name)),
+                function: sway::Expression::create_identifier(
+                    format!("{}_pre", modifier.new_name).as_str(),
+                ),
                 generic_parameters: None,
                 parameters: parameters_cell.borrow().clone(),
             }),
             Some(sway::FunctionCall {
-                function: sway::Expression::create_identifier(format!(
-                    "{}_post",
-                    modifier.new_name
-                )),
+                function: sway::Expression::create_identifier(
+                    format!("{}_post", modifier.new_name).as_str(),
+                ),
                 generic_parameters: None,
                 parameters: parameters_cell.borrow().clone(),
             }),
@@ -1959,7 +1889,7 @@ fn resolve_modifier_invocation(
     } else if modifier.pre_body.is_some() {
         return Ok(Some((
             Some(sway::FunctionCall {
-                function: sway::Expression::create_identifier(modifier.new_name.clone()),
+                function: sway::Expression::create_identifier(modifier.new_name.as_str()),
                 generic_parameters: None,
                 parameters: parameters_cell.borrow().clone(),
             }),
@@ -1970,7 +1900,7 @@ fn resolve_modifier_invocation(
         return Ok(Some((
             None,
             Some(sway::FunctionCall {
-                function: sway::Expression::create_identifier(modifier.new_name.clone()),
+                function: sway::Expression::create_identifier(modifier.new_name.as_str()),
                 generic_parameters: None,
                 parameters: parameters_cell.borrow().clone(),
             }),

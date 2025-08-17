@@ -53,10 +53,9 @@ pub fn translate_member_access_expression(
                         _ => false,
                     })
                 {
-                    return Ok(sway::Expression::create_identifier(format!(
-                        "{}::{}",
-                        name, c.name
-                    )));
+                    return Ok(sway::Expression::create_identifier(
+                        format!("{}::{}", name, c.name).as_str(),
+                    ));
                 }
             }
 
@@ -78,38 +77,32 @@ pub fn translate_member_access_expression(
                     Some(symbol) => match symbol {
                         SymbolData::Variable(variable) => {
                             return Ok(sway::Expression::create_identifier(
-                                variable.borrow().new_name.clone(),
+                                variable.borrow().new_name.as_str(),
                             ));
                         }
 
                         SymbolData::Constant(constant) => {
-                            return Ok(sway::Expression::create_identifier(constant.name.clone()));
+                            return Ok(sway::Expression::create_identifier(constant.name.as_str()));
                         }
 
                         SymbolData::ConfigurableField(configurable_field) => {
                             return Ok(sway::Expression::create_identifier(
-                                configurable_field.name.clone(),
+                                configurable_field.name.as_str(),
                             ));
                         }
 
                         SymbolData::StorageField { namespace, field } => {
-                            return Ok(sway::Expression::create_function_calls(
-                                None,
-                                &[
-                                    (
-                                        format!(
-                                            "storage{}",
-                                            namespace
-                                                .as_ref()
-                                                .map(|n| format!("::{n}"))
-                                                .unwrap_or_default()
-                                        )
-                                        .as_str(),
-                                        None,
-                                    ),
-                                    (field.name.as_str(), None),
-                                ],
-                            ));
+                            return Ok(sway::Expression::create_identifier(
+                                format!(
+                                    "storage{}",
+                                    namespace
+                                        .as_ref()
+                                        .map(|n| format!("::{n}"))
+                                        .unwrap_or_default()
+                                )
+                                .as_str(),
+                            )
+                            .with_member(field.name.as_str()));
                         }
 
                         SymbolData::StorageStructField {
@@ -139,7 +132,7 @@ pub fn translate_member_access_expression(
                         unreachable!()
                     };
 
-                    return Ok(sway::Expression::create_identifier(new_name.clone()));
+                    return Ok(sway::Expression::create_identifier(new_name));
                 }
             }
         }
@@ -231,10 +224,7 @@ pub fn translate_member_access_expression(
             let mut container = container.clone();
 
             if container_type_name.is_storage_key() {
-                container = sway::Expression::create_function_calls(
-                    Some(container),
-                    &[("read", Some((None, vec![])))],
-                )
+                container = container.with_read_call();
             }
 
             if fields.iter().any(|f| f.new_name == field_name) {
@@ -278,23 +268,16 @@ pub fn translate_member_access_expression(
                             if container_type_name.to_string() == "ContractId" {
                                 container.clone()
                             } else {
-                                sway::Expression::create_function_calls(
+                                sway::Expression::create_function_call(
+                                    "ContractId::from",
                                     None,
-                                    &[(
-                                        "ContractId::from",
-                                        Some((
-                                            None,
-                                            vec![sway::Expression::create_function_calls(
-                                                Some(container.clone()),
-                                                &[("bits", Some((None, vec![])))],
-                                            )],
-                                        )),
-                                    )],
+                                    vec![container.with_bits_call()],
                                 )
                             },
-                            sway::Expression::create_function_calls(
+                            sway::Expression::create_function_call(
+                                "AssetId::default",
                                 None,
-                                &[("AssetId::default", Some((None, vec![])))],
+                                vec![],
                             ),
                         ],
                     })));
@@ -307,10 +290,7 @@ pub fn translate_member_access_expression(
         if container_type_name.is_bytes() {
             match member.name.as_str() {
                 "length" => {
-                    return Ok(Some(sway::Expression::create_function_calls(
-                        Some(container.clone()),
-                        &[("len", Some((None, vec![])))],
-                    )));
+                    return Ok(Some(container.with_len_call()));
                 }
 
                 _ => {}
@@ -325,10 +305,7 @@ pub fn translate_member_access_expression(
                 } => match (name.as_str(), generic_parameters.as_ref()) {
                     ("StorageVec", Some(_)) => match member.name.as_str() {
                         "length" => {
-                            return Ok(Some(sway::Expression::create_function_calls(
-                                Some(container.clone()),
-                                &[("len", Some((None, vec![])))],
-                            )));
+                            return Ok(Some(container.with_len_call()));
                         }
 
                         _ => {}
@@ -342,17 +319,11 @@ pub fn translate_member_access_expression(
         }
 
         if container_type_name.is_vec() && member.name.as_str() == "length" {
-            return Ok(Some(sway::Expression::create_function_calls(
-                Some(container.clone()),
-                &[("len", Some((None, vec![])))],
-            )));
+            return Ok(Some(container.with_len_call()));
         }
 
         if container_type_name.is_array() && member.name.as_str() == "length" {
-            return Ok(Some(sway::Expression::create_function_calls(
-                Some(container.clone()),
-                &[("len", Some((None, vec![])))],
-            )));
+            return Ok(Some(container.with_len_call()));
         }
 
         Ok(None)
@@ -397,10 +368,7 @@ pub fn translate_member_access_expression(
     if let Some(option_type) = container_type_name.option_type()
         && option_type.is_storage_key()
     {
-        container = sway::Expression::create_function_calls(
-            Some(container.clone()),
-            &[("unwrap", Some((None, vec![])))],
-        );
+        container = container.with_unwrap_call();
     }
 
     if let Ok(Some(result)) = check_container(project, &container) {
@@ -412,8 +380,7 @@ pub fn translate_member_access_expression(
     }
 
     // HACK: tack on `.read()` and try again
-    container =
-        sway::Expression::create_function_calls(Some(container), &[("read", Some((None, vec![])))]);
+    container = container.with_read_call();
 
     if let Ok(Some(result)) = check_container(project, &container) {
         scope
@@ -470,7 +437,7 @@ fn translate_builtin_function_call_member_access_expression(
                         "min",
                     ) => {
                         return Ok(Some(sway::Expression::from(sway::FunctionCall {
-                            function: sway::Expression::create_identifier(format!("{name}::min")),
+                            function: sway::Expression::create_identifier(format!("{name}::min").as_str()),
                             generic_parameters: None,
                             parameters: vec![],
                         })));
@@ -482,7 +449,7 @@ fn translate_builtin_function_call_member_access_expression(
                         "max",
                     ) => {
                         return Ok(Some(sway::Expression::from(sway::FunctionCall {
-                            function: sway::Expression::create_identifier(format!("{name}::max")),
+                            function: sway::Expression::create_identifier(format!("{name}::max").as_str()),
                             generic_parameters: None,
                             parameters: vec![],
                         })));
@@ -549,8 +516,8 @@ fn translate_builtin_variable_member_access_expression(
             //    r1: u64
             // }.as_u256()
 
-            Ok(Some(sway::Expression::create_function_calls(
-                Some(sway::Expression::from(sway::AsmBlock {
+            Ok(Some(
+                sway::Expression::from(sway::AsmBlock {
                     registers: vec![sway::AsmRegister {
                         name: "r1".into(),
                         value: None,
@@ -561,14 +528,11 @@ fn translate_builtin_variable_member_access_expression(
                     }],
                     final_expression: Some(sway::AsmFinalExpression {
                         register: "r1".into(),
-                        type_name: Some(sway::TypeName::Identifier {
-                            name: "u64".into(),
-                            generic_parameters: None,
-                        }),
+                        type_name: Some(sway::TypeName::create_identifier("u64")),
                     }),
-                })),
-                &[("as_u256", Some((None, vec![])))],
-            )))
+                })
+                .with_as_u256_call(),
+            ))
         }
 
         ("block", "coinbase") => {
@@ -598,10 +562,7 @@ fn translate_builtin_variable_member_access_expression(
                                 function: sway::Expression::create_identifier("__size_of".into()),
                                 generic_parameters: Some(sway::GenericParameterList {
                                     entries: vec![sway::GenericParameter {
-                                        type_name: sway::TypeName::Identifier {
-                                            name: "b256".into(),
-                                            generic_parameters: None,
-                                        },
+                                        type_name: sway::TypeName::create_identifier("b256"),
                                         implements: None,
                                     }],
                                 }),
@@ -626,44 +587,25 @@ fn translate_builtin_variable_member_access_expression(
                 ],
 
                 // Identity::from(ContractId::from(ptr.read::<b256>()))
-                final_expr: Some(sway::Expression::create_function_calls(
+                final_expr: Some(sway::Expression::create_function_call(
+                    "Identity::from",
                     None,
-                    &[(
-                        "Identity::from",
-                        Some((
-                            None,
-                            vec![sway::Expression::create_function_calls(
-                                None,
-                                &[(
-                                    "ContractId::from",
-                                    Some((
-                                        None,
-                                        vec![sway::Expression::create_function_calls(
-                                            None,
-                                            &[
-                                                ("ptr", None),
-                                                (
-                                                    "read",
-                                                    Some((
-                                                        Some(sway::GenericParameterList {
-                                                            entries: vec![sway::GenericParameter {
-                                                                type_name:
-                                                                    sway::TypeName::Identifier {
-                                                                        name: "b256".into(),
-                                                                        generic_parameters: None,
-                                                                    },
-                                                                implements: None,
-                                                            }],
-                                                        }),
-                                                        vec![],
-                                                    )),
-                                                ),
-                                            ],
-                                        )],
-                                    )),
-                                )],
-                            )],
-                        )),
+                    vec![sway::Expression::create_function_call(
+                        "ContractId::from",
+                        None,
+                        vec![
+                            sway::Expression::create_identifier("ptr")
+                                .with_function_call(
+                                    "read",
+                                    Some(sway::GenericParameterList {
+                                        entries: vec![sway::GenericParameter {
+                                            type_name: sway::TypeName::create_identifier("b256"),
+                                            implements: None,
+                                        }],
+                                    }),
+                                    vec![],
+                                ),
+                        ],
                     )],
                 )),
             })))
@@ -710,13 +652,10 @@ fn translate_builtin_variable_member_access_expression(
 
         ("block", "timestamp") => {
             // block.timestamp => std::block::timestamp().as_u256()
-            Ok(Some(sway::Expression::create_function_calls(
-                None,
-                &[
-                    ("std::block::timestamp", Some((None, vec![]))),
-                    ("as_u256", Some((None, vec![]))),
-                ],
-            )))
+            Ok(Some(
+                sway::Expression::create_function_call("std::block::timestamp", None, vec![])
+                    .with_as_u256_call(),
+            ))
         }
 
         ("msg", "data") => {
@@ -725,49 +664,29 @@ fn translate_builtin_variable_member_access_expression(
             // Ensure `std::bytes::Bytes` is imported
             module.borrow_mut().ensure_use_declared("std::bytes::Bytes");
 
-            Ok(Some(sway::Expression::create_function_calls(
-                None,
-                &[
-                    (
-                        "std::inputs::input_message_data",
-                        Some((
-                            None,
-                            vec![
-                                sway::Expression::from(sway::Literal::DecInt(
-                                    BigUint::zero(),
-                                    None,
-                                )),
-                                sway::Expression::from(sway::Literal::DecInt(
-                                    BigUint::zero(),
-                                    None,
-                                )),
-                            ],
-                        )),
-                    ),
-                    (
-                        "unwrap_or",
-                        Some((
-                            None,
-                            vec![sway::Expression::from(sway::FunctionCall {
-                                function: sway::Expression::create_identifier("Bytes::new".into()),
-                                generic_parameters: None,
-                                parameters: vec![],
-                            })],
-                        )),
-                    ),
-                ],
-            )))
+            Ok(Some(
+                sway::Expression::create_function_call(
+                    "std::inputs::input_message_data",
+                    None,
+                    vec![
+                        sway::Expression::from(sway::Literal::DecInt(BigUint::zero(), None)),
+                        sway::Expression::from(sway::Literal::DecInt(BigUint::zero(), None)),
+                    ],
+                )
+                .with_unwrap_or_call(sway::Expression::create_function_call(
+                    "Bytes::new",
+                    None,
+                    vec![],
+                )),
+            ))
         }
 
         ("msg", "sender") => {
             // msg.sender => msg_sender().unwrap()
-            Ok(Some(sway::Expression::create_function_calls(
-                None,
-                &[
-                    ("msg_sender", Some((None, vec![]))),
-                    ("unwrap", Some((None, vec![]))),
-                ],
-            )))
+            Ok(Some(
+                sway::Expression::create_function_call("msg_sender", None, vec![])
+                    .with_unwrap_call(),
+            ))
         }
 
         ("msg", "sig") => {
@@ -796,22 +715,13 @@ fn translate_builtin_variable_member_access_expression(
 
         ("tx", "gasprice") => {
             // tx.gasprice => std::tx::tx_gas_price().unwrap_or(0)
-            Ok(Some(sway::Expression::create_function_calls(
-                None,
-                &[
-                    ("std::tx::tx_gas_price", Some((None, vec![]))),
-                    (
-                        "unwrap_or",
-                        Some((
-                            None,
-                            vec![sway::Expression::from(sway::Literal::DecInt(
-                                BigUint::zero(),
-                                None,
-                            ))],
-                        )),
-                    ),
-                ],
-            )))
+            Ok(Some(
+                sway::Expression::create_function_call("std::tx::tx_gas_price", None, vec![])
+                    .with_unwrap_or_call(sway::Expression::from(sway::Literal::DecInt(
+                        BigUint::zero(),
+                        None,
+                    ))),
+            ))
         }
 
         ("tx", "origin") => {
@@ -825,9 +735,10 @@ fn translate_builtin_variable_member_access_expression(
                     generic_parameters: None,
                     parameters: vec![sway::Expression::Commented(
                         "unsupported: tx.origin; using:".into(),
-                        Box::new(sway::Expression::create_function_calls(
+                        Box::new(sway::Expression::create_function_call(
+                            "b256::zero",
                             None,
-                            &[("b256::zero", Some((None, vec![])))],
+                            vec![],
                         )),
                     )],
                 })],

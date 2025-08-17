@@ -25,27 +25,18 @@ pub fn translate_delete_expression(
                 let container_type =
                     get_expression_type(project, module.clone(), scope.clone(), &m.expression)?;
 
-                if let Some(storage_key_type) = container_type.storage_key_type() {
-                    if let sway::TypeName::Identifier {
+                if let Some(storage_key_type) = container_type.storage_key_type()
+                    && let sway::TypeName::Identifier {
                         name,
                         generic_parameters,
                     } = &storage_key_type
-                    {
-                        if let ("StorageMap", Some(_)) =
-                            (name.as_str(), generic_parameters.as_ref())
-                        {
-                            scope.borrow_mut().set_function_storage_accesses(
-                                module.clone(),
-                                false,
-                                true,
-                            );
+                    && let ("StorageMap", Some(_)) = (name.as_str(), generic_parameters.as_ref())
+                {
+                    scope
+                        .borrow_mut()
+                        .set_function_storage_accesses(module.clone(), false, true);
 
-                            return Ok(sway::Expression::create_function_calls(
-                                Some(m.expression.clone()),
-                                &[("remove", Some((None, vec![f.parameters[0].clone()])))],
-                            ));
-                        }
-                    }
+                    return Ok(m.expression.with_remove_call(f.parameters[0].clone()));
                 }
             }
 
@@ -62,30 +53,21 @@ pub fn translate_delete_expression(
                                 &m.expression,
                             )?;
 
-                            if let Some(storage_key_type) = container_type.storage_key_type() {
-                                if let sway::TypeName::Identifier {
+                            if let Some(storage_key_type) = container_type.storage_key_type()
+                                && let sway::TypeName::Identifier {
                                     name,
                                     generic_parameters,
                                 } = &storage_key_type
-                                {
-                                    if let ("StorageVec", Some(_)) =
-                                        (name.as_str(), generic_parameters.as_ref())
-                                    {
-                                        scope.borrow_mut().set_function_storage_accesses(
-                                            module.clone(),
-                                            false,
-                                            true,
-                                        );
+                                && let ("StorageVec", Some(_)) =
+                                    (name.as_str(), generic_parameters.as_ref())
+                            {
+                                scope.borrow_mut().set_function_storage_accesses(
+                                    module.clone(),
+                                    false,
+                                    true,
+                                );
 
-                                        return Ok(sway::Expression::create_function_calls(
-                                            Some(m.expression.clone()),
-                                            &[(
-                                                "remove",
-                                                Some((None, vec![f.parameters[0].clone()])),
-                                            )],
-                                        ));
-                                    }
-                                }
+                                return Ok(m.expression.with_remove_call(f.parameters[0].clone()));
                             }
                         }
 

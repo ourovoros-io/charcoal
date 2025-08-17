@@ -208,10 +208,7 @@ pub fn translate_yul_variable_declaration_statement(
         variables.push(Rc::new(RefCell::new(ir::Variable {
             old_name: p.id.name.clone(),
             new_name: translate_naming_convention(p.id.name.as_str(), Case::Snake),
-            type_name: sway::TypeName::Identifier {
-                name: "u256".into(),
-                generic_parameters: None,
-            },
+            type_name: sway::TypeName::create_identifier("u256"),
             ..Default::default()
         })));
     }
@@ -248,10 +245,7 @@ pub fn translate_yul_variable_declaration_statement(
                 project,
                 module.clone(),
                 scope.clone(),
-                &sway::TypeName::Identifier {
-                    name: "u256".into(),
-                    generic_parameters: None,
-                },
+                &sway::TypeName::create_identifier("u256"),
                 None,
             )
         },
@@ -502,13 +496,10 @@ pub fn translate_yul_variable_expression(
     match name {
         "caller" => {
             // caller => msg_sender().unwrap()
-            return Ok(sway::Expression::create_function_calls(
-                None,
-                &[
-                    ("msg_sender", Some((None, vec![]))),
-                    ("unwrap", Some((None, vec![]))),
-                ],
-            ));
+            return Ok(
+                sway::Expression::create_function_call("msg_sender", None, vec![])
+                    .with_unwrap_call(),
+            );
         }
 
         "chainid" => {
@@ -517,26 +508,21 @@ pub fn translate_yul_variable_expression(
             //    r1: u64
             // }.as_u256()
 
-            return Ok(sway::Expression::create_function_calls(
-                Some(sway::Expression::from(sway::AsmBlock {
-                    registers: vec![sway::AsmRegister {
-                        name: "r1".into(),
-                        value: None,
-                    }],
-                    instructions: vec![sway::AsmInstruction {
-                        op_code: "gm".into(),
-                        args: vec!["r1".into(), "i4".into()],
-                    }],
-                    final_expression: Some(sway::AsmFinalExpression {
-                        register: "r1".into(),
-                        type_name: Some(sway::TypeName::Identifier {
-                            name: "u64".into(),
-                            generic_parameters: None,
-                        }),
-                    }),
-                })),
-                &[("as_u256", Some((None, vec![])))],
-            ));
+            return Ok(sway::Expression::from(sway::AsmBlock {
+                registers: vec![sway::AsmRegister {
+                    name: "r1".into(),
+                    value: None,
+                }],
+                instructions: vec![sway::AsmInstruction {
+                    op_code: "gm".into(),
+                    args: vec!["r1".into(), "i4".into()],
+                }],
+                final_expression: Some(sway::AsmFinalExpression {
+                    register: "r1".into(),
+                    type_name: Some(sway::TypeName::create_identifier("u64")),
+                }),
+            })
+            .with_as_u256_call());
         }
 
         "msize" => {
@@ -546,13 +532,12 @@ pub fn translate_yul_variable_expression(
 
         "now" => {
             // now => std::block::timestamp().as_u256()
-            return Ok(sway::Expression::create_function_calls(
+            return Ok(sway::Expression::create_function_call(
+                "std::block::timestamp",
                 None,
-                &[
-                    ("std::block::timestamp", Some((None, vec![]))),
-                    ("as_u256", Some((None, vec![]))),
-                ],
-            ));
+                vec![],
+            )
+            .with_as_u256_call());
         }
 
         _ => {}
@@ -730,10 +715,7 @@ pub fn translate_yul_function_call_expression(
             // Ensure std::math::Power is imported for the pow function
             module.borrow_mut().ensure_use_declared("std::math::Power");
 
-            Ok(sway::Expression::create_function_calls(
-                Some(parameters[0].clone()),
-                &[("pow", Some((None, vec![parameters[1].clone()])))],
-            ))
+            Ok(parameters[0].with_function_call("pow", None, vec![parameters[1].clone()]))
         }
 
         "not" => {
@@ -1119,13 +1101,10 @@ pub fn translate_yul_function_call_expression(
                 );
             }
 
-            Ok(sway::Expression::create_function_calls(
-                None,
-                &[
-                    ("std::block::timestamp", Some((None, vec![]))),
-                    ("as_u256", Some((None, vec![]))),
-                ],
-            ))
+            Ok(
+                sway::Expression::create_function_call("std::block::timestamp", None, vec![])
+                    .with_as_u256_call(),
+            )
         }
 
         "gas" => {
@@ -1145,17 +1124,13 @@ pub fn translate_yul_function_call_expression(
                 );
             }
 
-            Ok(sway::Expression::create_function_calls(
+            Ok(sway::Expression::create_function_call(
+                "Identity::ContractId",
                 None,
-                &[(
-                    "Identity::ContractId",
-                    Some((
-                        None,
-                        vec![sway::Expression::create_function_calls(
-                            None,
-                            &[("ContractId::this", Some((None, vec![])))],
-                        )],
-                    )),
+                vec![sway::Expression::create_function_call(
+                    "ContractId::this",
+                    None,
+                    vec![],
                 )],
             ))
         }
@@ -1177,21 +1152,14 @@ pub fn translate_yul_function_call_expression(
                 );
             }
 
-            Ok(sway::Expression::create_function_calls(
+            Ok(sway::Expression::create_function_call(
+                "std::context::this_balance",
                 None,
-                &[
-                    (
-                        "std::context::this_balance",
-                        Some((
-                            None,
-                            vec![sway::Expression::create_function_calls(
-                                None,
-                                &[("AssetId::default", Some((None, vec![])))],
-                            )],
-                        )),
-                    ),
-                    ("as_u256", Some((None, vec![]))),
-                ],
+                vec![sway::Expression::create_function_call(
+                    "AssetId::default",
+                    None,
+                    vec![],
+                )],
             ))
         }
 
@@ -1205,13 +1173,10 @@ pub fn translate_yul_function_call_expression(
                 );
             }
 
-            Ok(sway::Expression::create_function_calls(
-                None,
-                &[
-                    ("msg_sender", Some((None, vec![]))),
-                    ("unwrap", Some((None, vec![]))),
-                ],
-            ))
+            Ok(
+                sway::Expression::create_function_call("msg_sender", None, vec![])
+                    .with_unwrap_call(),
+            )
         }
 
         "callvalue" => {
@@ -1224,9 +1189,10 @@ pub fn translate_yul_function_call_expression(
                 );
             }
 
-            Ok(sway::Expression::create_function_calls(
+            Ok(sway::Expression::create_function_call(
+                "std::context::msg_amount",
                 None,
-                &[("std::context::msg_amount", Some((None, vec![])))],
+                vec![],
             ))
         }
 
@@ -1247,18 +1213,13 @@ pub fn translate_yul_function_call_expression(
                 );
             }
 
-            Ok(sway::Expression::create_function_calls(
+            Ok(sway::Expression::create_function_call(
+                "std::inputs::input_message_data_length",
                 None,
-                &[(
-                    "std::inputs::input_message_data_length",
-                    Some((
-                        None,
-                        vec![sway::Expression::from(sway::Literal::DecInt(
-                            BigUint::zero(),
-                            None,
-                        ))],
-                    )),
-                )],
+                vec![sway::Expression::from(sway::Literal::DecInt(
+                    BigUint::zero(),
+                    None,
+                ))],
             ))
         }
 
@@ -1307,9 +1268,10 @@ pub fn translate_yul_function_call_expression(
                 );
             }
 
-            Ok(sway::Expression::create_function_calls(
+            Ok(sway::Expression::create_function_call(
+                "std::registers::return_length",
                 None,
-                &[("std::registers::return_length", Some((None, vec![])))],
+                vec![],
             ))
         }
 
@@ -1452,26 +1414,21 @@ pub fn translate_yul_function_call_expression(
                 );
             }
 
-            Ok(sway::Expression::create_function_calls(
-                Some(sway::Expression::from(sway::AsmBlock {
-                    registers: vec![sway::AsmRegister {
-                        name: "r1".into(),
-                        value: None,
-                    }],
-                    instructions: vec![sway::AsmInstruction {
-                        op_code: "gm".into(),
-                        args: vec!["r1".into(), "i4".into()],
-                    }],
-                    final_expression: Some(sway::AsmFinalExpression {
-                        register: "r1".into(),
-                        type_name: Some(sway::TypeName::Identifier {
-                            name: "u64".into(),
-                            generic_parameters: None,
-                        }),
-                    }),
-                })),
-                &[("as_u256", Some((None, vec![])))],
-            ))
+            Ok(sway::Expression::from(sway::AsmBlock {
+                registers: vec![sway::AsmRegister {
+                    name: "r1".into(),
+                    value: None,
+                }],
+                instructions: vec![sway::AsmInstruction {
+                    op_code: "gm".into(),
+                    args: vec!["r1".into(), "i4".into()],
+                }],
+                final_expression: Some(sway::AsmFinalExpression {
+                    register: "r1".into(),
+                    type_name: Some(sway::TypeName::create_identifier("u64")),
+                }),
+            })
+            .with_as_u256_call())
         }
 
         "basefee" => {
@@ -1505,22 +1462,13 @@ pub fn translate_yul_function_call_expression(
                 );
             }
 
-            Ok(sway::Expression::create_function_calls(
-                None,
-                &[
-                    ("std::tx::tx_gas_price", Some((None, vec![]))),
-                    (
-                        "unwrap_or",
-                        Some((
-                            None,
-                            vec![sway::Expression::from(sway::Literal::DecInt(
-                                BigUint::zero(),
-                                None,
-                            ))],
-                        )),
-                    ),
-                ],
-            ))
+            Ok(
+                sway::Expression::create_function_call("std::tx::tx_gas_price", None, vec![])
+                    .with_unwrap_or_call(sway::Expression::from(sway::Literal::DecInt(
+                        BigUint::zero(),
+                        None,
+                    ))),
+            )
         }
 
         "blockhash" => {
@@ -1562,31 +1510,18 @@ pub fn translate_yul_function_call_expression(
                             name: "ptr".into(),
                         }),
                         type_name: None,
-                        value: sway::Expression::create_function_calls(
+                        value: sway::Expression::create_function_call(
+                            "std::alloc::alloc",
                             None,
-                            &[(
-                                "std::alloc::alloc",
-                                Some((
-                                    None,
-                                    vec![sway::Expression::create_function_calls(
-                                        None,
-                                        &[(
-                                            "__size_of",
-                                            Some((
-                                                Some(sway::GenericParameterList {
-                                                    entries: vec![sway::GenericParameter {
-                                                        type_name: sway::TypeName::Identifier {
-                                                            name: "b256".into(),
-                                                            generic_parameters: None,
-                                                        },
-                                                        implements: None,
-                                                    }],
-                                                }),
-                                                vec![],
-                                            )),
-                                        )],
-                                    )],
-                                )),
+                            vec![sway::Expression::create_function_call(
+                                "__size_of",
+                                Some(sway::GenericParameterList {
+                                    entries: vec![sway::GenericParameter {
+                                        type_name: sway::TypeName::create_identifier("b256"),
+                                        implements: None,
+                                    }],
+                                }),
+                                vec![],
                             )],
                         ),
                     }),
@@ -1607,44 +1542,25 @@ pub fn translate_yul_function_call_expression(
                 ],
 
                 // Identity::from(ContractId::from(ptr.read::<b256>()))
-                final_expr: Some(sway::Expression::create_function_calls(
+                final_expr: Some(sway::Expression::create_function_call(
+                    "Identity::from",
                     None,
-                    &[(
-                        "Identity::from",
-                        Some((
-                            None,
-                            vec![sway::Expression::create_function_calls(
-                                None,
-                                &[(
-                                    "ContractId::from",
-                                    Some((
-                                        None,
-                                        vec![sway::Expression::create_function_calls(
-                                            None,
-                                            &[
-                                                ("ptr", None),
-                                                (
-                                                    "read",
-                                                    Some((
-                                                        Some(sway::GenericParameterList {
-                                                            entries: vec![sway::GenericParameter {
-                                                                type_name:
-                                                                    sway::TypeName::Identifier {
-                                                                        name: "b256".into(),
-                                                                        generic_parameters: None,
-                                                                    },
-                                                                implements: None,
-                                                            }],
-                                                        }),
-                                                        vec![],
-                                                    )),
-                                                ),
-                                            ],
-                                        )],
-                                    )),
-                                )],
-                            )],
-                        )),
+                    vec![sway::Expression::create_function_call(
+                        "ContractId::from",
+                        None,
+                        vec![
+                            sway::Expression::create_identifier("ptr")
+                                .with_function_call(
+                                    "read",
+                                    Some(sway::GenericParameterList {
+                                        entries: vec![sway::GenericParameter {
+                                            type_name: sway::TypeName::create_identifier("b256"),
+                                            implements: None,
+                                        }],
+                                    }),
+                                    vec![],
+                                ),
+                        ],
                     )],
                 )),
             }))
@@ -1660,13 +1576,10 @@ pub fn translate_yul_function_call_expression(
                 );
             }
 
-            Ok(sway::Expression::create_function_calls(
-                None,
-                &[
-                    ("std::block::timestamp", Some((None, vec![]))),
-                    ("as_u256", Some((None, vec![]))),
-                ],
-            ))
+            Ok(
+                sway::Expression::create_function_call("std::block::timestamp", None, vec![])
+                    .with_as_u256_call(),
+            )
         }
 
         "number" => {
@@ -1679,9 +1592,10 @@ pub fn translate_yul_function_call_expression(
                 );
             }
 
-            Ok(sway::Expression::create_function_calls(
+            Ok(sway::Expression::create_function_call(
+                "std::block::height",
                 None,
-                &[("std::block::height", Some((None, vec![])))],
+                vec![],
             ))
         }
 

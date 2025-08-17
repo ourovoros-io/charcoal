@@ -78,27 +78,23 @@ pub fn translate_new_expression(
 
                 return Ok(sway::Expression::Commented(
                     format!("unsupported: new {expression}; using:"),
-                    Box::new(sway::Expression::create_function_calls(
+                    Box::new(sway::Expression::create_function_call(
+                        "abi",
                         None,
-                        &[(
-                            "abi",
-                            Some((
-                                None,
-                                vec![
-                                    sway::Expression::create_identifier(name.clone()),
-                                    sway::Expression::from(sway::FunctionCall {
-                                        function: sway::Expression::create_identifier(
-                                            "ContractId::from".into(),
-                                        ),
-                                        generic_parameters: None,
-                                        parameters: vec![sway::Expression::create_function_calls(
-                                            None,
-                                            &[("b256::zero", Some((None, vec![])))],
-                                        )],
-                                    }),
-                                ],
-                            )),
-                        )],
+                        vec![
+                            sway::Expression::create_identifier(name),
+                            sway::Expression::from(sway::FunctionCall {
+                                function: sway::Expression::create_identifier(
+                                    "ContractId::from".into(),
+                                ),
+                                generic_parameters: None,
+                                parameters: vec![sway::Expression::create_function_call(
+                                    "b256::zero",
+                                    None,
+                                    vec![],
+                                )],
+                            }),
+                        ],
                     )),
                 ));
             }
@@ -178,24 +174,12 @@ pub fn translate_new_expression(
                             body: sway::Block {
                                 statements: vec![
                                     // v.push(0);
-                                    sway::Statement::from(sway::Expression::create_function_calls(
-                                        None,
-                                        &[
-                                            ("v", None),
-                                            (
-                                                "push",
-                                                Some((
-                                                    None,
-                                                    vec![sway::Expression::from(
-                                                        sway::Literal::DecInt(
-                                                            BigUint::zero(),
-                                                            None,
-                                                        ),
-                                                    )],
-                                                )),
-                                            ),
-                                        ],
-                                    )),
+                                    sway::Statement::from(
+                                        sway::Expression::create_identifier("v".into())
+                                            .with_push_call(sway::Expression::from(
+                                                sway::Literal::DecInt(BigUint::zero(), None),
+                                            )),
+                                    ),
                                     // i += 1;
                                     sway::Statement::from(sway::Expression::from(
                                         sway::BinaryExpression {
@@ -291,24 +275,12 @@ pub fn translate_new_expression(
                             body: sway::Block {
                                 statements: vec![
                                     // v.push(0);
-                                    sway::Statement::from(sway::Expression::create_function_calls(
-                                        None,
-                                        &[
-                                            ("v", None),
-                                            (
-                                                "push",
-                                                Some((
-                                                    None,
-                                                    vec![sway::Expression::from(
-                                                        sway::Literal::DecInt(
-                                                            BigUint::zero(),
-                                                            None,
-                                                        ),
-                                                    )],
-                                                )),
-                                            ),
-                                        ],
-                                    )),
+                                    sway::Statement::from(
+                                        sway::Expression::create_identifier("v".into())
+                                            .with_push_call(sway::Expression::from(
+                                                sway::Literal::DecInt(BigUint::zero(), None),
+                                            )),
+                                    ),
                                     // i += 1;
                                     sway::Statement::from(sway::Expression::from(
                                         sway::BinaryExpression {
@@ -374,14 +346,14 @@ pub fn translate_new_expression(
 
     match block_fields {
         Some(fields) => Ok(sway::Expression::from(sway::FunctionCallBlock {
-            function: sway::Expression::create_identifier(name.clone()),
+            function: sway::Expression::create_identifier(name),
             generic_parameters: None,
             fields,
             parameters: vec![],
         })),
 
         None => Ok(sway::Expression::from(sway::FunctionCall {
-            function: sway::Expression::create_identifier(name.clone()),
+            function: sway::Expression::create_identifier(name),
             generic_parameters: None,
             parameters: vec![],
         })),

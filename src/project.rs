@@ -1121,10 +1121,7 @@ impl Project {
 
         for type_definition in type_definitions.iter() {
             module.borrow_mut().type_definitions.push(ir::Item {
-                signature: sway::TypeName::Identifier {
-                    name: type_definition.name.name.clone(),
-                    generic_parameters: None,
-                },
+                signature: sway::TypeName::create_identifier(type_definition.name.name.as_str()),
                 implementation: None,
             });
         }
@@ -1134,10 +1131,9 @@ impl Project {
 
         for enum_definition in enum_definitions.iter() {
             module.borrow_mut().enums.push(ir::Item {
-                signature: sway::TypeName::Identifier {
-                    name: enum_definition.name.as_ref().unwrap().name.clone(),
-                    generic_parameters: None,
-                },
+                signature: sway::TypeName::create_identifier(
+                    enum_definition.name.as_ref().unwrap().name.as_str(),
+                ),
                 implementation: None,
             });
         }
@@ -1147,12 +1143,11 @@ impl Project {
 
         for struct_definition in struct_definitions.iter() {
             module.borrow_mut().structs.push(ir::Item {
-                signature: sway::TypeName::Identifier {
-                    name: struct_definition.name.as_ref().unwrap().name.clone(),
-                    generic_parameters: None,
-                },
+                signature: sway::TypeName::create_identifier(
+                    struct_definition.name.as_ref().unwrap().name.as_str(),
+                ),
                 implementation: None,
-            })
+            });
         }
 
         // Collect the modifier signatures ahead of time
@@ -1213,10 +1208,7 @@ impl Project {
             let contract_name = contract_definition.name.as_ref().unwrap().name.as_str();
 
             module.borrow_mut().contracts.push(ir::Item {
-                signature: sway::TypeName::Identifier {
-                    name: contract_name.into(),
-                    generic_parameters: None,
-                },
+                signature: sway::TypeName::create_identifier(contract_name),
                 implementation: None,
             });
         }
@@ -1248,10 +1240,9 @@ impl Project {
 
                 assert!(base.name.identifiers.len() == 1);
 
-                inherits.push(sway::TypeName::Identifier {
-                    name: base.name.identifiers[0].name.clone(),
-                    generic_parameters: None,
-                });
+                inherits.push(sway::TypeName::create_identifier(
+                    base.name.identifiers[0].name.as_str(),
+                ));
             }
 
             let contract = Rc::new(RefCell::new(ir::Contract::new(
@@ -1313,10 +1304,9 @@ impl Project {
 
             for type_definition in type_definitions.iter() {
                 module.borrow_mut().type_definitions.push(ir::Item {
-                    signature: sway::TypeName::Identifier {
-                        name: type_definition.name.name.clone(),
-                        generic_parameters: None,
-                    },
+                    signature: sway::TypeName::create_identifier(
+                        type_definition.name.name.as_str(),
+                    ),
                     implementation: None,
                 });
             }
@@ -1326,10 +1316,9 @@ impl Project {
 
             for enum_definition in enum_definitions.iter() {
                 module.borrow_mut().enums.push(ir::Item {
-                    signature: sway::TypeName::Identifier {
-                        name: enum_definition.name.as_ref().unwrap().name.clone(),
-                        generic_parameters: None,
-                    },
+                    signature: sway::TypeName::create_identifier(
+                        enum_definition.name.as_ref().unwrap().name.as_str(),
+                    ),
                     implementation: None,
                 });
             }
@@ -1339,10 +1328,9 @@ impl Project {
 
             for struct_definition in struct_definitions.iter() {
                 module.borrow_mut().structs.push(ir::Item {
-                    signature: sway::TypeName::Identifier {
-                        name: struct_definition.name.as_ref().unwrap().name.clone(),
-                        generic_parameters: None,
-                    },
+                    signature: sway::TypeName::create_identifier(
+                        struct_definition.name.as_ref().unwrap().name.as_str(),
+                    ),
                     implementation: None,
                 });
             }
@@ -1858,19 +1846,14 @@ impl Project {
                                 name: "storage_struct".to_string(),
                             }),
                             type_name: None,
-                            value: sway::Expression::create_function_calls(
+                            value: sway::Expression::create_function_call(
+                                format!("create_{}_storage_struct", contract_module.name).as_str(),
                                 None,
-                                &[(
-                                    format!("create_{}_storage_struct", contract_module.name)
-                                        .as_str(),
-                                    Some((None, vec![])),
-                                )],
+                                vec![],
                             ),
                         }));
 
-                        parameters.push(sway::Expression::create_identifier(
-                            "storage_struct".to_string(),
-                        ));
+                        parameters.push(sway::Expression::create_identifier("storage_struct"));
                     }
 
                     contract_module.functions.push(ir::Item {
@@ -1886,9 +1869,10 @@ impl Project {
                             return_type: None,
                             body: Some(sway::Block {
                                 statements,
-                                final_expr: Some(sway::Expression::create_function_calls(
+                                final_expr: Some(sway::Expression::create_function_call(
+                                    fallback_function_name.as_str(),
                                     None,
-                                    &[(fallback_function_name.as_str(), Some((None, parameters)))],
+                                    parameters,
                                 )),
                             }),
                         }),

@@ -16,10 +16,7 @@ pub fn translate_type_definition(
 
     Ok(sway::TypeDefinition {
         is_public: true,
-        name: sway::TypeName::Identifier {
-            name: type_definition.name.name.clone(),
-            generic_parameters: None,
-        },
+        name: sway::TypeName::create_identifier(type_definition.name.name.as_str()),
         underlying_type: Some(underlying_type),
     })
 }
@@ -46,10 +43,7 @@ pub fn translate_type_name(
     ) -> sway::TypeName {
         // Check if type is a type definition
         if project.is_type_definition_declared(module.clone(), &name) {
-            sway::TypeName::Identifier {
-                name: name.clone(),
-                generic_parameters: None,
-            }
+            sway::TypeName::create_identifier(name.as_str())
         }
         // Check if type is a struct
         else if project.is_struct_declared(module.clone(), scope.clone(), &name) {
@@ -59,25 +53,16 @@ pub fn translate_type_name(
                 _ => name.clone(),
             };
 
-            sway::TypeName::Identifier {
-                name,
-                generic_parameters: None,
-            }
+            sway::TypeName::create_identifier(name.as_str())
         }
         // Check if type is an enum
         else if project.is_enum_declared(module.clone(), &name) {
-            sway::TypeName::Identifier {
-                name: name.clone(),
-                generic_parameters: None,
-            }
+            sway::TypeName::create_identifier(name.as_str())
         }
         // Check if type is an ABI
         else if project.is_contract_declared(module.clone(), &name) {
             sway::TypeName::Abi {
-                type_name: Box::new(sway::TypeName::Identifier {
-                    name: name.clone(),
-                    generic_parameters: None,
-                }),
+                type_name: Box::new(sway::TypeName::create_identifier(name.as_str())),
             }
         } else {
             todo!(
@@ -90,30 +75,14 @@ pub fn translate_type_name(
 
     let mut type_name = match type_name {
         solidity::Expression::Type(_, type_expression) => match type_expression {
-            solidity::Type::Address => sway::TypeName::Identifier {
-                name: "Identity".into(),
-                generic_parameters: None,
-            },
+            solidity::Type::Address => sway::TypeName::create_identifier("Identity"),
 
             // TODO: should we note that this address was marked payable?
-            solidity::Type::AddressPayable => sway::TypeName::Identifier {
-                name: "Identity".into(),
-                generic_parameters: None,
-            },
+            solidity::Type::AddressPayable => sway::TypeName::create_identifier("Identity"),
 
-            solidity::Type::Payable => {
-                // println!("WARNING: encountered payable cast, translating as Identity");
+            solidity::Type::Payable => sway::TypeName::create_identifier("Identity"),
 
-                sway::TypeName::Identifier {
-                    name: "Identity".into(),
-                    generic_parameters: None,
-                }
-            }
-
-            solidity::Type::Bool => sway::TypeName::Identifier {
-                name: "bool".into(),
-                generic_parameters: None,
-            },
+            solidity::Type::Bool => sway::TypeName::create_identifier("bool"),
 
             solidity::Type::String => {
                 match storage_location {
@@ -123,10 +92,7 @@ pub fn translate_type_name(
                             // Ensure `std::string::*` is imported
                             module.borrow_mut().ensure_use_declared("std::string::*");
 
-                            sway::TypeName::Identifier {
-                                name: "String".into(),
-                                generic_parameters: None,
-                            }
+                            sway::TypeName::create_identifier("String")
                         }
 
                         solidity::StorageLocation::Storage(_) => {
@@ -135,10 +101,7 @@ pub fn translate_type_name(
                                 .borrow_mut()
                                 .ensure_use_declared("std::storage::storage_string::*");
 
-                            sway::TypeName::Identifier {
-                                name: "StorageString".into(),
-                                generic_parameters: None,
-                            }
+                            sway::TypeName::create_identifier("StorageString")
                         }
                     },
 
@@ -306,75 +269,58 @@ pub fn translate_type_name(
 
             solidity::Type::Bytes(length) => match *length {
                 // HACK: bytes32 => b256
-                32 => sway::TypeName::Identifier {
-                    name: "b256".into(),
-                    generic_parameters: None,
-                },
+                32 => sway::TypeName::create_identifier("b256"),
 
-                _ => sway::TypeName::Array {
-                    type_name: Box::new(sway::TypeName::Identifier {
-                        name: "u8".into(),
-                        generic_parameters: None,
-                    }),
-                    length: *length as usize,
-                },
+                _ => sway::TypeName::create_array(
+                    sway::TypeName::create_identifier("u8"),
+                    *length as usize,
+                ),
             },
 
             solidity::Type::Rational => todo!("rational types"),
 
-            solidity::Type::DynamicBytes => sway::TypeName::Identifier {
-                name: {
-                    // Ensure `std::bytes::Bytes` is imported
-                    module.borrow_mut().ensure_use_declared("std::bytes::Bytes");
+            solidity::Type::DynamicBytes => {
+                // Ensure `std::bytes::Bytes` is imported
+                module.borrow_mut().ensure_use_declared("std::bytes::Bytes");
 
-                    "Bytes".into() // TODO: is this ok?
-                },
-                generic_parameters: None,
-            },
+                sway::TypeName::create_identifier("Bytes")
+            }
 
             solidity::Type::Mapping { key, value, .. } => {
                 // Ensure `std::hash::Hash` is imported
                 module.borrow_mut().ensure_use_declared("std::hash::Hash");
 
-                sway::TypeName::Identifier {
-                    name: "StorageMap".into(),
-                    generic_parameters: Some(sway::GenericParameterList {
-                        entries: vec![
-                            sway::GenericParameter {
-                                type_name: {
-                                    let mut type_name = translate_type_name(
-                                        project,
-                                        module.clone(),
-                                        scope.clone(),
-                                        key.as_ref(),
-                                        storage_location,
-                                    );
-                                    if let Some(storage_key_type) = type_name.storage_key_type() {
-                                        type_name = storage_key_type;
-                                    }
-                                    type_name
-                                },
-                                implements: None,
-                            },
-                            sway::GenericParameter {
-                                type_name: {
-                                    let mut type_name = translate_type_name(
-                                        project,
-                                        module,
-                                        scope.clone(),
-                                        value.as_ref(),
-                                        storage_location,
-                                    );
-                                    if let Some(storage_key_type) = type_name.storage_key_type() {
-                                        type_name = storage_key_type;
-                                    }
-                                    type_name
-                                },
-                                implements: None,
-                            },
-                        ],
-                    }),
-                }
+                sway::TypeName::create_generic(
+                    "StorageMap",
+                    vec![
+                        {
+                            let mut type_name = translate_type_name(
+                                project,
+                                module.clone(),
+                                scope.clone(),
+                                key.as_ref(),
+                                storage_location,
+                            );
+                            if let Some(storage_key_type) = type_name.storage_key_type() {
+                                type_name = storage_key_type;
+                            }
+                            type_name
+                        },
+                        {
+                            let mut type_name = translate_type_name(
+                                project,
+                                module,
+                                scope.clone(),
+                                value.as_ref(),
+                                storage_location,
+                            );
+                            if let Some(storage_key_type) = type_name.storage_key_type() {
+                                type_name = storage_key_type;
+                            }
+                            type_name
+                        },
+                    ],
+                )
             }
 
             solidity::Type::Function {
@@ -421,10 +367,7 @@ pub fn translate_type_name(
                                     &p.ty,
                                     p.storage.as_ref(),
                                 ),
-                                None => sway::TypeName::Identifier {
-                                    name: "_".into(),
-                                    generic_parameters: None,
-                                },
+                                None => sway::TypeName::create_identifier("_"),
                             })
                             .collect()
                     });
@@ -521,21 +464,8 @@ pub fn translate_type_name(
                         // Ensure that `std::vec::*` is imported
                         module.borrow_mut().ensure_use_declared("std::vec::*");
 
-                        sway::TypeName::Identifier {
-                            name: "Vec".into(),
-                            generic_parameters: Some(sway::GenericParameterList {
-                                entries: vec![sway::GenericParameter {
-                                    type_name: translate_type_name(
-                                        project,
-                                        module,
-                                        scope.clone(),
-                                        type_name,
-                                        None,
-                                    ),
-                                    implements: None,
-                                }],
-                            }),
-                        }
+                        translate_type_name(project, module, scope.clone(), type_name, None)
+                            .to_vec()
                     }
 
                     solidity::StorageLocation::Storage(_) => {
@@ -544,51 +474,27 @@ pub fn translate_type_name(
                             .borrow_mut()
                             .ensure_use_declared("std::storage::storage_vec::*");
 
-                        sway::TypeName::Identifier {
-                            name: "StorageVec".into(),
-                            generic_parameters: Some(sway::GenericParameterList {
-                                entries: vec![sway::GenericParameter {
-                                    type_name: {
-                                        let mut type_name = translate_type_name(
-                                            project,
-                                            module,
-                                            scope.clone(),
-                                            type_name,
-                                            Some(storage_location),
-                                        );
+                        let mut type_name = translate_type_name(
+                            project,
+                            module,
+                            scope.clone(),
+                            type_name,
+                            Some(storage_location),
+                        );
 
-                                        if let Some(storage_key_type) = type_name.storage_key_type()
-                                        {
-                                            type_name = storage_key_type;
-                                        }
-
-                                        type_name
-                                    },
-                                    implements: None,
-                                }],
-                            }),
+                        if let Some(storage_key_type) = type_name.storage_key_type() {
+                            type_name = storage_key_type;
                         }
+
+                        type_name.to_storage_vec()
                     }
 
                     solidity::StorageLocation::Calldata(_) => {
                         // Ensure that `std::vec::*` is imported
                         module.borrow_mut().ensure_use_declared("std::vec::*");
 
-                        sway::TypeName::Identifier {
-                            name: "Vec".into(),
-                            generic_parameters: Some(sway::GenericParameterList {
-                                entries: vec![sway::GenericParameter {
-                                    type_name: translate_type_name(
-                                        project,
-                                        module,
-                                        scope.clone(),
-                                        type_name,
-                                        None,
-                                    ),
-                                    implements: None,
-                                }],
-                            }),
-                        }
+                        translate_type_name(project, module, scope.clone(), type_name, None)
+                            .to_vec()
                     }
                 },
 
@@ -596,21 +502,7 @@ pub fn translate_type_name(
                     // Ensure that `std::vec::*` is imported
                     module.borrow_mut().ensure_use_declared("std::vec::*");
 
-                    sway::TypeName::Identifier {
-                        name: "Vec".into(),
-                        generic_parameters: Some(sway::GenericParameterList {
-                            entries: vec![sway::GenericParameter {
-                                type_name: translate_type_name(
-                                    project,
-                                    module,
-                                    scope.clone(),
-                                    type_name,
-                                    None,
-                                ),
-                                implements: None,
-                            }],
-                        }),
-                    }
+                    translate_type_name(project, module, scope.clone(), type_name, None).to_vec()
                 }
             },
         },
@@ -656,15 +548,7 @@ pub fn translate_type_name(
 
             solidity::StorageLocation::Storage(_) => {
                 // Wrap storage pointer types in a `StorageKey<T>`
-                type_name = sway::TypeName::Identifier {
-                    name: "StorageKey".into(),
-                    generic_parameters: Some(sway::GenericParameterList {
-                        entries: vec![sway::GenericParameter {
-                            type_name,
-                            implements: None,
-                        }],
-                    }),
-                };
+                type_name = type_name.to_storage_key();
             }
 
             solidity::StorageLocation::Calldata(_) => {

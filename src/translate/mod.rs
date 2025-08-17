@@ -68,15 +68,8 @@ pub fn coerce_expression(
     let from_type_name = get_underlying_type(project, module.clone(), from_type_name);
     let to_type_name = get_underlying_type(project, module.clone(), to_type_name);
 
-    let b256_type_name = sway::TypeName::Identifier {
-        name: "b256".into(),
-        generic_parameters: None,
-    };
-
-    let u256_type_name = sway::TypeName::Identifier {
-        name: "u256".into(),
-        generic_parameters: None,
-    };
+    let b256_type_name = sway::TypeName::create_identifier("b256");
+    let u256_type_name = sway::TypeName::create_identifier("u256");
 
     if from_type_name.is_compatible_with(&to_type_name) {
         // Check for abi cast to `Identity` coercions
@@ -118,21 +111,13 @@ pub fn coerce_expression(
                 .find_contract(module.clone(), abi_type.to_string().as_str())
                 .is_some()
         {
-            return Some(sway::Expression::create_function_calls(
+            return Some(sway::Expression::create_function_call(
+                "abi",
                 None,
-                &[(
-                    "abi",
-                    Some((
-                        None,
-                        vec![
-                            sway::Expression::create_identifier(abi_type.to_string()),
-                            sway::Expression::create_function_calls(
-                                Some(expression.clone()),
-                                &[("bits", Some((None, vec![])))],
-                            ),
-                        ],
-                    )),
-                )],
+                vec![
+                    sway::Expression::create_identifier(abi_type.to_string().as_str()),
+                    expression.with_bits_call(),
+                ],
             ));
         }
 
@@ -167,10 +152,7 @@ pub fn coerce_expression(
 
     // HACK: if the expression is a `Option<T>`, add a `.unwrap()` temporarily
     if let Some(option_type) = from_type_name.option_type() {
-        expression = sway::Expression::create_function_calls(
-            Some(expression.clone()),
-            &[("unwrap", Some((None, vec![])))],
-        );
+        expression = expression.with_unwrap_call();
         from_type_name = option_type;
         remove_unwrap_member_call = true;
     }
@@ -187,10 +169,7 @@ pub fn coerce_expression(
         let mut skip = false;
 
         if let Some(storage_key_type) = from_type_name.storage_key_type() {
-            expression = sway::Expression::create_function_calls(
-                Some(expression),
-                &[("read", Some((None, vec![])))],
-            );
+            expression = expression.with_read_call();
 
             if let sway::TypeName::Identifier {
                 name,
@@ -294,7 +273,7 @@ pub fn coerce_expression(
                                 name: rhs_field.new_name.clone(),
                                 value: sway::Expression::from(sway::MemberAccess {
                                     expression: sway::Expression::create_identifier(
-                                        variable_name.clone(),
+                                        variable_name.as_str(),
                                     ),
                                     member: lhs_field.new_name.clone(),
                                 }),
@@ -326,14 +305,12 @@ pub fn coerce_expression(
                 .borrow_mut()
                 .set_function_storage_accesses(module.clone(), true, false);
 
-            return Some(sway::Expression::create_function_calls(
-                Some(expression),
-                &[
-                    ("read_slice", Some((None, vec![]))),
-                    ("unwrap", Some((None, vec![]))),
-                    ("as_bytes", Some((None, vec![]))),
-                ],
-            ));
+            return Some(
+                expression
+                    .with_read_slice_call()
+                    .with_unwrap_call()
+                    .with_as_bytes_call(),
+            );
         }
 
         // Check for `StorageKey<StorageString>` to `String` coercions
@@ -342,13 +319,7 @@ pub fn coerce_expression(
                 .borrow_mut()
                 .set_function_storage_accesses(module.clone(), true, false);
 
-            return Some(sway::Expression::create_function_calls(
-                Some(expression),
-                &[
-                    ("read_slice", Some((None, vec![]))),
-                    ("unwrap", Some((None, vec![]))),
-                ],
-            ));
+            return Some(expression.with_read_slice_call().with_unwrap_call());
         }
     }
 
@@ -363,26 +334,13 @@ pub fn coerce_expression(
 
         // Use `x.load_vec()` if the element types are compatible
         if storage_vec_type.is_compatible_with(&vec_type) {
-            return Some(sway::Expression::create_function_calls(
-                Some(expression),
-                &[("load_vec", Some((None, vec![])))],
-            ));
+            return Some(expression.with_load_vec_call());
         }
 
-        let get_expression = sway::Expression::create_function_calls(
-            Some(expression.clone()),
-            &[
-                (
-                    "get",
-                    Some((
-                        None,
-                        vec![sway::Expression::create_identifier("i".to_string())],
-                    )),
-                ),
-                ("unwrap", Some((None, vec![]))),
-                ("read", Some((None, vec![]))),
-            ],
-        );
+        let get_expression = expression
+            .with_get_call(sway::Expression::create_identifier("i"))
+            .with_unwrap_call()
+            .with_read_call();
 
         let element_expression = coerce_expression(
             project,
@@ -402,10 +360,7 @@ pub fn coerce_expression(
                         name: "len".to_string(),
                     }),
                     type_name: None,
-                    value: sway::Expression::create_function_calls(
-                        Some(expression.clone()),
-                        &[("len", Some((None, vec![])))],
-                    ),
+                    value: expression.with_len_call(),
                 }),
                 sway::Statement::from(sway::Let {
                     pattern: sway::LetPattern::Identifier(sway::LetIdentifier {
@@ -413,15 +368,10 @@ pub fn coerce_expression(
                         name: "v".to_string(),
                     }),
                     type_name: None,
-                    value: sway::Expression::create_function_calls(
+                    value: sway::Expression::create_function_call(
+                        "Vec::with_capacity",
                         None,
-                        &[(
-                            "Vec::with_capacity",
-                            Some((
-                                None,
-                                vec![sway::Expression::create_identifier("len".to_string())],
-                            )),
-                        )],
+                        vec![sway::Expression::create_identifier("len")],
                     ),
                 }),
                 sway::Statement::from(sway::Let {
@@ -435,21 +385,18 @@ pub fn coerce_expression(
                 sway::Statement::from(sway::Expression::from(sway::While {
                     condition: sway::Expression::from(sway::BinaryExpression {
                         operator: "<".to_string(),
-                        lhs: sway::Expression::create_identifier("i".to_string()),
-                        rhs: sway::Expression::create_identifier("len".to_string()),
+                        lhs: sway::Expression::create_identifier("i"),
+                        rhs: sway::Expression::create_identifier("len"),
                     }),
                     body: sway::Block {
                         statements: vec![
-                            sway::Statement::from(sway::Expression::create_function_calls(
-                                None,
-                                &[
-                                    ("v", None),
-                                    ("push", Some((None, vec![element_expression.clone()]))),
-                                ],
-                            )),
+                            sway::Statement::from(
+                                sway::Expression::create_identifier("v")
+                                    .with_push_call(element_expression.clone()),
+                            ),
                             sway::Statement::from(sway::Expression::from(sway::BinaryExpression {
                                 operator: "+=".to_string(),
-                                lhs: sway::Expression::create_identifier("i".to_string()),
+                                lhs: sway::Expression::create_identifier("i"),
                                 rhs: sway::Expression::from(sway::Literal::DecInt(
                                     BigUint::one(),
                                     None,
@@ -460,7 +407,7 @@ pub fn coerce_expression(
                     },
                 })),
             ],
-            final_expr: Some(sway::Expression::create_identifier("v".to_string())),
+            final_expr: Some(sway::Expression::create_identifier("v")),
         }));
     }
 
@@ -469,61 +416,29 @@ pub fn coerce_expression(
         && storage_key_type.is_storage_bytes()
         && to_type_name.is_bytes()
     {
-        return Some(sway::Expression::create_function_calls(
-            Some(expression),
-            &[
-                ("read_slice", Some((None, vec![]))),
-                (
-                    "unwrap_or",
-                    Some((
-                        None,
-                        vec![sway::Expression::create_function_calls(
-                            None,
-                            &[("Bytes::new", Some((None, vec![])))],
-                        )],
-                    )),
-                ),
-            ],
+        return Some(expression.with_read_slice_call().with_unwrap_or_call(
+            sway::Expression::create_function_call("Bytes::new", None, vec![]),
         ));
     }
 
     // HACK: Restore the `.read()` if we removed it
     if add_read_member_call {
-        expression = sway::Expression::create_function_calls(
-            Some(expression),
-            &[("read", Some((None, vec![])))],
-        );
-
+        expression = expression.with_read_call();
         from_type_name =
             get_expression_type(project, module.clone(), scope.clone(), &expression).unwrap();
     }
 
     // HACK: Remove the `.unwrap()` if we added it
     if remove_unwrap_member_call {
-        expression = sway::Expression::create_function_calls(
-            None,
-            &[("Some", Some((None, vec![expression])))],
-        );
-
-        from_type_name = sway::TypeName::Identifier {
-            name: "Option".to_string(),
-            generic_parameters: Some(sway::GenericParameterList {
-                entries: vec![sway::GenericParameter {
-                    type_name: from_type_name,
-                    implements: None,
-                }],
-            }),
-        };
+        expression = expression.to_some();
+        from_type_name = from_type_name.to_option();
     }
 
     // Check for `Option<T>` to `T` coercions
     if let Some(option_type) = from_type_name.option_type()
         && option_type.is_compatible_with(&to_type_name)
     {
-        return Some(sway::Expression::create_function_calls(
-            Some(expression.clone()),
-            &[("unwrap", Some((None, vec![])))],
-        ));
+        return Some(expression.with_unwrap_call());
     }
 
     // Check for `StorageKey<T>` to `T` coercions
@@ -535,10 +450,7 @@ pub fn coerce_expression(
                 .borrow_mut()
                 .set_function_storage_accesses(module, true, false);
 
-            return Some(sway::Expression::create_function_calls(
-                Some(expression),
-                &[("read", Some((None, vec![])))],
-            ));
+            return Some(expression.with_read_call());
         }
     }
 
@@ -558,21 +470,12 @@ pub fn coerce_expression(
 
     // Check for `Identity` to `b256` coercions
     if from_type_name.is_identity() && to_type_name.is_b256() {
-        return Some(sway::Expression::create_function_calls(
-            Some(expression),
-            &[("bits", Some((None, vec![])))],
-        ));
+        return Some(expression.with_bits_call());
     }
 
     // Check for `Identity` to `u256` coercions
     if from_type_name.is_identity() && to_type_name.is_u256() {
-        return Some(sway::Expression::create_function_calls(
-            Some(expression),
-            &[
-                ("bits", Some((None, vec![]))),
-                ("as_u256", Some((None, vec![]))),
-            ],
-        ));
+        return Some(expression.with_bits_call().with_as_u256_call());
     }
 
     // Check for uint to `Identity` coercions
@@ -589,26 +492,23 @@ pub fn coerce_expression(
             .unwrap();
         }
 
-        return Some(sway::Expression::create_function_calls(
+        return Some(sway::Expression::create_function_call(
+            "Identity::Address",
             None,
-            &[(
-                "Identity::Address",
-                Some((
-                    None,
-                    vec![sway::Expression::create_function_calls(
-                        None,
-                        &[("Address::from", Some((None, vec![expression])))],
-                    )],
-                )),
+            vec![sway::Expression::create_function_call(
+                "Address::from",
+                None,
+                vec![expression],
             )],
         ));
     }
 
     // Check for `ContractId` to `Identity` coercions
     if from_type_name.is_contract_id() && to_type_name.is_identity() {
-        return Some(sway::Expression::create_function_calls(
+        return Some(sway::Expression::create_function_call(
+            "Identity::ContractId",
             None,
-            &[("Identity::ContractId", Some((None, vec![expression])))],
+            vec![expression],
         ));
     }
 
@@ -631,29 +531,21 @@ pub fn coerce_expression(
             .unwrap();
 
         if lhs_bits > rhs_bits {
-            expression = sway::Expression::create_function_calls(
+            expression = sway::Expression::create_function_call(
+                format!("u{rhs_bits}::try_from").as_str(),
                 None,
-                &[
-                    (
-                        format!("u{rhs_bits}::try_from").as_str(),
-                        Some((None, vec![expression.clone()])),
-                    ),
-                    ("unwrap", Some((None, vec![]))),
-                ],
-            );
+                vec![expression.clone()],
+            )
+            .with_unwrap_call();
         } else if lhs_bits < rhs_bits {
-            expression = sway::Expression::create_function_calls(
-                Some(expression.clone()),
-                &[(format!("as_u{rhs_bits}").as_str(), Some((None, vec![])))],
-            );
+            expression =
+                expression.with_function_call(format!("as_u{rhs_bits}").as_str(), None, vec![]);
         }
 
-        return Some(sway::Expression::create_function_calls(
+        return Some(sway::Expression::create_function_call(
+            format!("I{rhs_bits}::from_uint").as_str(),
             None,
-            &[(
-                format!("I{rhs_bits}::from_uint").as_str(),
-                Some((None, vec![expression.clone()])),
-            )],
+            vec![expression.clone()],
         ));
     }
 
@@ -676,33 +568,23 @@ pub fn coerce_expression(
             .unwrap();
 
         if lhs_bits > rhs_bits {
-            expression = sway::Expression::create_function_calls(
+            expression = sway::Expression::create_function_call(
+                format!("u{rhs_bits}::try_from").as_str(),
                 None,
-                &[
-                    (
-                        format!("u{rhs_bits}::try_from").as_str(),
-                        Some((
-                            None,
-                            vec![sway::Expression::from(sway::MemberAccess {
-                                expression: expression.clone(),
-                                member: "underlying".to_string(),
-                            })],
-                        )),
-                    ),
-                    ("unwrap", Some((None, vec![]))),
-                ],
-            );
+                vec![sway::Expression::from(sway::MemberAccess {
+                    expression: expression.clone(),
+                    member: "underlying".to_string(),
+                })],
+            )
+            .with_unwrap_call();
         } else if lhs_bits < rhs_bits {
-            expression = sway::Expression::create_function_calls(
-                Some(expression.clone()),
-                &[
-                    ("underlying", None),
-                    (format!("as_u{rhs_bits}").as_str(), Some((None, vec![]))),
-                ],
+            expression = expression.with_member("underlying").with_function_call(
+                format!("as_u{rhs_bits}").as_str(),
+                None,
+                vec![],
             );
         } else {
-            expression =
-                sway::Expression::create_function_calls(Some(expression), &[("underlying", None)])
+            expression = expression.with_member("underlying");
         }
 
         return Some(expression);
@@ -744,22 +626,21 @@ pub fn coerce_expression(
                 if lhs_bits > rhs_bits {
                     // x.as_u256()
                     // u64::try_from(x).unwrap()
-                    return Some(sway::Expression::create_function_calls(
-                        None,
-                        &[
-                            (
-                                format!("{to_type_name}::try_from").as_str(),
-                                Some((None, vec![expression.clone()])),
-                            ),
-                            ("unwrap", Some((None, vec![]))),
-                        ],
-                    ));
+                    return Some(
+                        sway::Expression::create_function_call(
+                            format!("{to_type_name}::try_from").as_str(),
+                            None,
+                            vec![expression.clone()],
+                        )
+                        .with_unwrap_call(),
+                    );
                 }
 
                 if lhs_bits < rhs_bits {
-                    return Some(sway::Expression::create_function_calls(
-                        Some(expression.clone()),
-                        &[(format!("as_{to_type_name}").as_str(), Some((None, vec![])))],
+                    return Some(expression.with_function_call(
+                        format!("as_{to_type_name}").as_str(),
+                        None,
+                        vec![],
                     ));
                 }
             }
@@ -768,22 +649,21 @@ pub fn coerce_expression(
                 if lhs_bits > rhs_bits {
                     // x.as_u256()
                     // u64::try_from(x).unwrap()
-                    return Some(sway::Expression::create_function_calls(
-                        None,
-                        &[
-                            (
-                                format!("{to_type_name}::try_from").as_str(),
-                                Some((None, vec![expression.clone()])),
-                            ),
-                            ("unwrap", Some((None, vec![]))),
-                        ],
-                    ));
+                    return Some(
+                        sway::Expression::create_function_call(
+                            format!("{to_type_name}::try_from").as_str(),
+                            None,
+                            vec![expression.clone()],
+                        )
+                        .with_unwrap_call(),
+                    );
                 }
 
                 if lhs_bits < rhs_bits {
-                    return Some(sway::Expression::create_function_calls(
-                        Some(expression.clone()),
-                        &[(format!("as_{to_type_name}").as_str(), Some((None, vec![])))],
+                    return Some(expression.with_function_call(
+                        format!("as_{to_type_name}").as_str(),
+                        None,
+                        vec![],
                     ));
                 }
             }
@@ -813,18 +693,12 @@ pub fn coerce_expression(
         )
         .unwrap();
 
-        return Some(sway::Expression::create_function_calls(
-            Some(expression),
-            &[("as_b256", Some((None, vec![])))],
-        ));
+        return Some(expression.with_as_b256_call());
     }
 
     // Check for b256 to `u256` coercions
     if from_type_name.is_b256() && to_type_name.is_u256() {
-        return Some(sway::Expression::create_function_calls(
-            Some(expression),
-            &[("as_u256", Some((None, vec![])))],
-        ));
+        return Some(expression.with_as_u256_call());
     }
 
     // Check for uint to `Bytes` coercions
@@ -833,18 +707,12 @@ pub fn coerce_expression(
             todo!()
         }
 
-        return Some(sway::Expression::create_function_calls(
-            Some(expression),
-            &[("to_be_bytes", Some((None, vec![])))],
-        ));
+        return Some(expression.with_to_be_bytes_call());
     }
 
     // Check for `String` to `Bytes` coercions
     if from_type_name.is_string() && to_type_name.is_bytes() {
-        return Some(sway::Expression::create_function_calls(
-            Some(expression),
-            &[("as_bytes", Some((None, vec![])))],
-        ));
+        return Some(expression.with_as_bytes_call());
     }
 
     // Check for byte array coercions
@@ -863,39 +731,34 @@ pub fn coerce_expression(
             let to_bits = to_byte_count * 8;
 
             if from_byte_count == to_byte_count {
-                return Some(sway::Expression::create_function_calls(
-                    Some(expression),
-                    &[("to_be_bytes", Some((None, vec![])))],
-                ));
+                return Some(expression.with_to_be_bytes_call());
             } else if from_byte_count < to_byte_count {
-                return Some(sway::Expression::create_function_calls(
-                    Some(expression),
-                    &[
-                        (format!("as_u{to_bits}").as_str(), Some((None, vec![]))),
-                        ("to_be_bytes", Some((None, vec![]))),
-                    ],
-                ));
+                return Some(
+                    expression
+                        .with_function_call(format!("as_u{to_bits}").as_str(), None, vec![])
+                        .with_to_be_bytes_call(),
+                );
             } else if from_byte_count > to_byte_count {
                 if to_byte_count == 1 {
                     return Some(sway::Expression::Array(sway::Array {
-                        elements: vec![sway::Expression::create_function_calls(
-                            Some(expression),
-                            &[
-                                (format!("try_as_u{to_bits}").as_str(), Some((None, vec![]))),
-                                ("unwrap", Some((None, vec![]))),
-                            ],
-                        )],
+                        elements: vec![
+                            expression
+                                .with_function_call(
+                                    format!("try_as_u{to_bits}").as_str(),
+                                    None,
+                                    vec![],
+                                )
+                                .with_unwrap_call(),
+                        ],
                     }));
                 }
 
-                return Some(sway::Expression::create_function_calls(
-                    Some(expression),
-                    &[
-                        (format!("try_as_u{to_bits}").as_str(), Some((None, vec![]))),
-                        ("unwrap", Some((None, vec![]))),
-                        ("to_be_bytes", Some((None, vec![]))),
-                    ],
-                ));
+                return Some(
+                    expression
+                        .with_function_call(format!("try_as_u{to_bits}").as_str(), None, vec![])
+                        .with_unwrap_call()
+                        .with_to_be_bytes_call(),
+                );
             }
         }
 
@@ -908,40 +771,21 @@ pub fn coerce_expression(
                         name: "x".into(),
                     }),
                     type_name: None,
-                    value: sway::Expression::create_function_calls(
+                    value: sway::Expression::create_function_call(
+                        "Bytes::from",
                         None,
-                        &[(
-                            "Bytes::from",
-                            Some((
-                                None,
-                                vec![sway::Expression::create_function_calls(
-                                    Some(expression),
-                                    &[("bits", Some((None, vec![])))],
-                                )],
-                            )),
-                        )],
+                        vec![expression.with_bits_call()],
                     ),
                 })],
                 final_expr: Some(sway::Expression::from(sway::Array {
                     elements: (0..to_byte_count)
                         .map(|i| {
-                            sway::Expression::create_function_calls(
-                                None,
-                                &[
-                                    ("x", None),
-                                    (
-                                        "get",
-                                        Some((
-                                            None,
-                                            vec![sway::Expression::from(sway::Literal::DecInt(
-                                                i.into(),
-                                                None,
-                                            ))],
-                                        )),
-                                    ),
-                                    ("unwrap", Some((None, vec![]))),
-                                ],
-                            )
+                            sway::Expression::create_identifier("x")
+                                .with_get_call(sway::Expression::from(sway::Literal::DecInt(
+                                    i.into(),
+                                    None,
+                                )))
+                                .with_unwrap_call()
                         })
                         .collect(),
                 })),
@@ -951,10 +795,7 @@ pub fn coerce_expression(
 
     // Check for `String` to `str` coercions
     if from_type_name.is_string() && to_type_name.is_string_slice() {
-        return Some(sway::Expression::create_function_calls(
-            Some(expression),
-            &[("as_str", Some((None, vec![])))],
-        ));
+        return Some(expression.with_as_str_call());
     }
 
     // Check for `str` to `String` coercions
@@ -962,12 +803,10 @@ pub fn coerce_expression(
         module.borrow_mut().ensure_use_declared("std::string::*");
 
         // String::from_ascii_str(x)
-        return Some(sway::Expression::create_function_calls(
+        return Some(sway::Expression::create_function_call(
+            "String::from_ascii_str",
             None,
-            &[(
-                "String::from_ascii_str",
-                Some((None, vec![expression.clone()])),
-            )],
+            vec![expression.clone()],
         ));
     }
 
@@ -976,16 +815,14 @@ pub fn coerce_expression(
         module.borrow_mut().ensure_use_declared("std::string::*");
 
         // String::from_ascii_str(input).as_bytes()
-        return Some(sway::Expression::create_function_calls(
-            None,
-            &[
-                (
-                    "String::from_ascii_str",
-                    Some((None, vec![expression.clone()])),
-                ),
-                ("as_bytes", Some((None, vec![]))),
-            ],
-        ));
+        return Some(
+            sway::Expression::create_function_call(
+                "String::from_ascii_str",
+                None,
+                vec![expression.clone()],
+            )
+            .with_as_bytes_call(),
+        );
     }
 
     // Check for `str[]` to `String` coercions
@@ -993,17 +830,13 @@ pub fn coerce_expression(
         module.borrow_mut().ensure_use_declared("std::string::*");
 
         // String::from_ascii_str(from_str_array(x))
-        return Some(sway::Expression::create_function_calls(
+        return Some(sway::Expression::create_function_call(
+            "String::from_ascii_str",
             None,
-            &[(
-                "String::from_ascii_str",
-                Some((
-                    None,
-                    vec![sway::Expression::create_function_calls(
-                        None,
-                        &[("from_str_array", Some((None, vec![expression.clone()])))],
-                    )],
-                )),
+            vec![sway::Expression::create_function_call(
+                "from_str_array",
+                None,
+                vec![expression.clone()],
             )],
         ));
     }
@@ -1013,61 +846,35 @@ pub fn coerce_expression(
         module.borrow_mut().ensure_use_declared("std::string::*");
 
         // String::from_ascii_str(from_str_array(input)).as_bytes()
-        return Some(sway::Expression::create_function_calls(
-            None,
-            &[(
+        return Some(
+            sway::Expression::create_function_call(
                 "String::from_ascii_str",
-                Some((
+                None,
+                vec![sway::Expression::create_function_call(
+                    "from_str_array",
                     None,
-                    vec![sway::Expression::create_function_calls(
-                        None,
-                        &[
-                            ("from_str_array", Some((None, vec![expression.clone()]))),
-                            ("as_bytes", Some((None, vec![]))),
-                        ],
-                    )],
-                )),
-            )],
-        ));
+                    vec![expression.clone()],
+                )],
+            )
+            .with_as_bytes_call(),
+        );
     }
 
     // Check for `str` to `Bytes` coercions
     if from_type_name.is_string_slice() && to_type_name.is_bytes() {
         // Bytes::from(raw_slice::from_parts::<u8>((s.as_ptr(), s.len())))
-        return Some(sway::Expression::create_function_calls(
+        return Some(sway::Expression::create_function_call(
+            "Bytes::from",
             None,
-            &[(
-                "Bytes::from",
-                Some((
-                    None,
-                    vec![sway::Expression::create_function_calls(
-                        None,
-                        &[(
-                            "raw_slice::from_parts",
-                            Some((
-                                Some(sway::GenericParameterList {
-                                    entries: vec![sway::GenericParameter {
-                                        type_name: sway::TypeName::Identifier {
-                                            name: "u8".into(),
-                                            generic_parameters: None,
-                                        },
-                                        implements: None,
-                                    }],
-                                }),
-                                vec![
-                                    sway::Expression::create_function_calls(
-                                        Some(expression.clone()),
-                                        &[("as_ptr", Some((None, vec![])))],
-                                    ),
-                                    sway::Expression::create_function_calls(
-                                        Some(expression.clone()),
-                                        &[("len", Some((None, vec![])))],
-                                    ),
-                                ],
-                            )),
-                        )],
-                    )],
-                )),
+            vec![sway::Expression::create_function_call(
+                "raw_slice::from_parts",
+                Some(sway::GenericParameterList {
+                    entries: vec![sway::GenericParameter {
+                        type_name: sway::TypeName::create_identifier("u8"),
+                        implements: None,
+                    }],
+                }),
+                vec![expression.with_as_ptr_call(), expression.with_len_call()],
             )],
         ));
     }
@@ -1076,22 +883,20 @@ pub fn coerce_expression(
     if from_type_name.is_bytes() && to_type_name.is_string_slice() {
         module.borrow_mut().ensure_use_declared("std::string::*");
 
-        return Some(sway::Expression::create_function_calls(
-            None,
-            &[
-                ("String::from_ascii", Some((None, vec![expression]))),
-                ("as_str", Some((None, vec![]))),
-            ],
-        ));
+        return Some(
+            sway::Expression::create_function_call("String::from_ascii", None, vec![expression])
+                .with_as_str_call(),
+        );
     }
 
     // Check for `Bytes` to `String` coercions
     if from_type_name.is_bytes() && to_type_name.is_string() {
         module.borrow_mut().ensure_use_declared("std::string::*");
 
-        return Some(sway::Expression::create_function_calls(
+        return Some(sway::Expression::create_function_call(
+            "String::from_ascii",
             None,
-            &[("String::from_ascii", Some((None, vec![expression])))],
+            vec![expression],
         ));
     }
 
@@ -1100,9 +905,10 @@ pub fn coerce_expression(
         && length == 32
         && to_type_name.is_b256()
     {
-        return Some(sway::Expression::create_function_calls(
+        return Some(sway::Expression::create_function_call(
+            "b256::from_be_bytes",
             None,
-            &[("b256::from_be_bytes", Some((None, vec![expression])))],
+            vec![expression],
         ));
     }
 
@@ -1177,7 +983,7 @@ pub fn coerce_expression(
                     .iter()
                     .enumerate()
                     .map(|(i, c)| {
-                        let expr = sway::Expression::create_identifier(c.name.clone());
+                        let expr = sway::Expression::create_identifier(c.name.as_str());
                         coerce_expression(
                             project,
                             module.clone(),
@@ -1375,17 +1181,11 @@ pub fn get_return_type_name(
         // Ensure `std::string::*` is imported
         module.borrow_mut().ensure_use_declared("std::string::*");
 
-        return sway::TypeName::Identifier {
-            name: "String".into(),
-            generic_parameters: None,
-        };
+        return sway::TypeName::create_identifier("String");
     }
 
     if let sway::TypeName::Abi { .. } = &type_name {
-        return sway::TypeName::Identifier {
-            name: "Identity".to_string(),
-            generic_parameters: None,
-        };
+        return sway::TypeName::create_identifier("Identity");
     }
 
     type_name.clone()
@@ -1437,7 +1237,7 @@ pub fn get_expression_type(
         sway::Expression::Match(match_expr) => {
             get_match_type(project, module.clone(), scope.clone(), match_expr)
         }
-        sway::Expression::While(_) => Ok(sway::TypeName::Tuple { type_names: vec![] }),
+        sway::Expression::While(_) => Ok(sway::TypeName::create_tuple(vec![])),
         sway::Expression::UnaryExpression(unary_expression) => {
             get_unary_expression_type(project, module.clone(), scope.clone(), unary_expression)
         }
@@ -1445,8 +1245,8 @@ pub fn get_expression_type(
             get_binary_expression_type(project, module.clone(), scope.clone(), binary_expression)
         }
         sway::Expression::Constructor(constructor) => Ok(constructor.type_name.clone()),
-        sway::Expression::Continue => Ok(sway::TypeName::Tuple { type_names: vec![] }),
-        sway::Expression::Break => Ok(sway::TypeName::Tuple { type_names: vec![] }),
+        sway::Expression::Continue => Ok(sway::TypeName::create_tuple(vec![])),
+        sway::Expression::Break => Ok(sway::TypeName::create_tuple(vec![])),
         sway::Expression::AsmBlock(asm_block) => get_asm_block_type(asm_block),
         sway::Expression::Commented(_, x) => {
             get_expression_type(project, module.clone(), scope.clone(), x)
@@ -1457,10 +1257,7 @@ pub fn get_expression_type(
 #[inline(always)]
 fn get_literal_type(literal: &sway::Literal) -> sway::TypeName {
     match literal {
-        sway::Literal::Bool(_) => sway::TypeName::Identifier {
-            name: "bool".into(),
-            generic_parameters: None,
-        },
+        sway::Literal::Bool(_) => sway::TypeName::create_identifier("bool"),
 
         sway::Literal::DecInt(value, suffix) => sway::TypeName::Identifier {
             name: if let Some(suffix) = suffix.as_ref() {
@@ -1568,10 +1365,7 @@ fn get_path_expr_type(
 
                     name == enum_name
                 }) {
-                    return Some(sway::TypeName::Identifier {
-                        name: enum_name.into(),
-                        generic_parameters: None,
-                    });
+                    return Some(sway::TypeName::create_identifier(enum_name));
                 }
             }
         }
@@ -1637,10 +1431,9 @@ fn get_path_expr_type(
                     };
                     *new_name == function_name
                 }) {
-                    return Some(sway::TypeName::Identifier {
-                        name: format!("{contract_name}Storage"),
-                        generic_parameters: None,
-                    });
+                    return Some(sway::TypeName::create_identifier(
+                        format!("{contract_name}Storage").as_str(),
+                    ));
                 }
             }
 
@@ -1662,10 +1455,7 @@ fn get_path_expr_type(
     }
 
     if path_expr.to_string() == "_" {
-        return sway::TypeName::Identifier {
-            name: "_".to_string(),
-            generic_parameters: None,
-        };
+        return sway::TypeName::create_identifier("_");
     }
 
     panic!(
@@ -1682,7 +1472,7 @@ fn get_block_type(
     block: &sway::Block,
 ) -> Result<sway::TypeName, Error> {
     let Some(expression) = block.final_expr.as_ref() else {
-        return Ok(sway::TypeName::Tuple { type_names: vec![] });
+        return Ok(sway::TypeName::create_tuple(vec![]));
     };
 
     let inner_scope = Rc::new(RefCell::new(ir::Scope::new(
@@ -1745,7 +1535,7 @@ fn get_return_type(
     if let Some(value) = value.as_ref() {
         get_expression_type(project, module.clone(), scope.clone(), value)
     } else {
-        Ok(sway::TypeName::Tuple { type_names: vec![] })
+        Ok(sway::TypeName::create_tuple(vec![]))
     }
 }
 
@@ -1760,7 +1550,7 @@ fn get_array_type(
         type_name: Box::new(if let Some(expression) = array.elements.first() {
             get_expression_type(project, module.clone(), scope.clone(), expression)?
         } else {
-            sway::TypeName::Tuple { type_names: vec![] }
+            sway::TypeName::create_tuple(vec![])
         }),
         length: array.elements.len(),
     })
@@ -1876,15 +1666,7 @@ fn get_member_access_type(
                 storage_namespace_name,
                 member_access.member.as_str(),
             )? {
-                return Ok(sway::TypeName::Identifier {
-                    name: "StorageKey".into(),
-                    generic_parameters: Some(sway::GenericParameterList {
-                        entries: vec![sway::GenericParameter {
-                            type_name,
-                            implements: None,
-                        }],
-                    }),
-                });
+                return Ok(type_name.to_storage_key());
             }
 
             panic!(
@@ -1904,19 +1686,15 @@ fn get_member_access_type(
     // Check if field is a signed integer
     if let Some(bits) = container_type.int_bits() {
         if member_access.member.as_str() == "underlying" {
-            return Ok(sway::TypeName::Identifier {
-                name: match bits {
-                    8 => "u8",
-                    16 => "u16",
-                    32 => "u32",
-                    64 => "u64",
-                    128 => "U128",
-                    256 => "u256",
-                    _ => unimplemented!("I{bits}"),
-                }
-                .into(),
-                generic_parameters: None,
-            });
+            return Ok(sway::TypeName::create_identifier(match bits {
+                8 => "u8",
+                16 => "u16",
+                32 => "u32",
+                64 => "u64",
+                128 => "U128",
+                256 => "u256",
+                _ => unimplemented!("I{bits}"),
+            }));
         }
     }
 
@@ -1983,7 +1761,7 @@ fn get_if_type(
     if let Some(expression) = if_expr.then_body.final_expr.as_ref() {
         get_expression_type(project, module.clone(), scope.clone(), expression)
     } else {
-        Ok(sway::TypeName::Tuple { type_names: vec![] })
+        Ok(sway::TypeName::create_tuple(vec![]))
     }
 }
 
@@ -2010,10 +1788,7 @@ fn get_match_type(
                             branch_scope.borrow_mut().add_variable(Rc::new(RefCell::new(
                                 ir::Variable {
                                     new_name: ident.into(),
-                                    type_name: sway::TypeName::Identifier {
-                                        name: "Address".into(),
-                                        generic_parameters: None,
-                                    },
+                                    type_name: sway::TypeName::create_identifier("Address"),
                                     ..Default::default()
                                 },
                             )));
@@ -2025,10 +1800,7 @@ fn get_match_type(
                             branch_scope.borrow_mut().add_variable(Rc::new(RefCell::new(
                                 ir::Variable {
                                     new_name: ident.into(),
-                                    type_name: sway::TypeName::Identifier {
-                                        name: "ContractId".into(),
-                                        generic_parameters: None,
-                                    },
+                                    type_name: sway::TypeName::create_identifier("ContractId"),
                                     ..Default::default()
                                 },
                             )));
@@ -2043,7 +1815,7 @@ fn get_match_type(
         return get_expression_type(project, module.clone(), branch_scope, &branch.value);
     }
 
-    Ok(sway::TypeName::Tuple { type_names: vec![] })
+    Ok(sway::TypeName::create_tuple(vec![]))
 }
 
 #[inline(always)]
@@ -2069,10 +1841,9 @@ fn get_binary_expression_type(
     binary_expression: &sway::BinaryExpression,
 ) -> Result<sway::TypeName, Error> {
     match binary_expression.operator.as_str() {
-        "==" | "!=" | ">" | "<" | ">=" | "<=" | "&&" | "||" => Ok(sway::TypeName::Identifier {
-            name: "bool".into(),
-            generic_parameters: None,
-        }),
+        "==" | "!=" | ">" | "<" | ">=" | "<=" | "&&" | "||" => {
+            Ok(sway::TypeName::create_identifier("bool"))
+        }
 
         _ => get_expression_type(
             project,
@@ -2151,10 +1922,7 @@ fn get_path_expr_function_call_type(
 
     match name.as_str() {
         "todo!" if generic_parameters.is_none() => {
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "todo!".into(),
-                generic_parameters: None,
-            }));
+            return Ok(Some(sway::TypeName::create_identifier("todo!")));
         }
 
         "abi" if generic_parameters.is_none() => {
@@ -2172,10 +1940,7 @@ fn get_path_expr_function_call_type(
             };
 
             return Ok(Some(sway::TypeName::Abi {
-                type_name: Box::new(sway::TypeName::Identifier {
-                    name: definition_name.into(),
-                    generic_parameters: None,
-                }),
+                type_name: Box::new(sway::TypeName::create_identifier(definition_name)),
             }));
         }
 
@@ -2189,10 +1954,7 @@ fn get_path_expr_function_call_type(
 
     match name.as_str() {
         "__size_of" if generic_parameters.is_none() => {
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "u64".into(),
-                generic_parameters: None,
-            }));
+            return Ok(Some(sway::TypeName::create_identifier("u64")));
         }
 
         "Address::from" if generic_parameters.is_none() => {
@@ -2202,332 +1964,153 @@ fn get_path_expr_function_call_type(
                 parameters.len()
             );
 
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "Address".into(),
-                generic_parameters: None,
-            }));
+            return Ok(Some(sway::TypeName::create_identifier("Address")));
         }
 
         "AssetId::default" if generic_parameters.is_none() => {
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "AssetId".into(),
-                generic_parameters: None,
-            }));
+            return Ok(Some(sway::TypeName::create_identifier("AssetId")));
         }
 
         "b256::from" | "b256::from_be_bytes" | "b256::from_le_bytes" | "b256::zero"
             if generic_parameters.is_none() =>
         {
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "b256".into(),
-                generic_parameters: None,
-            }));
+            return Ok(Some(sway::TypeName::create_identifier("b256")));
         }
 
         "Bytes::new" | "Bytes::from" | "Bytes::with_capacity" if generic_parameters.is_none() => {
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "Bytes".into(),
-                generic_parameters: None,
-            }));
+            return Ok(Some(sway::TypeName::create_identifier("Bytes")));
         }
 
         "ContractId::from" | "ContractId::this" if generic_parameters.is_none() => {
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "ContractId".into(),
-                generic_parameters: None,
-            }));
+            return Ok(Some(sway::TypeName::create_identifier("ContractId")));
         }
 
         "I8::from" | "I8::from_uint" | "I8::max" | "I8::min" if generic_parameters.is_none() => {
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "I8".into(),
-                generic_parameters: None,
-            }));
+            return Ok(Some(sway::TypeName::create_identifier("I8")));
         }
 
         "I8::try_from" if generic_parameters.is_none() => {
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "Option".into(),
-                generic_parameters: Some(sway::GenericParameterList {
-                    entries: vec![sway::GenericParameter {
-                        type_name: sway::TypeName::Identifier {
-                            name: "I8".into(),
-                            generic_parameters: None,
-                        },
-                        implements: None,
-                    }],
-                }),
-            }));
+            return Ok(Some(sway::TypeName::create_identifier("I8").to_option()));
         }
 
         "I16::from" | "I16::from_uint" | "I16::max" | "I16::min"
             if generic_parameters.is_none() =>
         {
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "I16".into(),
-                generic_parameters: None,
-            }));
+            return Ok(Some(sway::TypeName::create_identifier("I16")));
         }
 
         "I16::try_from" if generic_parameters.is_none() => {
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "Option".into(),
-                generic_parameters: Some(sway::GenericParameterList {
-                    entries: vec![sway::GenericParameter {
-                        type_name: sway::TypeName::Identifier {
-                            name: "I16".into(),
-                            generic_parameters: None,
-                        },
-                        implements: None,
-                    }],
-                }),
-            }));
+            return Ok(Some(sway::TypeName::create_identifier("I16").to_option()));
         }
 
         "I32::from" | "I32::from_uint" | "I32::max" | "I32::min"
             if generic_parameters.is_none() =>
         {
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "I32".into(),
-                generic_parameters: None,
-            }));
+            return Ok(Some(sway::TypeName::create_identifier("I32")));
         }
 
         "I32::try_from" if generic_parameters.is_none() => {
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "Option".into(),
-                generic_parameters: Some(sway::GenericParameterList {
-                    entries: vec![sway::GenericParameter {
-                        type_name: sway::TypeName::Identifier {
-                            name: "I32".into(),
-                            generic_parameters: None,
-                        },
-                        implements: None,
-                    }],
-                }),
-            }));
+            return Ok(Some(sway::TypeName::create_identifier("I32").to_option()));
         }
 
         "I64::from" | "I64::from_uint" | "I64::max" | "I64::min"
             if generic_parameters.is_none() =>
         {
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "I64".into(),
-                generic_parameters: None,
-            }));
+            return Ok(Some(sway::TypeName::create_identifier("I64")));
         }
 
         "I64::try_from" if generic_parameters.is_none() => {
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "Option".into(),
-                generic_parameters: Some(sway::GenericParameterList {
-                    entries: vec![sway::GenericParameter {
-                        type_name: sway::TypeName::Identifier {
-                            name: "I64".into(),
-                            generic_parameters: None,
-                        },
-                        implements: None,
-                    }],
-                }),
-            }));
+            return Ok(Some(sway::TypeName::create_identifier("I64").to_option()));
         }
 
         "I128::from" | "I128::from_uint" | "I128::max" | "I128::min"
             if generic_parameters.is_none() =>
         {
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "I128".into(),
-                generic_parameters: None,
-            }));
+            return Ok(Some(sway::TypeName::create_identifier("I128")));
         }
 
         "I128::try_from" if generic_parameters.is_none() => {
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "Option".into(),
-                generic_parameters: Some(sway::GenericParameterList {
-                    entries: vec![sway::GenericParameter {
-                        type_name: sway::TypeName::Identifier {
-                            name: "I128".into(),
-                            generic_parameters: None,
-                        },
-                        implements: None,
-                    }],
-                }),
-            }));
+            return Ok(Some(sway::TypeName::create_identifier("I128").to_option()));
         }
 
         "I256::from" | "I256::from_uint" | "I256::max" | "I256::min"
             if generic_parameters.is_none() =>
         {
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "I256".into(),
-                generic_parameters: None,
-            }));
+            return Ok(Some(sway::TypeName::create_identifier("I256")));
         }
 
         "I256::try_from" if generic_parameters.is_none() => {
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "Option".into(),
-                generic_parameters: Some(sway::GenericParameterList {
-                    entries: vec![sway::GenericParameter {
-                        type_name: sway::TypeName::Identifier {
-                            name: "I256".into(),
-                            generic_parameters: None,
-                        },
-                        implements: None,
-                    }],
-                }),
-            }));
+            return Ok(Some(sway::TypeName::create_identifier("I256").to_option()));
         }
 
         "Identity::Address" | "Identity::ContractId" | "Identity::from"
             if generic_parameters.is_none() =>
         {
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "Identity".into(),
-                generic_parameters: None,
-            }));
+            return Ok(Some(sway::TypeName::create_identifier("Identity")));
         }
 
         "msg_sender" if generic_parameters.is_none() => {
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "Option".into(),
-                generic_parameters: Some(sway::GenericParameterList {
-                    entries: vec![sway::GenericParameter {
-                        type_name: sway::TypeName::Identifier {
-                            name: "Identity".into(),
-                            generic_parameters: None,
-                        },
-                        implements: None,
-                    }],
-                }),
-            }));
+            return Ok(Some(
+                sway::TypeName::create_identifier("Identity").to_option(),
+            ));
         }
 
         "raw_slice::from_parts" if generic_parameters.is_none() => {
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "raw_slice".into(),
-                generic_parameters: None,
-            }));
+            return Ok(Some(sway::TypeName::create_identifier("raw_slice")));
         }
 
         "Secp256k1::from" if generic_parameters.is_none() => {
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "Secp256k1".into(),
-                generic_parameters: None,
-            }));
+            return Ok(Some(sway::TypeName::create_identifier("Secp256k1")));
         }
 
         "Some" if generic_parameters.is_none() && parameters.len() == 1 => {
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "Option".to_string(),
-                generic_parameters: Some(sway::GenericParameterList {
-                    entries: vec![sway::GenericParameter {
-                        type_name: get_expression_type(
-                            project,
-                            module.clone(),
-                            scope.clone(),
-                            &parameters[0],
-                        )?,
-                        implements: None,
-                    }],
-                }),
-            }));
+            return Ok(Some(
+                get_expression_type(project, module.clone(), scope.clone(), &parameters[0])?
+                    .to_option(),
+            ));
         }
 
         "std::alloc::alloc" if generic_parameters.is_none() => {
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "raw_ptr".into(),
-                generic_parameters: None,
-            }));
+            return Ok(Some(sway::TypeName::create_identifier("raw_ptr")));
         }
 
         "std::block::block_header_hash" if generic_parameters.is_none() => {
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "Result".into(),
-                generic_parameters: Some(sway::GenericParameterList {
-                    entries: vec![
-                        sway::GenericParameter {
-                            type_name: sway::TypeName::Identifier {
-                                name: "b256".into(),
-                                generic_parameters: None,
-                            },
-                            implements: None,
-                        },
-                        sway::GenericParameter {
-                            type_name: sway::TypeName::Identifier {
-                                name: "BlockHashError".into(),
-                                generic_parameters: None,
-                            },
-                            implements: None,
-                        },
-                    ],
-                }),
-            }));
+            return Ok(Some(sway::TypeName::create_result_type(
+                sway::TypeName::create_identifier("b256"),
+                sway::TypeName::create_identifier("BlockHashError"),
+            )));
         }
 
         "std::block::height" if generic_parameters.is_none() => {
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "u32".into(),
-                generic_parameters: None,
-            }));
+            return Ok(Some(sway::TypeName::create_identifier("u32")));
         }
 
         "std::block::timestamp" if generic_parameters.is_none() => {
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "u64".into(),
-                generic_parameters: None,
-            }));
+            return Ok(Some(sway::TypeName::create_identifier("u64")));
         }
 
         "std::context::balance_of" if generic_parameters.is_none() => {
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "u64".into(),
-                generic_parameters: None,
-            }));
+            return Ok(Some(sway::TypeName::create_identifier("u64")));
         }
 
         "std::context::msg_amount" if generic_parameters.is_none() => {
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "u64".into(),
-                generic_parameters: None,
-            }));
+            return Ok(Some(sway::TypeName::create_identifier("u64")));
         }
 
         "std::context::this_balance" if generic_parameters.is_none() => {
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "u64".into(),
-                generic_parameters: None,
-            }));
+            return Ok(Some(sway::TypeName::create_identifier("u64")));
         }
 
         "std::hash::keccak256" if generic_parameters.is_none() => {
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "b256".into(),
-                generic_parameters: None,
-            }));
+            return Ok(Some(sway::TypeName::create_identifier("b256")));
         }
 
         "std::hash::sha256" if generic_parameters.is_none() => {
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "b256".into(),
-                generic_parameters: None,
-            }));
+            return Ok(Some(sway::TypeName::create_identifier("b256")));
         }
 
         "std::inputs::input_message_data" if generic_parameters.is_none() => {
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "Option".into(),
-                generic_parameters: Some(sway::GenericParameterList {
-                    entries: vec![sway::GenericParameter {
-                        type_name: sway::TypeName::Identifier {
-                            name: "Bytes".into(),
-                            generic_parameters: None,
-                        },
-                        implements: None,
-                    }],
-                }),
-            }));
+            return Ok(Some(sway::TypeName::create_identifier("Bytes").to_option()));
         }
 
         "std::registers::balance" if generic_parameters.is_none() => {
@@ -2537,10 +2120,7 @@ fn get_path_expr_function_call_type(
                 parameters.len()
             );
 
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "u64".into(),
-                generic_parameters: None,
-            }));
+            return Ok(Some(sway::TypeName::create_identifier("u64")));
         }
 
         "std::registers::context_gas" if generic_parameters.is_none() => {
@@ -2550,10 +2130,7 @@ fn get_path_expr_function_call_type(
                 parameters.len()
             );
 
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "u64".into(),
-                generic_parameters: None,
-            }));
+            return Ok(Some(sway::TypeName::create_identifier("u64")));
         }
 
         "std::registers::error" if generic_parameters.is_none() => {
@@ -2563,10 +2140,7 @@ fn get_path_expr_function_call_type(
                 parameters.len()
             );
 
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "u64".into(),
-                generic_parameters: None,
-            }));
+            return Ok(Some(sway::TypeName::create_identifier("u64")));
         }
 
         "std::registers::flags" if generic_parameters.is_none() => {
@@ -2576,10 +2150,7 @@ fn get_path_expr_function_call_type(
                 parameters.len()
             );
 
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "u64".into(),
-                generic_parameters: None,
-            }));
+            return Ok(Some(sway::TypeName::create_identifier("u64")));
         }
 
         "std::registers::frame_ptr" if generic_parameters.is_none() => {
@@ -2589,10 +2160,7 @@ fn get_path_expr_function_call_type(
                 parameters.len()
             );
 
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "raw_ptr".into(),
-                generic_parameters: None,
-            }));
+            return Ok(Some(sway::TypeName::create_identifier("raw_ptr")));
         }
 
         "std::registers::global_gas" if generic_parameters.is_none() => {
@@ -2602,10 +2170,7 @@ fn get_path_expr_function_call_type(
                 parameters.len()
             );
 
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "u64".into(),
-                generic_parameters: None,
-            }));
+            return Ok(Some(sway::TypeName::create_identifier("u64")));
         }
 
         "std::registers::heap_ptr" if generic_parameters.is_none() => {
@@ -2615,10 +2180,7 @@ fn get_path_expr_function_call_type(
                 parameters.len()
             );
 
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "raw_ptr".into(),
-                generic_parameters: None,
-            }));
+            return Ok(Some(sway::TypeName::create_identifier("raw_ptr")));
         }
 
         "std::registers::instrs_start" if generic_parameters.is_none() => {
@@ -2628,10 +2190,7 @@ fn get_path_expr_function_call_type(
                 parameters.len()
             );
 
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "raw_ptr".into(),
-                generic_parameters: None,
-            }));
+            return Ok(Some(sway::TypeName::create_identifier("raw_ptr")));
         }
 
         "std::registers::overflow" if generic_parameters.is_none() => {
@@ -2641,10 +2200,7 @@ fn get_path_expr_function_call_type(
                 parameters.len()
             );
 
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "u64".into(),
-                generic_parameters: None,
-            }));
+            return Ok(Some(sway::TypeName::create_identifier("u64")));
         }
 
         "std::registers::program_counter" if generic_parameters.is_none() => {
@@ -2654,10 +2210,7 @@ fn get_path_expr_function_call_type(
                 parameters.len()
             );
 
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "raw_ptr".into(),
-                generic_parameters: None,
-            }));
+            return Ok(Some(sway::TypeName::create_identifier("raw_ptr")));
         }
 
         "std::registers::return_value" if generic_parameters.is_none() => {
@@ -2667,10 +2220,7 @@ fn get_path_expr_function_call_type(
                 parameters.len()
             );
 
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "u64".into(),
-                generic_parameters: None,
-            }));
+            return Ok(Some(sway::TypeName::create_identifier("u64")));
         }
 
         "std::registers::return_length" if generic_parameters.is_none() => {
@@ -2680,10 +2230,7 @@ fn get_path_expr_function_call_type(
                 parameters.len()
             );
 
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "u64".into(),
-                generic_parameters: None,
-            }));
+            return Ok(Some(sway::TypeName::create_identifier("u64")));
         }
 
         "std::registers::stack_ptr" if generic_parameters.is_none() => {
@@ -2693,10 +2240,7 @@ fn get_path_expr_function_call_type(
                 parameters.len()
             );
 
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "raw_ptr".into(),
-                generic_parameters: None,
-            }));
+            return Ok(Some(sway::TypeName::create_identifier("raw_ptr")));
         }
 
         "std::registers::stack_start_ptr" if generic_parameters.is_none() => {
@@ -2706,113 +2250,51 @@ fn get_path_expr_function_call_type(
                 parameters.len()
             );
 
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "raw_ptr".into(),
-                generic_parameters: None,
-            }));
+            return Ok(Some(sway::TypeName::create_identifier("raw_ptr")));
         }
 
         "String::from_ascii" | "String::from_ascii_str" if generic_parameters.is_none() => {
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "String".into(),
-                generic_parameters: None,
-            }));
+            return Ok(Some(sway::TypeName::create_identifier("String")));
         }
 
         "u8::from" | "u8::max" | "u8::min" | "u8::from_be_bytes" | "u8::from_le_bytes"
             if generic_parameters.is_none() =>
         {
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "u8".into(),
-                generic_parameters: None,
-            }));
+            return Ok(Some(sway::TypeName::create_identifier("u8")));
         }
 
         "u8::try_from" if generic_parameters.is_none() => {
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "Option".into(),
-                generic_parameters: Some(sway::GenericParameterList {
-                    entries: vec![sway::GenericParameter {
-                        type_name: sway::TypeName::Identifier {
-                            name: "u8".into(),
-                            generic_parameters: None,
-                        },
-                        implements: None,
-                    }],
-                }),
-            }));
+            return Ok(Some(sway::TypeName::create_identifier("u8").to_option()));
         }
 
         "u16::from" | "u16::max" | "u16::min" | "u16::from_be_bytes" | "u16::from_le_bytes"
             if generic_parameters.is_none() =>
         {
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "u16".into(),
-                generic_parameters: None,
-            }));
+            return Ok(Some(sway::TypeName::create_identifier("u16")));
         }
 
         "u16::try_from" if generic_parameters.is_none() => {
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "Option".into(),
-                generic_parameters: Some(sway::GenericParameterList {
-                    entries: vec![sway::GenericParameter {
-                        type_name: sway::TypeName::Identifier {
-                            name: "u16".into(),
-                            generic_parameters: None,
-                        },
-                        implements: None,
-                    }],
-                }),
-            }));
+            return Ok(Some(sway::TypeName::create_identifier("u16").to_option()));
         }
 
         "u32::from" | "u32::max" | "u32::min" | "u32::from_be_bytes" | "u32::from_le_bytes"
             if generic_parameters.is_none() =>
         {
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "u32".into(),
-                generic_parameters: None,
-            }));
+            return Ok(Some(sway::TypeName::create_identifier("u32")));
         }
 
         "u32::try_from" if generic_parameters.is_none() => {
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "Option".into(),
-                generic_parameters: Some(sway::GenericParameterList {
-                    entries: vec![sway::GenericParameter {
-                        type_name: sway::TypeName::Identifier {
-                            name: "u32".into(),
-                            generic_parameters: None,
-                        },
-                        implements: None,
-                    }],
-                }),
-            }));
+            return Ok(Some(sway::TypeName::create_identifier("u32").to_option()));
         }
 
         "u64::from" | "u64::max" | "u64::min" | "u64::from_be_bytes" | "u64::from_le_bytes"
             if generic_parameters.is_none() =>
         {
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "u64".into(),
-                generic_parameters: None,
-            }));
+            return Ok(Some(sway::TypeName::create_identifier("u64")));
         }
 
         "u64::try_from" if generic_parameters.is_none() => {
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "Option".into(),
-                generic_parameters: Some(sway::GenericParameterList {
-                    entries: vec![sway::GenericParameter {
-                        type_name: sway::TypeName::Identifier {
-                            name: "u64".into(),
-                            generic_parameters: None,
-                        },
-                        implements: None,
-                    }],
-                }),
-            }));
+            return Ok(Some(sway::TypeName::create_identifier("u128")));
         }
 
         "u256::from"
@@ -2822,84 +2304,31 @@ fn get_path_expr_function_call_type(
         | "u256::from_le_bytes"
             if generic_parameters.is_none() =>
         {
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "u256".into(),
-                generic_parameters: None,
-            }));
+            return Ok(Some(sway::TypeName::create_identifier("u256")));
         }
 
         "u256::try_from" if generic_parameters.is_none() => {
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "Option".into(),
-                generic_parameters: Some(sway::GenericParameterList {
-                    entries: vec![sway::GenericParameter {
-                        type_name: sway::TypeName::Identifier {
-                            name: "u256".into(),
-                            generic_parameters: None,
-                        },
-                        implements: None,
-                    }],
-                }),
-            }));
+            return Ok(Some(sway::TypeName::create_identifier("u256").to_option()));
         }
 
         "U128::from" | "U128::max" | "U128::min" | "U128::zero" if generic_parameters.is_none() => {
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "U128".into(),
-                generic_parameters: None,
-            }));
+            return Ok(Some(sway::TypeName::create_identifier("U128")));
         }
 
         "U128::try_from" if generic_parameters.is_none() => {
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "Option".into(),
-                generic_parameters: Some(sway::GenericParameterList {
-                    entries: vec![sway::GenericParameter {
-                        type_name: sway::TypeName::Identifier {
-                            name: "U128".into(),
-                            generic_parameters: None,
-                        },
-                        implements: None,
-                    }],
-                }),
-            }));
+            return Ok(Some(sway::TypeName::create_identifier("U128").to_option()));
         }
 
         "U256::from" | "U256::max" | "U256::min" if generic_parameters.is_none() => {
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "U256".into(),
-                generic_parameters: None,
-            }));
+            return Ok(Some(sway::TypeName::create_identifier("U256")));
         }
 
         "U256::try_from" if generic_parameters.is_none() => {
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "Option".into(),
-                generic_parameters: Some(sway::GenericParameterList {
-                    entries: vec![sway::GenericParameter {
-                        type_name: sway::TypeName::Identifier {
-                            name: "U256".into(),
-                            generic_parameters: None,
-                        },
-                        implements: None,
-                    }],
-                }),
-            }));
+            return Ok(Some(sway::TypeName::create_identifier("U256").to_option()));
         }
 
         "Vec::with_capacity" if generic_parameters.is_none() => {
-            return Ok(Some(sway::TypeName::Identifier {
-                name: "Vec".into(),
-                generic_parameters: Some(sway::GenericParameterList {
-                    entries: vec![sway::GenericParameter {
-                        type_name: sway::TypeName::Identifier {
-                            name: "_".into(),
-                            generic_parameters: None,
-                        },
-                        implements: None,
-                    }],
-                }),
-            }));
+            return Ok(Some(sway::TypeName::create_identifier("_").to_vec()));
         }
 
         _ => {}
@@ -3040,7 +2469,7 @@ fn get_path_expr_function_call_type(
                 return Ok(Some(return_type.as_ref().clone()));
             }
 
-            return Ok(Some(sway::TypeName::Tuple { type_names: vec![] }));
+            return Ok(Some(sway::TypeName::create_tuple(vec![])));
         }
 
         // Attempt to find a function pointer variable in scope
@@ -3085,7 +2514,7 @@ fn get_path_expr_function_call_type(
             if let Some(return_type) = return_type.as_ref() {
                 return Ok(Some(return_type.as_ref().clone()));
             } else {
-                return Ok(Some(sway::TypeName::Tuple { type_names: vec![] }));
+                return Ok(Some(sway::TypeName::create_tuple(vec![])));
             }
         }
 
@@ -3156,54 +2585,23 @@ fn get_member_access_function_call_type(
     if container_type.is_identity() {
         match member_access.member.as_str() {
             "as_address" if parameters.is_empty() => {
-                return Ok(sway::TypeName::Identifier {
-                    name: "Option".into(),
-                    generic_parameters: Some(sway::GenericParameterList {
-                        entries: vec![sway::GenericParameter {
-                            type_name: sway::TypeName::Identifier {
-                                name: "Address".into(),
-                                generic_parameters: None,
-                            },
-                            implements: None,
-                        }],
-                    }),
-                });
+                return Ok(sway::TypeName::create_identifier("Address").to_option());
             }
 
             "as_contract_id" if parameters.is_empty() => {
-                return Ok(sway::TypeName::Identifier {
-                    name: "Option".into(),
-                    generic_parameters: Some(sway::GenericParameterList {
-                        entries: vec![sway::GenericParameter {
-                            type_name: sway::TypeName::Identifier {
-                                name: "ContractId".into(),
-                                generic_parameters: None,
-                            },
-                            implements: None,
-                        }],
-                    }),
-                });
+                return Ok(sway::TypeName::create_identifier("ContractId").to_option());
             }
 
             "bits" if parameters.is_empty() => {
-                return Ok(sway::TypeName::Identifier {
-                    name: "b256".into(),
-                    generic_parameters: None,
-                });
+                return Ok(sway::TypeName::create_identifier("b256"));
             }
 
             "is_address" if parameters.is_empty() => {
-                return Ok(sway::TypeName::Identifier {
-                    name: "bool".into(),
-                    generic_parameters: None,
-                });
+                return Ok(sway::TypeName::create_identifier("bool"));
             }
 
             "is_contract_id" if parameters.is_empty() => {
-                return Ok(sway::TypeName::Identifier {
-                    name: "bool".into(),
-                    generic_parameters: None,
-                });
+                return Ok(sway::TypeName::create_identifier("bool"));
             }
 
             _ => {}
@@ -3218,26 +2616,17 @@ fn get_member_access_function_call_type(
             generic_parameters,
         } => match (name.as_str(), generic_parameters.as_ref()) {
             ("b256", None) => match member_access.member.as_str() {
-                "as_u256" => Ok(sway::TypeName::Identifier {
-                    name: "u256".into(),
-                    generic_parameters: None,
-                }),
+                "as_u256" => Ok(sway::TypeName::create_identifier("u256")),
 
-                "to_be_bytes" => Ok(sway::TypeName::Array {
-                    type_name: Box::new(sway::TypeName::Identifier {
-                        name: "u8".into(),
-                        generic_parameters: None,
-                    }),
-                    length: 32,
-                }),
+                "to_be_bytes" => Ok(sway::TypeName::create_array(
+                    sway::TypeName::create_identifier("u8"),
+                    32,
+                )),
 
-                "to_le_bytes" => Ok(sway::TypeName::Array {
-                    type_name: Box::new(sway::TypeName::Identifier {
-                        name: "u8".into(),
-                        generic_parameters: None,
-                    }),
-                    length: 32,
-                }),
+                "to_le_bytes" => Ok(sway::TypeName::create_array(
+                    sway::TypeName::create_identifier("u8"),
+                    32,
+                )),
 
                 _ => todo!(
                     "get type of function call expression: {}",
@@ -3246,46 +2635,18 @@ fn get_member_access_function_call_type(
             },
 
             ("Bytes", None) => match member_access.member.as_str() {
-                "as_raw_slice" => Ok(sway::TypeName::Identifier {
-                    name: "raw_slice".into(),
-                    generic_parameters: None,
-                }),
+                "as_raw_slice" => Ok(sway::TypeName::create_identifier("raw_slice")),
 
-                "get" => Ok(sway::TypeName::Identifier {
-                    name: "Option".into(),
-                    generic_parameters: Some(sway::GenericParameterList {
-                        entries: vec![sway::GenericParameter {
-                            type_name: sway::TypeName::Identifier {
-                                name: "u8".into(),
-                                generic_parameters: None,
-                            },
-                            implements: None,
-                        }],
-                    }),
-                }),
+                "get" => Ok(sway::TypeName::create_identifier("raw_slice").to_option()),
 
-                "len" => Ok(sway::TypeName::Identifier {
-                    name: "u64".into(),
-                    generic_parameters: None,
-                }),
+                "len" => Ok(sway::TypeName::create_identifier("u64")),
 
-                "ptr" => Ok(sway::TypeName::Identifier {
-                    name: "raw_ptr".into(),
-                    generic_parameters: None,
-                }),
+                "ptr" => Ok(sway::TypeName::create_identifier("raw_ptr")),
 
-                "split_at" => Ok(sway::TypeName::Tuple {
-                    type_names: vec![
-                        sway::TypeName::Identifier {
-                            name: "Bytes".into(),
-                            generic_parameters: None,
-                        },
-                        sway::TypeName::Identifier {
-                            name: "Bytes".into(),
-                            generic_parameters: None,
-                        },
-                    ],
-                }),
+                "split_at" => Ok(sway::TypeName::create_tuple(vec![
+                    sway::TypeName::create_identifier("Bytes"),
+                    sway::TypeName::create_identifier("Bytes"),
+                ])),
 
                 _ => todo!(
                     "get type of function call expression: {}",
@@ -3294,15 +2655,9 @@ fn get_member_access_function_call_type(
             },
 
             ("I8", None) => match member_access.member.as_str() {
-                "wrapping_neg" => Ok(sway::TypeName::Identifier {
-                    name: "I8".into(),
-                    generic_parameters: None,
-                }),
+                "wrapping_neg" => Ok(sway::TypeName::create_identifier("I8")),
 
-                "underlying" => Ok(sway::TypeName::Identifier {
-                    name: "u8".into(),
-                    generic_parameters: None,
-                }),
+                "underlying" => Ok(sway::TypeName::create_identifier("u8")),
 
                 _ => todo!(
                     "get type of function call expression: {}",
@@ -3311,15 +2666,9 @@ fn get_member_access_function_call_type(
             },
 
             ("I16", None) => match member_access.member.as_str() {
-                "wrapping_neg" => Ok(sway::TypeName::Identifier {
-                    name: "I16".into(),
-                    generic_parameters: None,
-                }),
+                "wrapping_neg" => Ok(sway::TypeName::create_identifier("I16")),
 
-                "underlying" => Ok(sway::TypeName::Identifier {
-                    name: "u16".into(),
-                    generic_parameters: None,
-                }),
+                "underlying" => Ok(sway::TypeName::create_identifier("U16")),
 
                 _ => todo!(
                     "get type of function call expression: {}",
@@ -3328,15 +2677,9 @@ fn get_member_access_function_call_type(
             },
 
             ("I32", None) => match member_access.member.as_str() {
-                "wrapping_neg" => Ok(sway::TypeName::Identifier {
-                    name: "I32".into(),
-                    generic_parameters: None,
-                }),
+                "wrapping_neg" => Ok(sway::TypeName::create_identifier("I32")),
 
-                "underlying" => Ok(sway::TypeName::Identifier {
-                    name: "u32".into(),
-                    generic_parameters: None,
-                }),
+                "underlying" => Ok(sway::TypeName::create_identifier("u32")),
 
                 _ => todo!(
                     "get type of function call expression: {}",
@@ -3345,15 +2688,9 @@ fn get_member_access_function_call_type(
             },
 
             ("I64", None) => match member_access.member.as_str() {
-                "wrapping_neg" => Ok(sway::TypeName::Identifier {
-                    name: "I64".into(),
-                    generic_parameters: None,
-                }),
+                "wrapping_neg" => Ok(sway::TypeName::create_identifier("I64")),
 
-                "underlying" => Ok(sway::TypeName::Identifier {
-                    name: "u64".into(),
-                    generic_parameters: None,
-                }),
+                "underlying" => Ok(sway::TypeName::create_identifier("u64")),
 
                 _ => todo!(
                     "get type of function call expression: {}",
@@ -3362,15 +2699,9 @@ fn get_member_access_function_call_type(
             },
 
             ("I128", None) => match member_access.member.as_str() {
-                "wrapping_neg" => Ok(sway::TypeName::Identifier {
-                    name: "I128".into(),
-                    generic_parameters: None,
-                }),
+                "wrapping_neg" => Ok(sway::TypeName::create_identifier("I128")),
 
-                "underlying" => Ok(sway::TypeName::Identifier {
-                    name: "U128".into(),
-                    generic_parameters: None,
-                }),
+                "underlying" => Ok(sway::TypeName::create_identifier("U128")),
 
                 _ => todo!(
                     "get type of function call expression: {}",
@@ -3379,15 +2710,9 @@ fn get_member_access_function_call_type(
             },
 
             ("I256", None) => match member_access.member.as_str() {
-                "wrapping_neg" => Ok(sway::TypeName::Identifier {
-                    name: "I256".into(),
-                    generic_parameters: None,
-                }),
+                "wrapping_neg" => Ok(sway::TypeName::create_identifier("I256")),
 
-                "underlying" => Ok(sway::TypeName::Identifier {
-                    name: "u256".into(),
-                    generic_parameters: None,
-                }),
+                "underlying" => Ok(sway::TypeName::create_identifier("u256")),
 
                 _ => todo!(
                     "get type of function call expression: {}",
@@ -3398,10 +2723,7 @@ fn get_member_access_function_call_type(
             ("Option", Some(generic_parameters)) if generic_parameters.entries.len() == 1 => {
                 match member_access.member.as_str() {
                     "is_none" | "is_some" if parameters.is_empty() => {
-                        Ok(sway::TypeName::Identifier {
-                            name: "bool".into(),
-                            generic_parameters: None,
-                        })
+                        Ok(sway::TypeName::create_identifier("bool"))
                     }
 
                     "unwrap" => Ok(generic_parameters.entries[0].type_name.clone()),
@@ -3428,10 +2750,7 @@ fn get_member_access_function_call_type(
             }
 
             ("raw_ptr", None) => match member_access.member.as_str() {
-                "add" => Ok(sway::TypeName::Identifier {
-                    name: "raw_ptr".into(),
-                    generic_parameters: None,
-                }),
+                "add" => Ok(sway::TypeName::create_identifier("raw_ptr")),
 
                 "read" => Ok(function_generic_parameters.unwrap().entries[0]
                     .type_name
@@ -3444,10 +2763,7 @@ fn get_member_access_function_call_type(
             },
 
             ("raw_slice", None) => match member_access.member.as_str() {
-                "ptr" => Ok(sway::TypeName::Identifier {
-                    name: "raw_ptr".into(),
-                    generic_parameters: None,
-                }),
+                "ptr" => Ok(sway::TypeName::create_identifier("raw_ptr")),
 
                 _ => todo!(
                     "get type of function call expression: {}",
@@ -3462,27 +2778,10 @@ fn get_member_access_function_call_type(
                         .borrow_mut()
                         .ensure_use_declared("std::crypto::signature_error::SignatureError");
 
-                    Ok(sway::TypeName::Identifier {
-                        name: "Result".into(),
-                        generic_parameters: Some(sway::GenericParameterList {
-                            entries: vec![
-                                sway::GenericParameter {
-                                    type_name: sway::TypeName::Identifier {
-                                        name: "Address".into(),
-                                        generic_parameters: None,
-                                    },
-                                    implements: None,
-                                },
-                                sway::GenericParameter {
-                                    type_name: sway::TypeName::Identifier {
-                                        name: "SignatureError".into(),
-                                        generic_parameters: None,
-                                    },
-                                    implements: None,
-                                },
-                            ],
-                        }),
-                    })
+                    Ok(sway::TypeName::create_result_type(
+                        sway::TypeName::create_identifier("Address"),
+                        sway::TypeName::create_identifier("SignatureError"),
+                    ))
                 }
 
                 _ => todo!(
@@ -3493,24 +2792,13 @@ fn get_member_access_function_call_type(
 
             ("StorageKey", Some(generic_parameters)) if generic_parameters.entries.len() == 1 => {
                 match member_access.member.as_str() {
-                    "clear" => Ok(sway::TypeName::Identifier {
-                        name: "bool".into(),
-                        generic_parameters: None,
-                    }),
+                    "clear" => Ok(sway::TypeName::create_identifier("bool")),
 
                     "read" => Ok(generic_parameters.entries[0].type_name.clone()),
 
-                    "try_read" => Ok(sway::TypeName::Identifier {
-                        name: "Option".into(),
-                        generic_parameters: Some(sway::GenericParameterList {
-                            entries: vec![sway::GenericParameter {
-                                type_name: generic_parameters.entries[0].type_name.clone(),
-                                implements: None,
-                            }],
-                        }),
-                    }),
+                    "try_read" => Ok(generic_parameters.entries[0].type_name.to_option()),
 
-                    "write" => Ok(sway::TypeName::Tuple { type_names: vec![] }),
+                    "write" => Ok(sway::TypeName::create_tuple(vec![])),
 
                     _ => match &generic_parameters.entries[0].type_name {
                         sway::TypeName::Identifier {
@@ -3518,30 +2806,15 @@ fn get_member_access_function_call_type(
                             generic_parameters,
                         } => match (name.as_str(), generic_parameters.as_ref()) {
                             ("StorageBytes", None) => match member_access.member.as_str() {
-                                "clear" => Ok(sway::TypeName::Identifier {
-                                    name: "bool".into(),
-                                    generic_parameters: None,
-                                }),
+                                "clear" => Ok(sway::TypeName::create_identifier("bool")),
 
-                                "len" => Ok(sway::TypeName::Identifier {
-                                    name: "u64".into(),
-                                    generic_parameters: None,
-                                }),
+                                "len" => Ok(sway::TypeName::create_identifier("u64")),
 
-                                "read_slice" => Ok(sway::TypeName::Identifier {
-                                    name: "Option".into(),
-                                    generic_parameters: Some(sway::GenericParameterList {
-                                        entries: vec![sway::GenericParameter {
-                                            type_name: sway::TypeName::Identifier {
-                                                name: "Bytes".into(),
-                                                generic_parameters: None,
-                                            },
-                                            implements: None,
-                                        }],
-                                    }),
-                                }),
+                                "read_slice" => {
+                                    Ok(sway::TypeName::create_identifier("Bytes").to_option())
+                                }
 
-                                "write_slice" => Ok(sway::TypeName::Tuple { type_names: vec![] }),
+                                "write_slice" => Ok(sway::TypeName::create_tuple(vec![])),
 
                                 _ => todo!(
                                     "get type of function call expression: {}",
@@ -3553,58 +2826,21 @@ fn get_member_access_function_call_type(
                                 if generic_parameters.entries.len() == 2 =>
                             {
                                 match member_access.member.as_str() {
-                                    "get" => Ok(sway::TypeName::Identifier {
-                                        name: "StorageKey".into(),
-                                        generic_parameters: Some(sway::GenericParameterList {
-                                            entries: vec![sway::GenericParameter {
-                                                type_name: generic_parameters.entries[1]
-                                                    .type_name
-                                                    .clone(),
-                                                implements: None,
-                                            }],
-                                        }),
-                                    }),
+                                    "get" => {
+                                        Ok(generic_parameters.entries[1].type_name.to_storage_key())
+                                    }
 
-                                    "insert" => Ok(sway::TypeName::Tuple { type_names: vec![] }),
+                                    "insert" => Ok(sway::TypeName::create_tuple(vec![])),
 
-                                    "remove" => Ok(sway::TypeName::Identifier {
-                                        name: "bool".into(),
-                                        generic_parameters: None,
-                                    }),
+                                    "remove" => Ok(sway::TypeName::create_identifier("bool")),
 
-                                    "try_insert" => Ok(sway::TypeName::Identifier {
-                                        name: "Result".into(),
-                                        generic_parameters: Some(sway::GenericParameterList {
-                                            entries: vec![
-                                                sway::GenericParameter {
-                                                    type_name: generic_parameters.entries[0]
-                                                        .type_name
-                                                        .clone(),
-                                                    implements: None,
-                                                },
-                                                sway::GenericParameter {
-                                                    type_name: sway::TypeName::Identifier {
-                                                        name: "StorageMapError".into(),
-                                                        generic_parameters: Some(
-                                                            sway::GenericParameterList {
-                                                                entries: vec![
-                                                                    sway::GenericParameter {
-                                                                        type_name:
-                                                                            generic_parameters
-                                                                                .entries[0]
-                                                                                .type_name
-                                                                                .clone(),
-                                                                        implements: None,
-                                                                    },
-                                                                ],
-                                                            },
-                                                        ),
-                                                    },
-                                                    implements: None,
-                                                },
-                                            ],
-                                        }),
-                                    }),
+                                    "try_insert" => Ok(sway::TypeName::create_result_type(
+                                        generic_parameters.entries[0].type_name.clone(),
+                                        sway::TypeName::create_generic(
+                                            "StorageMapError",
+                                            vec![generic_parameters.entries[0].type_name.clone()],
+                                        ),
+                                    )),
 
                                     _ => todo!(
                                         "get type of function call expression: {}",
@@ -3614,30 +2850,15 @@ fn get_member_access_function_call_type(
                             }
 
                             ("StorageString", None) => match member_access.member.as_str() {
-                                "clear" => Ok(sway::TypeName::Identifier {
-                                    name: "bool".into(),
-                                    generic_parameters: None,
-                                }),
+                                "clear" => Ok(sway::TypeName::create_identifier("bool")),
 
-                                "len" => Ok(sway::TypeName::Identifier {
-                                    name: "u64".into(),
-                                    generic_parameters: None,
-                                }),
+                                "len" => Ok(sway::TypeName::create_identifier("u64")),
 
-                                "read_slice" => Ok(sway::TypeName::Identifier {
-                                    name: "Option".into(),
-                                    generic_parameters: Some(sway::GenericParameterList {
-                                        entries: vec![sway::GenericParameter {
-                                            type_name: sway::TypeName::Identifier {
-                                                name: "String".into(),
-                                                generic_parameters: None,
-                                            },
-                                            implements: None,
-                                        }],
-                                    }),
-                                }),
+                                "read_slice" => {
+                                    Ok(sway::TypeName::create_identifier("String").to_option())
+                                }
 
-                                "write_slice" => Ok(sway::TypeName::Tuple { type_names: vec![] }),
+                                "write_slice" => Ok(sway::TypeName::create_tuple(vec![])),
 
                                 _ => todo!(
                                     "get type of function call expression: {}",
@@ -3649,130 +2870,54 @@ fn get_member_access_function_call_type(
                                 if generic_parameters.entries.len() == 1 =>
                             {
                                 match member_access.member.as_str() {
-                                    "fill" => Ok(sway::TypeName::Tuple { type_names: vec![] }),
+                                    "fill" => Ok(sway::TypeName::create_tuple(vec![])),
 
-                                    "first" => Ok(sway::TypeName::Identifier {
-                                        name: "Option".into(),
-                                        generic_parameters: Some(sway::GenericParameterList {
-                                            entries: vec![sway::GenericParameter {
-                                                type_name: sway::TypeName::Identifier {
-                                                    name: "StorageKey".into(),
-                                                    generic_parameters: Some(
-                                                        sway::GenericParameterList {
-                                                            entries: vec![sway::GenericParameter {
-                                                                type_name: generic_parameters
-                                                                    .entries[0]
-                                                                    .type_name
-                                                                    .clone(),
-                                                                implements: None,
-                                                            }],
-                                                        },
-                                                    ),
-                                                },
-                                                implements: None,
-                                            }],
-                                        }),
-                                    }),
+                                    "first" => Ok(generic_parameters.entries[0]
+                                        .type_name
+                                        .to_storage_key()
+                                        .to_option()),
 
-                                    "get" => Ok(sway::TypeName::Identifier {
-                                        name: "Option".into(),
-                                        generic_parameters: Some(sway::GenericParameterList {
-                                            entries: vec![sway::GenericParameter {
-                                                type_name: sway::TypeName::Identifier {
-                                                    name: "StorageKey".into(),
-                                                    generic_parameters: Some(
-                                                        sway::GenericParameterList {
-                                                            entries: vec![sway::GenericParameter {
-                                                                type_name: generic_parameters
-                                                                    .entries[0]
-                                                                    .type_name
-                                                                    .clone(),
-                                                                implements: None,
-                                                            }],
-                                                        },
-                                                    ),
-                                                },
-                                                implements: None,
-                                            }],
-                                        }),
-                                    }),
+                                    "get" => Ok(generic_parameters.entries[0]
+                                        .type_name
+                                        .to_storage_key()
+                                        .to_option()),
 
-                                    "insert" => Ok(sway::TypeName::Tuple { type_names: vec![] }),
+                                    "insert" => Ok(sway::TypeName::create_tuple(vec![])),
 
-                                    "is_empty" => Ok(sway::TypeName::Identifier {
-                                        name: "bool".into(),
-                                        generic_parameters: None,
-                                    }),
+                                    "is_empty" => Ok(sway::TypeName::create_identifier("bool")),
 
-                                    "last" => Ok(sway::TypeName::Identifier {
-                                        name: "Option".into(),
-                                        generic_parameters: Some(sway::GenericParameterList {
-                                            entries: vec![sway::GenericParameter {
-                                                type_name: sway::TypeName::Identifier {
-                                                    name: "StorageKey".into(),
-                                                    generic_parameters: Some(
-                                                        sway::GenericParameterList {
-                                                            entries: vec![sway::GenericParameter {
-                                                                type_name: generic_parameters
-                                                                    .entries[0]
-                                                                    .type_name
-                                                                    .clone(),
-                                                                implements: None,
-                                                            }],
-                                                        },
-                                                    ),
-                                                },
-                                                implements: None,
-                                            }],
-                                        }),
-                                    }),
+                                    "last" => Ok(generic_parameters.entries[0]
+                                        .type_name
+                                        .to_storage_key()
+                                        .to_option()),
 
-                                    "len" => Ok(sway::TypeName::Identifier {
-                                        name: "u64".into(),
-                                        generic_parameters: None,
-                                    }),
+                                    "len" => Ok(sway::TypeName::create_identifier("u64")),
 
-                                    "load_vec" => Ok(sway::TypeName::Identifier {
-                                        name: "Vec".into(),
-                                        generic_parameters: Some(sway::GenericParameterList {
-                                            entries: vec![sway::GenericParameter {
-                                                type_name: generic_parameters.entries[0]
-                                                    .type_name
-                                                    .clone(),
-                                                implements: None,
-                                            }],
-                                        }),
-                                    }),
+                                    "load_vec" => {
+                                        Ok(generic_parameters.entries[0].type_name.to_vec())
+                                    }
 
-                                    "pop" => Ok(sway::TypeName::Identifier {
-                                        name: "Option".into(),
-                                        generic_parameters: Some(sway::GenericParameterList {
-                                            entries: vec![sway::GenericParameter {
-                                                type_name: generic_parameters.entries[0]
-                                                    .type_name
-                                                    .clone(),
-                                                implements: None,
-                                            }],
-                                        }),
-                                    }),
+                                    "pop" => {
+                                        Ok(generic_parameters.entries[0].type_name.to_option())
+                                    }
 
-                                    "push" => Ok(sway::TypeName::Tuple { type_names: vec![] }),
+                                    "push" => Ok(sway::TypeName::create_tuple(vec![])),
 
                                     "remove" => Ok(generic_parameters.entries[0].type_name.clone()),
 
-                                    "resize" => Ok(sway::TypeName::Tuple { type_names: vec![] }),
+                                    "resize" => Ok(sway::TypeName::create_tuple(vec![])),
 
-                                    "reverse" => Ok(sway::TypeName::Tuple { type_names: vec![] }),
+                                    "reverse" => Ok(sway::TypeName::create_tuple(vec![])),
 
-                                    "set" => Ok(sway::TypeName::Tuple { type_names: vec![] }),
+                                    "set" => Ok(sway::TypeName::create_tuple(vec![])),
 
-                                    "store_vec" => Ok(sway::TypeName::Tuple { type_names: vec![] }),
+                                    "store_vec" => Ok(sway::TypeName::create_tuple(vec![])),
 
                                     "swap_remove" => {
                                         Ok(generic_parameters.entries[0].type_name.clone())
                                     }
 
-                                    "swap" => Ok(sway::TypeName::Tuple { type_names: vec![] }),
+                                    "swap" => Ok(sway::TypeName::create_tuple(vec![])),
 
                                     _ => todo!(
                                         "get type of function call expression: {}",
@@ -3798,12 +2943,10 @@ fn get_member_access_function_call_type(
 
             ("StorageMap", Some(generic_parameters)) if generic_parameters.entries.len() == 2 => {
                 match member_access.member.as_str() {
-                    "get" if parameters.len() == 1 => Ok(sway::TypeName::Identifier {
-                        name: "StorageKey".to_string(),
-                        generic_parameters: Some(sway::GenericParameterList {
-                            entries: vec![generic_parameters.entries[1].clone()],
-                        }),
-                    }),
+                    "get" if parameters.len() == 1 => {
+                        Ok(generic_parameters.entries[1].type_name.to_storage_key())
+                    }
+
                     _ => todo!(
                         "get type of function call expression: {}",
                         sway::TabbedDisplayer(member_access)
@@ -3812,47 +2955,23 @@ fn get_member_access_function_call_type(
             }
 
             ("String", None) => match member_access.member.as_str() {
-                "as_bytes" => Ok(sway::TypeName::Identifier {
-                    name: "Bytes".into(),
-                    generic_parameters: None,
-                }),
+                "as_bytes" => Ok(sway::TypeName::create_identifier("Bytes")),
 
-                "capacity" => Ok(sway::TypeName::Identifier {
-                    name: "u64".into(),
-                    generic_parameters: None,
-                }),
+                "capacity" => Ok(sway::TypeName::create_identifier("u64")),
 
-                "clear" => Ok(sway::TypeName::Tuple { type_names: vec![] }),
+                "clear" => Ok(sway::TypeName::create_tuple(vec![])),
 
-                "from_ascii" => Ok(sway::TypeName::Identifier {
-                    name: "String".into(),
-                    generic_parameters: None,
-                }),
+                "from_ascii" => Ok(sway::TypeName::create_identifier("String")),
 
-                "from_ascii_str" => Ok(sway::TypeName::Identifier {
-                    name: "String".into(),
-                    generic_parameters: None,
-                }),
+                "from_ascii_str" => Ok(sway::TypeName::create_identifier("String")),
 
-                "is_empty" => Ok(sway::TypeName::Identifier {
-                    name: "bool".into(),
-                    generic_parameters: None,
-                }),
+                "is_empty" => Ok(sway::TypeName::create_identifier("bool")),
 
-                "new" => Ok(sway::TypeName::Identifier {
-                    name: "String".into(),
-                    generic_parameters: None,
-                }),
+                "new" => Ok(sway::TypeName::create_identifier("String")),
 
-                "with_capacity" => Ok(sway::TypeName::Identifier {
-                    name: "String".into(),
-                    generic_parameters: None,
-                }),
+                "with_capacity" => Ok(sway::TypeName::create_identifier("String")),
 
-                "ptr" => Ok(sway::TypeName::Identifier {
-                    name: "raw_ptr".into(),
-                    generic_parameters: None,
-                }),
+                "ptr" => Ok(sway::TypeName::create_identifier("raw_ptr")),
 
                 "as_str" => Ok(sway::TypeName::StringSlice),
 
@@ -3863,30 +2982,15 @@ fn get_member_access_function_call_type(
             },
 
             ("u8", None) => match member_access.member.as_str() {
-                "as_u16" => Ok(sway::TypeName::Identifier {
-                    name: "u16".into(),
-                    generic_parameters: None,
-                }),
+                "as_u16" => Ok(sway::TypeName::create_identifier("u16")),
 
-                "as_u32" => Ok(sway::TypeName::Identifier {
-                    name: "u32".into(),
-                    generic_parameters: None,
-                }),
+                "as_u32" => Ok(sway::TypeName::create_identifier("u32")),
 
-                "as_u64" => Ok(sway::TypeName::Identifier {
-                    name: "u64".into(),
-                    generic_parameters: None,
-                }),
+                "as_u64" => Ok(sway::TypeName::create_identifier("u64")),
 
-                "as_u256" => Ok(sway::TypeName::Identifier {
-                    name: "u256".into(),
-                    generic_parameters: None,
-                }),
+                "as_u256" => Ok(sway::TypeName::create_identifier("u256")),
 
-                "pow" => Ok(sway::TypeName::Identifier {
-                    name: "u8".into(),
-                    generic_parameters: None,
-                }),
+                "pow" => Ok(sway::TypeName::create_identifier("u8")),
 
                 _ => todo!(
                     "get type of function call expression: {}",
@@ -3895,41 +2999,23 @@ fn get_member_access_function_call_type(
             },
 
             ("u16", None) => match member_access.member.as_str() {
-                "as_u32" => Ok(sway::TypeName::Identifier {
-                    name: "u32".into(),
-                    generic_parameters: None,
-                }),
+                "as_u32" => Ok(sway::TypeName::create_identifier("u32")),
 
-                "as_u64" => Ok(sway::TypeName::Identifier {
-                    name: "u64".into(),
-                    generic_parameters: None,
-                }),
+                "as_u64" => Ok(sway::TypeName::create_identifier("u64")),
 
-                "as_u256" => Ok(sway::TypeName::Identifier {
-                    name: "u256".into(),
-                    generic_parameters: None,
-                }),
+                "as_u256" => Ok(sway::TypeName::create_identifier("u256")),
 
-                "pow" => Ok(sway::TypeName::Identifier {
-                    name: "u16".into(),
-                    generic_parameters: None,
-                }),
+                "pow" => Ok(sway::TypeName::create_identifier("u16")),
 
-                "to_be_bytes" => Ok(sway::TypeName::Array {
-                    type_name: Box::new(sway::TypeName::Identifier {
-                        name: "u8".into(),
-                        generic_parameters: None,
-                    }),
-                    length: 2,
-                }),
+                "to_be_bytes" => Ok(sway::TypeName::create_array(
+                    sway::TypeName::create_identifier("u8"),
+                    2,
+                )),
 
-                "to_le_bytes" => Ok(sway::TypeName::Array {
-                    type_name: Box::new(sway::TypeName::Identifier {
-                        name: "u8".into(),
-                        generic_parameters: None,
-                    }),
-                    length: 2,
-                }),
+                "to_le_bytes" => Ok(sway::TypeName::create_array(
+                    sway::TypeName::create_identifier("u8"),
+                    2,
+                )),
 
                 _ => todo!(
                     "get type of function call expression: {}",
@@ -3938,36 +3024,21 @@ fn get_member_access_function_call_type(
             },
 
             ("u32", None) => match member_access.member.as_str() {
-                "as_u64" => Ok(sway::TypeName::Identifier {
-                    name: "u64".into(),
-                    generic_parameters: None,
-                }),
+                "as_u64" => Ok(sway::TypeName::create_identifier("u64")),
 
-                "as_u256" => Ok(sway::TypeName::Identifier {
-                    name: "u256".into(),
-                    generic_parameters: None,
-                }),
+                "as_u256" => Ok(sway::TypeName::create_identifier("u256")),
 
-                "pow" => Ok(sway::TypeName::Identifier {
-                    name: "u32".into(),
-                    generic_parameters: None,
-                }),
+                "pow" => Ok(sway::TypeName::create_identifier("u32")),
 
-                "to_be_bytes" => Ok(sway::TypeName::Array {
-                    type_name: Box::new(sway::TypeName::Identifier {
-                        name: "u8".into(),
-                        generic_parameters: None,
-                    }),
-                    length: 4,
-                }),
+                "to_be_bytes" => Ok(sway::TypeName::create_array(
+                    sway::TypeName::create_identifier("u8"),
+                    4,
+                )),
 
-                "to_le_bytes" => Ok(sway::TypeName::Array {
-                    type_name: Box::new(sway::TypeName::Identifier {
-                        name: "u8".into(),
-                        generic_parameters: None,
-                    }),
-                    length: 4,
-                }),
+                "to_le_bytes" => Ok(sway::TypeName::create_array(
+                    sway::TypeName::create_identifier("u8"),
+                    4,
+                )),
 
                 _ => todo!(
                     "get type of function call expression: {}",
@@ -3976,86 +3047,27 @@ fn get_member_access_function_call_type(
             },
 
             ("u64", None) => match member_access.member.as_str() {
-                "as_u256" => Ok(sway::TypeName::Identifier {
-                    name: "u256".into(),
-                    generic_parameters: None,
-                }),
+                "as_u256" => Ok(sway::TypeName::create_identifier("u256")),
 
-                "pow" => Ok(sway::TypeName::Identifier {
-                    name: "u64".into(),
-                    generic_parameters: None,
-                }),
+                "pow" => Ok(sway::TypeName::create_identifier("u64")),
 
-                "to_be_bytes" => Ok(sway::TypeName::Array {
-                    type_name: Box::new(sway::TypeName::Identifier {
-                        name: "u8".into(),
-                        generic_parameters: None,
-                    }),
-                    length: 8,
-                }),
+                "to_be_bytes" => Ok(sway::TypeName::create_array(
+                    sway::TypeName::create_identifier("u8"),
+                    8,
+                )),
 
-                "to_le_bytes" => Ok(sway::TypeName::Array {
-                    type_name: Box::new(sway::TypeName::Identifier {
-                        name: "u8".into(),
-                        generic_parameters: None,
-                    }),
-                    length: 8,
-                }),
+                "to_le_bytes" => Ok(sway::TypeName::create_array(
+                    sway::TypeName::create_identifier("u8"),
+                    8,
+                )),
 
-                "try_as_u8" => Ok(sway::TypeName::Identifier {
-                    name: "Option".into(),
-                    generic_parameters: Some(sway::GenericParameterList {
-                        entries: vec![sway::GenericParameter {
-                            type_name: sway::TypeName::Identifier {
-                                name: "u8".into(),
-                                generic_parameters: None,
-                            },
-                            implements: None,
-                        }],
-                    }),
-                }),
+                "try_as_u8" => Ok(sway::TypeName::create_identifier("u8").to_option()),
 
-                "try_as_u16" => Ok(sway::TypeName::Identifier {
-                    name: "Option".into(),
-                    generic_parameters: Some(sway::GenericParameterList {
-                        entries: vec![sway::GenericParameter {
-                            type_name: sway::TypeName::Identifier {
-                                name: "u16".into(),
-                                generic_parameters: None,
-                            },
-                            implements: None,
-                        }],
-                    }),
-                }),
+                "try_as_u16" => Ok(sway::TypeName::create_identifier("u16").to_option()),
 
-                "try_as_u32" => Ok(sway::TypeName::Identifier {
-                    name: "Option".into(),
-                    generic_parameters: Some(sway::GenericParameterList {
-                        entries: vec![sway::GenericParameter {
-                            type_name: sway::TypeName::Identifier {
-                                name: "u32".into(),
-                                generic_parameters: None,
-                            },
-                            implements: None,
-                        }],
-                    }),
-                }),
+                "try_as_u32" => Ok(sway::TypeName::create_identifier("u32").to_option()),
 
-                "wrapping_neg" => {
-                    module
-                        .borrow_mut()
-                        .ensure_dependency_declared("signed_int = \"0.26.0\"");
-
-                    Ok(sway::TypeName::Identifier {
-                        name: {
-                            module
-                                .borrow_mut()
-                                .ensure_use_declared("signed_int::i64::*");
-                            "I64".into()
-                        },
-                        generic_parameters: None,
-                    })
-                }
+                "wrapping_neg" => Ok(sway::TypeName::create_identifier("I64")),
 
                 _ => todo!(
                     "get type of function call expression: {}",
@@ -4064,31 +3076,19 @@ fn get_member_access_function_call_type(
             },
 
             ("u256", None) => match member_access.member.as_str() {
-                "as_b256" => Ok(sway::TypeName::Identifier {
-                    name: "b256".into(),
-                    generic_parameters: None,
-                }),
+                "as_b256" => Ok(sway::TypeName::create_identifier("b256")),
 
-                "pow" => Ok(sway::TypeName::Identifier {
-                    name: "u256".into(),
-                    generic_parameters: None,
-                }),
+                "pow" => Ok(sway::TypeName::create_identifier("u256")),
 
-                "to_be_bytes" => Ok(sway::TypeName::Array {
-                    type_name: Box::new(sway::TypeName::Identifier {
-                        name: "u8".into(),
-                        generic_parameters: None,
-                    }),
-                    length: 32,
-                }),
+                "to_be_bytes" => Ok(sway::TypeName::create_array(
+                    sway::TypeName::create_identifier("u8"),
+                    32,
+                )),
 
-                "to_le_bytes" => Ok(sway::TypeName::Array {
-                    type_name: Box::new(sway::TypeName::Identifier {
-                        name: "u8".into(),
-                        generic_parameters: None,
-                    }),
-                    length: 32,
-                }),
+                "to_le_bytes" => Ok(sway::TypeName::create_array(
+                    sway::TypeName::create_identifier("u8"),
+                    32,
+                )),
 
                 name => {
                     // Check to see if we are using a function from the using library
@@ -4098,10 +3098,7 @@ fn get_member_access_function_call_type(
                         .iter()
                         .any(|using| using.functions.iter().any(|fnc| fnc == name))
                     {
-                        return Ok(sway::TypeName::Identifier {
-                            name: "u256".into(),
-                            generic_parameters: None,
-                        });
+                        return Ok(sway::TypeName::create_identifier("u256"));
                     }
 
                     todo!(
@@ -4113,17 +3110,9 @@ fn get_member_access_function_call_type(
 
             ("Vec", Some(generic_parameters)) if generic_parameters.entries.len() == 1 => {
                 match member_access.member.as_str() {
-                    "get" => Ok(sway::TypeName::Identifier {
-                        name: "Option".into(),
-                        generic_parameters: Some(sway::GenericParameterList {
-                            entries: vec![generic_parameters.entries.first().unwrap().clone()],
-                        }),
-                    }),
+                    "get" => Ok(generic_parameters.entries[0].type_name.to_option()),
 
-                    "len" => Ok(sway::TypeName::Identifier {
-                        name: "u64".into(),
-                        generic_parameters: None,
-                    }),
+                    "len" => Ok(sway::TypeName::create_identifier("u64")),
 
                     _ => todo!(
                         "get type of function call expression: {}",
@@ -4146,15 +3135,9 @@ fn get_member_access_function_call_type(
         },
 
         sway::TypeName::StringSlice => match member_access.member.as_str() {
-            "as_ptr" => Ok(sway::TypeName::Identifier {
-                name: "raw_ptr".into(),
-                generic_parameters: None,
-            }),
+            "as_ptr" => Ok(sway::TypeName::create_identifier("raw_ptr")),
 
-            "len" => Ok(sway::TypeName::Identifier {
-                name: "u64".into(),
-                generic_parameters: None,
-            }),
+            "len" => Ok(sway::TypeName::create_identifier("u64")),
 
             _ => todo!(
                 "get type of function call expression: {}",
@@ -4163,10 +3146,7 @@ fn get_member_access_function_call_type(
         },
 
         sway::TypeName::Array { .. } => match member_access.member.as_str() {
-            "len" => Ok(sway::TypeName::Identifier {
-                name: "u64".into(),
-                generic_parameters: None,
-            }),
+            "len" => Ok(sway::TypeName::create_identifier("u64")),
 
             value => todo!("{value}"),
         },
@@ -4184,7 +3164,7 @@ fn get_member_access_function_call_type(
                 return Ok(function_definition
                     .return_type
                     .clone()
-                    .unwrap_or_else(|| sway::TypeName::Tuple { type_names: vec![] }));
+                    .unwrap_or_else(|| sway::TypeName::create_tuple(vec![])));
             }
 
             todo!(

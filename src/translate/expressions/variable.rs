@@ -29,13 +29,12 @@ pub fn translate_variable_expression(
 
         "now" => {
             // now => std::block::timestamp().as_u256()
-            return Ok(sway::Expression::create_function_calls(
+            return Ok(sway::Expression::create_function_call(
+                "std::block::timestamp",
                 None,
-                &[
-                    ("std::block::timestamp", Some((None, vec![]))),
-                    ("as_u256", Some((None, vec![]))),
-                ],
-            ));
+                vec![],
+            )
+            .with_as_u256_call());
         }
 
         _ => {}
@@ -95,10 +94,7 @@ pub fn translate_variable_access_expression(
                         .borrow_mut()
                         .set_function_storage_accesses(module.clone(), true, false);
 
-                    expression = sway::Expression::create_function_calls(
-                        Some(expression),
-                        &[("read", Some((None, vec![])))],
-                    );
+                    expression = expression.with_read_call();
                 }
 
                 return Ok(Some(ir::VariableAccess {
@@ -120,7 +116,7 @@ pub fn translate_variable_access_expression(
                         let sway::TypeName::Function { new_name, .. } = &function.signature else {
                             unreachable!()
                         };
-                        new_name.clone()
+                        new_name.as_str()
                     }),
                 }));
             }
@@ -173,13 +169,7 @@ pub fn translate_variable_access_expression(
                         name,
                         generic_parameters,
                     } => match (name.as_str(), generic_parameters.as_ref()) {
-                        ("Bytes", None) => sway::Expression::create_function_calls(
-                            Some(expression),
-                            &[
-                                ("get", Some((None, vec![index]))),
-                                ("unwrap", Some((None, vec![]))),
-                            ],
-                        ),
+                        ("Bytes", None) => expression.with_get_call(index).with_unwrap_call(),
 
                         ("Option", Some(generic_parameters))
                             if generic_parameters.entries.len() == 1 =>
@@ -188,22 +178,12 @@ pub fn translate_variable_access_expression(
                                 generic_parameters.entries[0].type_name.storage_key_type()
                             {
                                 if storage_key_type.is_storage_map() {
-                                    sway::Expression::create_function_calls(
-                                        Some(expression),
-                                        &[
-                                            ("unwrap", Some((None, vec![]))),
-                                            ("get", Some((None, vec![index]))),
-                                        ],
-                                    )
+                                    expression.with_unwrap_call().with_get_call(index)
                                 } else if storage_key_type.is_storage_vec() {
-                                    sway::Expression::create_function_calls(
-                                        Some(expression),
-                                        &[
-                                            ("unwrap", Some((None, vec![]))),
-                                            ("get", Some((None, vec![index]))),
-                                            ("unwrap", Some((None, vec![]))),
-                                        ],
-                                    )
+                                    expression
+                                        .with_unwrap_call()
+                                        .with_get_call(index)
+                                        .with_unwrap_call()
                                 } else {
                                     todo!("option type: {}", generic_parameters.entries[0])
                                 }
@@ -221,10 +201,7 @@ pub fn translate_variable_access_expression(
                                     generic_parameters,
                                 } => match (name.as_str(), generic_parameters.as_ref()) {
                                     ("StorageMap", Some(_)) => {
-                                        sway::Expression::create_function_calls(
-                                            Some(expression),
-                                            &[("get", Some((None, vec![index])))],
-                                        )
+                                        expression.with_get_call(index)
                                     }
 
                                     ("StorageVec", Some(_)) => {
@@ -235,10 +212,7 @@ pub fn translate_variable_access_expression(
                                             &index,
                                         )?;
 
-                                        let u64_type = sway::TypeName::Identifier {
-                                            name: "u64".to_string(),
-                                            generic_parameters: None,
-                                        };
+                                        let u64_type = sway::TypeName::create_identifier("u64");
 
                                         index = coerce_expression(
                                             project,
@@ -250,13 +224,7 @@ pub fn translate_variable_access_expression(
                                         )
                                         .unwrap();
 
-                                        sway::Expression::create_function_calls(
-                                            Some(expression),
-                                            &[
-                                                ("get", Some((None, vec![index]))),
-                                                ("unwrap", Some((None, vec![]))),
-                                            ],
-                                        )
+                                        expression.with_get_call(index).with_unwrap_call()
                                     }
 
                                     (name, _) => panic!(
@@ -277,10 +245,7 @@ pub fn translate_variable_access_expression(
                                     );
 
                                     sway::Expression::from(sway::ArrayAccess {
-                                        expression: sway::Expression::create_function_calls(
-                                            Some(expression),
-                                            &[("read", Some((None, vec![])))],
-                                        ),
+                                        expression: expression.with_read_call(),
                                         index,
                                     })
                                 }
@@ -307,10 +272,7 @@ pub fn translate_variable_access_expression(
                                 &index,
                             )?;
 
-                            let u64_type = sway::TypeName::Identifier {
-                                name: "u64".to_string(),
-                                generic_parameters: None,
-                            };
+                            let u64_type = sway::TypeName::create_identifier("u64");
 
                             index = coerce_expression(
                                 project,
@@ -322,13 +284,7 @@ pub fn translate_variable_access_expression(
                             )
                             .unwrap();
 
-                            sway::Expression::create_function_calls(
-                                Some(expression),
-                                &[
-                                    ("get", Some((None, vec![index]))),
-                                    ("unwrap", Some((None, vec![]))),
-                                ],
-                            )
+                            expression.with_get_call(index).with_unwrap_call()
                         }
 
                         (name, _) => todo!(
@@ -362,10 +318,7 @@ pub fn translate_variable_access_expression(
                     .borrow_mut()
                     .set_function_storage_accesses(module.clone(), true, false);
 
-                translated_container = sway::Expression::create_function_calls(
-                    Some(translated_container),
-                    &[("read", Some((None, vec![])))],
-                );
+                translated_container = translated_container.with_read_call();
                 container_type_name = container_type;
             }
 

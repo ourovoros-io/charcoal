@@ -24,13 +24,7 @@ pub fn translate_binary_expression(
             && let solidity::Expression::NumberLiteral(_, value, _, _) = rhs
             && value == "0"
         {
-            return Ok(sway::Expression::create_function_calls(
-                Some(expression),
-                &[
-                    ("as_contract_id", Some((None, vec![]))),
-                    ("is_none", Some((None, vec![]))),
-                ],
-            ));
+            return Ok(expression.with_as_contract_id_call().with_is_none_call());
         }
     }
 
@@ -45,7 +39,7 @@ pub fn translate_binary_expression(
             .borrow_mut()
             .set_function_storage_accesses(module.clone(), true, false);
 
-        lhs = sway::Expression::create_function_calls(Some(lhs), &[("read", Some((None, vec![])))]);
+        lhs = lhs.with_read_call();
         lhs_type = get_expression_type(project, module.clone(), scope.clone(), &lhs)?;
     }
 
@@ -54,7 +48,7 @@ pub fn translate_binary_expression(
             .borrow_mut()
             .set_function_storage_accesses(module.clone(), true, false);
 
-        rhs = sway::Expression::create_function_calls(Some(rhs), &[("read", Some((None, vec![])))]);
+        rhs = rhs.with_read_call();
         rhs_type = get_expression_type(project, module.clone(), scope.clone(), &rhs)?;
     }
 
@@ -127,10 +121,7 @@ pub fn translate_unary_expression(
                 generic_parameters,
             } => match (name.as_str(), generic_parameters.as_ref()) {
                 ("I8" | "I16" | "I32" | "I64" | "I128" | "I256", None) => {
-                    return Ok(sway::Expression::create_function_calls(
-                        Some(expression),
-                        &[("wrapping_neg", Some((None, vec![])))],
-                    ));
+                    return Ok(expression.with_function_call("wrapping_neg", None, vec![]));
                 }
 
                 ("u8" | "u16" | "u32" | "u64" | "u256", None) => {
@@ -143,17 +134,13 @@ pub fn translate_unary_expression(
                         .borrow_mut()
                         .ensure_use_declared(format!("signed_int::i{bits}::*").as_str());
 
-                    return Ok(sway::Expression::create_function_calls(
+                    return Ok(sway::Expression::create_function_call(
+                        format!("I{bits}::from_uint").as_str(),
                         None,
-                        &[
-                            (
-                                format!("I{bits}::from_uint").as_str(),
-                                Some((None, vec![expression.clone()])),
-                            ),
-                            ("wrapping_neg", Some((None, vec![]))),
-                            ("underlying", Some((None, vec![]))),
-                        ],
-                    ));
+                        vec![expression.clone()],
+                    )
+                    .with_function_call("wrapping_neg", None, vec![])
+                    .with_function_call("underlying", None, vec![]));
                 }
 
                 _ => {
@@ -162,10 +149,7 @@ pub fn translate_unary_expression(
                         sway::Literal::DecInt(_, _) | sway::Literal::HexInt(_, _),
                     ) = &expression
                     {
-                        return Ok(sway::Expression::create_function_calls(
-                            Some(expression),
-                            &[("wrapping_neg", Some((None, vec![])))],
-                        ));
+                        return Ok(expression.with_function_call("wrapping_neg", None, vec![]));
                     }
 
                     panic!("Unhandled {type_name} negate operator translation")
@@ -206,15 +190,9 @@ pub fn translate_power_expression(
         scope.clone(),
         &rhs,
         &rhs_type,
-        &sway::TypeName::Identifier {
-            name: "u32".to_string(),
-            generic_parameters: None,
-        },
+        &sway::TypeName::create_identifier("u32"),
     )
     .unwrap();
 
-    Ok(sway::Expression::create_function_calls(
-        Some(lhs),
-        &[("pow", Some((None, vec![rhs])))],
-    ))
+    Ok(lhs.with_function_call("pow", None, vec![rhs]))
 }

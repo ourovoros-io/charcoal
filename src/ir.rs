@@ -363,14 +363,8 @@ impl Contract {
             },
             abi_impl: sway::Impl {
                 generic_parameters: None,
-                type_name: sway::TypeName::Identifier {
-                    name: name.to_string(),
-                    generic_parameters: None,
-                },
-                for_type_name: Some(sway::TypeName::Identifier {
-                    name: "Contract".to_string(),
-                    generic_parameters: None,
-                }),
+                type_name: sway::TypeName::create_identifier(name),
+                for_type_name: Some(sway::TypeName::create_identifier("Contract")),
                 items: vec![],
             },
             storage: None,
@@ -556,6 +550,65 @@ impl Module {
             .cloned()
     }
 
+    /// Ensure the supplied storage field exists in both the current contract's storage namespace and storage struct.
+    #[inline]
+    pub fn create_storage_field(
+        &mut self,
+        scope: Rc<RefCell<Scope>>,
+        name: &str,
+        type_name: &sway::TypeName,
+        value: &sway::Expression,
+    ) {
+        // Ensure the field exists in the storage namespace
+        let storage = self.get_storage_namespace(scope.clone()).unwrap();
+
+        if let Some(field) = storage.borrow().fields.iter().find(|f| f.name == name) {
+            assert!(
+                field.type_name == *type_name,
+                "{name} field already exists: {field:#?}"
+            );
+        } else {
+            storage.borrow_mut().fields.push(sway::StorageField {
+                old_name: String::new(),
+                name: name.to_string(),
+                type_name: type_name.clone(),
+                value: value.clone(),
+            });
+        }
+
+        // Ensure the field exists in the storage struct
+        let storage_struct = self.get_storage_struct(scope.clone());
+
+        if let Some(field) = storage_struct
+            .borrow()
+            .storage
+            .fields
+            .iter()
+            .find(|f| f.new_name == name)
+        {
+            let mut valid = false;
+
+            if let Some(storage_key_type) = field.type_name.storage_key_type()
+                && storage_key_type == *type_name
+            {
+                valid = true;
+            }
+
+            assert!(valid, "{name} field already exists: {field:#?}");
+        } else {
+            storage_struct
+                .borrow_mut()
+                .storage
+                .fields
+                .push(sway::StructField {
+                    is_public: true,
+                    new_name: name.to_string(),
+                    old_name: String::new(),
+                    type_name: type_name.to_storage_key(),
+                });
+        }
+    }
+
     /// Gets the name of the storage namespace from the translated definition.
     #[inline]
     pub fn get_storage_namespace_name(&self, scope: Rc<RefCell<Scope>>) -> Option<String> {
@@ -574,6 +627,7 @@ impl Module {
             else {
                 return false;
             };
+
             let Some(sway::TypeName::Identifier {
                 name: for_type_name,
                 ..
@@ -581,6 +635,7 @@ impl Module {
             else {
                 return false;
             };
+            
             *type_name == definition_name && for_type_name == "Contract"
         })
     }

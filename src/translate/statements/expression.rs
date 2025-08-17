@@ -103,10 +103,7 @@ pub fn translate_expression_statement(
                                         p.storage.as_ref(),
                                     )
                                 } else {
-                                    sway::TypeName::Identifier {
-                                        name: "_".into(),
-                                        generic_parameters: None,
-                                    }
+                                    sway::TypeName::create_identifier("_")
                                 }
                             })
                             .collect(),

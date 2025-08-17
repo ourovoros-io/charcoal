@@ -27,37 +27,13 @@ pub fn translate_struct_definition(
             field.storage.as_ref(),
         );
 
-        if let sway::TypeName::Identifier {
-            name,
-            generic_parameters,
-        } = &type_name
+        // Wrap storage types in a `StorageKey<T>`
+        if type_name.is_storage_bytes()
+            || type_name.is_storage_map()
+            || type_name.is_storage_string()
+            || type_name.is_storage_vec()
         {
-            if let ("StorageMap" | "StorageVec", Some(_)) =
-                (name.as_str(), generic_parameters.as_ref())
-            {
-                // HACK: wrap storage types in a StorageKey
-                type_name = sway::TypeName::Identifier {
-                    name: "StorageKey".into(),
-                    generic_parameters: Some(sway::GenericParameterList {
-                        entries: vec![sway::GenericParameter {
-                            type_name,
-                            implements: None,
-                        }],
-                    }),
-                };
-            }
-        }
-
-        if type_name.is_storage_key() {
-            type_name = sway::TypeName::Identifier {
-                name: "Option".into(),
-                generic_parameters: Some(sway::GenericParameterList {
-                    entries: vec![sway::GenericParameter {
-                        type_name,
-                        implements: None,
-                    }],
-                }),
-            }
+            type_name = type_name.to_storage_key();
         }
 
         memory_fields.push(sway::StructField {
@@ -67,91 +43,16 @@ pub fn translate_struct_definition(
             type_name: type_name.clone(),
         });
 
-        fn memory_to_storage_type(type_name: sway::TypeName) -> sway::TypeName {
-            if let Some(mut vec_type) = type_name.vec_type() {
-                vec_type = memory_to_storage_type(vec_type);
-
-                return sway::TypeName::Identifier {
-                    name: "Option".into(),
-                    generic_parameters: Some(sway::GenericParameterList {
-                        entries: vec![sway::GenericParameter {
-                            type_name: sway::TypeName::Identifier {
-                                name: "StorageKey".to_string(),
-                                generic_parameters: Some(sway::GenericParameterList {
-                                    entries: vec![sway::GenericParameter {
-                                        type_name: sway::TypeName::Identifier {
-                                            name: "StorageVec".to_string(),
-                                            generic_parameters: Some(sway::GenericParameterList {
-                                                entries: vec![sway::GenericParameter {
-                                                    type_name: vec_type,
-                                                    implements: None,
-                                                }],
-                                            }),
-                                        },
-                                        implements: None,
-                                    }],
-                                }),
-                            },
-                            implements: None,
-                        }],
-                    }),
-                };
-            }
-
-            if type_name.is_bytes() {
-                return sway::TypeName::Identifier {
-                    name: "Option".into(),
-                    generic_parameters: Some(sway::GenericParameterList {
-                        entries: vec![sway::GenericParameter {
-                            type_name: sway::TypeName::Identifier {
-                                name: "StorageKey".to_string(),
-                                generic_parameters: Some(sway::GenericParameterList {
-                                    entries: vec![sway::GenericParameter {
-                                        type_name: sway::TypeName::Identifier {
-                                            name: "StorageBytes".to_string(),
-                                            generic_parameters: None,
-                                        },
-                                        implements: None,
-                                    }],
-                                }),
-                            },
-                            implements: None,
-                        }],
-                    }),
-                };
-            }
-
-            if type_name.is_string() {
-                return sway::TypeName::Identifier {
-                    name: "Option".into(),
-                    generic_parameters: Some(sway::GenericParameterList {
-                        entries: vec![sway::GenericParameter {
-                            type_name: sway::TypeName::Identifier {
-                                name: "StorageKey".to_string(),
-                                generic_parameters: Some(sway::GenericParameterList {
-                                    entries: vec![sway::GenericParameter {
-                                        type_name: sway::TypeName::Identifier {
-                                            name: "StorageString".to_string(),
-                                            generic_parameters: None,
-                                        },
-                                        implements: None,
-                                    }],
-                                }),
-                            },
-                            implements: None,
-                        }],
-                    }),
-                };
-            }
-
-            type_name
+        // HACK: Wrap `StorageKey<T>` in `Option<T>` so it can be deferred
+        if type_name.is_storage_key() {
+            type_name = type_name.to_option();
         }
 
         storage_fields.push(sway::StructField {
             is_public: true,
             new_name,
             old_name,
-            type_name: memory_to_storage_type(type_name),
+            type_name: type_name.to_storage_compatible_type(),
         });
     }
 
@@ -237,10 +138,7 @@ pub fn create_struct_constructor(
     }
 
     Some(sway::Constructor {
-        type_name: sway::TypeName::Identifier {
-            name: format!("{contract_name}Storage"),
-            generic_parameters: None,
-        },
+        type_name: sway::TypeName::create_identifier(format!("{contract_name}Storage").as_str()),
         fields,
     })
 }

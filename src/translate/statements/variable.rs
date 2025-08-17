@@ -110,25 +110,16 @@ pub fn translate_variable_definition_statement(
                             body: sway::Block {
                                 statements: vec![
                                     // v.push(0);
-                                    sway::Statement::from(sway::Expression::create_function_calls(
-                                        None,
-                                        &[
-                                            ("v", None),
-                                            (
-                                                "push",
-                                                Some((
-                                                    None,
-                                                    vec![create_value_expression(
-                                                        project,
-                                                        module.clone(),
-                                                        scope.clone(),
-                                                        element_type_name,
-                                                        None,
-                                                    )],
-                                                )),
-                                            ),
-                                        ],
-                                    )),
+                                    sway::Statement::from(
+                                        sway::Expression::create_identifier("v".into())
+                                            .with_push_call(create_value_expression(
+                                                project,
+                                                module.clone(),
+                                                scope.clone(),
+                                                element_type_name,
+                                                None,
+                                            )),
+                                    ),
                                     // i += 1;
                                     sway::Statement::from(sway::Expression::from(
                                         sway::BinaryExpression {

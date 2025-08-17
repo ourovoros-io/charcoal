@@ -43,15 +43,15 @@ impl TryInto<sway::Expression> for SymbolData {
     fn try_into(self) -> Result<sway::Expression, Self::Error> {
         match self {
             SymbolData::Variable(variable) => Ok(sway::Expression::create_identifier(
-                variable.borrow().new_name.clone(),
+                variable.borrow().new_name.as_str(),
             )),
 
             SymbolData::Constant(constant) => {
-                Ok(sway::Expression::create_identifier(constant.name.clone()))
+                Ok(sway::Expression::create_identifier(constant.name.as_str()))
             }
 
             SymbolData::ConfigurableField(configurable_field) => Ok(
-                sway::Expression::create_identifier(configurable_field.name.clone()),
+                sway::Expression::create_identifier(configurable_field.name.as_str()),
             ),
 
             SymbolData::StorageField { namespace, field } => {
@@ -124,10 +124,9 @@ pub fn resolve_symbol(
                         .unwrap();
 
                     return Some(SymbolData::EventVariant {
-                        type_name: sway::TypeName::Identifier {
-                            name: event_enum.0.borrow().name.clone(),
-                            generic_parameters: None,
-                        },
+                        type_name: sway::TypeName::create_identifier(
+                            event_enum.0.borrow().name.as_str(),
+                        ),
                         variant,
                     });
                 }
@@ -153,10 +152,9 @@ pub fn resolve_symbol(
                         .unwrap();
 
                     return Some(SymbolData::ErrorVariant {
-                        type_name: sway::TypeName::Identifier {
-                            name: error_enum.0.borrow().name.clone(),
-                            generic_parameters: None,
-                        },
+                        type_name: sway::TypeName::create_identifier(
+                            error_enum.0.borrow().name.as_str(),
+                        ),
                         variant,
                     });
                 }
@@ -287,9 +285,12 @@ pub fn resolve_symbol(
                     project,
                     module.clone(),
                     scope.clone(),
-                    storage_struct_name.trim_end_matches("Storage").to_string().as_str(),
+                    storage_struct_name
+                        .trim_end_matches("Storage")
+                        .to_string()
+                        .as_str(),
                     name,
-                    sway::Expression::create_identifier(parameter_name),
+                    sway::Expression::create_identifier(parameter_name.as_str()),
                 ) {
                     return Some(result);
                 }
@@ -503,17 +504,15 @@ pub fn resolve_abi_function_call(
                 && let Some(function_storage_struct_type) =
                     storage_struct_parameter.type_name.clone()
             {
-                let contract_storage_struct_type = sway::TypeName::Identifier {
-                    name: format!("{}Storage", abi.name),
-                    generic_parameters: None,
-                };
+                let contract_storage_struct_type =
+                    sway::TypeName::create_identifier(format!("{}Storage", abi.name).as_str());
 
                 parameters.push(
                     coerce_expression(
                         project,
                         module.clone(),
                         scope.clone(),
-                        &sway::Expression::create_identifier("storage_struct".to_string()),
+                        &sway::Expression::create_identifier("storage_struct"),
                         &contract_storage_struct_type,
                         &function_storage_struct_type,
                     )
@@ -580,14 +579,16 @@ pub fn resolve_abi_function_call(
     }
 
     match contract_id {
-        Some(contract_id) => Ok(Some(sway::Expression::create_function_calls(
-            Some(contract_id.clone()),
-            &[(function.new_name.as_str(), Some((None, parameters)))],
+        Some(contract_id) => Ok(Some(contract_id.with_function_call(
+            function.new_name.as_str(),
+            None,
+            parameters,
         ))),
 
-        None => Ok(Some(sway::Expression::create_function_calls(
+        None => Ok(Some(sway::Expression::create_function_call(
+            function.new_name.as_str(),
             None,
-            &[(function.new_name.as_str(), Some((None, parameters)))],
+            parameters,
         ))),
     }
 }
@@ -755,9 +756,7 @@ pub fn resolve_function_call(
         && let Some(variable) = scope.borrow().get_variable_from_old_name(function_name)
         && check_type_name(&variable.borrow().type_name)
     {
-        return Ok(Some(sway::Expression::create_identifier(
-            function_name.to_string(),
-        )));
+        return Ok(Some(sway::Expression::create_identifier(function_name)));
     }
 
     let Some(function) = function else {
@@ -829,7 +828,7 @@ pub fn resolve_function_call(
                 project,
                 module.clone(),
                 scope.clone(),
-                &sway::Expression::create_identifier(storage_struct_parameter.name.clone()),
+                &sway::Expression::create_identifier(storage_struct_parameter.name.as_str()),
                 storage_struct_parameter.type_name.as_ref().unwrap(),
                 function_struct_parameter.type_name.as_ref().unwrap(),
             )
@@ -849,9 +848,10 @@ pub fn resolve_function_call(
         *current_function_storage_access = function_storage_access;
     }
 
-    Ok(Some(sway::Expression::create_function_calls(
+    Ok(Some(sway::Expression::create_function_call(
+        new_name,
         None,
-        &[(new_name, Some((None, parameters_cell.borrow().clone())))],
+        parameters_cell.borrow().clone(),
     )))
 }
 
@@ -1137,10 +1137,8 @@ pub fn resolve_modifier(
                         member: inherited_field_name,
                     });
 
-                    *parameter_types.last_mut().unwrap() = sway::TypeName::Identifier {
-                        name: inherited_storage_struct_name,
-                        generic_parameters: None,
-                    };
+                    *parameter_types.last_mut().unwrap() =
+                        sway::TypeName::create_identifier(inherited_storage_struct_name.as_str());
                 }
 
                 let scope = Rc::new(RefCell::new(ir::Scope::new(
@@ -1249,10 +1247,7 @@ pub fn resolve_struct_constructor(
     }
 
     Ok(Some(sway::Expression::from(sway::Constructor {
-        type_name: sway::TypeName::Identifier {
-            name: struct_name.to_string(),
-            generic_parameters: None,
-        },
+        type_name: sway::TypeName::create_identifier(struct_name),
 
         fields: fields
             .iter()
