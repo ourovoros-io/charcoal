@@ -74,20 +74,18 @@ pub fn translate_revert_statement(
         return Ok(sway::Statement::from(sway::Expression::from(sway::Block {
             statements: vec![
                 // 1. log(data)
-                sway::Statement::from(sway::Expression::from(sway::FunctionCall {
-                    function: sway::Expression::create_identifier("log".into()),
-                    generic_parameters: None,
-                    parameters: vec![if parameters.is_empty() {
+                sway::Statement::from(sway::Expression::create_function_call(
+                    "log",
+                    None,
+                    vec![if parameters.is_empty() {
                         sway::Expression::create_identifier(
                             format!("{}::{}", error_type_name, error_variant.name).as_str(),
                         )
                     } else {
-                        sway::Expression::from(sway::FunctionCall {
-                            function: sway::Expression::create_identifier(
-                                format!("{}::{}", error_type_name, error_variant.name).as_str(),
-                            ),
-                            generic_parameters: None,
-                            parameters: vec![if parameters.len() == 1 {
+                        sway::Expression::create_function_call(
+                            format!("{}::{}", error_type_name, error_variant.name).as_str(),
+                            None,
+                            vec![if parameters.len() == 1 {
                                 let parameter_expression = translate_expression(
                                     project,
                                     module.clone(),
@@ -146,18 +144,18 @@ pub fn translate_revert_statement(
                                         .collect::<Vec<_>>(),
                                 )
                             }],
-                        })
+                        )
                     }],
-                })),
+                )),
                 // 2. revert(0)
-                sway::Statement::from(sway::Expression::from(sway::FunctionCall {
-                    function: sway::Expression::create_identifier("revert".into()),
-                    generic_parameters: None,
-                    parameters: vec![sway::Expression::from(sway::Literal::DecInt(
+                sway::Statement::from(sway::Expression::create_function_call(
+                    "revert",
+                    None,
+                    vec![sway::Expression::from(sway::Literal::DecInt(
                         BigUint::zero(),
                         None,
                     ))],
-                })),
+                )),
             ],
             final_expr: None,
         })));
@@ -181,22 +179,22 @@ pub fn translate_revert_statement(
             return Ok(sway::Statement::from(sway::Expression::from(sway::Block {
                 statements: vec![
                     // 1. log(reason)
-                    sway::Statement::from(sway::Expression::from(sway::FunctionCall {
-                        function: sway::Expression::create_identifier("log".into()),
-                        generic_parameters: None,
-                        parameters: vec![sway::Expression::from(sway::Literal::String(
+                    sway::Statement::from(sway::Expression::create_function_call(
+                        "log",
+                        None,
+                        vec![sway::Expression::from(sway::Literal::String(
                             reason.iter().map(|s| s.string.clone()).collect::<String>(),
                         ))],
-                    })),
+                    )),
                     // 2. revert(0)
-                    sway::Statement::from(sway::Expression::from(sway::FunctionCall {
-                        function: sway::Expression::create_identifier("revert".into()),
-                        generic_parameters: None,
-                        parameters: vec![sway::Expression::from(sway::Literal::DecInt(
+                    sway::Statement::from(sway::Expression::create_function_call(
+                        "revert",
+                        None,
+                        vec![sway::Expression::from(sway::Literal::DecInt(
                             BigUint::zero(),
                             None,
                         ))],
-                    })),
+                    )),
                 ],
                 final_expr: None,
             })));
@@ -206,20 +204,20 @@ pub fn translate_revert_statement(
             return Ok(sway::Statement::from(sway::Expression::from(sway::Block {
                 statements: vec![
                     // 1. log(reason)
-                    sway::Statement::from(sway::Expression::from(sway::FunctionCall {
-                        function: sway::Expression::create_identifier("log".into()),
-                        generic_parameters: None,
-                        parameters: vec![x_expr],
-                    })),
+                    sway::Statement::from(sway::Expression::create_function_call(
+                        "log",
+                        None,
+                        vec![x_expr],
+                    )),
                     // 2. revert(0)
-                    sway::Statement::from(sway::Expression::from(sway::FunctionCall {
-                        function: sway::Expression::create_identifier("revert".into()),
-                        generic_parameters: None,
-                        parameters: vec![sway::Expression::from(sway::Literal::DecInt(
+                    sway::Statement::from(sway::Expression::create_function_call(
+                        "revert",
+                        None,
+                        vec![sway::Expression::from(sway::Literal::DecInt(
                             BigUint::zero(),
                             None,
                         ))],
-                    })),
+                    )),
                 ],
                 final_expr: None,
             })));

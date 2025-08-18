@@ -259,12 +259,10 @@ pub fn translate_member_access_expression(
         if container_type_name.is_identity() {
             match member.name.as_str() {
                 "balance" => {
-                    return Ok(Some(sway::Expression::from(sway::FunctionCall {
-                        function: sway::Expression::create_identifier(
-                            "std::context::balance_of".into(),
-                        ),
-                        generic_parameters: None,
-                        parameters: vec![
+                    return Ok(Some(sway::Expression::create_function_call(
+                        "std::context::balance_of",
+                        None,
+                        vec![
                             if container_type_name.to_string() == "ContractId" {
                                 container.clone()
                             } else {
@@ -280,7 +278,7 @@ pub fn translate_member_access_expression(
                                 vec![],
                             ),
                         ],
-                    })));
+                    )));
                 }
 
                 _ => {}
@@ -331,13 +329,9 @@ pub fn translate_member_access_expression(
 
     let mut container = translate_expression(project, module.clone(), scope.clone(), container)?;
 
-    // HACK: remove read if present
-    if let sway::Expression::FunctionCall(f) = &container
-        && let sway::Expression::MemberAccess(m) = &f.function
-        && m.member == "read"
-        && f.parameters.is_empty()
-    {
-        container = m.expression.clone();
+    // HACK: remove the `.read()` if present
+    if let Some(expression) = container.to_read_call_parts() {
+        container = expression.clone();
     }
 
     let container_type_name =
@@ -436,11 +430,11 @@ fn translate_builtin_function_call_member_access_expression(
                         | "u64" | "u256",
                         "min",
                     ) => {
-                        return Ok(Some(sway::Expression::from(sway::FunctionCall {
-                            function: sway::Expression::create_identifier(format!("{name}::min").as_str()),
-                            generic_parameters: None,
-                            parameters: vec![],
-                        })));
+                        return Ok(Some(sway::Expression::create_function_call(
+                            format!("{name}::min").as_str(),
+                            None,
+                            vec![],
+                        )));
                     }
 
                     (
@@ -448,11 +442,11 @@ fn translate_builtin_function_call_member_access_expression(
                         | "u64" | "u256",
                         "max",
                     ) => {
-                        return Ok(Some(sway::Expression::from(sway::FunctionCall {
-                            function: sway::Expression::create_identifier(format!("{name}::max").as_str()),
-                            generic_parameters: None,
-                            parameters: vec![],
-                        })));
+                        return Ok(Some(sway::Expression::create_function_call(
+                            format!("{name}::max").as_str(),
+                            None,
+                            vec![],
+                        )));
                     }
 
                     (_, member_name) => {
@@ -553,22 +547,20 @@ fn translate_builtin_variable_member_access_expression(
                             name: "ptr".into(),
                         }),
                         type_name: None,
-                        value: sway::Expression::from(sway::FunctionCall {
-                            function: sway::Expression::create_identifier(
-                                "std::alloc::alloc".into(),
-                            ),
-                            generic_parameters: None,
-                            parameters: vec![sway::Expression::from(sway::FunctionCall {
-                                function: sway::Expression::create_identifier("__size_of".into()),
-                                generic_parameters: Some(sway::GenericParameterList {
+                        value: sway::Expression::create_function_call(
+                            "std::alloc::alloc",
+                            None,
+                            vec![sway::Expression::create_function_call(
+                                "__size_of",
+                                Some(sway::GenericParameterList {
                                     entries: vec![sway::GenericParameter {
                                         type_name: sway::TypeName::create_identifier("b256"),
                                         implements: None,
                                     }],
                                 }),
-                                parameters: vec![],
-                            })],
-                        }),
+                                vec![],
+                            )],
+                        ),
                     }),
                     // asm(r1: ptr) {
                     //     cb r1;
@@ -594,17 +586,16 @@ fn translate_builtin_variable_member_access_expression(
                         "ContractId::from",
                         None,
                         vec![
-                            sway::Expression::create_identifier("ptr")
-                                .with_function_call(
-                                    "read",
-                                    Some(sway::GenericParameterList {
-                                        entries: vec![sway::GenericParameter {
-                                            type_name: sway::TypeName::create_identifier("b256"),
-                                            implements: None,
-                                        }],
-                                    }),
-                                    vec![],
-                                ),
+                            sway::Expression::create_identifier("ptr").with_function_call(
+                                "read",
+                                Some(sway::GenericParameterList {
+                                    entries: vec![sway::GenericParameter {
+                                        type_name: sway::TypeName::create_identifier("b256"),
+                                        implements: None,
+                                    }],
+                                }),
+                                vec![],
+                            ),
                         ],
                     )],
                 )),
@@ -632,11 +623,11 @@ fn translate_builtin_variable_member_access_expression(
 
         ("block", "number") => {
             // block.number => std::block::height()
-            Ok(Some(sway::Expression::from(sway::FunctionCall {
-                function: sway::Expression::create_identifier("std::block::height".into()),
-                generic_parameters: None,
-                parameters: vec![],
-            })))
+            Ok(Some(sway::Expression::create_function_call(
+                "std::block::height",
+                None,
+                vec![],
+            )))
         }
 
         ("block", "prevrandao") => {
@@ -706,11 +697,11 @@ fn translate_builtin_variable_member_access_expression(
 
         ("msg", "value") => {
             // msg.value => std::context::msg_amount()
-            Ok(Some(sway::Expression::from(sway::FunctionCall {
-                function: sway::Expression::create_identifier("std::context::msg_amount".into()),
-                generic_parameters: None,
-                parameters: vec![],
-            })))
+            Ok(Some(sway::Expression::create_function_call(
+                "std::context::msg_amount",
+                None,
+                vec![],
+            )))
         }
 
         ("tx", "gasprice") => {
@@ -727,13 +718,13 @@ fn translate_builtin_variable_member_access_expression(
         ("tx", "origin") => {
             // tx.origin => Identity::from(Address::from(/*unsupported: tx.origin; using:*/ ZERO_B256))
 
-            Ok(Some(sway::Expression::from(sway::FunctionCall {
-                function: sway::Expression::create_identifier("Identity::Address".into()),
-                generic_parameters: None,
-                parameters: vec![sway::Expression::from(sway::FunctionCall {
-                    function: sway::Expression::create_identifier("Address::from".into()),
-                    generic_parameters: None,
-                    parameters: vec![sway::Expression::Commented(
+            Ok(Some(sway::Expression::create_function_call(
+                "Identity::Address",
+                None,
+                vec![sway::Expression::create_function_call(
+                    "Address::from",
+                    None,
+                    vec![sway::Expression::Commented(
                         "unsupported: tx.origin; using:".into(),
                         Box::new(sway::Expression::create_function_call(
                             "b256::zero",
@@ -741,8 +732,8 @@ fn translate_builtin_variable_member_access_expression(
                             vec![],
                         )),
                     )],
-                })],
-            })))
+                )],
+            )))
         }
 
         _ => Ok(None),

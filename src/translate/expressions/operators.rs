@@ -65,11 +65,9 @@ pub fn translate_binary_expression(
         {
             *rhs = expr.parameters[1].clone();
 
-            if let sway::Expression::FunctionCall(f) = &rhs
-                && let sway::Expression::MemberAccess(e) = &f.function
-                && e.member == "bits"
-            {
-                *rhs = e.expression.clone();
+            // HACK: remove `.bits()` if present
+            if let Some(container) = rhs.to_bits_call_parts() {
+                *rhs = container.clone();
             }
 
             *rhs_type = get_expression_type(project, module.clone(), scope.clone(), rhs).unwrap();

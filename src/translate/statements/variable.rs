@@ -75,13 +75,11 @@ pub fn translate_variable_definition_statement(
                                 name: "v".into(),
                             }),
                             type_name: Some(type_name.clone()),
-                            value: sway::Expression::from(sway::FunctionCall {
-                                function: sway::Expression::create_identifier(
-                                    "Vec::with_capacity".into(),
-                                ),
-                                generic_parameters: None,
-                                parameters: vec![length.clone()],
-                            }),
+                            value: sway::Expression::create_function_call(
+                                "Vec::with_capacity",
+                                None,
+                                vec![length.clone()],
+                            ),
                         }),
                         // let mut i = 0;
                         sway::Statement::from(sway::Let {
@@ -160,17 +158,11 @@ pub fn translate_variable_definition_statement(
     } else if let Some(x) = initializer.as_ref() {
         let mut x = translate_expression(project, module.clone(), scope.clone(), x)?;
 
-        if let sway::Expression::FunctionCall(f) = &x
-            && let sway::Expression::MemberAccess(m) = &f.function
-            && m.member == "read"
-            && f.parameters.is_empty()
+        if let Some(container) = x.to_read_call_parts()
+            && get_expression_type(project, module.clone(), scope.clone(), container)?
+                .is_storage_key()
         {
-            let container_type =
-                get_expression_type(project, module.clone(), scope.clone(), &m.expression)?;
-
-            if container_type.is_storage_key() {
-                x = m.expression.clone();
-            }
+            x = container.clone();
         }
 
         let value_type = get_expression_type(project, module.clone(), scope.clone(), &x)?;

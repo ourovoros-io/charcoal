@@ -1730,14 +1730,10 @@ fn translate_storage_vec_member_access_function_call(
     };
 
     // HACK: remove `.read()`
-    if let sway::Expression::FunctionCall(f) = &expression
-        && let sway::Expression::MemberAccess(m) = &f.function
-        && m.member == "read"
-        && f.parameters.is_empty()
-        && get_expression_type(project, module.clone(), scope.clone(), &m.expression)?
-            .is_storage_key()
+    if let Some(container) = expression.to_read_call_parts()
+        && get_expression_type(project, module.clone(), scope.clone(), container)?.is_storage_key()
     {
-        expression = m.expression.clone();
+        expression = container.clone();
     }
 
     let type_name = get_expression_type(project, module.clone(), scope.clone(), &expression)?;
@@ -2030,17 +2026,16 @@ fn translate_builtin_abi_member_access_function_call(
                         name: parameter_name.clone(),
                     }),
                     type_name: None,
-                    value: sway::Expression::create_identifier("ptr")
-                        .with_function_call(
-                            "read",
-                            Some(sway::GenericParameterList {
-                                entries: vec![sway::GenericParameter {
-                                    type_name: parameter_type.clone(),
-                                    implements: None,
-                                }],
-                            }),
-                            vec![],
-                        ),
+                    value: sway::Expression::create_identifier("ptr").with_function_call(
+                        "read",
+                        Some(sway::GenericParameterList {
+                            entries: vec![sway::GenericParameter {
+                                type_name: parameter_type.clone(),
+                                implements: None,
+                            }],
+                        }),
+                        vec![],
+                    ),
                 }));
 
                 // If we have more parameters to decode, increase the ptr

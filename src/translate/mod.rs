@@ -135,16 +135,12 @@ pub fn coerce_expression(
     let mut remove_unwrap_member_call = false;
 
     // HACK: If the expression is reading from a `StorageKey<T>`, remove the `.read()` temporarily
-    if let sway::Expression::FunctionCall(f) = &expression
-        && let sway::Expression::MemberAccess(m) = &f.function
-        && m.member == "read"
-        && f.parameters.is_empty()
-    {
+    if let Some(container) = expression.to_read_call_parts() {
         let container_type =
-            get_expression_type(project, module.clone(), scope.clone(), &m.expression).unwrap();
+            get_expression_type(project, module.clone(), scope.clone(), container).unwrap();
 
         if container_type.is_storage_key() {
-            expression = m.expression.clone();
+            expression = container.clone();
             from_type_name = container_type;
             add_read_member_call = true;
         }
@@ -459,12 +455,9 @@ pub fn coerce_expression(
         let storage_key_type = get_underlying_type(project, module.clone(), &storage_key_type);
 
         if storage_key_type.is_compatible_with(&from_type_name)
-            && let sway::Expression::FunctionCall(f) = &expression
-            && let sway::Expression::MemberAccess(m) = &f.function
-            && m.member == "read"
-            && f.parameters.is_empty()
+            && let Some(expression) = expression.to_read_call_parts()
         {
-            return Some(m.expression.clone());
+            return Some(expression.clone());
         }
     }
 

@@ -38,17 +38,10 @@ pub fn translate_assignment_expression(
     };
 
     // HACK: remove `.read()` if present
-    if let sway::Expression::FunctionCall(f) = &expression
-        && let sway::Expression::MemberAccess(m) = &f.function
-        && m.member == "read"
-        && f.parameters.is_empty()
+    if let Some(container) = expression.to_read_call_parts()
+        && get_expression_type(project, module.clone(), scope.clone(), container)?.is_storage_key()
     {
-        let container_type =
-            get_expression_type(project, module.clone(), scope.clone(), &m.expression)?;
-
-        if container_type.is_storage_key() {
-            expression = m.expression.clone();
-        }
+        expression = container.clone();
     }
 
     let expr_type_name = get_expression_type(project, module.clone(), scope.clone(), &expression)?;
@@ -75,26 +68,14 @@ pub fn translate_assignment_expression(
                 },
 
                 ("StorageMap", Some(_)) => {
-                    if let sway::Expression::FunctionCall(function_call) = &expression
-                        && let sway::Expression::MemberAccess(member_access) =
-                            &function_call.function
-                        && member_access.member == "get"
-                        && function_call.parameters.len() == 1
-                    {
+                    if let Some((container, index)) = expression.to_get_call_parts() {
                         scope.borrow_mut().set_function_storage_accesses(
                             module.clone(),
                             false,
                             true,
                         );
 
-                        return Ok(sway::Expression::from(sway::FunctionCall {
-                            function: sway::Expression::from(sway::MemberAccess {
-                                expression: member_access.expression.clone(),
-                                member: "insert".into(),
-                            }),
-                            generic_parameters: None,
-                            parameters: vec![rhs],
-                        }));
+                        return Ok(container.with_insert_call(index.clone(), rhs));
                     }
 
                     todo!()
@@ -384,13 +365,10 @@ pub fn create_assignment_expression(
 
     // Check for assignments to fields of storage keys of storage structs
     if let sway::Expression::MemberAccess(member_access) = expression
-        && let sway::Expression::FunctionCall(f) = &member_access.expression
-        && let sway::Expression::MemberAccess(m) = &f.function
-        && m.member == "read"
-        && f.parameters.is_empty()
+        && let Some(container) = member_access.expression.to_read_call_parts()
     {
         let container_type =
-            get_expression_type(project, module.clone(), scope.clone(), &m.expression)?;
+            get_expression_type(project, module.clone(), scope.clone(), container)?;
 
         if let Some(storage_key_type) = container_type.storage_key_type()
             && let sway::TypeName::Identifier {
@@ -425,7 +403,7 @@ pub fn create_assignment_expression(
                             name: variable_name.clone(),
                         }),
                         type_name: None,
-                        value: sway::Expression::from(f.as_ref().clone()),
+                        value: container.with_read_call(),
                     }),
                     sway::Statement::from(sway::Expression::from(sway::BinaryExpression {
                         operator: match operator {
@@ -466,7 +444,7 @@ pub fn create_assignment_expression(
                             }
                         },
                     })),
-                    sway::Statement::from(m.expression.with_write_call(
+                    sway::Statement::from(container.with_write_call(
                         sway::Expression::create_identifier(variable_name.as_str()),
                     )),
                 ],

@@ -2383,6 +2383,18 @@ impl Expression {
     }
 
     #[inline(always)]
+    pub fn to_bits_call_parts(&self) -> Option<&Expression> {
+        if let Expression::FunctionCall(f) = self
+            && let Expression::MemberAccess(m) = &f.function
+            && m.member == "bits"
+        {
+            return Some(&m.expression);
+        }
+
+        None
+    }
+
+    #[inline(always)]
     pub fn with_as_contract_id_call(&self) -> Self {
         self.with_function_calls(&[("as_contract_id", Some((None, vec![])))])
     }
@@ -2468,16 +2480,21 @@ impl Expression {
     }
 
     #[inline(always)]
-    pub fn is_unwrap_call(&self) -> bool {
+    pub fn to_unwrap_call_parts(&self) -> Option<&Expression> {
         if let Self::FunctionCall(f) = self
             && let Self::MemberAccess(m) = &f.function
             && m.member == "unwrap"
             && f.parameters.is_empty()
         {
-            return true;
+            return Some(&m.expression);
         }
 
-        false
+        None
+    }
+
+    #[inline(always)]
+    pub fn is_unwrap_call(&self) -> bool {
+        self.to_unwrap_call_parts().is_some()
     }
 
     #[inline(always)]
@@ -2491,8 +2508,26 @@ impl Expression {
     }
 
     #[inline(always)]
+    pub fn to_get_call_parts(&self) -> Option<(&Expression, &Expression)> {
+        if let Expression::FunctionCall(function_call) = self
+            && let Expression::MemberAccess(member_access) = &function_call.function
+            && member_access.member == "get"
+            && function_call.parameters.len() == 1
+        {
+            return Some((&member_access.expression, &function_call.parameters[0]));
+        }
+
+        None
+    }
+
+    #[inline(always)]
     pub fn with_set_call(&self, index: Expression, value: Expression) -> Self {
         self.with_function_calls(&[("set", Some((None, vec![index, value])))])
+    }
+
+    #[inline(always)]
+    pub fn with_insert_call(&self, index: Expression, value: Expression) -> Self {
+        self.with_function_calls(&[("insert", Some((None, vec![index, value])))])
     }
 
     #[inline(always)]
@@ -2506,16 +2541,21 @@ impl Expression {
     }
 
     #[inline(always)]
-    pub fn is_read_call(&self) -> bool {
+    pub fn to_read_call_parts(&self) -> Option<&Expression> {
         if let Self::FunctionCall(f) = self
             && let Self::MemberAccess(m) = &f.function
             && m.member == "read"
             && f.parameters.is_empty()
         {
-            return true;
+            return Some(&m.expression);
         }
 
-        false
+        None
+    }
+
+    #[inline(always)]
+    pub fn is_read_call(&self) -> bool {
+        self.to_read_call_parts().is_some()
     }
 
     #[inline(always)]

@@ -142,21 +142,11 @@ pub fn translate_variable_access_expression(
             };
 
             // HACK: remove `.read()` if present
-            if let sway::Expression::FunctionCall(function_call) = &expression
-                && let sway::Expression::MemberAccess(member_access) = &function_call.function
-                && member_access.member == "read"
-                && function_call.parameters.is_empty()
+            if let Some(container) = expression.to_read_call_parts()
+                && get_expression_type(project, module.clone(), scope.clone(), container)?
+                    .is_storage_key()
             {
-                let container_type = get_expression_type(
-                    project,
-                    module.clone(),
-                    scope.clone(),
-                    &member_access.expression,
-                )?;
-
-                if container_type.is_storage_key() {
-                    expression = member_access.expression.clone();
-                }
+                expression = container.clone();
             }
 
             let type_name =
@@ -200,9 +190,7 @@ pub fn translate_variable_access_expression(
                                     name,
                                     generic_parameters,
                                 } => match (name.as_str(), generic_parameters.as_ref()) {
-                                    ("StorageMap", Some(_)) => {
-                                        expression.with_get_call(index)
-                                    }
+                                    ("StorageMap", Some(_)) => expression.with_get_call(index),
 
                                     ("StorageVec", Some(_)) => {
                                         let index_type_name = get_expression_type(

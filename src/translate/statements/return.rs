@@ -40,17 +40,10 @@ pub fn translate_return_statement(
     let mut expression = translate_expression(project, module.clone(), scope.clone(), expression)?;
 
     // HACK: remove `.read()` if present
-    if let sway::Expression::FunctionCall(f) = &expression
-        && let sway::Expression::MemberAccess(m) = &f.function
-        && m.member == "read"
-        && f.parameters.is_empty()
+    if let Some(container) = expression.to_read_call_parts()
+        && get_expression_type(project, module.clone(), scope.clone(), container)?.is_storage_key()
     {
-        let container_type =
-            get_expression_type(project, module.clone(), scope.clone(), &m.expression)?;
-
-        if container_type.is_storage_key() {
-            expression = m.expression.clone();
-        }
+        expression = container.clone();
     }
 
     if return_type.is_none() {

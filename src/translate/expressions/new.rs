@@ -83,17 +83,15 @@ pub fn translate_new_expression(
                         None,
                         vec![
                             sway::Expression::create_identifier(name),
-                            sway::Expression::from(sway::FunctionCall {
-                                function: sway::Expression::create_identifier(
-                                    "ContractId::from".into(),
-                                ),
-                                generic_parameters: None,
-                                parameters: vec![sway::Expression::create_function_call(
+                            sway::Expression::create_function_call(
+                                "ContractId::from",
+                                None,
+                                vec![sway::Expression::create_function_call(
                                     "b256::zero",
                                     None,
                                     vec![],
                                 )],
-                            }),
+                            ),
                         ],
                     )),
                 ));
@@ -139,13 +137,11 @@ pub fn translate_new_expression(
                                 name: "v".into(),
                             }),
                             type_name: None,
-                            value: sway::Expression::from(sway::FunctionCall {
-                                function: sway::Expression::create_identifier(
-                                    "Bytes::with_capacity".into(),
-                                ),
-                                generic_parameters: None,
-                                parameters: vec![length.clone()],
-                            }),
+                            value: sway::Expression::create_function_call(
+                                "Bytes::with_capacity",
+                                None,
+                                vec![length.clone()],
+                            ),
                         }),
                         // let mut i = 0;
                         sway::Statement::from(sway::Let {
@@ -240,13 +236,11 @@ pub fn translate_new_expression(
                                 name: "v".into(),
                             }),
                             type_name: None,
-                            value: sway::Expression::from(sway::FunctionCall {
-                                function: sway::Expression::create_identifier(
-                                    "Bytes::with_capacity".into(),
-                                ),
-                                generic_parameters: None,
-                                parameters: vec![length.clone()],
-                            }),
+                            value: sway::Expression::create_function_call(
+                                "Bytes::with_capacity",
+                                None,
+                                vec![length.clone()],
+                            ),
                         }),
                         // let mut i = 0;
                         sway::Statement::from(sway::Let {
@@ -299,11 +293,11 @@ pub fn translate_new_expression(
                     ],
 
                     // String::from(v)
-                    final_expr: Some(sway::Expression::from(sway::FunctionCall {
-                        function: sway::Expression::create_identifier("String::from".into()),
-                        generic_parameters: None,
-                        parameters: vec![sway::Expression::create_identifier("v".into())],
-                    })),
+                    final_expr: Some(sway::Expression::create_function_call(
+                        "String::from",
+                        None,
+                        vec![sway::Expression::create_identifier("v".into())],
+                    )),
                 }));
             }
 
@@ -315,11 +309,12 @@ pub fn translate_new_expression(
 
         solidity::Expression::ArraySubscript(_, _, None) => {
             assert!(args.len() == 1);
-            return Ok(sway::Expression::from(sway::FunctionCall {
-                function: sway::Expression::create_identifier("Vec::with_capacity".into()),
-                generic_parameters: None,
-                parameters: args,
-            }));
+
+            return Ok(sway::Expression::create_function_call(
+                "Vec::with_capacity",
+                None,
+                args,
+            ));
         }
 
         _ => {
@@ -352,10 +347,10 @@ pub fn translate_new_expression(
             parameters: vec![],
         })),
 
-        None => Ok(sway::Expression::from(sway::FunctionCall {
-            function: sway::Expression::create_identifier(name),
-            generic_parameters: None,
-            parameters: vec![],
-        })),
+        None => Ok(sway::Expression::create_function_call(
+            name.as_str(),
+            None,
+            vec![],
+        )),
     }
 }

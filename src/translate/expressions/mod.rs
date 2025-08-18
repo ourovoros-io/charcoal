@@ -741,40 +741,36 @@ pub fn create_value_expression(
                     .ensure_use_declared("std::alloc::alloc_bytes");
 
                 // alloc_bytes(0)
-                sway::Expression::from(sway::FunctionCall {
-                    function: sway::Expression::create_identifier("alloc_bytes".into()),
-                    generic_parameters: None,
-                    parameters: vec![sway::Expression::from(sway::Literal::DecInt(
+                sway::Expression::create_function_call(
+                    "alloc_bytes",
+                    None,
+                    vec![sway::Expression::from(sway::Literal::DecInt(
                         0u8.into(),
                         None,
                     ))],
-                })
+                )
             }
 
             ("Bytes", None) => {
                 // Ensure `std::bytes::Bytes` is imported
                 module.borrow_mut().ensure_use_declared("std::bytes::Bytes");
 
-                sway::Expression::from(sway::FunctionCall {
-                    function: sway::Expression::create_identifier("Bytes::new".into()),
-                    generic_parameters: None,
-                    parameters: vec![],
-                })
+                sway::Expression::create_function_call("Bytes::new", None, vec![])
             }
 
-            ("Identity", None) => sway::Expression::from(sway::FunctionCall {
-                function: sway::Expression::create_identifier("Identity::Address".into()),
-                generic_parameters: None,
-                parameters: vec![sway::Expression::from(sway::FunctionCall {
-                    function: sway::Expression::create_identifier("Address::from".into()),
-                    generic_parameters: None,
-                    parameters: vec![sway::Expression::create_function_call(
+            ("Identity", None) => sway::Expression::create_function_call(
+                "Identity::Address",
+                None,
+                vec![sway::Expression::create_function_call(
+                    "Address::from",
+                    None,
+                    vec![sway::Expression::create_function_call(
                         "b256::zero",
                         None,
                         vec![],
                     )],
-                })],
-            }),
+                )],
+            ),
 
             ("Option", Some(generic_parameters)) if generic_parameters.entries.len() == 1 => {
                 sway::Expression::create_identifier("None".into())
@@ -801,11 +797,7 @@ pub fn create_value_expression(
 
             ("String", None) => sway::Expression::create_function_call("String::new", None, vec![]),
 
-            ("Vec", Some(_)) => sway::Expression::from(sway::FunctionCall {
-                function: sway::Expression::create_identifier("Vec::new".into()),
-                generic_parameters: None,
-                parameters: vec![],
-            }),
+            ("Vec", Some(_)) => sway::Expression::create_function_call("Vec::new", None, vec![]),
 
             (name, _) => {
                 // Check to see if the type is a type definition
@@ -895,30 +887,30 @@ pub fn create_value_expression(
 
         sway::TypeName::StringSlice => sway::Expression::from(sway::Literal::String(String::new())),
 
-        sway::TypeName::StringArray { length } => sway::Expression::from(sway::FunctionCall {
-            function: sway::Expression::create_identifier("__to_str_array".into()),
-            generic_parameters: None,
-            parameters: vec![sway::Expression::Literal(sway::Literal::String(
+        sway::TypeName::StringArray { length } => sway::Expression::create_function_call(
+            "__to_str_array",
+            None,
+            vec![sway::Expression::Literal(sway::Literal::String(
                 (0..*length).map(|_| " ").collect(),
             ))],
-        }),
+        ),
 
         sway::TypeName::Function { .. } => {
             sway::Expression::create_todo(Some(type_name.to_string()))
         }
 
-        sway::TypeName::Abi { .. } => sway::Expression::from(sway::FunctionCall {
-            function: sway::Expression::create_identifier("Identity::Address".into()),
-            generic_parameters: None,
-            parameters: vec![sway::Expression::from(sway::FunctionCall {
-                function: sway::Expression::create_identifier("Address::from".into()),
-                generic_parameters: None,
-                parameters: vec![sway::Expression::create_function_call(
+        sway::TypeName::Abi { .. } => sway::Expression::create_function_call(
+            "Identity::Address",
+            None,
+            vec![sway::Expression::create_function_call(
+                "Address::from",
+                None,
+                vec![sway::Expression::create_function_call(
                     "b256::zero",
                     None,
                     vec![],
                 )],
-            })],
-        }),
+            )],
+        ),
     }
 }
