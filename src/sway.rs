@@ -2353,7 +2353,7 @@ impl Expression {
     }
 
     #[inline(always)]
-    pub fn to_some(&self) -> Self {
+    pub fn into_some_call(&self) -> Self {
         Self::create_function_call("Some", None, vec![self.clone()])
     }
 

@@ -68,9 +68,6 @@ pub fn coerce_expression(
     let from_type_name = get_underlying_type(project, module.clone(), from_type_name);
     let to_type_name = get_underlying_type(project, module.clone(), to_type_name);
 
-    let b256_type_name = sway::TypeName::create_identifier("b256");
-    let u256_type_name = sway::TypeName::create_identifier("u256");
-
     if from_type_name.is_compatible_with(&to_type_name) {
         // Check for abi cast to `Identity` coercions
         if to_type_name.is_identity() {
@@ -96,7 +93,7 @@ pub fn coerce_expression(
                         } else {
                             f.parameters[1].clone()
                         },
-                        &b256_type_name,
+                        &sway::TypeName::create_identifier("b256"),
                         &to_type_name,
                     )
                     .unwrap(),
@@ -131,6 +128,12 @@ pub fn coerce_expression(
 
     let mut expression = expression.clone();
     let mut from_type_name = from_type_name.clone();
+
+    //----------------------------------------------------------------------------------------------------
+    // SPECIAL COERCIONS:
+    //   These are done *before* regular coercion so that generated code looks nicer.
+    //----------------------------------------------------------------------------------------------------
+
     let mut add_read_member_call = false;
     let mut remove_unwrap_member_call = false;
 
@@ -155,8 +158,8 @@ pub fn coerce_expression(
 
     // Check for `Struct` to `StorageStruct` coercion
     if let (
-        sway::TypeName::Identifier { name: lhs_name, .. },
-        sway::TypeName::Identifier { name: rhs_name, .. },
+        sway::TypeName::Identifier { name: lhs_name, generic_parameters: None },
+        sway::TypeName::Identifier { name: rhs_name, generic_parameters: None },
     ) = (&from_type_name, &to_type_name)
     {
         let mut expression = expression.clone();
@@ -426,15 +429,35 @@ pub fn coerce_expression(
 
     // HACK: Remove the `.unwrap()` if we added it
     if remove_unwrap_member_call {
-        expression = expression.to_some();
+        let Some(container) = expression.to_unwrap_call_parts() else {
+            unreachable!()
+        };
+        expression = container.clone();
         from_type_name = from_type_name.to_option();
     }
+
+    //----------------------------------------------------------------------------------------------------
+    // SPECIAL COERCION CODE ENDS, REGULAR COERCION CODE BEGINS BELOW
+    //----------------------------------------------------------------------------------------------------
 
     // Check for `Option<T>` to `T` coercions
     if let Some(option_type) = from_type_name.option_type()
         && option_type.is_compatible_with(&to_type_name)
     {
         return Some(expression.with_unwrap_call());
+    }
+
+    // Check for `T` to `Option<T>` coercions
+    if let Some(option_type) = to_type_name.option_type()
+        && option_type.is_compatible_with(&from_type_name)
+    {
+        // If the expression ends in `.unwrap()`, remove it
+        if let Some(container) = expression.to_unwrap_call_parts() {
+            return Some(container.clone());
+        }
+
+        // Otherwise wrap it in `Some(_)`
+        return Some(expression.into_some_call());
     }
 
     // Check for `StorageKey<T>` to `T` coercions
@@ -480,7 +503,7 @@ pub fn coerce_expression(
                 scope.clone(),
                 &expression,
                 &from_type_name,
-                &b256_type_name,
+                &sway::TypeName::create_identifier("b256"),
             )
             .unwrap();
         }
@@ -682,7 +705,7 @@ pub fn coerce_expression(
             scope.clone(),
             &expression,
             &from_type_name,
-            &u256_type_name,
+            &sway::TypeName::create_identifier("u256"),
         )
         .unwrap();
 
