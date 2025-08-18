@@ -158,8 +158,8 @@ pub fn coerce_expression(
 
     // Check for `Struct` to `StorageStruct` coercion
     if let (
-        sway::TypeName::Identifier { name: lhs_name, generic_parameters: None },
-        sway::TypeName::Identifier { name: rhs_name, generic_parameters: None },
+        sway::TypeName::Identifier { name: lhs_name, .. },
+        sway::TypeName::Identifier { name: rhs_name, .. },
     ) = (&from_type_name, &to_type_name)
     {
         let mut expression = expression.clone();
