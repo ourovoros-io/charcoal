@@ -228,6 +228,130 @@ pub fn coerce_expression(
                 };
 
                 if let sway::Expression::Constructor(constructor) = &expression {
+                    if memory {
+                        let struct_field_name = translate_naming_convention(&lhs_name, Case::Snake);
+                        let instance_field_name = format!("{struct_field_name}_instance_count");
+
+                        let mut value = create_value_expression(
+                            project,
+                            module.clone(),
+                            scope.clone(),
+                            &sway::TypeName::create_identifier(&rhs_name),
+                            None,
+                        );
+
+                        let mut instance_index_statement = None;
+                        let mut storage_fields_to_write = vec![];
+
+                        if let sway::Expression::Constructor(c) = &mut value {
+                            for (
+                                (memory_constructor_field, storage_constructor_field),
+                                (memory_struct_field, storage_struct_field),
+                            ) in constructor
+                                .fields
+                                .iter()
+                                .zip(c.fields.iter_mut())
+                                .zip(lhs_fields.iter().zip(rhs_fields.iter()))
+                            {
+                                if memory_struct_field
+                                    .type_name
+                                    .is_compatible_with(&storage_struct_field.type_name)
+                                {
+                                    storage_constructor_field.value =
+                                        memory_constructor_field.value.clone();
+                                } else if let Some(storage_key_type) =
+                                    storage_struct_field.type_name.storage_key_type()
+                                {
+                                    if instance_index_statement.is_none() {
+                                        instance_index_statement =
+                                            Some(sway::Statement::from(sway::Let {
+                                                pattern: sway::LetPattern::Identifier(
+                                                    sway::LetIdentifier {
+                                                        is_mutable: false,
+                                                        name: "instance_index".to_string(),
+                                                    },
+                                                ),
+                                                type_name: None,
+                                                value: sway::Expression::create_identifier(
+                                                    "storage_struct",
+                                                )
+                                                .with_member(&instance_field_name)
+                                                .with_read_call(),
+                                            }));
+
+                                        storage_fields_to_write.push(sway::Statement::from(
+                                            sway::Expression::create_identifier("storage_struct")
+                                                .with_member(&instance_field_name)
+                                                .with_write_call(sway::Expression::from(
+                                                    sway::BinaryExpression {
+                                                        operator: "+".to_string(),
+                                                        lhs: sway::Expression::create_identifier(
+                                                            &instance_field_name,
+                                                        ),
+                                                        rhs: sway::Expression::from(
+                                                            sway::Literal::DecInt(
+                                                                1_u64.into(),
+                                                                None,
+                                                            ),
+                                                        ),
+                                                    },
+                                                )),
+                                        ));
+                                    }
+
+                                    let mapping_field_name = format!(
+                                        "{struct_field_name}_{}_instances",
+                                        storage_struct_field.new_name,
+                                    );
+
+                                    storage_constructor_field.value =
+                                        sway::Expression::create_identifier("storage_struct")
+                                            .with_member(&mapping_field_name)
+                                            .with_get_call(sway::Expression::create_identifier(
+                                                "instance_index",
+                                            ));
+
+                                    if storage_key_type.is_storage_bytes() {
+                                        storage_fields_to_write.push(sway::Statement::from(
+                                            sway::Expression::create_identifier("storage_struct")
+                                                .with_member(&mapping_field_name)
+                                                .with_get_call(sway::Expression::create_identifier(
+                                                    "instance_index",
+                                                ))
+                                                .with_clear_call(),
+                                        ));
+
+                                        storage_fields_to_write.push(sway::Statement::from(
+                                            sway::Expression::create_identifier("storage_struct")
+                                                .with_member(&mapping_field_name)
+                                                .with_get_call(sway::Expression::create_identifier(
+                                                    "instance_index",
+                                                ))
+                                                .with_write_slice_call(
+                                                    memory_constructor_field.value.clone(),
+                                                ),
+                                        ));
+
+                                        continue;
+                                    }
+
+                                    todo!("storage key type: {storage_key_type}");
+                                } else {
+                                    todo!()
+                                }
+                            }
+                        }
+
+                        if let Some(instance_index_statement) = instance_index_statement {
+                            storage_fields_to_write.insert(0, instance_index_statement);
+
+                            return Some(sway::Expression::from(sway::Block {
+                                statements: storage_fields_to_write,
+                                final_expr: Some(value),
+                            }));
+                        }
+                    }
+
                     return Some(sway::Expression::from(sway::Constructor {
                         type_name: to_type_name.clone(),
                         fields: lhs_fields
@@ -467,7 +591,7 @@ pub fn coerce_expression(
         if to_type_name.is_compatible_with(&storage_key_type) {
             scope
                 .borrow_mut()
-                .set_function_storage_accesses(module, true, false);
+                .set_function_storage_accesses(module.clone(), true, false);
 
             return Some(expression.with_read_call());
         }
@@ -2310,7 +2434,7 @@ fn get_path_expr_function_call_type(
         }
 
         "u64::try_from" if generic_parameters.is_none() => {
-            return Ok(Some(sway::TypeName::create_identifier("u128")));
+            return Ok(Some(sway::TypeName::create_identifier("u64").to_option()));
         }
 
         "u256::from"
@@ -2653,7 +2777,7 @@ fn get_member_access_function_call_type(
             ("Bytes", None) => match member_access.member.as_str() {
                 "as_raw_slice" => Ok(sway::TypeName::create_identifier("raw_slice")),
 
-                "get" => Ok(sway::TypeName::create_identifier("raw_slice").to_option()),
+                "get" => Ok(sway::TypeName::create_identifier("u8").to_option()),
 
                 "len" => Ok(sway::TypeName::create_identifier("u64")),
 
