@@ -336,7 +336,7 @@ pub fn generate_enum_abi_encode_function(
                     name: "buffer".into(),
                 }),
                 type_name: None,
-                value: sway::Expression::create_identifier(variant.name.as_str())
+                value: sway::Expression::from(sway::Literal::String(variant.name.clone()))
                     .with_abi_encode_call(sway::Expression::create_identifier("buffer".into())),
             }),
         );
