@@ -2503,6 +2503,11 @@ impl Expression {
     }
 
     #[inline(always)]
+    pub fn with_clear_call(&self) -> Self {
+        self.with_function_calls(&[("clear", Some((None, vec![])))])
+    }
+
+    #[inline(always)]
     pub fn with_get_call(&self, value: Expression) -> Self {
         self.with_function_calls(&[("get", Some((None, vec![value])))])
     }

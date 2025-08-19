@@ -615,7 +615,10 @@ pub fn resolve_function_call(
             ));
         }
 
-        let functions = module.borrow().functions.clone();
+        let functions = {
+            let functions = module.borrow().functions.clone();
+            functions
+        };
 
         if let Some(f) = functions.iter().find(|f| {
             let sway::TypeName::Function {
@@ -735,8 +738,13 @@ pub fn resolve_function_call(
     };
 
     // Check to see if the function is defined in the current module
+    let functions = {
+        let functions = module.borrow().functions.clone();
+        functions
+    };
+
     if function.is_none()
-        && let Some(f) = module.borrow().functions.iter().find(|f| {
+        && let Some(f) = functions.iter().find(|f| {
             let sway::TypeName::Function { old_name, .. } = &f.signature else {
                 unreachable!()
             };

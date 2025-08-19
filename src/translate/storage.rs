@@ -152,13 +152,17 @@ pub fn translate_state_variable(
 
     // Create deferred initializations for types that can't be initialized with a value
     if value.is_none()
-        && (variable_type_name.is_storage_string() || variable_type_name.is_storage_vec())
+        && (variable_type_name.is_storage_string()
+            || variable_type_name.is_storage_vec()
+            || variable_type_name.is_storage_map()
+            || variable_type_name.is_storage_bytes())
     {
         if let Some(x) = variable_definition.initializer.as_ref() {
             let value = translate_expression(project, module.clone(), scope.clone(), x)?;
 
             deferred_initializations.push(ir::DeferredInitialization {
-                name: new_name.clone(),
+                expression: sway::Expression::create_identifier("storage_struct")
+                    .with_member(&new_name),
                 is_storage,
                 is_constant,
                 is_configurable,
@@ -168,12 +172,12 @@ pub fn translate_state_variable(
             ensure_constructor_called_fields_exist(project, module.clone(), scope.clone());
         }
 
+        let sway::TypeName::Identifier { name, .. } = variable_type_name.clone() else {
+            unreachable!()
+        };
+
         value = Some(sway::Expression::from(sway::Constructor {
-            type_name: if variable_type_name.is_storage_string() {
-                sway::TypeName::create_identifier("StorageString")
-            } else {
-                sway::TypeName::create_identifier("StorageVec")
-            },
+            type_name: sway::TypeName::create_identifier(name.as_str()),
             fields: vec![],
         }));
     }
@@ -219,6 +223,13 @@ pub fn translate_state_variable(
                 todo!()
             };
 
+            let mut field_initializations = vec![];
+
+            let struct_field_name =
+                translate_naming_convention(&variable_type_name.to_string(), Case::Snake);
+
+            let instance_field_name = format!("{struct_field_name}_instance_count");
+
             for field in fields.iter() {
                 let Some(option_type) = field.type_name.option_type() else {
                     continue;
@@ -228,30 +239,17 @@ pub fn translate_state_variable(
                     continue;
                 };
 
-                if !(storage_key_type.is_storage_bytes()
-                    || storage_key_type.is_storage_map()
-                    || storage_key_type.is_storage_string()
-                    || storage_key_type.is_storage_vec())
-                {
-                    continue;
-                }
-
-                let struct_name =
-                    translate_naming_convention(&variable_type_name.to_string(), Case::Snake);
-
-                if !mapping_names.iter().any(|(n, _)| *n == struct_name) {
-                    mapping_names.push((struct_name.clone(), vec![]));
+                if !mapping_names.iter().any(|(n, _)| *n == struct_field_name) {
+                    mapping_names.push((struct_field_name.clone(), vec![]));
                 }
 
                 let mapping_names = mapping_names
                     .iter_mut()
-                    .find(|m| m.0 == struct_name)
+                    .find(|m| m.0 == struct_field_name)
                     .unwrap();
                 mapping_names.1.push(field.new_name.clone());
 
                 // Ensure the instance count field exists in storage
-                let instance_field_name = format!("{struct_name}_instance_count");
-
                 module.borrow_mut().create_storage_field(
                     scope.clone(),
                     instance_field_name.as_str(),
@@ -260,7 +258,8 @@ pub fn translate_state_variable(
                 );
 
                 // Ensure the instance mapping field exists in storage
-                let mapping_field_name = format!("{struct_name}_{}_instances", field.new_name,);
+                let mapping_field_name =
+                    format!("{struct_field_name}_{}_instances", field.new_name,);
 
                 module.borrow_mut().create_storage_field(
                     scope.clone(),
@@ -277,6 +276,75 @@ pub fn translate_state_variable(
                         fields: vec![],
                     }),
                 );
+
+                field_initializations.push(sway::Statement::from(sway::Expression::from(
+                    sway::BinaryExpression {
+                        operator: "=".to_string(),
+                        lhs: sway::Expression::create_identifier(&new_name)
+                            .with_member(&field.new_name),
+                        rhs: sway::Expression::create_identifier("storage_struct")
+                            .with_member(&mapping_field_name)
+                            .with_get_call(sway::Expression::create_identifier("instance_index")),
+                    },
+                )));
+            }
+
+            if !field_initializations.is_empty() {
+                field_initializations.insert(
+                    0,
+                    sway::Statement::from(sway::Let {
+                        pattern: sway::LetPattern::Identifier(sway::LetIdentifier {
+                            is_mutable: true,
+                            name: new_name.clone(),
+                        }),
+                        type_name: None,
+                        value: sway::Expression::create_identifier("storage_struct")
+                            .with_member(&new_name)
+                            .with_read_call(),
+                    }),
+                );
+
+                field_initializations.insert(
+                    0,
+                    sway::Statement::from(
+                        sway::Expression::create_identifier("storage_struct")
+                            .with_member(&instance_field_name)
+                            .with_write_call(sway::Expression::from(sway::BinaryExpression {
+                                operator: "+".to_string(),
+                                lhs: sway::Expression::create_identifier(&instance_field_name),
+                                rhs: sway::Expression::from(sway::Literal::DecInt(
+                                    1_u64.into(),
+                                    None,
+                                )),
+                            })),
+                    ),
+                );
+
+                field_initializations.insert(
+                    0,
+                    sway::Statement::from(sway::Let {
+                        pattern: sway::LetPattern::Identifier(sway::LetIdentifier {
+                            is_mutable: false,
+                            name: "instance_index".to_string(),
+                        }),
+                        type_name: None,
+                        value: sway::Expression::create_identifier("storage_struct")
+                            .with_member(&instance_field_name)
+                            .with_read_call(),
+                    }),
+                );
+
+                deferred_initializations.push(ir::DeferredInitialization {
+                    expression: sway::Expression::create_identifier("storage_struct")
+                        .with_member(&new_name),
+                    is_storage,
+                    is_constant,
+                    is_configurable,
+                    value: sway::Expression::from(sway::Block {
+                        statements: field_initializations,
+                        final_expr: Some(sway::Expression::create_identifier(&new_name)),
+                    }),
+                });
             }
         }
 

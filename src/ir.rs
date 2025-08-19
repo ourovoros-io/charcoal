@@ -333,7 +333,7 @@ pub struct Item<T> {
 
 #[derive(Clone, Debug)]
 pub struct DeferredInitialization {
-    pub name: String,
+    pub expression: sway::Expression,
     pub is_storage: bool,
     pub is_constant: bool,
     pub is_configurable: bool,
@@ -635,7 +635,7 @@ impl Module {
             else {
                 return false;
             };
-            
+
             *type_name == definition_name && for_type_name == "Contract"
         })
     }

@@ -551,11 +551,11 @@ pub fn create_assignment_expression(
             ("StorageKey", Some(generic_parameters)) if generic_parameters.entries.len() == 1 => {
                 if let sway::TypeName::Identifier {
                     name,
-                    generic_parameters,
+                    generic_parameters: storage_key_generic_parameters,
                 } = &generic_parameters.entries[0].type_name
                 {
-                    match (name.as_str(), generic_parameters.as_ref()) {
-                        ("StorageString", None) => {
+                    match (name.as_str(), storage_key_generic_parameters.as_ref()) {
+                        ("StorageString", None) | ("StorageBytes", None) => {
                             scope.borrow_mut().set_function_storage_accesses(
                                 module.clone(),
                                 false,
@@ -569,7 +569,11 @@ pub fn create_assignment_expression(
                                     scope.clone(),
                                     rhs,
                                     &rhs_type_name,
-                                    &sway::TypeName::create_identifier("String"),
+                                    &if name == "StorageString" {
+                                        sway::TypeName::create_identifier("String")
+                                    } else {
+                                        sway::TypeName::create_identifier("Bytes")
+                                    },
                                 )
                                 .unwrap(),
 
@@ -579,7 +583,29 @@ pub fn create_assignment_expression(
                             }));
                         }
 
-                        _ => {}
+                        _ => {
+                            scope.borrow_mut().set_function_storage_accesses(
+                                module.clone(),
+                                false,
+                                true,
+                            );
+
+                            return Ok(expression.with_write_call(match operator {
+                                "=" => coerce_expression(
+                                    project,
+                                    module.clone(),
+                                    scope.clone(),
+                                    rhs,
+                                    &rhs_type_name,
+                                    &generic_parameters.entries[0].type_name,
+                                )
+                                .unwrap(),
+
+                                _ => {
+                                    todo!()
+                                }
+                            }));
+                        }
                     }
                 }
             }
