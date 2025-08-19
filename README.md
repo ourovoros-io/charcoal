@@ -14,6 +14,8 @@ See the [Rust Install](https://www.rust-lang.org/tools/install) page for install
 
 ## Usage
 
+The tool requires that the input directory is a valid solidity project. Currently the tools supports Foundry and Hardhat.
+
 `cargo run --release -- [OPTIONS]`
 
 | Flags | |
@@ -23,9 +25,9 @@ See the [Rust Install](https://www.rust-lang.org/tools/install) page for install
 
 | Options | |
 |-|-|
-| `-d`, `--definition-name <definition-name>` | The name of the specific definition to translate. (Optional; Leave unused for all) |
-| `-o`, `--output-directory <output-directory>` | The path to save the translated Forc project to. (Optional; Must be a directory) |
-| `-t`, `--target <target>` | The Solidity target file or folder to translate. |
+| `-i`, `--input <input directory>` | The input directory for the project to be translated. The input must be a valid project root. |
+| `-o`, `--output-directory <output-directory>` | The path to save the translated Forc project to. (Optional; Must be a directory). |
+| `-n`, `--name <target>` | The name of the generated Sway project. |
 
 > [!warning]
 >

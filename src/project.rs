@@ -1,7 +1,5 @@
-use crate::{errors::Error, sway, translate::*, utils};
-use convert_case::Case;
-use num_bigint::BigUint;
-use num_traits::One;
+use crate::{cli::Args, error::Error, framework::Framework, ir, sway, translate::*, wrapped_err};
+use convert_case::{Case, Casing};
 use solang_parser::pt as solidity;
 use std::{
     cell::RefCell,
@@ -10,91 +8,373 @@ use std::{
     rc::Rc,
 };
 
-/// Represents the type of project as [ProjectKind] default is [ProjectKind::Unknown]
-#[derive(Clone, Debug, Default)]
-pub enum ProjectKind {
-    Foundry {
-        remappings: HashMap<String, String>,
-    },
-    Hardhat,
-    Brownie {
-        remappings: HashMap<String, String>,
-    },
-    Truffle,
-    Dapp,
-    #[default]
-    Unknown,
-}
-
-impl ProjectKind {
-    pub const FOUNDRY_CONFIG_FILE: &'static str = "foundry.toml";
-    pub const HARDHAT_CONFIG_FILE: &'static str = "hardhat.config.js";
-    pub const HARDHAT_CONFIG_FILE_TS: &'static str = "hardhat.config.ts";
-    pub const BROWNIE_CONFIG_FILE: &'static str = "brownie-config.yaml";
-    pub const TRUFFLE_CONFIG_FILE: &'static str = "truffle-config.js";
-    pub const DAPP_CONFIG_FILE: &'static str = "Dappfile";
-}
-
-#[derive(Default)]
 pub struct Project {
-    pub kind: ProjectKind,
+    pub options: Args,
+    pub contracts_path: PathBuf,
+    pub framework: Framework,
+    pub queue: Vec<PathBuf>,
     pub line_ranges: HashMap<PathBuf, Vec<(usize, usize)>>,
-    pub solidity_source_units: Rc<RefCell<HashMap<PathBuf, solidity::SourceUnit>>>,
-    pub translated_definitions: Vec<TranslatedDefinition>,
+    pub solidity_source_units: HashMap<PathBuf, solidity::SourceUnit>,
+    pub translated_modules: Vec<Rc<RefCell<ir::Module>>>,
 }
 
 impl Project {
-    /// Attempts to parse the file from the supplied `path`.
-    #[inline]
-    pub fn parse_solidity_source_unit<P: AsRef<Path>>(&mut self, path: P) -> Result<(), Error> {
-        if !path.as_ref().exists() {
-            return Err(Error::Wrapped(Box::new(
-                std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
-                    format!("File not found: {}", path.as_ref().to_string_lossy()),
-                )
-            )));
+    pub fn new(options: Args, framework: Framework) -> Result<Self, Error> {
+        let contracts_path = Self::resolve_input_path(&options, &framework)?;
+
+        let mut result = Self {
+            options,
+            contracts_path,
+            framework,
+            queue: vec![],
+            line_ranges: HashMap::new(),
+            solidity_source_units: HashMap::new(),
+            translated_modules: vec![],
+        };
+
+        result.queue = result.create_usage_queue()?;
+
+        Ok(result)
+    }
+
+    /// Resolve the input path based on the remappings of the [Framework]
+    pub fn resolve_input_path(options: &Args, framework: &Framework) -> Result<PathBuf, Error> {
+        let mut contracts_path = options.input.clone();
+
+        match framework {
+            Framework::Foundry { src_path, .. } => match src_path.as_ref() {
+                Some(src_path) => contracts_path.extend(src_path),
+                None => contracts_path.push("src"),
+            },
+
+            _ => contracts_path.push("contracts"),
         }
 
-        let path = utils::get_canonical_path(path, false, false)?;
+        if !contracts_path.exists() || !contracts_path.is_dir() {
+            return Err(Error::Wrapped(Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!(
+                    "Contracts folder should be a directory: {}",
+                    contracts_path.display()
+                ),
+            ))));
+        }
 
-        let source = std::fs::read_to_string(path.clone())
-            .map_err(|e| Error::Wrapped(Box::new(e)))?;
-        
-        self.load_line_ranges(&path, source.as_str());
-        let line_ranges = self.line_ranges.get(&path).unwrap();
+        Ok(contracts_path)
+    }
+
+    /// Resolve the import path based on the remappings of the [Framework]
+    fn resolve_import_path(
+        &self,
+        source_unit_directory: &Path,
+        filename: &str,
+    ) -> Result<PathBuf, Error> {
+        match &self.framework {
+            // Remappings in foundry are handled using the same pattern
+            Framework::Foundry { remappings, .. } => {
+                for (k, v) in remappings {
+                    if filename.starts_with(k) {
+                        let project_full_path = self.options.input.join(v);
+                        return Ok(PathBuf::from(
+                            filename.replace(k, project_full_path.to_string_lossy().as_ref()),
+                        ));
+                    }
+                }
+
+                Ok(source_unit_directory.join(filename))
+            }
+
+            // Remappings in hardhat are done using the @ symbol and the node_modules folder
+            Framework::Hardhat => {
+                if filename.starts_with('.') {
+                    Ok(source_unit_directory.join(filename))
+                } else if filename.starts_with('@') {
+                    Ok(self.options.input.join("node_modules").join(filename))
+                } else {
+                    Ok(self.options.input.join(filename))
+                }
+            }
+        }
+    }
+
+    /// Recursively search for .sol files in the given directory
+    fn collect_source_unit_paths(
+        path: &Path,
+        framework: &Framework,
+    ) -> Result<Vec<PathBuf>, Error> {
+        let mut source_unit_paths = vec![];
+
+        if let Framework::Hardhat = framework {
+            // Skip the node_modules folder. Only translate things that are imported explicitly.
+            if path
+                .to_string_lossy()
+                .replace('\\', "/")
+                .contains("/node_modules/")
+            {
+                return Ok(vec![]);
+            }
+        }
+
+        if !path.is_dir() {
+            assert!(
+                path.extension().unwrap() == "sol",
+                "Only solidity files are supported."
+            );
+
+            if !path.exists() {
+                return Err(Error::Wrapped(Box::new(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!("File not found: {}", path.to_string_lossy()),
+                ))));
+            }
+
+            source_unit_paths.push(wrapped_err!(path.canonicalize())?);
+        } else {
+            for entry in wrapped_err!(std::fs::read_dir(path))? {
+                let entry = wrapped_err!(entry)?;
+                let path = entry.path();
+
+                if path.is_dir() {
+                    for source_unit_path in Self::collect_source_unit_paths(&path, framework)? {
+                        if !source_unit_paths.contains(&source_unit_path) {
+                            source_unit_paths.push(source_unit_path);
+                        }
+                    }
+                    continue;
+                }
+
+                if let Some(extension) = path.extension() {
+                    if extension == "sol" {
+                        source_unit_paths.push(wrapped_err!(path.canonicalize())?);
+                    }
+                }
+            }
+        }
+
+        Ok(source_unit_paths)
+    }
+
+    fn create_usage_queue(&mut self) -> Result<Vec<PathBuf>, Error> {
+        let paths = Self::collect_source_unit_paths(&self.contracts_path, &self.framework)?;
+
+        // Build a mapping of file paths to import paths, and file paths to the number of times that that file is imported from another file
+        let mut import_paths = HashMap::new();
+        let mut import_counts = HashMap::new();
+
+        fn collect_imports(
+            project: &mut Project,
+            path: &Path,
+            import_paths: &mut HashMap<PathBuf, Vec<PathBuf>>,
+            import_counts: &mut HashMap<PathBuf, i32>,
+        ) {
+            import_counts.entry(path.into()).or_insert(0);
+            let ast = project.parse_solidity_source_unit(path).cloned().unwrap();
+
+            if !import_paths.contains_key(path) {
+                let paths = project.get_import_paths(&ast, path).unwrap();
+
+                import_paths.insert(path.into(), paths.clone());
+
+                for import_path in paths.iter() {
+                    collect_imports(project, import_path, import_paths, import_counts);
+                    *import_counts.entry(import_path.clone()).or_insert(0) += 1;
+                }
+            }
+        }
+
+        for path in paths.iter() {
+            collect_imports(self, path, &mut import_paths, &mut import_counts);
+        }
+
+        // Start with all the files that have an import count of 0 (as in they are never imported by another file)
+        // When visiting a file you visit each of its imports first, inserting them higher in the queue before inserting the current file
+        // After visiting each import path, add the path of the current file
+        fn queue_imports(
+            project: &mut Project,
+            import_paths: &HashMap<PathBuf, Vec<PathBuf>>,
+            path: &Path,
+            queue: &mut Vec<PathBuf>,
+        ) {
+            let current_import_paths = import_paths.get(path).unwrap();
+
+            for import_path in current_import_paths.iter() {
+                queue_imports(project, import_paths, import_path, queue);
+            }
+
+            if !queue.iter().any(|p| p == path) {
+                queue.push(path.into());
+            }
+        }
+
+        let mut paths = import_counts
+            .iter()
+            .filter(|&(_, x)| *x == 0)
+            .map(|(x, _)| x.clone())
+            .collect::<Vec<_>>();
+
+        paths.sort();
+
+        let mut queue = vec![];
+
+        for path in paths {
+            queue_imports(self, &import_paths, &path, &mut queue);
+        }
+
+        Ok(queue)
+    }
+
+    /// Returns all the contract imports
+    fn get_contract_imports(source_unit: &solidity::SourceUnit) -> Option<Vec<solidity::Import>> {
+        let imports: Vec<solidity::Import> = source_unit
+            .0
+            .iter()
+            .filter_map(|part| match part {
+                solidity::SourceUnitPart::ImportDirective(import) => Some(import),
+                _ => None,
+            })
+            .cloned()
+            .collect();
+
+        (!imports.is_empty()).then_some(imports)
+    }
+
+    fn get_import_paths(
+        &mut self,
+        ast: &solidity::SourceUnit,
+        source_unit_path: &Path,
+    ) -> Result<Vec<PathBuf>, Error> {
+        let mut import_paths = Vec::new();
+        if let Some(import_directives) = Self::get_contract_imports(ast) {
+            for import_directive in &import_directives {
+                let import_path = match import_directive {
+                    solang_parser::pt::Import::Plain(import_path, _) => import_path,
+                    solang_parser::pt::Import::GlobalSymbol(import_path, _, _) => import_path,
+                    solang_parser::pt::Import::Rename(import_path, _, _) => import_path,
+                };
+
+                let import_path = match import_path {
+                    solang_parser::pt::ImportPath::Filename(path) => {
+                        std::path::PathBuf::from(path.to_string())
+                    }
+                    solang_parser::pt::ImportPath::Path(path) => {
+                        std::path::PathBuf::from(path.to_string())
+                    }
+                };
+
+                // Clean the import path and remove quotes
+                let mut import_path = import_path.to_str().unwrap().replace('\"', "");
+
+                // If we have detected a framework we need to resolve the path based on the remappings if found
+                import_path = self
+                    .resolve_import_path(source_unit_path.parent().unwrap(), &import_path)?
+                    .to_str()
+                    .unwrap()
+                    .to_string();
+
+                // Normalize the import path
+                let import_path = wrapped_err!(std::fs::canonicalize(import_path))?;
+
+                import_paths.push(import_path);
+            }
+        }
+        Ok(import_paths)
+    }
+
+    pub fn canonicalize_import_path(
+        &self,
+        source_unit_directory: &Path,
+        path_string: &str,
+    ) -> Result<PathBuf, Error> {
+        let mut import_path = PathBuf::from(path_string);
+
+        if !import_path.to_string_lossy().starts_with('.') {
+            import_path = self
+                .resolve_import_path(source_unit_directory, path_string)
+                .unwrap();
+        } else {
+            import_path = source_unit_directory.join(import_path);
+        }
+
+        import_path = wrapped_err!(import_path.canonicalize()).unwrap();
+
+        if !import_path.exists() {
+            return Err(Error::Wrapped(Box::new(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("File not found: {}", import_path.to_string_lossy()),
+            ))));
+        }
+
+        Ok(import_path)
+    }
+
+    /// Attempts to parse the file from the supplied `path`.
+    #[inline]
+    fn parse_solidity_source_unit<P: AsRef<Path>>(
+        &mut self,
+        path: P,
+    ) -> Result<&solidity::SourceUnit, Error> {
+        if self.solidity_source_units.contains_key(path.as_ref()) {
+            return Ok(self.solidity_source_units.get(path.as_ref()).unwrap());
+        }
+
+        let path = wrapped_err!(path.as_ref().canonicalize())?;
+        let source = wrapped_err!(std::fs::read_to_string(path.clone()))?;
+        let line_ranges = self.load_line_ranges(&path, source.as_str());
 
         let (source_unit, _comments) = solang_parser::parse(source.as_str(), 0)
             .map_err(|e| Error::SolangDiagnostics(path.clone(), line_ranges.clone(), e))?;
 
         // TODO: do we need the comments for anything?
 
-        self.solidity_source_units.borrow_mut().insert(path, source_unit);
+        self.solidity_source_units.insert(path.clone(), source_unit);
 
-        Ok(())
+        Ok(self.solidity_source_units.get(&path).unwrap())
     }
 
     /// Loads line ranges in a specific file `path` from the provided `source` text.
     #[inline]
-    fn load_line_ranges(&mut self, path: &PathBuf, source: &str) {
+    fn load_line_ranges(&mut self, path: &PathBuf, source: &str) -> &Vec<(usize, usize)> {
+        if self.line_ranges.contains_key(path) {
+            return self.line_ranges.get(path).unwrap();
+        }
+
         let mut line_range = (0usize, 0usize);
 
         for (i, c) in source.chars().enumerate() {
             if c == '\n' {
                 line_range.1 = i;
-                self.line_ranges.entry(path.clone()).or_default().push(line_range);
+                self.line_ranges
+                    .entry(path.clone())
+                    .or_default()
+                    .push(line_range);
                 line_range = (i + 1, 0);
             }
         }
 
         if line_range.1 > line_range.0 {
-            self.line_ranges.entry(path.clone()).or_default().push(line_range);
+            self.line_ranges
+                .entry(path.clone())
+                .or_default()
+                .push(line_range);
         }
+
+        self.line_ranges.get(path).unwrap()
     }
 
     #[inline]
-    pub fn loc_to_line_and_column<P: AsRef<Path>>(&self, path: P, loc: &solidity::Loc) -> Option<(usize, usize)> {
-        let line_ranges = self.line_ranges.get(path.as_ref())?;
+    fn loc_to_line_and_column(
+        &self,
+        module: Rc<RefCell<ir::Module>>,
+        loc: &solidity::Loc,
+    ) -> Option<(usize, usize)> {
+        let path = self
+            .options
+            .input
+            .clone()
+            .join(module.borrow().path.clone())
+            .with_extension("sol");
+
+        let line_ranges = self.line_ranges.get(&path)?;
 
         let start = match loc {
             solidity::Loc::Builtin
@@ -110,85 +390,624 @@ impl Project {
                 return Some((i + 1, (start - line_start) + 1));
             }
         }
-        
+
         None
     }
 
-    pub fn collect_translated_definitions<P: AsRef<Path>>(&self, definition_name: Option<&String>, source_unit_path: P) -> Vec<TranslatedDefinition> {
-        let mut result = vec![];
-        
-        for translated_definition in self.translated_definitions.iter() {
-            if let Some(definition_name) = definition_name {
-                if translated_definition.name != *definition_name {
-                    continue;
+    #[inline]
+    pub fn loc_to_file_location_string(
+        &self,
+        module: Rc<RefCell<ir::Module>>,
+        loc: &solidity::Loc,
+    ) -> String {
+        match self.loc_to_line_and_column(module.clone(), loc) {
+            Some((line, col)) => format!(
+                "{}:{}:{}",
+                self.options
+                    .input
+                    .join(module.borrow().path.clone())
+                    .with_extension("sol")
+                    .to_string_lossy(),
+                line,
+                col
+            ),
+            None => format!(
+                "{}",
+                self.options
+                    .input
+                    .join(module.borrow().path.clone())
+                    .with_extension("sol")
+                    .to_string_lossy()
+            ),
+        }
+    }
+
+    pub fn resolve_use(&mut self, use_expr: &sway::Use) -> Option<Rc<RefCell<ir::Module>>> {
+        let sway::UseTree::Path { prefix, suffix } = &use_expr.tree else {
+            return None;
+        };
+
+        // Only check crate-local imports
+        if !prefix.is_empty() {
+            return None;
+        }
+
+        let mut use_tree = suffix.as_ref().clone();
+        let mut path = PathBuf::new();
+
+        while let sway::UseTree::Path { prefix, suffix } = &use_tree {
+            path.push(prefix);
+
+            if let sway::UseTree::Glob = suffix.as_ref() {
+                break;
+            }
+
+            use_tree = suffix.as_ref().clone();
+        }
+
+        path = path.with_extension("");
+        let mut parent_module: Option<Rc<RefCell<ir::Module>>> = None;
+        let mut first = true;
+
+        for comp in path.components() {
+            if let Component::RootDir = comp {
+                continue;
+            }
+
+            let mut comp = comp
+                .as_os_str()
+                .to_string_lossy()
+                .to_string()
+                .replace(".", "_")
+                .to_case(Case::Snake);
+
+            if first {
+                first = false;
+
+                if let "lib" | "src" | "main" = comp.as_str() {
+                    comp = format!("_{comp}");
                 }
             }
 
-            if translated_definition.path == source_unit_path.as_ref() {
-                result.push(translated_definition.clone());
+            match parent_module.clone() {
+                Some(parent) => {
+                    if let Some(module) = parent
+                        .borrow()
+                        .submodules
+                        .iter()
+                        .find(|s| s.borrow().name == comp)
+                    {
+                        parent_module = Some(module.clone());
+                    } else {
+                        return None;
+                    }
+                }
+                None => {
+                    if let Some(module) = self
+                        .translated_modules
+                        .iter()
+                        .find(|t| t.borrow().name == comp)
+                    {
+                        parent_module = Some(module.clone());
+                    } else {
+                        return None;
+                    }
+                }
             }
         }
 
-        result
+        parent_module
     }
 
-    pub fn find_definition_with_abi(&self, name: &str) -> Option<&TranslatedDefinition> {
-        if let Some(external_definition) = self.translated_definitions.iter().find(|d| d.name == name && d.abi.is_some()) {
-            return Some(external_definition);
+    pub fn find_module(&mut self, path: &Path) -> Option<Rc<RefCell<ir::Module>>> {
+        let path = PathBuf::from(path).with_extension("");
+        let mut parent_module: Option<Rc<RefCell<ir::Module>>> = None;
+
+        for comp in path.components() {
+            if let Component::RootDir = comp {
+                continue;
+            }
+
+            let mut comp = comp
+                .as_os_str()
+                .to_string_lossy()
+                .to_string()
+                .replace(".", "_")
+                .to_case(Case::Snake);
+
+            if let "lib" | "src" | "main" = comp.as_str() {
+                comp = format!("_{comp}");
+            }
+
+            match parent_module.clone() {
+                Some(parent) => {
+                    if let Some(module) = parent
+                        .borrow()
+                        .submodules
+                        .iter()
+                        .find(|s| s.borrow().name == comp)
+                    {
+                        parent_module = Some(module.clone());
+                    } else {
+                        return None;
+                    }
+                }
+                None => {
+                    if let Some(module) = self
+                        .translated_modules
+                        .iter()
+                        .find(|t| t.borrow().name == comp)
+                    {
+                        parent_module = Some(module.clone());
+                    } else {
+                        return None;
+                    }
+                }
+            }
+        }
+
+        parent_module
+    }
+
+    pub fn find_or_create_module(&mut self, path: &Path) -> Rc<RefCell<ir::Module>> {
+        let mut current_path = PathBuf::new();
+
+        let components = path
+            .components()
+            .filter(|c| !matches!(c, Component::RootDir))
+            .collect::<Vec<_>>();
+        current_path.push(components[0]);
+
+        let mut component = components[0]
+            .as_os_str()
+            .to_string_lossy()
+            .to_string()
+            .replace(".", "_")
+            .to_case(Case::Snake);
+
+        if let "lib" | "src" | "main" = component.as_str() {
+            component = format!("_{component}");
+        }
+
+        let mut parent_module = match self
+            .translated_modules
+            .iter()
+            .find(|t| t.borrow().name == component)
+        {
+            Some(result) => result.clone(),
+            None => {
+                self.translated_modules
+                    .push(Rc::new(RefCell::new(ir::Module {
+                        name: component,
+                        path: current_path.clone(),
+                        ..Default::default()
+                    })));
+
+                self.translated_modules.last().cloned().unwrap()
+            }
+        };
+
+        for component in &components[1..] {
+            current_path.push(*component);
+            let mut component = component
+                .as_os_str()
+                .to_string_lossy()
+                .to_string()
+                .replace(".", "_")
+                .to_case(Case::Snake);
+
+            if let "lib" | "src" | "main" = component.as_str() {
+                component = format!("_{component}");
+            }
+
+            let found = parent_module
+                .borrow()
+                .submodules
+                .iter()
+                .find(|t| t.borrow().name == component)
+                .cloned();
+
+            match found {
+                Some(result) => parent_module = result,
+                None => {
+                    parent_module
+                        .borrow_mut()
+                        .submodules
+                        .push(Rc::new(RefCell::new(ir::Module {
+                            name: component,
+                            path: current_path.clone(),
+                            ..Default::default()
+                        })));
+
+                    let child = parent_module.borrow().submodules.last().cloned().unwrap();
+                    parent_module = child;
+                }
+            }
+        }
+
+        parent_module
+    }
+
+    pub fn is_contract_declared(
+        &mut self,
+        module: Rc<RefCell<ir::Module>>,
+        contract_name: &str,
+    ) -> bool {
+        // Check to see if the contract was declared in the current file
+        if module
+            .borrow()
+            .contracts
+            .iter()
+            .any(|c| c.signature.to_string() == contract_name)
+        {
+            return true;
+        }
+
+        // Check all of the module's `use` statements for crate-local imports,
+        // find the module being imported, then check if the contract lives there.
+        for use_item in module.borrow().uses.iter() {
+            if let Some(found_module) = self.resolve_use(use_item)
+                && found_module
+                    .borrow()
+                    .contracts
+                    .iter()
+                    .any(|c| c.signature.to_string() == contract_name)
+            {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    pub fn find_contract(
+        &mut self,
+        module: Rc<RefCell<ir::Module>>,
+        contract_name: &str,
+    ) -> Option<Rc<RefCell<ir::Contract>>> {
+        // Check to see if the contract was defined in the current file
+        if let Some(contract) = module
+            .borrow()
+            .contracts
+            .iter()
+            .find(|c| c.signature.to_string() == contract_name)
+        {
+            return contract.implementation.clone();
+        }
+
+        // Check all of the module's `use` statements for crate-local imports,
+        // find the module being imported, then check if the contract lives there.
+        for use_item in module.borrow().uses.iter() {
+            if let Some(found_module) = self.resolve_use(use_item)
+                && let Some(contract) = self.find_contract(found_module, contract_name)
+            {
+                return Some(contract.clone());
+            }
         }
 
         None
     }
 
-    pub fn canonicalize_import_path(&self, source_unit_directory: &Path, path_string: &str) -> Result<PathBuf, Error> {
-        let mut import_path = PathBuf::from(path_string);
-
-        if !import_path.to_string_lossy().starts_with('.') {
-            import_path = self.get_project_type_path(source_unit_directory, path_string)?;
-        } else {
-            import_path = source_unit_directory.join(import_path);
-        }
-        
-        import_path = utils::get_canonical_path(import_path, false, false)?;
-        
-        if !import_path.exists() {
-            return Err(Error::Wrapped(Box::new(
-                std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
-                    format!("File not found: {}", import_path.to_string_lossy()),
-                )
-            )));
+    pub fn find_module_and_contract(
+        &mut self,
+        module: Rc<RefCell<ir::Module>>,
+        contract_name: &str,
+    ) -> Option<(Rc<RefCell<ir::Module>>, Rc<RefCell<ir::Contract>>)> {
+        // Check to see if the contract was defined in the current file
+        if let Some(contract) = module
+            .borrow()
+            .contracts
+            .iter()
+            .find(|c| c.signature.to_string() == contract_name)
+        {
+            return Some((module.clone(), contract.implementation.clone().unwrap()));
         }
 
-        Ok(import_path)
+        // Check all of the module's `use` statements for crate-local imports,
+        // find the module being imported, then check if the contract lives there.
+        for use_item in module.borrow().uses.iter() {
+            if let Some(found_module) = self.resolve_use(use_item)
+                && let Some(contract) = found_module
+                    .borrow()
+                    .contracts
+                    .iter()
+                    .find(|c| c.signature.to_string() == contract_name)
+            {
+                return Some((
+                    found_module.clone(),
+                    contract.implementation.clone().unwrap(),
+                ));
+            }
+        }
+
+        None
     }
 
-    pub fn translate(&mut self, definition_name: Option<&String>, source_unit_path: &Path) -> Result<(), Error> {
-        let solidity_source_units = self.solidity_source_units.clone();
-
-        // Ensure the source unit has been parsed
-        if !solidity_source_units.borrow().contains_key(source_unit_path) {
-            self.parse_solidity_source_unit(source_unit_path)?;
+    pub fn find_module_containing_contract(
+        &mut self,
+        module: Rc<RefCell<ir::Module>>,
+        contract_name: &str,
+    ) -> Option<Rc<RefCell<ir::Module>>> {
+        // Check to see if the contract was defined in the current file
+        if module
+            .borrow()
+            .contracts
+            .iter()
+            .any(|c| c.signature.to_string() == contract_name)
+        {
+            return Some(module.clone());
         }
-        
-        // Get the parsed source unit
-        let source_unit = solidity_source_units.borrow().get(source_unit_path).unwrap().clone();
+
+        // Check all of the module's `use` statements for crate-local imports,
+        // find the module being imported, then check if the contract lives there.
+        for use_item in module.borrow().uses.iter() {
+            if let Some(found_module) = self.resolve_use(use_item)
+                && found_module
+                    .borrow()
+                    .contracts
+                    .iter()
+                    .any(|c| c.signature.to_string() == contract_name)
+            {
+                return Some(found_module.clone());
+            }
+        }
+
+        None
+    }
+
+    pub fn is_type_definition_declared(
+        &mut self,
+        module: Rc<RefCell<ir::Module>>,
+        name: &str,
+    ) -> bool {
+        // Check to see if the type definition was defined in the current file
+        if module
+            .borrow()
+            .type_definitions
+            .iter()
+            .any(|x| x.signature.to_string() == name)
+        {
+            return true;
+        }
+
+        // Check all of the module's `use` statements for crate-local imports,
+        // find the module being imported, then check if the type definition lives there.
+        for use_item in module.borrow().uses.iter() {
+            if let Some(found_module) = self.resolve_use(use_item)
+                && found_module
+                    .borrow()
+                    .type_definitions
+                    .iter()
+                    .any(|x| x.signature.to_string() == name)
+            {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    pub fn find_type_definition(
+        &mut self,
+        module: Rc<RefCell<ir::Module>>,
+        name: &str,
+    ) -> Option<sway::TypeDefinition> {
+        // Check to see if the type definition was defined in the current file
+        if let Some(x) = module
+            .borrow()
+            .type_definitions
+            .iter()
+            .find(|x| x.signature.to_string() == name)
+        {
+            return x.implementation.clone();
+        }
+
+        // Check all of the module's `use` statements for crate-local imports,
+        // find the module being imported, then check if the type definition lives there.
+        for use_item in module.borrow().uses.iter() {
+            if let Some(found_module) = self.resolve_use(use_item)
+                && let Some(x) = found_module
+                    .borrow()
+                    .type_definitions
+                    .iter()
+                    .find(|x| x.signature.to_string() == name)
+            {
+                return x.implementation.clone();
+            }
+        }
+
+        None
+    }
+
+    pub fn is_enum_declared(&mut self, module: Rc<RefCell<ir::Module>>, name: &str) -> bool {
+        // Check to see if the enum was defined in the current file
+        if module
+            .borrow()
+            .enums
+            .iter()
+            .any(|x| x.signature.to_string() == name)
+        {
+            return true;
+        }
+
+        // Check all of the module's `use` statements for crate-local imports,
+        // find the module being imported, then check if the enum lives there.
+        for use_item in module.borrow().uses.iter() {
+            if let Some(found_module) = self.resolve_use(use_item)
+                && found_module
+                    .borrow()
+                    .enums
+                    .iter()
+                    .any(|x| x.signature.to_string() == name)
+            {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    pub fn find_enum(&mut self, module: Rc<RefCell<ir::Module>>, name: &str) -> Option<ir::Enum> {
+        // Check to see if the enum was defined in the current file
+        if let Some(x) = module
+            .borrow()
+            .enums
+            .iter()
+            .find(|x| x.signature.to_string() == name)
+        {
+            return x.implementation.clone();
+        }
+
+        // Check all of the module's `use` statements for crate-local imports,
+        // find the module being imported, then check if the enum lives there.
+        for use_item in module.borrow().uses.iter() {
+            if let Some(found_module) = self.resolve_use(use_item)
+                && let Some(x) = found_module
+                    .borrow()
+                    .enums
+                    .iter()
+                    .find(|x| x.signature.to_string() == name)
+            {
+                return x.implementation.clone();
+            }
+        }
+
+        None
+    }
+
+    pub fn is_struct_declared(
+        &mut self,
+        module: Rc<RefCell<ir::Module>>,
+        scope: Rc<RefCell<ir::Scope>>,
+        name: &str,
+    ) -> bool {
+        // Check to see if the struct was defined in the current file
+        if module.borrow().structs.iter().any(|x| {
+            let sway::TypeName::Identifier {
+                name: struct_name,
+                generic_parameters: None,
+            } = &x.signature
+            else {
+                return false;
+            };
+
+            let storage_name = format!("Storage{}", struct_name);
+
+            struct_name == name || storage_name == name
+        }) {
+            return true;
+        }
+
+        // Check to see if the struct is a storage struct
+        let contract_name = scope.borrow().get_contract_name();
+        if let Some(contract_name) = contract_name
+            && let Some(contract) = self.find_contract(module.clone(), &contract_name)
+            && let Some(x) = contract.borrow().storage_struct.as_ref()
+            && x.borrow().name == name
+        {
+            return true;
+        }
+
+        // Check all of the module's `use` statements for crate-local imports,
+        // find the module being imported, then check if the struct lives there.
+        for use_item in module.borrow().uses.iter() {
+            if let Some(found_module) = self.resolve_use(use_item)
+                && self.is_struct_declared(found_module.clone(), scope.clone(), name)
+            {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    pub fn find_struct(
+        &mut self,
+        module: Rc<RefCell<ir::Module>>,
+        scope: Rc<RefCell<ir::Scope>>,
+        name: &str,
+    ) -> Option<Rc<RefCell<ir::Struct>>> {
+        // Check to see if the struct was defined in the current file
+        if let Some(x) = module.borrow().structs.iter().find(|x| {
+            let Some(implementation) = x.implementation.as_ref() else {
+                return false;
+            };
+
+            implementation.borrow().memory.name == name
+                || implementation.borrow().storage.name == name
+        }) {
+            return x.implementation.clone();
+        }
+
+        // Check to see if the struct is a storage struct
+        for contract in module.borrow().contracts.iter() {
+            if let Some(contract) = contract.implementation.as_ref()
+                && let Some(storage_struct) = contract.borrow().storage_struct.as_ref()
+                && storage_struct.borrow().name == name
+            {
+                return Some(storage_struct.clone());
+            }
+        }
+
+        // Check all of the module's `use` statements for crate-local imports,
+        // find the module being imported, then check if the struct lives there.
+        for use_item in module.borrow().uses.iter() {
+            if let Some(found_module) = self.resolve_use(use_item)
+                && let Some(struct_definition) =
+                    self.find_struct(found_module.clone(), scope.clone(), name)
+            {
+                return Some(struct_definition.clone());
+            }
+        }
+
+        None
+    }
+
+    pub fn translate(&mut self) -> Result<(), Error> {
+        for source_unit_path in self.queue.clone() {
+            self.translate_file(&source_unit_path)?;
+        }
+
+        match self.options.output_directory.clone() {
+            Some(_) => {
+                self.generate_forc_project()?;
+            }
+
+            None => {
+                for module in self.translated_modules.iter() {
+                    println!(
+                        "// Translated from {}",
+                        module.borrow().path.to_string_lossy()
+                    );
+
+                    let module: sway::Module = module.borrow().clone().into();
+                    println!("{}", sway::TabbedDisplayer(&module));
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn translate_file(&mut self, source_unit_path: &Path) -> Result<(), Error> {
+        // Parse the source unit
+        let source_unit = self.parse_solidity_source_unit(source_unit_path)?;
 
         // Collect toplevel items ahead of time for contextual reasons
         let mut import_directives = vec![];
-        let mut toplevel_using_directives = vec![];
-        let mut toplevel_type_definitions = vec![];
-        let mut toplevel_enums = vec![];
-        let mut toplevel_structs = vec![];
-        let mut toplevel_events = vec![];
-        let mut toplevel_errors = vec![];
-        let mut toplevel_functions = vec![];
-        let mut toplevel_variables = vec![];
-        let mut contract_names = vec![];
+        let mut using_directives = vec![];
+        let mut type_definitions = vec![];
+        let mut enum_definitions = vec![];
+        let mut struct_definitions = vec![];
+        let mut event_definitions = vec![];
+        let mut error_definitions = vec![];
+        let mut function_definitions = vec![];
+        let mut variable_definitions = vec![];
+        let mut contract_definitions = vec![];
 
         for source_unit_part in source_unit.0.iter() {
             match source_unit_part {
-                solidity::SourceUnitPart::PragmaDirective(_) => {
+                solidity::SourceUnitPart::PragmaDirective(_, _, _) => {
                     // NOTE: we don't need to do anything with pragma directives
                 }
 
@@ -197,43 +1016,43 @@ impl Project {
                 }
 
                 solidity::SourceUnitPart::ContractDefinition(contract_definition) => {
-                    contract_names.push(contract_definition.name.as_ref().unwrap().name.clone());
+                    contract_definitions.push(contract_definition.clone());
                 }
 
                 solidity::SourceUnitPart::EnumDefinition(enum_definition) => {
-                    toplevel_enums.push(enum_definition.as_ref().clone());
+                    enum_definitions.push(enum_definition.as_ref().clone());
                 }
 
                 solidity::SourceUnitPart::StructDefinition(struct_definition) => {
-                    toplevel_structs.push(struct_definition.as_ref().clone());
+                    struct_definitions.push(struct_definition.as_ref().clone());
                 }
 
                 solidity::SourceUnitPart::EventDefinition(event_definition) => {
-                    toplevel_events.push(event_definition.as_ref().clone());
+                    event_definitions.push(event_definition.as_ref().clone());
                 }
 
                 solidity::SourceUnitPart::ErrorDefinition(error_definition) => {
-                    toplevel_errors.push(error_definition.as_ref().clone());
+                    error_definitions.push(error_definition.as_ref().clone());
                 }
 
                 solidity::SourceUnitPart::FunctionDefinition(function_definition) => {
-                    toplevel_functions.push(function_definition.as_ref().clone());
+                    function_definitions.push(function_definition.as_ref().clone());
                 }
 
                 solidity::SourceUnitPart::VariableDefinition(variable_definition) => {
-                    toplevel_variables.push(variable_definition.as_ref().clone());
+                    variable_definitions.push(variable_definition.as_ref().clone());
                 }
 
                 solidity::SourceUnitPart::TypeDefinition(type_definition) => {
-                    toplevel_type_definitions.push(type_definition.as_ref().clone());
+                    type_definitions.push(type_definition.as_ref().clone());
                 }
 
                 solidity::SourceUnitPart::Annotation(_) => {
                     // NOTE: we don't need to do anything with annotations
                 }
-                
+
                 solidity::SourceUnitPart::Using(using_directive) => {
-                    toplevel_using_directives.push(using_directive.as_ref().clone());
+                    using_directives.push(using_directive.as_ref().clone());
                 }
 
                 solidity::SourceUnitPart::StraySemicolon(_) => {
@@ -242,533 +1061,1005 @@ impl Project {
             }
         }
 
-        //
-        // TODO: Build the symbol list by flattening the imported symbols and listing everything in
-        //       the source file (contracts, structs, enums, functions, etc)
-        //
+        let mut sorted_contract_definitions = vec![];
+        let mut sorted_inherited_definitions = vec![];
 
-        let mut translated_definition = TranslatedDefinition {
-            path: source_unit_path.into(),
-            ..Default::default()
-        };
+        for contract_definition in contract_definitions.iter() {
+            for base in contract_definition.base.iter() {
+                let inherited_name = base
+                    .name
+                    .identifiers
+                    .iter()
+                    .map(|i| i.name.clone())
+                    .collect::<Vec<_>>()
+                    .join(".");
 
-        // Translate import directives
-        translate_import_directives(self, &mut translated_definition, import_directives.as_slice())?;
-
-        // Translate toplevel using directives
-        for using_directive in toplevel_using_directives.iter() {
-            translate_using_directive(self, &mut translated_definition, using_directive)?;
-        }
-
-        // Translate toplevel type definitions
-        for type_definition in toplevel_type_definitions.iter() {
-            translate_type_definition(self, &mut translated_definition, type_definition)?;
-        }
-
-        // Translate toplevel enum definitions
-        for enum_definition in toplevel_enums.iter() {
-            translate_enum_definition(self, &mut translated_definition, enum_definition)?;
-        }
-
-        // Collect toplevel struct names ahead of time for contextual reasons
-        for struct_definition in toplevel_structs.iter() {
-            let struct_name = struct_definition.name.as_ref().unwrap().name.clone();
-
-            if !translated_definition.struct_names.contains(&struct_name) {
-                translated_definition.struct_names.push(struct_name);
+                if let Some(contract) = contract_definitions
+                    .iter()
+                    .find(|c| c.name.as_ref().unwrap().name == inherited_name)
+                {
+                    sorted_inherited_definitions.push(contract.clone());
+                }
+            }
+            if !sorted_inherited_definitions.contains(contract_definition) {
+                sorted_contract_definitions.push(contract_definition.clone());
             }
         }
 
-        // Translate toplevel struct definitions
-        for struct_definition in toplevel_structs.iter() {
-            translate_struct_definition(self, &mut translated_definition, struct_definition)?;
+        contract_definitions.clear();
+
+        for definition in sorted_inherited_definitions {
+            if !contract_definitions.contains(&definition) {
+                contract_definitions.push(definition);
+            }
         }
 
-        // Translate toplevel event definitions
-        for event_definition in toplevel_events.iter() {
-            translate_event_definition(self, &mut translated_definition, event_definition)?;
+        for definition in sorted_contract_definitions {
+            if !contract_definitions.contains(&definition) {
+                contract_definitions.push(definition);
+            }
         }
 
-        // Translate toplevel error definitions
-        for error_definition in toplevel_errors.iter() {
-            translate_error_definition(self, &mut translated_definition, error_definition)?;
+        // Create a new module to store the translated items in
+        let module = self.find_or_create_module(
+            &PathBuf::from(
+                source_unit_path
+                    .to_string_lossy()
+                    .trim_start_matches(&self.options.input.to_string_lossy().to_string()),
+            )
+            .with_extension(""),
+        );
+
+        //
+        // Translate each source unit part
+        //
+
+        translate_import_directives(self, module.clone(), &import_directives)?;
+
+        // Collect the type definition signatures ahead of time
+        let type_definitions_index = module.borrow().type_definitions.len();
+
+        for type_definition in type_definitions.iter() {
+            module.borrow_mut().type_definitions.push(ir::Item {
+                signature: sway::TypeName::create_identifier(type_definition.name.name.as_str()),
+                implementation: None,
+            });
         }
 
-        // Collect each toplevel function ahead of time for contextual reasons
-        for function_definition in toplevel_functions.iter() {
+        // Collect the enum signatures ahead of time
+        let enums_index = module.borrow().enums.len();
 
-            let is_modifier = matches!(function_definition.ty, solidity::FunctionTy::Modifier);
+        for enum_definition in enum_definitions.iter() {
+            module.borrow_mut().enums.push(ir::Item {
+                signature: sway::TypeName::create_identifier(
+                    enum_definition.name.as_ref().unwrap().name.as_str(),
+                ),
+                implementation: None,
+            });
+        }
 
-            if is_modifier {
+        // Collect the struct signatures ahead of time
+        let structs_index = module.borrow().structs.len();
+
+        for struct_definition in struct_definitions.iter() {
+            module.borrow_mut().structs.push(ir::Item {
+                signature: sway::TypeName::create_identifier(
+                    struct_definition.name.as_ref().unwrap().name.as_str(),
+                ),
+                implementation: None,
+            });
+        }
+
+        // Collect the modifier signatures ahead of time
+        for function_definition in function_definitions.iter() {
+            if !matches!(function_definition.ty, solidity::FunctionTy::Modifier) {
+                continue;
+            }
+            let function_name = translate_function_name(
+                self,
+                module.clone(),
+                None,
+                function_definition.name.as_ref().map(|n| n.name.as_str()),
+                &function_definition.params,
+                &function_definition.ty,
+            );
+
+            let parameters =
+                translate_function_parameters(self, module.clone(), None, function_definition);
+
+            module.borrow_mut().modifiers.push(ir::Item {
+                signature: sway::TypeName::Function {
+                    old_name: function_name.old_name,
+                    new_name: function_name.abi_fn_name,
+                    generic_parameters: None,
+                    parameters,
+                    storage_struct_parameter: None,
+                    return_type: translate_return_type_name(
+                        self,
+                        module.clone(),
+                        Rc::new(RefCell::new(ir::Scope::new(None, None, None))),
+                        function_definition,
+                    )
+                    .map(Box::new),
+                },
+                implementation: None,
+            })
+        }
+
+        // Collect the function signatures ahead of time
+        for function_definition in function_definitions.iter() {
+            if matches!(function_definition.ty, solidity::FunctionTy::Modifier) {
                 continue;
             }
 
-            // Add the toplevel function to the list of toplevel functions for the toplevel scope
-            let function = translate_function_declaration(self, &mut translated_definition, function_definition)?;
-            
-            let sway::TypeName::Function { parameters: function_parameters, return_type: function_return_type, .. } = &function.type_name else {
-                panic!("Invalid function type name: {:#?}", function.type_name)
-            };
-            
-            let mut function_exists = false;
-            
-            for f in translated_definition.toplevel_scope.borrow().functions.iter() {
-                let mut f = f.borrow_mut();
+            let declaration =
+                translate_function_declaration(self, module.clone(), None, None, function_definition)?;
 
-                let sway::TypeName::Function { parameters: f_parameters, return_type: f_return_type, .. } = &f.type_name else {
-                    panic!("Invalid function type name: {:#?}", f.type_name)
-                };
-                
-                if ((!f.old_name.is_empty() && (f.old_name == function.old_name)) || (f.new_name == function.new_name))
-                    && f_parameters == function_parameters
-                    && f_return_type == function_return_type
-                {
-                    f.new_name.clone_from(&function.new_name);
-                    function_exists = true;
-                    break;
+            module.borrow_mut().functions.push(ir::Item {
+                signature: declaration.type_name,
+                implementation: None,
+            });
+        }
+
+        // Collect the contract signatures ahead of time
+        let contracts_index = module.borrow().contracts.len();
+
+        for contract_definition in contract_definitions.iter() {
+            let contract_name = contract_definition.name.as_ref().unwrap().name.as_str();
+
+            module.borrow_mut().contracts.push(ir::Item {
+                signature: sway::TypeName::create_identifier(contract_name),
+                implementation: None,
+            });
+        }
+
+        // Translate toplevel variable definitions
+        for variable_definition in variable_definitions {
+            let state_variable_info =
+                translate_state_variable(self, module.clone(), None, &variable_definition)?;
+            assert!(state_variable_info.deferred_initializations.is_empty());
+            assert!(state_variable_info.mapping_names.is_empty());
+        }
+
+        // Collect the contract's toplevel item signatures ahead of time
+        for (i, contract_definition) in contract_definitions.iter().enumerate() {
+            let contract_name = contract_definition.name.as_ref().unwrap().name.as_str();
+
+            let mut inherits = vec![];
+
+            for base in contract_definition.base.iter() {
+                if base.args.as_ref().is_some() {
+                    //
+                    // TODO:
+                    // set up a base constructor call
+                    //
+
+                    // print!("WARNING: Unused contract base constructor args: `{base}`; ");
+                    // println!("This is for inherits and base constructor calls.")
                 }
+
+                assert!(base.name.identifiers.len() == 1);
+
+                inherits.push(sway::TypeName::create_identifier(
+                    base.name.identifiers[0].name.as_str(),
+                ));
             }
 
-            if !function_exists {
-                translated_definition.toplevel_scope.borrow_mut().functions.push(Rc::new(RefCell::new(function)));
-            }
-        }
+            let contract = Rc::new(RefCell::new(ir::Contract::new(
+                contract_name,
+                contract_definition.ty.clone(),
+                inherits.as_slice(),
+            )));
 
-        // Translate toplevel function definitions
-        for function_definition in toplevel_functions.iter() {
-            translate_function_definition(self, &mut translated_definition, function_definition)?;
-        }
-        
-        let finalize_mappings = |project: &mut Project, translated_definition: &mut TranslatedDefinition| {
-            if translated_definition.mapping_names.is_empty() {
-                return;
-            }
-            
-            let mut constructor_body = translated_definition.get_constructor_fn().body.clone().unwrap();
-            
-            let namespace_name = translated_definition.get_storage_namespace_name();
+            let mut type_definitions = vec![];
+            let mut enum_definitions = vec![];
+            let mut struct_definitions = vec![];
+            let mut function_definitions = vec![];
+            let mut variable_definitions = vec![];
 
-            // Insert constructor call guard if necessary
-            if constructor_body.statements.is_empty() {
-                let prefix = translate_naming_convention(translated_definition.name.as_str(), Case::Snake);
-                let constructor_called_variable_name =  translate_storage_name(project, translated_definition, format!("{prefix}_constructor_called").as_str());
-
-                // Add the `constructor_called` field to the storage block
-                translated_definition.get_storage_namespace().fields.push(sway::StorageField {
-                    name: constructor_called_variable_name.clone(),
-                    type_name: sway::TypeName::Identifier {
-                        name: "bool".into(),
-                        generic_parameters: None,
-                    },
-                    value: sway::Expression::from(sway::Literal::Bool(false)),
-                });                
-
-                // Add the `constructor_called` requirement to the beginning of the function
-                // require(!storage.initialized.read(), "The Contract constructor has already been called");
-                constructor_body.statements.insert(0, sway::Statement::from(sway::Expression::create_function_calls(None, &[
-                    ("require", Some((None, vec![
-                        sway::Expression::from(sway::UnaryExpression {
-                            operator: "!".into(),
-                            expression: sway::Expression::create_function_calls(None, &[
-                                (format!("storage::{namespace_name}").as_str(), None),
-                                (constructor_called_variable_name.as_str(), None),
-                                ("read", Some((None, vec![]))),
-                            ])
-                        }),
-                        sway::Expression::from(sway::Literal::String(
-                            format!("The {} constructor has already been called", translated_definition.name)
-                        )),
-                    ]))),
-                ])));
-
-                // Set the `constructor_called` storage field to `true` at the end of the function
-                // storage.initialized.write(true);
-                constructor_body.statements.push(sway::Statement::from(sway::Expression::create_function_calls(None, &[
-                    (format!("storage::{namespace_name}").as_str(), None),
-                    (constructor_called_variable_name.as_str(), None),
-                    ("write", Some((None, vec![
-                        sway::Expression::from(sway::Literal::Bool(true)),
-                    ]))),
-                ])));
-            }
-
-            // Insert statements into the constructor to initialize each struct mapping
-            for (mapping_name, field_names) in translated_definition.mapping_names.iter() {
-                let mut i = 0;
-
-                // Skip `require` statements in the constructor
-                while i < constructor_body.statements.len() {
-                    let sway::Statement::Expression(sway::Expression::FunctionCall(f)) = &constructor_body.statements[i] else { break };
-                    let Some(id) = f.function.as_identifier() else { break }; 
-                    if id != "require" {
-                        break;
+            for part in contract_definition.parts.iter() {
+                match part {
+                    solidity::ContractPart::TypeDefinition(type_definition) => {
+                        type_definitions.push(type_definition.clone());
                     }
-                    i += 1;
-                }
 
-                // storage.x_instance_count.write(i + 1);
-                constructor_body.statements.insert(i, sway::Statement::from(sway::Expression::create_function_calls(None, &[
-                    (format!("storage::{namespace_name}").as_str(), None),
-                    (format!("{mapping_name}_instance_count").as_str(), None),
-                    ("write", Some((None, vec![sway::Expression::from(sway::BinaryExpression { 
-                        operator: "+".into(),
-                        lhs: sway::Expression::create_identifier("i".to_string()),
-                        rhs: sway::Expression::from(sway::Literal::DecInt(BigUint::one(), None))
-                    })])))
-                ])));   
+                    solidity::ContractPart::StructDefinition(struct_definition) => {
+                        struct_definitions.push(struct_definition.clone())
+                    }
 
-                // let i = storage.x_instance_count.read();
-                constructor_body.statements.insert(i, sway::Statement::from(sway::Let { 
-                    pattern: sway::LetPattern::Identifier(sway::LetIdentifier { 
-                        is_mutable: false,
-                        name: "i".to_string()
-                    }),
-                    type_name: None,
-                    value: sway::Expression::create_function_calls(None, &[
-                        (format!("storage::{namespace_name}").as_str(), None),
-                        (format!("{mapping_name}_instance_count").as_str(), None),
-                        ("read", Some((None, vec![])))
-                    ])
-                }));
+                    solidity::ContractPart::EnumDefinition(enum_definition) => {
+                        enum_definitions.push(enum_definition.clone())
+                    }
 
-                // HACK: Skip forward two statements
-                i += 2;
+                    solidity::ContractPart::FunctionDefinition(function_definition) => {
+                        function_definitions.push(function_definition.clone());
+                    }
 
-                for field_name in field_names.iter().rev() {
-                    // storage.my_struct.my_mapping.write(Some(my_mapping));
-                    constructor_body.statements.insert(i, sway::Statement::from(sway::Expression::create_function_calls(None, &[
-                        (format!("storage::{namespace_name}").as_str(), None),
-                        (mapping_name.as_str(), None),
-                        (field_name.as_str(), None),
-                        ("write", Some((None, vec![
-                            sway::Expression::create_function_calls(None, &[
-                                ("Some", Some((None, vec![
-                                    sway::Expression::create_identifier(field_name.to_string()),
-                                ]))),
-                            ]),
-                        ]))),
-                    ])));
+                    solidity::ContractPart::VariableDefinition(variable_definition) => {
+                        let is_constant = variable_definition
+                            .attrs
+                            .iter()
+                            .any(|x| matches!(x, solidity::VariableAttribute::Constant(_)));
 
-                    // let my_mapping = storage.my_struct_mappings.get(i);
-                    constructor_body.statements.insert(i, sway::Statement::from(
-                        sway::Let { 
-                            pattern: sway::LetPattern::Identifier(sway::LetIdentifier { 
-                                is_mutable: false,
-                                name: field_name.clone()
-                            }),
-                            type_name: None,
-                            value: sway::Expression::create_function_calls(None, &[
-                                (format!("storage::{namespace_name}").as_str(), None),
-                                (format!("{mapping_name}_{field_name}s").as_str(), None),
-                                ("get", Some((None, vec![sway::Expression::create_identifier("i".to_string())])))
-                            ])
+                        let is_immutable = variable_definition
+                            .attrs
+                            .iter()
+                            .any(|x| matches!(x, solidity::VariableAttribute::Immutable(_)));
+
+                        let is_configurable = is_immutable && !is_constant;
+
+                        // Only translate constant and configurable variables ahead of time.
+                        // Regular state variables are translated later.
+                        if is_constant || is_configurable {
+                            variable_definitions.push(variable_definition);
                         }
-                    ));
+                    }
+
+                    _ => {}
                 }
             }
-            
-            // Set up constructor attributes
-            let constructor_attrs = {
-                let constructor_fn = translated_definition.get_constructor_fn();
 
-                *constructor_fn.body.as_mut().unwrap() = constructor_body;
+            // Collect the signatures of the contract type definitions
+            let type_definitions_index = module.borrow().type_definitions.len();
 
-                if constructor_fn.attributes.is_none() {
-                    constructor_fn.attributes = Some(sway::AttributeList::default());
-                }
+            for type_definition in type_definitions.iter() {
+                module.borrow_mut().type_definitions.push(ir::Item {
+                    signature: sway::TypeName::create_identifier(
+                        type_definition.name.name.as_str(),
+                    ),
+                    implementation: None,
+                });
+            }
 
-                let Some(attributes) = constructor_fn.attributes.as_mut() else { unreachable!() };
+            // Collect the signatures of the contract enum definitions
+            let enums_index = module.borrow().enums.len();
 
-                if !attributes.attributes.iter().any(|a| a.name == "storage") {
-                    attributes.attributes.push(sway::Attribute { 
-                        name: "storage".to_string(),
-                        parameters: None
+            for enum_definition in enum_definitions.iter() {
+                module.borrow_mut().enums.push(ir::Item {
+                    signature: sway::TypeName::create_identifier(
+                        enum_definition.name.as_ref().unwrap().name.as_str(),
+                    ),
+                    implementation: None,
+                });
+            }
+
+            // Collect the signatures of the contract struct definitions
+            let structs_index = module.borrow().structs.len();
+
+            for struct_definition in struct_definitions.iter() {
+                module.borrow_mut().structs.push(ir::Item {
+                    signature: sway::TypeName::create_identifier(
+                        struct_definition.name.as_ref().unwrap().name.as_str(),
+                    ),
+                    implementation: None,
+                });
+            }
+
+            // Translate contract constants and immutables
+            let mut state_variable_infos = vec![];
+            for variable_definition in variable_definitions.iter() {
+                let state_variable_info = translate_state_variable(
+                    self,
+                    module.clone(),
+                    Some(contract_name),
+                    variable_definition,
+                )?;
+
+                assert!(state_variable_info.deferred_initializations.is_empty());
+                assert!(state_variable_info.mapping_names.is_empty());
+
+                state_variable_infos.push(state_variable_info);
+            }
+
+            let scope = Rc::new(RefCell::new(ir::Scope::new(
+                Some(contract_name),
+                None,
+                None,
+            )));
+
+            for state_variable_info in state_variable_infos {
+                let Some((abi_fn, toplevel_fn, impl_fn)) =
+                    generate_state_variable_getter_functions(
+                        self,
+                        module.clone(),
+                        scope.clone(),
+                        Some(contract_name),
+                        &state_variable_info,
+                    )?
+                else {
+                    continue;
+                };
+
+                contract.borrow_mut().abi.functions.push(abi_fn);
+
+                if let Some(function) = module
+                    .borrow_mut()
+                    .functions
+                    .iter_mut()
+                    .find(|f| f.signature == toplevel_fn.get_type_name())
+                {
+                    if let Some(function_implementation) = function.implementation.as_ref() {
+                        assert!(*function_implementation == toplevel_fn);
+                    } else {
+                        assert!(function.implementation.is_none());
+                        function.implementation = Some(toplevel_fn);
+                    }
+                } else {
+                    module.borrow_mut().functions.push(ir::Item {
+                        signature: toplevel_fn.get_type_name(),
+                        implementation: Some(toplevel_fn),
                     });
                 }
 
-                let Some(storage_attr) = attributes.attributes.iter_mut().find(|a| a.name == "storage") else { unreachable!() };
-                if storage_attr.parameters.is_none() {
-                    storage_attr.parameters = Some(Vec::default());
-                }
-
-                let Some(parameters) = storage_attr.parameters.as_mut() else { unreachable!() };
-                
-                if !parameters.iter().any(|p| p == "read") {
-                    parameters.push("read".to_string());
-                }
-
-                if !parameters.iter().any(|p| p == "write") {
-                    parameters.push("write".to_string());
-                }
-
-                Some(attributes.clone())
-            };
-
-            let abi = translated_definition.get_abi();
-
-            if let Some(abi_constructor) = abi.functions.iter_mut().find(|f| f.name == "constructor") {
-                abi_constructor.attributes = constructor_attrs;
+                contract
+                    .borrow_mut()
+                    .abi_impl
+                    .items
+                    .push(sway::ImplItem::Function(impl_fn));
             }
-        };
 
-        // Translate any contract definitions in the file
-        for source_unit_part in source_unit.0.iter() {
-            let solidity::SourceUnitPart::ContractDefinition(contract_definition) = source_unit_part else { continue };
+            // Translate contract type definitions
+            for (i, type_definition) in type_definitions.into_iter().enumerate() {
+                module.borrow_mut().type_definitions[type_definitions_index + i].implementation =
+                    Some(translate_type_definition(
+                        self,
+                        module.clone(),
+                        Some(contract_name),
+                        type_definition.as_ref(),
+                    )?);
+            }
 
-            if let Some(definition_name) = definition_name {
-                if contract_definition.name.as_ref().unwrap().name != *definition_name {
+            // Translate contract enum definitions
+            for (i, enum_definition) in enum_definitions.into_iter().enumerate() {
+                module.borrow_mut().enums[enums_index + i].implementation = Some(
+                    translate_enum_definition(self, module.clone(), &enum_definition)?,
+                );
+            }
+
+            // Translate contract struct definitions
+            for (i, struct_definition) in struct_definitions.into_iter().enumerate() {
+                module.borrow_mut().structs[structs_index + i].implementation =
+                    Some(translate_struct_definition(
+                        self,
+                        module.clone(),
+                        Some(contract_name),
+                        struct_definition.as_ref(),
+                    )?);
+            }
+
+            // Translate abi modifiers
+            for function_definition in function_definitions.iter() {
+                if !matches!(function_definition.ty, solidity::FunctionTy::Modifier) {
                     continue;
                 }
+
+                let function_names = translate_function_name(
+                    self,
+                    module.clone(),
+                    Some(contract_name),
+                    function_definition.name.as_ref().map(|n| n.name.as_str()),
+                    &function_definition.params,
+                    &function_definition.ty,
+                );
+
+                let parameters = translate_function_parameters(
+                    self,
+                    module.clone(),
+                    Some(contract_name),
+                    function_definition,
+                );
+
+                module.borrow_mut().modifiers.push(ir::Item {
+                    signature: sway::TypeName::Function {
+                        old_name: function_names.old_name,
+                        new_name: function_names.top_level_fn_name,
+                        generic_parameters: None,
+                        parameters,
+                        storage_struct_parameter: None,
+                        return_type: translate_return_type_name(
+                            self,
+                            module.clone(),
+                            scope.clone(),
+                            function_definition,
+                        )
+                        .map(Box::new),
+                    },
+                    implementation: None,
+                })
             }
 
-            let mut translated_definition = TranslatedDefinition {
-                kind: Some(contract_definition.ty.clone()),
-                name: contract_definition.name.as_ref().unwrap().name.clone(),
-                inherits: contract_definition.base.iter()
-                    .map(|b| {
-                        b.name.identifiers.iter().map(|i| i.name.clone())
-                            .collect::<Vec<_>>()
-                            .join(".")
-                    })
-                    .collect(),
-                contract_names: contract_names.clone(),
-                ..translated_definition.clone()
+            // Translate abi functions
+            for function_definition in function_definitions {
+                if matches!(function_definition.ty, solidity::FunctionTy::Modifier) {
+                    continue;
+                }
+
+                if let Some(abi_fn) = translate_abi_function(
+                    self,
+                    module.clone(),
+                    contract_name,
+                    &function_definition,
+                ) {
+                    contract.borrow_mut().abi.functions.push(abi_fn);
+                }
+
+                // Only create a toplevel function if the function has a body
+                if function_definition.body.is_none() {
+                    continue;
+                }
+
+                let declaration = translate_function_declaration(
+                    self,
+                    module.clone(),
+                    Some(contract_name),
+                    Some(&contract_definition.ty),
+                    &function_definition,
+                )?;
+
+                module.borrow_mut().functions.push(ir::Item {
+                    signature: declaration.type_name,
+                    implementation: None,
+                });
+            }
+
+            module.borrow_mut().contracts[contracts_index + i].implementation =
+                Some(contract.clone());
+        }
+
+        for (i, type_definition) in type_definitions.into_iter().enumerate() {
+            module.borrow_mut().type_definitions[type_definitions_index + i].implementation = Some(
+                translate_type_definition(self, module.clone(), None, &type_definition)?,
+            );
+        }
+
+        for (i, enum_definition) in enum_definitions.into_iter().enumerate() {
+            module.borrow_mut().enums[enums_index + i].implementation = Some(
+                translate_enum_definition(self, module.clone(), &enum_definition)?,
+            );
+        }
+
+        for (i, struct_definition) in struct_definitions.into_iter().enumerate() {
+            module.borrow_mut().structs[structs_index + i].implementation = Some(
+                translate_struct_definition(self, module.clone(), None, &struct_definition)?,
+            );
+        }
+
+        for event_definition in event_definitions {
+            translate_event_definition(self, module.clone(), None, &event_definition)?;
+        }
+
+        for error_definition in error_definitions {
+            translate_error_definition(self, module.clone(), None, &error_definition)?;
+        }
+
+        // Translate modifiers before functions
+        for function_definition in function_definitions.iter() {
+            if !matches!(function_definition.ty, solidity::FunctionTy::Modifier) {
+                continue;
+            }
+
+            translate_modifier_definition(self, module.clone(), None, function_definition)?;
+        }
+
+        for function_definition in function_definitions {
+            if matches!(function_definition.ty, solidity::FunctionTy::Modifier) {
+                continue;
+            }
+
+            let (Some(function), impl_item) =
+                translate_function_definition(self, module.clone(), None, &function_definition)?
+            else {
+                continue;
             };
-            
+
+            assert!(impl_item.is_none());
+
+            let mut module = module.borrow_mut();
+
+            let function_signature = sway::TypeName::Function {
+                old_name: function.old_name.clone(),
+                new_name: function.new_name.clone(),
+                generic_parameters: function.generic_parameters.clone(),
+                parameters: function.parameters.clone(),
+                storage_struct_parameter: function.storage_struct_parameter.clone().map(Box::new),
+                return_type: function.return_type.clone().map(Box::new),
+            };
+
+            let Some(function_entry) = module.functions.iter_mut().find(|f| {
+                let sway::TypeName::Function { new_name, .. } = &f.signature else {
+                    unreachable!()
+                };
+
+                *new_name == function.new_name
+                    && f.signature.is_compatible_with(&function_signature)
+            }) else {
+                panic!(
+                    "Failed to find function {} - {} - in list:\n{}",
+                    function.new_name,
+                    function_signature,
+                    module
+                        .functions
+                        .iter()
+                        .map(|f| {
+                            let sway::TypeName::Function { new_name, .. } = &f.signature else {
+                                unreachable!()
+                            };
+
+                            format!("    {} - {}", new_name, f.signature)
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n"),
+                );
+            };
+
+            function_entry.implementation = Some(function);
+        }
+
+        for (i, contract_definition) in contract_definitions.into_iter().enumerate() {
+            let contract = module.borrow().contracts[contracts_index + i].clone();
+
             translate_contract_definition(
                 self,
-                &mut translated_definition,
-                contract_definition,
+                module.clone(),
+                &contract_definition,
+                contract.implementation.clone().unwrap(),
             )?;
-
-            finalize_mappings(self, &mut translated_definition);
-
-            self.translated_definitions.push(translated_definition);
-        }
-        
-        finalize_mappings(self, &mut translated_definition);
-
-        // HACK: if we don't have any contracts, add a standalone translated definition
-        if contract_names.is_empty() {
-            self.translated_definitions.push(translated_definition);
         }
 
         Ok(())
     }
 
-    /// Get the project type from the [PathBuf] and return a [ProjectKind]
-    pub fn detect_project_type<P: AsRef<Path>>(&mut self, path: P) -> Result<(), Error> {
-        let path = path.as_ref();
-        
-        if path.join(ProjectKind::FOUNDRY_CONFIG_FILE).exists() {
-            self.kind = ProjectKind::Foundry {
-                remappings: HashMap::new(),
+    fn generate_forc_project(&mut self) -> Result<(), Error> {
+        fn process_submodules(
+            options: &Args,
+            dependencies: &mut Vec<String>,
+            modules: &mut Vec<(PathBuf, sway::Module)>,
+            contract_modules: &mut Vec<ir::Module>,
+            module: Rc<RefCell<ir::Module>>,
+        ) {
+            let mut module = module.borrow_mut();
+
+            // Construct the module path
+            let dirty_module_path = module.path.clone();
+
+            let mut module_path = PathBuf::new();
+            let mut first = true;
+
+            for component in dirty_module_path.components() {
+                let mut component = component
+                    .as_os_str()
+                    .to_string_lossy()
+                    .to_string()
+                    .replace(".", "_")
+                    .to_case(Case::Snake);
+
+                if first {
+                    first = false;
+
+                    if let "lib" | "src" | "main" = component.as_str() {
+                        component = format!("_{component}");
+                    }
+                }
+
+                module_path.push(component);
+            }
+
+            // Extend the shared library project's dependencies
+            for dependency in module.dependencies.iter() {
+                if !dependencies.contains(dependency) {
+                    dependencies.push(dependency.clone());
+                }
+            }
+
+            // Construct the contract's shared library use tree
+            let mut use_tree = sway::UseTree::Glob;
+
+            for component in module.path.components().rev() {
+                match component {
+                    std::path::Component::Prefix(_) => continue,
+                    std::path::Component::RootDir => continue,
+                    std::path::Component::CurDir => continue,
+
+                    std::path::Component::ParentDir => {
+                        // Discard the prefix of the use tree
+                        let sway::UseTree::Path { suffix, .. } = use_tree else {
+                            panic!("Malformed import path: {:#?}", module.path)
+                        };
+
+                        use_tree = *suffix;
+                    }
+
+                    std::path::Component::Normal(name) => {
+                        let mut name = name
+                            .to_string_lossy()
+                            .to_string()
+                            .replace(".", "_")
+                            .to_case(Case::Snake);
+
+                        if let "lib" | "src" | "main" = name.as_str() {
+                            name = format!("_{name}");
+                        }
+
+                        use_tree = sway::UseTree::Path {
+                            prefix: name,
+                            suffix: Box::new(use_tree),
+                        };
+                    }
+                }
+            }
+
+            assert!(
+                use_tree != sway::UseTree::Glob,
+                "Invalid module path: {:#?}",
+                module.path
+            );
+
+            use_tree = sway::UseTree::Path {
+                prefix: options.name.clone().unwrap().to_case(Case::Snake),
+                suffix: Box::new(use_tree),
             };
 
-            let remappings = self.get_remappings(path).map_err(|e| Error::Wrapped(
-                format!("Failed to get remappings for Foundry project: {e:#?}").into()
-            ))?;
+            // Construct the contract project's dependencies
+            let mut contract_dependencies = module.dependencies.clone();
 
-            self.kind = ProjectKind::Foundry { remappings };
-        } else if path.join(ProjectKind::HARDHAT_CONFIG_FILE).exists() || path.join(ProjectKind::HARDHAT_CONFIG_FILE_TS).exists() {
-            self.kind = ProjectKind::Hardhat;
-        } else if path.join(ProjectKind::BROWNIE_CONFIG_FILE).exists() {
-            self.kind = ProjectKind::Brownie { remappings: HashMap::new() };
+            let shared_dependency = format!(
+                "{} = {{ path = \"../../{}\" }}",
+                options.name.clone().unwrap(),
+                options.name.clone().unwrap()
+            );
 
-            self.kind = ProjectKind::Brownie { remappings: self.get_remappings(path).map_err(|e| Error::Wrapped(
-                format!("Failed to get remappings for Brownie project: {e:#?}").into()
-            ))? };
-        } else if path.join(ProjectKind::TRUFFLE_CONFIG_FILE).exists() {
-            self.kind = ProjectKind::Truffle;
-        } else if path.join(ProjectKind::DAPP_CONFIG_FILE).exists() {
-            self.kind = ProjectKind::Dapp;
-        } else {
-            self.kind = ProjectKind::Unknown;
+            if !contract_dependencies.contains(&shared_dependency) {
+                contract_dependencies.push(shared_dependency);
+            }
+
+            // Construct the contract main module's use statements
+            let mut uses = module
+                .uses
+                .iter()
+                .filter(|u| !u.is_public)
+                .cloned()
+                .collect::<Vec<_>>();
+
+            uses.push(sway::Use {
+                is_public: true,
+                tree: use_tree.clone(),
+            });
+
+            // Move the storage and abi impls out of the contract IR and into the main modules of the new contract projects
+            for contract in module.contracts.iter_mut() {
+                let contract_signature = contract.signature.clone();
+                let mut contract = contract.implementation.as_mut().unwrap().borrow_mut();
+
+                // Don't create projects for empty abi impls (interface translations)
+                if let solidity::ContractTy::Abstract(_)
+                | solidity::ContractTy::Interface(_)
+                | solidity::ContractTy::Library(_) = contract.kind
+                {
+                    continue;
+                }
+
+                let contract_project_name = contract.name.to_case(Case::Kebab);
+
+                let output_directory = options
+                    .output_directory
+                    .clone()
+                    .unwrap()
+                    .join("contracts")
+                    .join(contract_project_name.clone());
+
+                let src_dir_path = output_directory.join("src");
+                let module_path = src_dir_path.join("main.sw");
+
+                let storage = contract.storage.take();
+
+                let abi_impl = contract.abi_impl.clone();
+
+                contract_modules.push(ir::Module {
+                    name: contract_project_name,
+                    path: module_path.clone(),
+                    dependencies: contract_dependencies.clone(),
+                    uses: uses.clone(),
+                    contracts: vec![ir::Item {
+                        signature: contract_signature,
+                        implementation: Some(Rc::new(RefCell::new(ir::Contract {
+                            storage,
+                            abi_impl,
+                            ..ir::Contract::new(
+                                contract.name.as_str(),
+                                contract.kind.clone(),
+                                contract.abi.inherits.as_slice(),
+                            )
+                        }))),
+                    }],
+                    functions: contract
+                        .storage_struct_constructor_fn
+                        .as_ref()
+                        .map(|s| {
+                            vec![ir::Item {
+                                signature: sway::TypeName::Function {
+                                    old_name: s.old_name.clone(),
+                                    new_name: s.new_name.clone(),
+                                    generic_parameters: s.generic_parameters.clone(),
+                                    parameters: s.parameters.clone(),
+                                    storage_struct_parameter: s
+                                        .storage_struct_parameter
+                                        .clone()
+                                        .map(Box::new),
+                                    return_type: s.return_type.clone().map(Box::new),
+                                },
+                                implementation: Some(s.clone()),
+                            }]
+                        })
+                        .unwrap_or_default(),
+                    ..Default::default()
+                });
+            }
+
+            for contract_module in contract_modules.iter_mut() {
+                // If the contract has a fallback function remove fallback attribute from the shared code
+                // and add a fallback function on the contract and call the shared fallback function
+                let fallback_function_name =
+                    format!("{}_fallback", contract_module.name).to_case(Case::Snake);
+
+                if let Some(fallback_function) = module.functions.iter_mut().find(|f| {
+                    let sway::TypeName::Function { new_name, .. } = &f.signature else {
+                        unreachable!()
+                    };
+
+                    *new_name == fallback_function_name
+                }) {
+                    let fallback_function_signature = fallback_function.signature.clone();
+                    let fallback_function = fallback_function.implementation.as_mut().unwrap();
+                    let fallback_function_attributes = fallback_function.attributes.clone();
+
+                    let Some(attributes) = fallback_function.attributes.as_mut() else {
+                        continue;
+                    };
+
+                    let Some((index, _)) = attributes
+                        .attributes
+                        .iter()
+                        .enumerate()
+                        .find(|(_, a)| a.name == "fallback")
+                    else {
+                        continue;
+                    };
+
+                    attributes.attributes.remove(index);
+
+                    let mut statements = vec![];
+                    let mut parameters = vec![];
+
+                    if contract_module
+                        .contracts
+                        .last()
+                        .unwrap()
+                        .implementation
+                        .as_ref()
+                        .unwrap()
+                        .borrow()
+                        .storage
+                        .is_some()
+                    {
+                        statements.push(sway::Statement::from(sway::Let {
+                            pattern: sway::LetPattern::from(sway::LetIdentifier {
+                                is_mutable: false,
+                                name: "storage_struct".to_string(),
+                            }),
+                            type_name: None,
+                            value: sway::Expression::create_function_call(
+                                format!("create_{}_storage_struct", contract_module.name).as_str(),
+                                None,
+                                vec![],
+                            ),
+                        }));
+
+                        parameters.push(sway::Expression::create_identifier("storage_struct"));
+                    }
+
+                    contract_module.functions.push(ir::Item {
+                        signature: fallback_function_signature,
+                        implementation: Some(sway::Function {
+                            attributes: fallback_function_attributes,
+                            is_public: false,
+                            old_name: String::new(),
+                            new_name: "fallback".to_string(),
+                            generic_parameters: None,
+                            parameters: sway::ParameterList::default(),
+                            storage_struct_parameter: None,
+                            return_type: None,
+                            body: Some(sway::Block {
+                                statements,
+                                final_expr: Some(sway::Expression::create_function_call(
+                                    fallback_function_name.as_str(),
+                                    None,
+                                    parameters,
+                                )),
+                            }),
+                        }),
+                    })
+                }
+            }
+
+            let submodules = module.submodules.clone();
+            let mut module = sway::Module::from(module.clone());
+            module.kind = sway::ModuleKind::Library;
+
+            let mut remove_indices = vec![];
+
+            for (i, item) in module.items.iter().enumerate() {
+                if let sway::ModuleItem::Impl(abi_impl) = item
+                    && let Some(for_type_name) = abi_impl.for_type_name.as_ref()
+                    && for_type_name.to_string() == "Contract"
+                {
+                    remove_indices.push(i);
+                }
+            }
+
+            for i in remove_indices.iter().rev() {
+                module.items.remove(*i);
+            }
+
+            modules.push((module_path.with_extension("sw"), module));
+
+            for submodule in submodules.iter() {
+                process_submodules(
+                    options,
+                    dependencies,
+                    modules,
+                    contract_modules,
+                    submodule.clone(),
+                );
+            }
+        }
+
+        // Process all of the modules in the project from the top down
+        let mut lib_module = sway::Module {
+            kind: sway::ModuleKind::Library,
+            items: vec![],
+        };
+
+        let mut shared_dependencies = vec![];
+        let mut modules = vec![];
+        let mut contract_modules = vec![];
+
+        for module in self.translated_modules.iter() {
+            lib_module
+                .items
+                .push(sway::ModuleItem::Submodule(sway::Submodule {
+                    is_public: true,
+                    name: module.borrow().name.clone(),
+                }));
+
+            for dependency in module.borrow().dependencies.iter() {
+                if !shared_dependencies.contains(dependency) {
+                    shared_dependencies.push(dependency.clone());
+                }
+            }
+
+            process_submodules(
+                &self.options,
+                &mut shared_dependencies,
+                &mut modules,
+                &mut contract_modules,
+                module.clone(),
+            );
+        }
+
+        modules.push(("lib.sw".into(), lib_module));
+
+        // Generate the shared library project
+        let output_directory = self
+            .options
+            .output_directory
+            .clone()
+            .unwrap()
+            .join(self.options.name.clone().unwrap());
+
+        wrapped_err!(std::fs::create_dir_all(&output_directory))?;
+
+        let src_dir_path = output_directory.join("src");
+        wrapped_err!(std::fs::create_dir_all(&src_dir_path))?;
+
+        for (module_path, module) in modules {
+            let module_path = src_dir_path.join(&module_path);
+            wrapped_err!(std::fs::create_dir_all(module_path.parent().unwrap()))?;
+
+            std::fs::write(module_path, sway::TabbedDisplayer(&module).to_string())
+                .map_err(|e| Error::Wrapped(Box::new(e)))?;
+        }
+
+        std::fs::write(
+            output_directory.join(".gitignore"),
+            "out\ntarget\nForc.lock\n",
+        )
+        .map_err(|e| Error::Wrapped(Box::new(e)))?;
+
+        std::fs::write(
+            output_directory.join("Forc.toml"),
+            format!(
+                "[project]\n\
+                authors = [\"\"]\n\
+                entry = \"lib.sw\"\n\
+                license = \"Apache-2.0\"\n\
+                name = \"{}\"\n\
+                \n\
+                [dependencies]\n\
+                {}\
+                \n\
+                ",
+                self.options.name.as_ref().unwrap(),
+                shared_dependencies.join("\n"),
+            ),
+        )
+        .map_err(|e| Error::Wrapped(Box::new(e)))?;
+
+        // Generate each of the contract projects
+        for module in contract_modules {
+            let contract_project_name = module.name.clone();
+
+            // Ensure the output directories exist
+            let output_directory = self
+                .options
+                .output_directory
+                .clone()
+                .unwrap()
+                .join("contracts")
+                .join(contract_project_name.clone());
+
+            std::fs::create_dir_all(&output_directory).unwrap();
+            std::fs::create_dir_all(module.path.parent().unwrap()).unwrap();
+
+            // Write the project's `.gitignore` file
+            std::fs::write(
+                output_directory.join(".gitignore"),
+                "out\ntarget\nForc.lock\n",
+            )
+            .map_err(|e| Error::Wrapped(Box::new(e)))
+            .unwrap();
+
+            // Write the project's `Forc.toml` file
+            std::fs::write(
+                output_directory.join("Forc.toml"),
+                format!(
+                    "[project]\n\
+                    authors = [\"\"]\n\
+                    entry = \"main.sw\"\n\
+                    license = \"Apache-2.0\"\n\
+                    name = \"{}\"\n\
+                    \n\
+                    [dependencies]\n\
+                    {}\
+                    \n\
+                    ",
+                    contract_project_name,
+                    module.dependencies.join("\n"),
+                ),
+            )
+            .map_err(|e| Error::Wrapped(Box::new(e)))
+            .unwrap();
+
+            // Write the project's `main.sw` file
+            let module_path = module.path.clone();
+            let mut module = sway::Module::from(module);
+            module.kind = sway::ModuleKind::Contract;
+            let mut remove_indices = vec![];
+
+            for (i, item) in module.items.iter().enumerate() {
+                if let sway::ModuleItem::Abi(_) = item {
+                    remove_indices.push(i);
+                }
+            }
+
+            for i in remove_indices.iter().rev() {
+                module.items.remove(*i);
+            }
+
+            std::fs::write(module_path, sway::TabbedDisplayer(&{ module }).to_string())
+                .map_err(|e| Error::Wrapped(Box::new(e)))
+                .unwrap();
         }
 
         Ok(())
-    }
-
-    /// Get the project type path from the [ProjectKind] and return a [PathBuf]
-    pub fn get_project_type_path(&self, source_unit_directory: &Path, filename: &str) -> Result<PathBuf, Error> {
-        let project_root_folder = find_project_root_folder(source_unit_directory);
-
-        let Some(project_root_folder) = project_root_folder else {
-            // If we cant find a project root folder we return the filename as is
-            return Ok(PathBuf::from(filename));
-        };
-
-        match &self.kind {
-            // Remappings in foundry and brownie are handled using the same pattern
-            ProjectKind::Foundry { remappings } | ProjectKind::Brownie { remappings } => {
-                for (k, v) in remappings {
-                    if filename.starts_with(k) {
-                        let project_full_path = project_root_folder.join(v);
-                        return Ok(PathBuf::from(filename.replace(k, project_full_path.to_string_lossy().as_ref())))
-                    }
-                }
-
-                Ok(source_unit_directory.join(filename))
-            }
-
-            // Remappings in hardhat and truffle are done using the @ symbol and the node_modules folder
-            ProjectKind::Hardhat | ProjectKind::Truffle => {
-                if filename.starts_with('.') {
-                    Ok(source_unit_directory.join(filename))
-                } else if filename.starts_with('@') {
-                    Ok(project_root_folder.join("node_modules").join(filename))
-                } else {
-                    Ok(project_root_folder.join(filename))
-                }
-            }
-
-            ProjectKind::Dapp => {
-                let filename = PathBuf::from(filename);
-                let mut components: Vec<_> = filename.components().collect();
-                
-                if components.len() <= 1 {
-                    panic!("Dapp filename should have more than one component")
-                }
-
-                match &components[0] {
-                    Component::Normal(_) => {
-                        components.insert(1, Component::Normal("src".as_ref()));
-                        let component = components.iter().map(|c| c.as_os_str()).collect::<PathBuf>();
-                        Ok(project_root_folder.join("lib").join(component))
-                    }
-
-                    _ => {
-                        Ok(project_root_folder.join(filename))
-                    }
-                }
-            }
-
-            // If we find that the project type is unknown we return the filename as is
-            ProjectKind::Unknown => {
-                println!("Charcoal was unable to detect the project type.");
-                println!("Please make sure you are targeting the root folder of the project (do not target the contracts folder itself).");
-                Ok(PathBuf::from(filename))
-            },
-        }
-    }
-
-    /// Get the re mappings from the re mappings file on the root folder of the project represented by the [PathBuf]
-    fn get_remappings(&self, root_folder_path: &Path) -> Result<HashMap<String, String>, Error> {
-        match &self.kind {
-            ProjectKind::Foundry { .. } => {
-                let remappings_filename = "remappings.txt";
-                
-                let lines: Vec<String> = if root_folder_path.join(remappings_filename).exists() {
-                    // Get the remappings.txt file from the root of the project folder
-                    let remappings_content = std::fs::read_to_string(root_folder_path.join(remappings_filename))
-                        .map_err(|e| Error::Wrapped(e.into()))?;
-
-                    remappings_content.lines().map(str::to_string).collect()
-                } else {
-                    // Get foundry toml file from the root of the project folder
-                    let remappings_from_toml_str = std::fs::read_to_string(root_folder_path.join(ProjectKind::FOUNDRY_CONFIG_FILE))
-                        .map_err(|e| Error::Wrapped(e.into()))?;
-        
-                    let remappings_from_toml: toml::Value = toml::from_str(&remappings_from_toml_str)
-                        .map_err(|e| Error::Wrapped(e.into()))?;
-
-                    let value = find_in_toml_value(&remappings_from_toml, remappings_filename.strip_suffix(".txt").unwrap());
-
-                    let Some(value) = value.as_ref() else { return Ok(HashMap::new()) };
-
-                    let toml::Value::Array(arr) = value else {
-                        panic!("remappings key in foundry.toml should be an array")
-                    };
-
-                    arr.iter().map(|x| x.as_str().unwrap().to_string()).collect::<Vec<_>>()
-                };
-
-                let mut remappings = HashMap::new();
-
-                for line in lines {
-                    let mut split = line.split('=');
-                    let from = split.next().unwrap().to_string();
-                    let to = split.next().unwrap().to_string();
-                    remappings.insert(from, to);
-                }
-                
-                Ok(remappings)
-            }
-
-            ProjectKind::Brownie { .. } => {
-                let remappings_from_yaml_str = std::fs::read_to_string(root_folder_path.join(ProjectKind::BROWNIE_CONFIG_FILE))
-                    .map_err(|e| Error::Wrapped(e.into()))?;
-
-                let remappings_from_yaml: serde_yaml::Value = serde_yaml::from_str(&remappings_from_yaml_str)
-                    .map_err(|e| Error::Wrapped(e.into()))?;
-                
-                let Some(compiler) = remappings_from_yaml.get("compiler") else {
-                    return Err(Error::Wrapped("compiler key not found in brownie-config.yaml".into()))
-                };
-
-                let Some(solc) = compiler.get("solc") else {
-                    return Err(Error::Wrapped("solc key not found in brownie-config.yaml".into()))
-                };
-
-                let Some(remappings) = solc.get("solidity.remappings").or_else(|| solc.get("remappings")) else {
-                    return Err(Error::Wrapped("solidity.remappings key not found in brownie-config.yaml".into()));
-                };
-
-                let serde_yaml::Value::Sequence(seq) = remappings else {
-                    return Err(Error::Wrapped("solidity.remappings should be a sequence".into()));
-                };
-                    
-                let mut remappings = HashMap::new();
-                
-                for v in seq {
-                    let mut split = v.as_str().unwrap().split('=');
-                    let from = split.next().unwrap().to_string();
-                    let to = split.next().unwrap().to_string();
-                    remappings.insert(from, to);
-                }
-
-                Ok(remappings)
-            }
-
-            _ => Ok(HashMap::new())
-        }
-    }
-}
-
-/// Recursively check to find the root folder of the project and return a [PathBuf]
-pub fn find_project_root_folder<P: AsRef<Path>>(path: P) -> Option<PathBuf> {
-    let path = path.as_ref();
-
-    if path.join(ProjectKind::FOUNDRY_CONFIG_FILE).exists()
-    || path.join(ProjectKind::HARDHAT_CONFIG_FILE).exists()
-    || path.join(ProjectKind::HARDHAT_CONFIG_FILE_TS).exists()
-    || path.join(ProjectKind::BROWNIE_CONFIG_FILE).exists()
-    || path.join(ProjectKind::TRUFFLE_CONFIG_FILE).exists()
-    || path.join(ProjectKind::DAPP_CONFIG_FILE).exists() {
-        return Some(path.to_path_buf());
-    }
-
-    if let Some(parent) = path.parent() {
-        return find_project_root_folder(parent);
-    }
-
-    None
-}
-
-/// Find a key in a [toml::Table] and return the [toml::Value]
-fn find_in_toml_value(value: &toml::Value, key: &str) -> Option<toml::Value> {
-    match value {
-        toml::Value::Table(table) => {
-            for (k, v) in table {
-                if k == key {
-                    return Some(v.clone());
-                }
-                if let Some(val) = find_in_toml_value(v, key) {
-                    return Some(val);
-                }
-            }
-            None
-        },
-        _ => None,
     }
 }

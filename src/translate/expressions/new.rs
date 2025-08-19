@@ -1,14 +1,14 @@
-use crate::{errors::Error, project::Project, sway, translate::*};
+use crate::{error::Error, project::Project, sway, translate::*};
 use num_bigint::BigUint;
 use num_traits::{One, Zero};
-use solang_parser::{helpers::CodeLocation, pt as solidity};
+use solang_parser::pt as solidity;
 use std::{cell::RefCell, rc::Rc};
 
 #[inline]
 pub fn translate_new_expression(
     project: &mut Project,
-    translated_definition: &mut TranslatedDefinition,
-    scope: &Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
     expression: &solidity::Expression,
 ) -> Result<sway::Expression, Error> {
     let solidity::Expression::FunctionCall(_, mut expr, args) = expression.clone() else {
@@ -26,7 +26,8 @@ pub fn translate_new_expression(
             let mut fields = vec![];
 
             for block_arg in block_args.iter() {
-                let value = translate_expression(project, translated_definition, scope, &block_arg.expr)?;
+                let value =
+                    translate_expression(project, module.clone(), scope.clone(), &block_arg.expr)?;
 
                 match block_arg.name.name.as_str() {
                     "value" => fields.push(sway::ConstructorField {
@@ -39,13 +40,12 @@ pub fn translate_new_expression(
                         value,
                     }),
 
-                    arg => println!(
-                        "{}WARNING: unsupported function call block arg: {arg}",
-                        match project.loc_to_line_and_column(&translated_definition.path, &block_arg.loc()) {
-                            Some((line, col)) => format!("{}:{}:{} - ", translated_definition.path.to_string_lossy(), line, col),
-                            None => format!("{} - ", translated_definition.path.to_string_lossy()),
-                        }
-                    ),
+                    _arg => {
+                        // println!(
+                        //     "{}: WARNING: unsupported function call block arg: {_arg}",
+                        //     project.loc_to_file_location_string(module.clone(), &block_arg.loc()),
+                        // );
+                    }
                 }
             }
 
@@ -56,7 +56,9 @@ pub fn translate_new_expression(
     };
 
     loop {
-        let solidity::Expression::Parenthesis(_, expression) = expr.as_ref() else { break };
+        let solidity::Expression::Parenthesis(_, expression) = expr.as_ref() else {
+            break;
+        };
         expr = expression.clone();
     }
 
@@ -64,39 +66,34 @@ pub fn translate_new_expression(
         expr = expression.clone();
     }
 
-    let args = args.iter()
-        .map(|e| translate_expression(project, translated_definition, scope, e))
+    let args = args
+        .iter()
+        .map(|e| translate_expression(project, module.clone(), scope.clone(), e))
         .collect::<Result<Vec<_>, _>>()?;
 
     match expr.as_ref() {
-        solidity::Expression::Variable(solidity::Identifier {name, ..}) => {
-            if project.find_definition_with_abi(name).is_some() {
-                // new Contract(...) => /*unsupported: new Contract(...); using:*/ abi(Contract, Identity::ContractId(ContractId::from(ZERO_B256)))
+        solidity::Expression::Variable(solidity::Identifier { name, .. }) => {
+            if project.is_contract_declared(module.clone(), name) {
+                // new Contract(...) => /*unsupported: new Contract(...); using:*/ abi(Contract, ContractId::from(b256::zero()))
 
                 return Ok(sway::Expression::Commented(
                     format!("unsupported: new {expression}; using:"),
-                    Box::new(sway::Expression::from(sway::FunctionCall {
-                        function: sway::Expression::create_identifier("abi".into()),
-                        generic_parameters: None,
-                        parameters: vec![
-                            sway::Expression::create_identifier(name.clone()),
-                            sway::Expression::from(sway::FunctionCall {
-                                function: sway::Expression::create_identifier("Identity::ContractId".into()),
-                                generic_parameters: None,
-                                parameters: vec![
-                                    sway::Expression::from(sway::FunctionCall {
-                                        function: sway::Expression::create_identifier("ContractId::from".into()),
-                                        generic_parameters: None,
-                                        parameters: vec![
-                                            sway::Expression::create_function_calls(None, &[
-                                                ("b256::zero", Some((None, vec![])))
-                                            ]),
-                                        ],
-                                    }),
-                                ],
-                            }),
+                    Box::new(sway::Expression::create_function_call(
+                        "abi",
+                        None,
+                        vec![
+                            sway::Expression::create_identifier(name),
+                            sway::Expression::create_function_call(
+                                "ContractId::from",
+                                None,
+                                vec![sway::Expression::create_function_call(
+                                    "b256::zero",
+                                    None,
+                                    vec![],
+                                )],
+                            ),
                         ],
-                    }))
+                    )),
                 ));
             }
         }
@@ -114,15 +111,20 @@ pub fn translate_new_expression(
                 // }
 
                 if block_fields.is_some() {
-                    panic!("Invalid new array expression: expected no block args, found {block_fields:#?}");
+                    panic!(
+                        "Invalid new array expression: expected no block args, found {block_fields:#?}"
+                    );
                 }
 
                 if args.len() != 1 {
-                    panic!("Invalid new array expression: expected 1 argument, found {}", args.len());
+                    panic!(
+                        "Invalid new array expression: expected 1 argument, found {}",
+                        args.len()
+                    );
                 }
 
                 // Ensure `std::bytes::Bytes` is imported
-                translated_definition.ensure_use_declared("std::bytes::Bytes");
+                module.borrow_mut().ensure_use_declared("std::bytes::Bytes");
 
                 let length = &args[0];
 
@@ -135,15 +137,12 @@ pub fn translate_new_expression(
                                 name: "v".into(),
                             }),
                             type_name: None,
-                            value: sway::Expression::from(sway::FunctionCall {
-                                function: sway::Expression::create_identifier("Bytes::with_capacity".into()),
-                                generic_parameters: None,
-                                parameters: vec![
-                                    length.clone(),
-                                ],
-                            }),
+                            value: sway::Expression::create_function_call(
+                                "Bytes::with_capacity",
+                                None,
+                                vec![length.clone()],
+                            ),
                         }),
-
                         // let mut i = 0;
                         sway::Statement::from(sway::Let {
                             pattern: sway::LetPattern::Identifier(sway::LetIdentifier {
@@ -151,9 +150,11 @@ pub fn translate_new_expression(
                                 name: "i".into(),
                             }),
                             type_name: None,
-                            value: sway::Expression::from(sway::Literal::DecInt(BigUint::zero(), None)),
+                            value: sway::Expression::from(sway::Literal::DecInt(
+                                BigUint::zero(),
+                                None,
+                            )),
                         }),
-
                         // while i < length {
                         //     v.push(0);
                         //     i += 1;
@@ -169,23 +170,27 @@ pub fn translate_new_expression(
                             body: sway::Block {
                                 statements: vec![
                                     // v.push(0);
-                                    sway::Statement::from(sway::Expression::create_function_calls(None, &[
-                                        ("v", None),
-                                        ("push", Some((None, vec![
-                                            sway::Expression::from(sway::Literal::DecInt(BigUint::zero(), None)),
-                                        ]))),
-                                    ])),
-
+                                    sway::Statement::from(
+                                        sway::Expression::create_identifier("v".into())
+                                            .with_push_call(sway::Expression::from(
+                                                sway::Literal::DecInt(BigUint::zero(), None),
+                                            )),
+                                    ),
                                     // i += 1;
-                                    sway::Statement::from(sway::Expression::from(sway::BinaryExpression {
-                                        operator: "+=".into(),
-                                        lhs: sway::Expression::create_identifier("i".into()),
-                                        rhs: sway::Expression::from(sway::Literal::DecInt(BigUint::one(), None)),
-                                    })),
+                                    sway::Statement::from(sway::Expression::from(
+                                        sway::BinaryExpression {
+                                            operator: "+=".into(),
+                                            lhs: sway::Expression::create_identifier("i".into()),
+                                            rhs: sway::Expression::from(sway::Literal::DecInt(
+                                                BigUint::one(),
+                                                None,
+                                            )),
+                                        },
+                                    )),
                                 ],
                                 final_expr: None,
-                            }
-                        }))
+                            },
+                        })),
                     ],
 
                     // v
@@ -205,15 +210,20 @@ pub fn translate_new_expression(
                 // }
 
                 if block_fields.is_some() {
-                    panic!("Invalid new string expression: expected no block args, found {block_fields:#?}");
+                    panic!(
+                        "Invalid new string expression: expected no block args, found {block_fields:#?}"
+                    );
                 }
 
                 if args.len() != 1 {
-                    panic!("Invalid new string expression: expected 1 argument, found {}", args.len());
+                    panic!(
+                        "Invalid new string expression: expected 1 argument, found {}",
+                        args.len()
+                    );
                 }
 
                 // Ensure `std::bytes::Bytes` is imported
-                translated_definition.ensure_use_declared("std::bytes::Bytes");
+                module.borrow_mut().ensure_use_declared("std::bytes::Bytes");
 
                 let length = &args[0];
 
@@ -226,15 +236,12 @@ pub fn translate_new_expression(
                                 name: "v".into(),
                             }),
                             type_name: None,
-                            value: sway::Expression::from(sway::FunctionCall {
-                                function: sway::Expression::create_identifier("Bytes::with_capacity".into()),
-                                generic_parameters: None,
-                                parameters: vec![
-                                    length.clone(),
-                                ],
-                            }),
+                            value: sway::Expression::create_function_call(
+                                "Bytes::with_capacity",
+                                None,
+                                vec![length.clone()],
+                            ),
                         }),
-
                         // let mut i = 0;
                         sway::Statement::from(sway::Let {
                             pattern: sway::LetPattern::Identifier(sway::LetIdentifier {
@@ -242,9 +249,11 @@ pub fn translate_new_expression(
                                 name: "i".into(),
                             }),
                             type_name: None,
-                            value: sway::Expression::from(sway::Literal::DecInt(BigUint::zero(), None)),
+                            value: sway::Expression::from(sway::Literal::DecInt(
+                                BigUint::zero(),
+                                None,
+                            )),
                         }),
-
                         // while i < length {
                         //     v.push(0);
                         //     i += 1;
@@ -260,82 +269,88 @@ pub fn translate_new_expression(
                             body: sway::Block {
                                 statements: vec![
                                     // v.push(0);
-                                    sway::Statement::from(sway::Expression::create_function_calls(None, &[
-                                        ("v", None),
-                                        ("push", Some((None, vec![
-                                            sway::Expression::from(sway::Literal::DecInt(BigUint::zero(), None)),
-                                        ]))),
-                                    ])),
-
+                                    sway::Statement::from(
+                                        sway::Expression::create_identifier("v".into())
+                                            .with_push_call(sway::Expression::from(
+                                                sway::Literal::DecInt(BigUint::zero(), None),
+                                            )),
+                                    ),
                                     // i += 1;
-                                    sway::Statement::from(sway::Expression::from(sway::BinaryExpression {
-                                        operator: "+=".into(),
-                                        lhs: sway::Expression::create_identifier("i".into()),
-                                        rhs: sway::Expression::from(sway::Literal::DecInt(BigUint::one(), None)),
-                                    })),
+                                    sway::Statement::from(sway::Expression::from(
+                                        sway::BinaryExpression {
+                                            operator: "+=".into(),
+                                            lhs: sway::Expression::create_identifier("i".into()),
+                                            rhs: sway::Expression::from(sway::Literal::DecInt(
+                                                BigUint::one(),
+                                                None,
+                                            )),
+                                        },
+                                    )),
                                 ],
                                 final_expr: None,
-                            }
-                        }))
+                            },
+                        })),
                     ],
 
                     // String::from(v)
-                    final_expr: Some(sway::Expression::from(sway::FunctionCall {
-                        function: sway::Expression::create_identifier("String::from".into()),
-                        generic_parameters: None,
-                        parameters: vec![
-                            sway::Expression::create_identifier("v".into()),
-                        ],
-                    })),
+                    final_expr: Some(sway::Expression::create_function_call(
+                        "String::from",
+                        None,
+                        vec![sway::Expression::create_identifier("v".into())],
+                    )),
                 }));
             }
 
-            _ => todo!("translate new {} expression: {expression} {expression:#?}", type_name.to_string())
-        }
+            _ => todo!(
+                "translate new {} expression: {expression} {expression:#?}",
+                type_name.to_string()
+            ),
+        },
 
         solidity::Expression::ArraySubscript(_, _, None) => {
             assert!(args.len() == 1);
-            return Ok(sway::Expression::from(sway::FunctionCall {
-                function: sway::Expression::create_identifier("Vec::with_capacity".into()),
-                generic_parameters: None,
-                parameters: args,
-            }));
+
+            return Ok(sway::Expression::create_function_call(
+                "Vec::with_capacity",
+                None,
+                args,
+            ));
         }
 
         _ => {
             // println!(
-            //     "{}WARNING: unsupported function call block arg: {expr}",
-            //     match project.loc_to_line_and_column(&translated_definition.path, &expr.loc()) {
-            //         Some((line, col)) => format!("{}:{}:{} - ", translated_definition.path.to_string_lossy(), line, col),
-            //         None => format!("{} - ", translated_definition.path.to_string_lossy()),
-            //     }
+            //     "{}: WARNING: unsupported function call block arg: {expr}",
+            //     project.loc_to_file_location_string(module.clone(), &expr.loc()),
             // );
-            
+
             todo!("translate new expression: {expr:#?} - {expression:#?}")
         }
     }
 
     let name = match expr.as_ref() {
         solidity::Expression::ArraySubscript(_, ex, _) => {
-            let solidity::Expression::Variable(solidity::Identifier { name, .. }) = ex.as_ref() else { todo!("translate new expression: {expression:#?}") };
+            let solidity::Expression::Variable(solidity::Identifier { name, .. }) = ex.as_ref()
+            else {
+                todo!("translate new expression: {expression:#?}")
+            };
             name
-        },
+        }
         solidity::Expression::Variable(solidity::Identifier { name, .. }) => name,
-        _ => todo!("translate new expression: {expression:#?}")
+        _ => todo!("translate new expression: {expression:#?}"),
     };
-    
+
     match block_fields {
         Some(fields) => Ok(sway::Expression::from(sway::FunctionCallBlock {
-            function: sway::Expression::create_identifier(name.clone()),
+            function: sway::Expression::create_identifier(name),
             generic_parameters: None,
             fields,
             parameters: vec![],
         })),
 
-        None => Ok(sway::Expression::from(sway::FunctionCall {
-            function: sway::Expression::create_identifier(name.clone()),
-            generic_parameters: None,
-            parameters: vec![],
-        })),
+        None => Ok(sway::Expression::create_function_call(
+            name.as_str(),
+            None,
+            vec![],
+        )),
     }
 }

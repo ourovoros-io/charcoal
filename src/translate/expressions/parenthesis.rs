@@ -1,16 +1,16 @@
-use crate::{errors::Error, project::Project, sway, translate::*};
+use crate::{error::Error, project::Project, sway, translate::*};
 use solang_parser::pt as solidity;
 use std::{cell::RefCell, rc::Rc};
 
 #[inline]
 pub fn translate_parenthesis_expression(
     project: &mut Project,
-    translated_definition: &mut TranslatedDefinition,
-    scope: &Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
     expression: &solidity::Expression,
 ) -> Result<sway::Expression, Error> {
-    let sway_expr = translate_expression(project, translated_definition, scope, expression)?;
-    
+    let sway_expr = translate_expression(project, module.clone(), scope.clone(), expression)?;
+
     match &expression {
         solidity::Expression::Assign(_, lhs, _) => {
             // function add(uint x, uint y) internal pure returns (uint z) {
@@ -23,20 +23,16 @@ pub fn translate_parenthesis_expression(
             //    z
             // }
             //
-            let sway_lhs = translate_expression(project, translated_definition, scope, lhs)?;
-            
+            let sway_lhs = translate_expression(project, module.clone(), scope.clone(), lhs)?;
+
             Ok(sway::Expression::from(sway::Block {
-                statements: vec![
-                    sway::Statement::from(sway_expr),
-                ],
-                final_expr:  Some(sway_lhs),
+                statements: vec![sway::Statement::from(sway_expr)],
+                final_expr: Some(sway_lhs),
             }))
-        },
+        }
         _ => {
             // (x)
-            Ok(sway::Expression::Tuple(vec![
-                sway_expr,
-            ]))
+            Ok(sway::Expression::Tuple(vec![sway_expr]))
         }
     }
 }

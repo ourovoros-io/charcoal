@@ -1,4 +1,4 @@
-use crate::{errors::Error, project::Project, sway, translate::*};
+use crate::{error::Error, ir, project::Project, sway, translate::*};
 use convert_case::Case;
 use solang_parser::pt as solidity;
 use std::{cell::RefCell, rc::Rc};
@@ -6,76 +6,139 @@ use std::{cell::RefCell, rc::Rc};
 #[inline]
 pub fn translate_struct_definition(
     project: &mut Project,
-    translated_definition: &mut TranslatedDefinition,
+    module: Rc<RefCell<ir::Module>>,
+    contract_name: Option<&str>,
     struct_definition: &solidity::StructDefinition,
-) -> Result<(), Error> {
-    let mut fields = vec![];
+) -> Result<Rc<RefCell<ir::Struct>>, Error> {
+    let mut memory_fields = vec![];
+    let mut storage_fields = vec![];
+
+    let scope = Rc::new(RefCell::new(ir::Scope::new(contract_name, None, None)));
 
     for field in struct_definition.fields.iter() {
-        // TODO: keep track of original struct name?
-        let name = translate_naming_convention(field.name.as_ref().unwrap().name.as_str(), Case::Snake);
-        let mut type_name = translate_type_name(project, translated_definition, &field.ty, false, false);
+        let old_name = field.name.as_ref().unwrap().name.clone();
+        let new_name = translate_naming_convention(old_name.as_str(), Case::Snake);
 
-        if let sway::TypeName::Identifier { name, generic_parameters } = &type_name {
-            match (name.as_str(), generic_parameters.as_ref()) {
-                ("StorageMap" | "StorageVec", Some(_)) => {
-                    // HACK: wrap storage types in a StorageKey
-                    type_name = sway::TypeName::Identifier {
-                        name: "StorageKey".into(),
-                        generic_parameters: Some(sway::GenericParameterList {
-                            entries: vec![
-                                sway::GenericParameter {
-                                    type_name,
-                                    implements: None,
-                                },
-                            ],
-                        }),
-                    };
-                }
+        let mut type_name = translate_type_name(
+            project,
+            module.clone(),
+            scope.clone(),
+            &field.ty,
+            field.storage.as_ref(),
+        );
 
-                (name, generic_parameters) => {
-                    // HACK: import field types if we haven't already
-                    if generic_parameters.is_none() && !translated_definition.structs.iter().any(|s| s.borrow().name == *name) {
-                        'lookup: for external_definition in project.translated_definitions.iter() {
-                            // Check if the field type is a struct
-                            for external_struct in external_definition.structs.iter() {
-                                if external_struct.borrow().name == *name {
-                                    translated_definition.ensure_struct_included(project, external_struct);
-                                    break 'lookup;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+        // Wrap storage types in a `StorageKey<T>`
+        if type_name.is_storage_bytes()
+            || type_name.is_storage_map()
+            || type_name.is_storage_string()
+            || type_name.is_storage_vec()
+        {
+            type_name = type_name.to_storage_key();
         }
 
+        memory_fields.push(sway::StructField {
+            is_public: true,
+            new_name: new_name.clone(),
+            old_name: old_name.clone(),
+            type_name: type_name.clone(),
+        });
+
+        // HACK: Wrap `StorageKey<T>` in `Option<T>` so it can be deferred
         if type_name.is_storage_key() {
-            type_name = sway::TypeName::Identifier {
-                name: "Option".into(),
-                generic_parameters: Some(sway::GenericParameterList {
-                    entries: vec![sway::GenericParameter {
-                        type_name,
-                        implements: None,
-                    }],
-                }),
-            }
+            type_name = type_name.to_option();
         }
 
-        fields.push(sway::StructField {
-            is_public: false,
-            name,
-            type_name,
+        storage_fields.push(sway::StructField {
+            is_public: true,
+            new_name,
+            old_name,
+            type_name: type_name.to_storage_compatible_type(),
         });
     }
 
-    translated_definition.structs.push(Rc::new(RefCell::new(sway::Struct {
-        attributes: None,
-        is_public: false,
-        name: struct_definition.name.as_ref().unwrap().name.clone(),
-        generic_parameters: None,
-        fields,
-    })));
+    let struct_name = struct_definition.name.as_ref().unwrap().name.clone();
 
-    Ok(())
+    Ok(Rc::new(RefCell::new(ir::Struct {
+        name: struct_name.clone(),
+        memory: sway::Struct {
+            attributes: None,
+            is_public: true,
+            name: struct_name.clone(),
+            generic_parameters: None,
+            fields: memory_fields,
+        },
+        storage: sway::Struct {
+            attributes: None,
+            is_public: true,
+            name: format!("Storage{struct_name}"),
+            generic_parameters: None,
+            fields: storage_fields,
+        },
+    })))
+}
+
+pub fn create_struct_constructor(
+    project: &mut Project,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
+    contract_name: &str,
+) -> Option<sway::Constructor> {
+    let mut fields = vec![];
+
+    let contract = project.find_contract(module.clone(), contract_name)?;
+
+    let storage_namespace_name = contract.borrow().name.to_case(Case::Snake);
+
+    let storage_namespace = contract
+        .borrow()
+        .storage
+        .as_ref()?
+        .borrow()
+        .namespaces
+        .iter()
+        .find(|s| s.borrow().name == storage_namespace_name)
+        .cloned()?;
+
+    let storage_struct = contract.borrow().storage_struct.clone()?;
+
+    for field in storage_struct.borrow().storage.fields.iter() {
+        if !storage_namespace
+            .borrow()
+            .fields
+            .iter()
+            .any(|f| f.name == field.new_name)
+            && field.new_name != "constructor_called"
+        {
+            let inherited_contract_name = field.new_name.to_case(Case::Pascal);
+            let field = sway::ConstructorField {
+                name: field.new_name.clone(),
+                value: sway::Expression::from(create_struct_constructor(
+                    project,
+                    module.clone(),
+                    scope.clone(),
+                    &inherited_contract_name,
+                )?),
+            };
+            fields.push(field);
+        } else {
+            fields.push(sway::ConstructorField {
+                name: field.new_name.clone(),
+                value: sway::Expression::from(sway::MemberAccess {
+                    expression: sway::Expression::from(sway::PathExpr {
+                        root: sway::PathExprRoot::Identifier("storage".to_string()),
+                        segments: vec![sway::PathExprSegment {
+                            name: storage_namespace.borrow().name.clone(),
+                            generic_parameters: None,
+                        }],
+                    }),
+                    member: field.new_name.clone(),
+                }),
+            })
+        }
+    }
+
+    Some(sway::Constructor {
+        type_name: sway::TypeName::create_identifier(format!("{contract_name}Storage").as_str()),
+        fields,
+    })
 }

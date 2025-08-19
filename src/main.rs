@@ -1,62 +1,27 @@
-#![warn(clippy::all, clippy::pedantic)]
-#![allow(clippy::single_match)]
+#![warn(clippy::all)]
 
-pub mod errors;
+pub mod cli;
+pub mod error;
+pub mod framework;
+pub mod ir;
 pub mod project;
 pub mod sway;
 pub mod translate;
 pub mod utils;
-pub mod cli;
 
-use cli::Options;
-use errors::Error;
-use project::{Project, ProjectKind};
-use structopt::StructOpt;
+#[cfg(test)]
+mod tests;
 
 fn main() {
     if let Err(e) = translate_project() {
-        eprintln!("{e}");
+        eprintln!("ERROR: {e}");
+        std::process::exit(1);
     }
 }
 
-fn translate_project() -> Result<(), Error> {
-    let mut options = Options::from_args_safe()
-        .map_err(|e| Error::Wrapped(Box::new(e)))?;
-
-    // If an output directory was supplied, canonicalize it
-    if let Some(output_directory) = options.output_directory.as_mut() {
-        *output_directory = utils::get_canonical_path(output_directory.clone(), true, true)?;
-    }
-
-    let mut project = Project::default();
-    
-    if let Some(root_path) = project::find_project_root_folder(options.target.as_path()) {
-        project.detect_project_type(root_path)?;
-    } else {
-        project.kind = ProjectKind::Unknown;
-    }
-    
-    let source_unit_paths = utils::collect_source_unit_paths(&options.target, &project.kind)?;
-    let usage_queue = utils::create_usage_queue(&mut project, source_unit_paths)?;
-
-    for source_unit_path in &usage_queue {
-        project.translate(options.definition_name.as_ref(), source_unit_path)?;
-
-        match options.output_directory.as_ref() {
-            Some(output_directory) => {
-                utils::generate_forc_project(&mut project, output_directory, options.definition_name.as_ref(), source_unit_path)?;
-            }
-
-            None => {
-                for translated_definition in project.collect_translated_definitions(options.definition_name.as_ref(), source_unit_path) {
-                    println!("// Translated from {}", translated_definition.path.to_string_lossy());
-                    
-                    let module: sway::Module = translated_definition.into();
-                    println!("{}", sway::TabbedDisplayer(&module));
-                }
-            }
-        }
-    }
-
-    Ok(())
+fn translate_project() -> Result<(), error::Error> {
+    use clap::Parser;
+    let options = cli::Args::parse().canonicalize()?;
+    let framework = framework::Framework::from_path(&options.input)?;
+    project::Project::new(options, framework)?.translate()
 }

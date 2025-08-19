@@ -1,391 +1,464 @@
-use crate::{errors::Error, project::Project, sway, translate::*};
-use convert_case::Case;
+use crate::{error::Error, project::Project, translate::*};
 use solang_parser::pt as solidity;
 use std::{cell::RefCell, rc::Rc};
 
 #[inline]
-pub fn translate_using_directive(
-    project: &mut Project,
-    translated_definition: &mut TranslatedDefinition,
-    using_directive: &solidity::Using,
-) -> Result<(), Error> {
-    let for_type = using_directive.ty.as_ref()
-        .map(|t| translate_type_name(project, translated_definition, t, false, false))
-        .map_or(Ok(None), |t| Ok(Some(t)))?;
-
-    match &using_directive.list {
-        solidity::UsingList::Library(using_library) => {
-            let library_name = using_library.identifiers.iter().map(|i| i.name.clone()).collect::<Vec<_>>().join(".");
-            
-            if library_name == translated_definition.name {
-                // Add a self-referential using directive to the current definition
-                translated_definition.using_directives.push(TranslatedUsingDirective {
-                    library_name,
-                    for_type,
-                    functions: vec![],
-                });
-
-                return Ok(());
-            }
-
-            // Find the translated library definition
-            let Some(library_definition) = project.translated_definitions.iter().find(|d| {
-                d.name == library_name && matches!(d.kind.as_ref().unwrap(), solidity::ContractTy::Library(_))
-            }) else {
-                panic!(
-                    "Failed to find translated library: \"{library_name}\"; from {}",
-                    match project.loc_to_line_and_column(&translated_definition.path, &using_directive.loc) {
-                        Some((line, col)) => format!("{}:{}:{} - ", translated_definition.path.to_string_lossy(), line, col),
-                        None => format!("{} - ", translated_definition.path.to_string_lossy()),
-                    },
-                )
-            };
-
-            let mut translated_using_directive = TranslatedUsingDirective {
-                library_name,
-                for_type,
-                functions: vec![],
-            };
-
-            // Collect all functions that support the `for_type`
-            for function in library_definition.functions.iter() {
-                // If we're using the library for a specific type, ensure the first function parameter matches that type
-                if translated_using_directive.for_type.is_some() && translated_using_directive.for_type != function.parameters.entries.first().and_then(|p| p.type_name.clone()) {
-                    continue;
-                }
-
-                // Get the scope entry for the library function
-                let Some(scope_entry) = library_definition.toplevel_scope.borrow().find_function(|f| f.borrow().new_name == function.name) else {
-                    panic!("Failed to find function in scope: \"{}\"", function.name);
-                };
-
-                // Add the function to the current definition's toplevel scope
-                if !translated_definition.toplevel_scope.borrow().functions.iter().any(|f| {
-                    let f = f.borrow();
-                    let scope_entry = scope_entry.borrow();
-
-                    let sway::TypeName::Function { parameters: f_parameters, return_type: f_return_type, .. } = &f.type_name else {
-                        panic!("Invalid function type name: {:#?}", f.type_name)
-                    };
-                    
-                    let sway::TypeName::Function { parameters: scope_parameters, return_type: scope_return_type, .. } = &scope_entry.type_name else {
-                        panic!("Invalid function type name: {:#?}", scope_entry.type_name)
-                    };
-                    
-                    f.old_name == scope_entry.old_name
-                    && f_parameters == scope_parameters
-                    && f_return_type == scope_return_type
-                }) {
-                    translated_definition.toplevel_scope.borrow_mut().functions.push(Rc::new(RefCell::new(scope_entry.borrow().clone())));
-                }
-
-                // Add the function to the translated using directive so we know where it came from
-                translated_using_directive.functions.push(scope_entry.borrow().clone());
-
-                // Add the function name to the current definition's function name list
-                *translated_definition.function_name_counts.entry(function.name.clone()).or_insert(0) += 1;
-
-                // Add the function definition to the current definition
-                if !translated_definition.functions.contains(function) {
-                    translated_definition.functions.push(function.clone());
-                }
-
-                // Add the function call count from the library definition to the current definition
-                translated_definition.function_call_counts.insert(
-                    function.name.clone(),
-                    if let Some(function_call_count) = library_definition.function_call_counts.get(&function.name) {
-                        *function_call_count
-                    } else {
-                        0
-                    }
-                );
-
-                // Add the functions called from the library definition to the current definition
-                for (lib_calling_fn, lib_called_fns) in library_definition.functions_called.iter() {
-                    let called_functions = translated_definition.functions_called.entry(lib_calling_fn.clone()).or_default();
-
-                    for lib_called_fn in lib_called_fns.iter() {
-                        if !called_functions.contains(lib_called_fn) {
-                            called_functions.push(lib_called_fn.clone());
-                        }
-                    }
-                }
-            }
-
-            // Add the using directive to the current definition
-            translated_definition.using_directives.push(translated_using_directive);
-        }
-
-        solidity::UsingList::Functions(_) => todo!("using directive function list: {}", using_directive.to_string()),
-
-        solidity::UsingList::Error => panic!("Failed to parse using directive"),
-    }
-
-    Ok(())
-}
-
-#[allow(clippy::too_many_arguments)]
-#[inline]
 pub fn translate_contract_definition(
     project: &mut Project,
-    translated_definition: &mut TranslatedDefinition,
+    module: Rc<RefCell<ir::Module>>,
     contract_definition: &solidity::ContractDefinition,
+    contract: Rc<RefCell<ir::Contract>>,
 ) -> Result<(), Error> {
-    // Propagate inherited definitions
-    propagate_inherited_definitions(project, translated_definition)?;
+    // println!(
+    //     "Translating contract `{}` at {}",
+    //     contract_definition
+    //         .name
+    //         .as_ref()
+    //         .map(|x| x.name.as_str())
+    //         .unwrap(),
+    //     project.loc_to_file_location_string(module.clone(), &contract_definition.loc),
+    // );
 
-    // Translate contract using directives
+    // Collect each contract part into separate collections
+    let mut using_directives = vec![];
+    let mut event_definitions = vec![];
+    let mut error_definitions = vec![];
+    let mut function_definitions = vec![];
+    let mut variable_definitions = vec![];
+
+    let mut has_constructor = false;
+
     for part in contract_definition.parts.iter() {
-        let solidity::ContractPart::Using(using_directive) = part else { continue };
-        translate_using_directive(project, translated_definition, using_directive)?;
-    }
+        match part {
+            solidity::ContractPart::EventDefinition(event_definition) => {
+                event_definitions.push(event_definition.clone())
+            }
 
-    // Translate contract type definitions
-    for part in contract_definition.parts.iter() {
-        let solidity::ContractPart::TypeDefinition(type_definition) = part else { continue };
-        translate_type_definition(project, translated_definition, type_definition)?;
-    }
+            solidity::ContractPart::ErrorDefinition(error_definition) => {
+                error_definitions.push(error_definition.clone())
+            }
 
-    // Translate contract enum definitions
-    for part in contract_definition.parts.iter() {
-        let solidity::ContractPart::EnumDefinition(enum_definition) = part else { continue };
-        translate_enum_definition(project, translated_definition, enum_definition)?;
-    }
+            solidity::ContractPart::VariableDefinition(variable_definition) => {
+                let is_constant = variable_definition
+                    .attrs
+                    .iter()
+                    .any(|x| matches!(x, solidity::VariableAttribute::Constant(_)));
 
-    // Collect contract struct names ahead of time for contextual reasons
-    for part in contract_definition.parts.iter() {
-        let solidity::ContractPart::StructDefinition(struct_definition) = part else { continue };
-        let struct_name = struct_definition.name.as_ref().unwrap().name.clone();
+                let is_immutable = variable_definition
+                    .attrs
+                    .iter()
+                    .any(|x| matches!(x, solidity::VariableAttribute::Immutable(_)));
 
-        if !translated_definition.struct_names.contains(&struct_name) {
-            translated_definition.struct_names.push(struct_name);
+                let is_configurable = is_immutable && !is_constant;
+
+                // Only translate regular state variables.
+                // Constants and configurables are translated at toplevel ahead of time.
+                if !is_constant && !is_configurable {
+                    variable_definitions.push(variable_definition);
+                }
+            }
+
+            solidity::ContractPart::FunctionDefinition(function_definition) => {
+                if matches!(function_definition.ty, solidity::FunctionTy::Constructor) {
+                    has_constructor = true;
+                }
+
+                function_definitions.push(function_definition.clone())
+            }
+
+            solidity::ContractPart::Annotation(_annotation) => {}
+
+            solidity::ContractPart::Using(using_directive) => {
+                using_directives.push(using_directive.clone())
+            }
+
+            solidity::ContractPart::StraySemicolon(_loc) => {}
+
+            _ => {}
         }
     }
 
-    // Translate contract struct definitions
-    for part in contract_definition.parts.iter() {
-        let solidity::ContractPart::StructDefinition(struct_definition) = part else { continue };
-        translate_struct_definition(project, translated_definition, struct_definition)?;
+    // Translate contract using directives
+    let contract_name = contract.borrow().name.clone();
+
+    for using_directive in using_directives {
+        translate_using_directive(
+            project,
+            module.clone(),
+            Some(&contract_name),
+            &using_directive,
+        )?;
     }
 
     // Translate contract event definitions
-    for part in contract_definition.parts.iter() {
-        let solidity::ContractPart::EventDefinition(event_definition) = part else { continue };
-        translate_event_definition(project, translated_definition, event_definition)?;
-    }
-
-    // Translate contract error definitions
-    for part in contract_definition.parts.iter() {
-        let solidity::ContractPart::ErrorDefinition(error_definition) = part else { continue };
-        translate_error_definition(project, translated_definition, error_definition)?;
+    for event_definition in event_definitions {
+        translate_event_definition(
+            project,
+            module.clone(),
+            Some(&contract_name),
+            &event_definition,
+        )?;
     }
 
     // Create the abi encoding function for the events enum (if any)
-    let events_enum_name = format!("{}Event", translated_definition.name);
+    let events_enum_name = format!("{contract_name}Event");
 
-    if let Some((events_enum, abi_encode_impl)) = translated_definition.events_enums.iter().find(|(e, _)| e.borrow().name == events_enum_name).cloned() {
-        generate_enum_abi_encode_function(project, translated_definition, &events_enum, &abi_encode_impl)?;
+    if let Some((events_enum, abi_encode_impl)) = module
+        .borrow()
+        .events_enums
+        .iter()
+        .find(|(e, _)| e.borrow().name == events_enum_name)
+        .cloned()
+    {
+        generate_enum_abi_encode_function(
+            project,
+            module.clone(),
+            events_enum.clone(),
+            abi_encode_impl.clone(),
+        )?;
+    }
+
+    // Translate contract error definitions
+    for error_definition in error_definitions {
+        translate_error_definition(
+            project,
+            module.clone(),
+            Some(&contract_name),
+            &error_definition,
+        )?;
     }
 
     // Create the abi encoding function for the errors enum (if any)
-    let errors_enum_name = format!("{}Error", translated_definition.name);
+    let errors_enum_name = format!("{contract_name}Error");
 
-    if let Some((errors_enum, abi_encode_impl)) = translated_definition.errors_enums.iter().find(|(e, _)| e.borrow().name == errors_enum_name).cloned() {
-        generate_enum_abi_encode_function(project, translated_definition, &errors_enum, &abi_encode_impl)?;
+    if let Some((errors_enum, abi_encode_impl)) = module
+        .borrow()
+        .errors_enums
+        .iter()
+        .find(|(e, _)| e.borrow().name == errors_enum_name)
+        .cloned()
+    {
+        generate_enum_abi_encode_function(
+            project,
+            module.clone(),
+            errors_enum.clone(),
+            abi_encode_impl.clone(),
+        )?;
     }
+
+    let scope = Rc::new(RefCell::new(ir::Scope::new(
+        Some(contract_name.as_str()),
+        None,
+        None,
+    )));
+
+    // HACK: Add an implicit `constructor_called` state variable if we have a constructor function
+    if has_constructor {
+        ensure_constructor_called_fields_exist(project, module.clone(), scope.clone());
+    }
+
+    fn collect_inherited_storage_namespaces(
+        project: &mut Project,
+        module: Rc<RefCell<ir::Module>>,
+        scope: Rc<RefCell<ir::Scope>>,
+        contract: Rc<RefCell<ir::Contract>>,
+        storage: &mut sway::Storage,
+    ) {
+        let inherits = contract.borrow().abi.inherits.clone();
+        for inherited_contract in inherits {
+            let inherited_contract_name = inherited_contract.to_string();
+            let inherited_contract = project
+                .find_contract(module.clone(), &inherited_contract_name)
+                .unwrap();
+
+            if let Some(inherited_storage) = inherited_contract.borrow().storage.as_ref() {
+                if contract.borrow().storage_struct.is_none() {
+                    contract.borrow_mut().storage_struct = Some(Rc::new(RefCell::new(ir::Struct {
+                        name: format!("{}Storage", contract.borrow().name),
+                        memory: sway::Struct {
+                            attributes: None,
+                            is_public: true,
+                            name: String::new(),
+                            generic_parameters: None,
+                            fields: vec![],
+                        },
+                        storage: sway::Struct {
+                            attributes: None,
+                            is_public: true,
+                            name: format!("{}Storage", contract.borrow().name),
+                            generic_parameters: None,
+                            fields: vec![],
+                        },
+                    })))
+                }
+
+                contract
+                    .borrow_mut()
+                    .storage_struct
+                    .as_ref()
+                    .unwrap()
+                    .borrow_mut()
+                    .storage
+                    .fields
+                    .push(sway::StructField {
+                        is_public: true,
+                        new_name: inherited_contract_name.to_case(Case::Snake),
+                        old_name: String::new(),
+                        type_name: sway::TypeName::create_identifier(
+                            format!("{inherited_contract_name}Storage").as_str(),
+                        ),
+                    });
+                storage
+                    .namespaces
+                    .extend(inherited_storage.borrow().namespaces.clone());
+            }
+
+            collect_inherited_storage_namespaces(
+                project,
+                module.clone(),
+                scope.clone(),
+                inherited_contract,
+                storage,
+            );
+        }
+    }
+
+    let mut contract_storage = sway::Storage::default();
+
+    collect_inherited_storage_namespaces(
+        project,
+        module.clone(),
+        scope.clone(),
+        contract.clone(),
+        &mut contract_storage,
+    );
+
+    contract.borrow_mut().storage = Some(Rc::new(RefCell::new(contract_storage)));
 
     // Translate contract state variables
-    for part in contract_definition.parts.iter() {
-        let solidity::ContractPart::VariableDefinition(variable_definition) = part else { continue };
-        translate_state_variable(project, translated_definition, variable_definition)?;
+    let mut deferred_initializations = vec![];
+    let mut mapping_names = vec![];
+    let mut state_variable_infos = vec![];
+
+    for variable_definition in variable_definitions.iter() {
+        let state_variable_info = translate_state_variable(
+            project,
+            module.clone(),
+            Some(&contract_name),
+            variable_definition,
+        )?;
+
+        deferred_initializations.extend(state_variable_info.deferred_initializations.clone());
+        mapping_names.extend(state_variable_info.mapping_names.clone());
+
+        state_variable_infos.push(state_variable_info);
     }
-    
-    // Collect each toplevel function ahead of time for contextual reasons
-    for part in contract_definition.parts.iter() {
-        let solidity::ContractPart::FunctionDefinition(function_definition) = part else { continue };
 
-        let is_modifier = matches!(function_definition.ty, solidity::FunctionTy::Modifier);
-
-        if is_modifier {
+    for state_variable_info in state_variable_infos {
+        let Some((abi_fn, toplevel_fn, impl_fn)) = generate_state_variable_getter_functions(
+            project,
+            module.clone(),
+            scope.clone(),
+            Some(contract_name.as_str()),
+            &state_variable_info,
+        )?
+        else {
             continue;
-        }
-
-        // Add the toplevel function to the list of toplevel functions for the toplevel scope
-        let function = translate_function_declaration(project, translated_definition, function_definition)?;
-        
-        let sway::TypeName::Function { parameters: function_parameters, return_type: function_return_type, .. } = &function.type_name else {
-            panic!("Invalid function type name: {:#?}", function.type_name)
         };
-        
-        let mut function_exists = false;
 
-        for f in translated_definition.toplevel_scope.borrow().functions.iter() {
-            let mut f = f.borrow_mut();
+        contract.borrow_mut().abi.functions.push(abi_fn);
 
-            let sway::TypeName::Function { parameters: f_parameters, return_type: f_return_type, .. } = &f.type_name else {
-                panic!("Invalid function type name: {:#?}", f.type_name)
-            };
-            
-            if ((!f.old_name.is_empty() && (f.old_name == function.old_name)) || (f.new_name == function.new_name))
-                && f_parameters == function_parameters
-                && f_return_type == function_return_type
-            {
-                f.new_name = function.new_name.clone();
-                function_exists = true;
-                break;
+        if let Some(function) = module
+            .borrow_mut()
+            .functions
+            .iter_mut()
+            .find(|f| f.signature == toplevel_fn.get_type_name())
+        {
+            if let Some(function_implementation) = function.implementation.as_ref() {
+                assert!(*function_implementation == toplevel_fn);
+            } else {
+                assert!(function.implementation.is_none());
+                function.implementation = Some(toplevel_fn);
             }
+        } else {
+            module.borrow_mut().functions.push(ir::Item {
+                signature: toplevel_fn.get_type_name(),
+                implementation: Some(toplevel_fn),
+            });
         }
 
-        if !function_exists {
-            translated_definition.toplevel_scope.borrow_mut().functions.push(Rc::new(RefCell::new(function)));
-        }
+        contract
+            .borrow_mut()
+            .abi_impl
+            .items
+            .push(sway::ImplItem::Function(impl_fn));
     }
 
     // Translate each modifier
-    for part in contract_definition.parts.iter() {
-        let solidity::ContractPart::FunctionDefinition(function_definition) = part else { continue };
-        
+    for function_definition in function_definitions.iter() {
         let is_modifier = matches!(function_definition.ty, solidity::FunctionTy::Modifier);
-
         if !is_modifier || function_definition.body.is_none() {
             continue;
         }
-        
-        translate_modifier_definition(project, translated_definition, function_definition)?;
+
+        translate_modifier_definition(
+            project,
+            module.clone(),
+            Some(&contract_name),
+            function_definition,
+        )?;
     }
 
     // Translate each function
-    for part in contract_definition.parts.iter() {
-        let solidity::ContractPart::FunctionDefinition(function_definition) = part else { continue };
-
+    for function_definition in function_definitions {
         let is_modifier = matches!(function_definition.ty, solidity::FunctionTy::Modifier);
-
         if is_modifier {
             continue;
         }
 
-        translate_function_definition(project, translated_definition, function_definition)?;
+        let (Some(function), impl_item) = translate_function_definition(
+            project,
+            module.clone(),
+            Some(&contract_name),
+            &function_definition,
+        )?
+        else {
+            continue;
+        };
+
+        if let Some(impl_item) = impl_item
+            && !contract.borrow().abi_impl.items.contains(&impl_item)
+        {
+            contract.borrow_mut().abi_impl.items.push(impl_item);
+        }
+
+        let mut module = module.borrow_mut();
+
+        let function_signature = sway::TypeName::Function {
+            old_name: function.old_name.clone(),
+            new_name: function.new_name.clone(),
+            generic_parameters: function.generic_parameters.clone(),
+            parameters: function.parameters.clone(),
+            storage_struct_parameter: function.storage_struct_parameter.clone().map(Box::new),
+            return_type: function.return_type.clone().map(Box::new),
+        };
+
+        let Some(function_entry) = module.functions.iter_mut().find(|f| {
+            let sway::TypeName::Function { new_name, .. } = &f.signature else {
+                unreachable!()
+            };
+
+            *new_name == function.new_name && f.signature.is_compatible_with(&function_signature)
+        }) else {
+            panic!(
+                "Failed to find function {} - {} - in list:\n{}",
+                function.new_name,
+                function_signature,
+                module
+                    .functions
+                    .iter()
+                    .map(|f| {
+                        let sway::TypeName::Function { new_name, .. } = &f.signature else {
+                            unreachable!()
+                        };
+
+                        format!("    {} - {}", new_name, f.signature)
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            );
+        };
+
+        function_entry.implementation = Some(function);
     }
 
     // Propagate deferred initializations into the constructor
-    if !translated_definition.deferred_initializations.is_empty() {
-        let mut assignment_statements = vec![];
-        let deferred_initializations = translated_definition.deferred_initializations.clone();
+    if !deferred_initializations.is_empty() {
+        let namespace_name = translate_naming_convention(&contract_name, Case::Snake);
 
-        let namespace_name = translated_definition.get_storage_namespace_name();
+        let scope = Rc::new(RefCell::new(ir::Scope::new(
+            Some(contract_name.as_str()),
+            None,
+            None,
+        )));
+
+        let mut assignment_statements = vec![];
+
+        scope
+            .borrow_mut()
+            .add_variable(Rc::new(RefCell::new(ir::Variable {
+                old_name: String::new(),
+                new_name: "storage_struct".to_string(),
+                type_name: sway::TypeName::create_identifier(
+                    format!("{}Storage", contract.borrow().name).as_str(),
+                ),
+                statement_index: None,
+                read_count: 0,
+                mutation_count: 0,
+            })));
 
         // Create assignment statements for all of the deferred initializations
         for deferred_initialization in deferred_initializations.iter().rev() {
-            let lhs = sway::Expression::create_member_access(
-                sway::Expression::create_identifier(format!("storage::{namespace_name}")),
-                &[deferred_initialization.name.as_str()],
-            );
-            
-            let value_type_name = translated_definition.get_expression_type(&translated_definition.toplevel_scope.clone(), &deferred_initialization.value)?;
-            let variable = translated_definition.toplevel_scope.borrow().get_variable_from_new_name(&deferred_initialization.name).unwrap();
+            let lhs = deferred_initialization.expression.clone();
+
+            let value_type_name = get_expression_type(
+                project,
+                module.clone(),
+                scope.clone(),
+                &deferred_initialization.value,
+            )?;
 
             match &deferred_initialization.value {
                 sway::Expression::Array(sway::Array { elements }) => {
                     for element in elements {
-                        assignment_statements.push(sway::Statement::from(sway::Expression::create_function_calls(None, &[
-                            (format!("storage::{namespace_name}").as_str(), None),
-                            (deferred_initialization.name.as_str(), None),
-                            ("push", Some((None, vec![
-                                element.clone(),
-                            ]))),
-                        ])));
+                        assignment_statements.push(sway::Statement::from(
+                            deferred_initialization.expression.with_function_call(
+                                "push",
+                                None,
+                                vec![element.clone()],
+                            ),
+                        ));
                     }
                 }
 
                 _ => {
-                    let scope = translated_definition.toplevel_scope.clone();
-                    
-                    assignment_statements.push(sway::Statement::from(create_assignment_expression(
-                        project,
-                        translated_definition,
-                        &scope,
-                        "=",
-                        &lhs,
-                        &variable,
-                        &deferred_initialization.value,
-                        &value_type_name,
-                    )?));
+                    assignment_statements.push(sway::Statement::from(
+                        create_assignment_expression(
+                            project,
+                            module.clone(),
+                            scope.clone(),
+                            "=",
+                            &lhs,
+                            None,
+                            &deferred_initialization.value,
+                            &value_type_name,
+                        )?,
+                    ));
                 }
             }
         }
-        
-        let mut constructor_function = translated_definition.functions.iter_mut().find(|f| f.name == "constructor");
-    
-        // Create the constructor if it doesn't exist
-        if constructor_function.is_none() {
-            let mut function = sway::Function {
-                attributes: None,
-                is_public: false,
-                old_name: String::new(),
-                name: "constructor".into(),
-                generic_parameters: None,
-                parameters: sway::ParameterList::default(),
-                return_type: None,
-                body: None,
-            };
-    
-            translated_definition.get_abi().functions.insert(0, function.clone());
-    
-            function.body = Some(sway::Block::default());
-            let function_body = function.body.as_mut().unwrap();
-    
-            let prefix = translate_naming_convention(translated_definition.name.as_str(), Case::Snake);
-            let constructor_called_variable_name =  translate_storage_name(project, translated_definition, format!("{prefix}_constructor_called").as_str());
-            
-            // Add the `constructor_called` field to the storage block
-            translated_definition.get_storage_namespace().fields.push(sway::StorageField {
-                name: constructor_called_variable_name.clone(),
-                type_name: sway::TypeName::Identifier {
-                    name: "bool".into(),
-                    generic_parameters: None,
-                },
-                value: sway::Expression::from(sway::Literal::Bool(false)),
-            });
-    
-            // Add the `constructor_called` requirement to the beginning of the function
-            // require(!storage.initialized.read(), "The Contract constructor has already been called");
-            function_body.statements.insert(0, sway::Statement::from(sway::Expression::create_function_calls(None, &[
-                ("require", Some((None, vec![
-                    sway::Expression::from(sway::UnaryExpression {
-                        operator: "!".into(),
-                        expression: sway::Expression::create_function_calls(None, &[
-                            (format!("storage::{namespace_name}").as_str(), None),
-                            (constructor_called_variable_name.as_str(), None),
-                            ("read", Some((None, vec![]))),
-                        ]),
-                    }),
-                    sway::Expression::from(sway::Literal::String(format!("The {} constructor has already been called", translated_definition.name))),
-                ]))),
-            ])));
-    
-            // Set the `constructor_called` storage field to `true` at the end of the function
-            // storage.initialized.write(true);
-            function_body.statements.push(sway::Statement::from(sway::Expression::create_function_calls(None, &[
-                (format!("storage::{namespace_name}").as_str(), None),
-                (constructor_called_variable_name.as_str(), None),
-                ("write", Some((None, vec![
-                    sway::Expression::from(sway::Literal::Bool(true)),
-                ]))),
-            ])));
 
-            translated_definition.get_contract_impl().items.insert(0, sway::ImplItem::Function(function));
-            constructor_function = translated_definition.get_contract_impl().items.iter_mut()
-                .find(|i| {
-                    let sway::ImplItem::Function(f) = i else { return false };
-                    f.name == "constructor"
-                })
-                .map(|i| {
-                    let sway::ImplItem::Function(f) = i else { unreachable!() };
-                    f
-                });
-        }
+        ensure_constructor_functions_exist(
+            project,
+            module.clone(),
+            scope.clone(),
+            contract.clone(),
+        );
 
-        let constructor_function = constructor_function.unwrap();
+        let mut module = module.borrow_mut();
+        let constructor_name = format!("{namespace_name}_constructor");
+
+        let constructor_function = module
+            .functions
+            .iter_mut()
+            .find(|f| {
+                let sway::TypeName::Function { new_name, .. } = &f.signature else {
+                    unreachable!()
+                };
+                *new_name == constructor_name
+            })
+            .and_then(|f| f.implementation.as_mut())
+            .unwrap();
 
         if constructor_function.body.is_none() {
             constructor_function.body = Some(sway::Block::default());
@@ -397,7 +470,9 @@ pub fn translate_contract_definition(
 
         // Skip past the initial constructor requirements
         for (i, statement) in constructor_body.statements.iter().enumerate() {
-            let sway::Statement::Expression(sway::Expression::FunctionCall(function_call)) = statement else {
+            let sway::Statement::Expression(sway::Expression::FunctionCall(function_call)) =
+                statement
+            else {
                 statement_index = i;
                 break;
             };
@@ -415,297 +490,98 @@ pub fn translate_contract_definition(
 
         // Add the deferred initializations to the constructor body
         for statement in assignment_statements.into_iter().rev() {
-            constructor_body.statements.insert(statement_index, statement);
+            constructor_body
+                .statements
+                .insert(statement_index, statement);
         }
     }
 
-    // Expand function attributes to support the attributes of any other functions they call
-    for (calling_name, called_names) in translated_definition.functions_called.iter() {
-        for called_name in called_names.iter() {
-            // HACK: if we can't find the function, skip for now...
-            // TODO: look into why some functions are showing up here
-            let Some(called_function) = translated_definition.functions.iter().find(|f| f.name == *called_name).cloned() else { continue };
-            let Some(calling_function) = translated_definition.functions.iter_mut().find(|f| f.name == *calling_name) else { continue };
-            
-            if let Some(called_attrs) = called_function.attributes.as_ref() {
-                if calling_function.attributes.is_none() {
-                    calling_function.attributes = Some(sway::AttributeList::default());
-                }
-
-                let calling_attrs = calling_function.attributes.as_mut().unwrap();
-
-                for called_attr in called_attrs.attributes.iter() {
-                    if !calling_attrs.attributes.iter().any(|a| a.name == called_attr.name) {
-                        calling_attrs.attributes.push(sway::Attribute {
-                            name: called_attr.name.clone(),
-                            parameters: None,
-                        });
-                    }
-
-                    let calling_attr = calling_attrs.attributes.iter_mut().find(|a| a.name == called_attr.name).unwrap();
-
-                    if let Some(called_params) = called_attr.parameters.as_ref() {
-                        if calling_attr.parameters.is_none() {
-                            calling_attr.parameters = Some(vec![]);
-                        }
-
-                        let calling_params = calling_attr.parameters.as_mut().unwrap();
-                        
-                        for called_param in called_params.iter() {
-                            if !calling_params.contains(called_param) {
-                                calling_params.push(called_param.clone());
-                            }
-                        }
-                    }
-                }
-            }
+    let mut contract = contract.borrow_mut();
+    if let Some(storage) = contract.storage.as_mut() {
+        if storage.borrow().fields.is_empty() && storage.borrow().namespaces.is_empty() {
+            contract.storage = None;
         }
     }
 
-    // Look for toplevel functions that are never called, move their implementation to the abi wrapper function if it exists
-    if !matches!(translated_definition.kind.as_ref(), Some(solidity::ContractTy::Abstract(_))) {
-        let function_names = translated_definition.functions.iter().map(|f| f.name.clone()).collect::<Vec<_>>();
-        for function_name in function_names {
-            let (None | Some(0)) = translated_definition.function_call_counts.get(&function_name) else { continue };
-            let Some((toplevel_function_index, toplevel_function)) = translated_definition.functions.iter().enumerate().find(|(_, f)| f.name == function_name) else { continue };
-            let toplevel_function = toplevel_function.clone();
-            let body = translated_definition.functions[toplevel_function_index].body.clone();
-
-            let Some(contract_impl) = translated_definition.find_contract_impl_mut() else { continue };
-            let Some(contract_impl_function) = contract_impl.items.iter_mut()
-                .filter_map(|i| match i {
-                    sway::ImplItem::Function(f) => Some(f),
-                    _ => None,
-                })
-                .find(|f| f.name == function_name) else { continue };
-            
-            if toplevel_function.parameters.entries.iter().zip(contract_impl_function.parameters.entries.iter()).all(|(p1, p2)| p1 == p2) {
-                contract_impl_function.body = body;
-                translated_definition.functions.remove(toplevel_function_index);
-            }
-        }
-    }
-    
     Ok(())
 }
 
 #[inline]
-pub fn propagate_inherited_definitions(
+pub fn translate_using_directive(
     project: &mut Project,
-    translated_definition: &mut TranslatedDefinition,
+    module: Rc<RefCell<ir::Module>>,
+    contract_name: Option<&str>,
+    using_directive: &solidity::Using,
 ) -> Result<(), Error> {
-    for inherit in translated_definition.inherits.clone() {
-        let mut inherited_definition = None;
+    let scope = Rc::new(RefCell::new(ir::Scope::new(contract_name, None, None)));
 
-        // Try to find the inherited definition in project
-        if let Some(external_definition) = project.translated_definitions.iter().find(|t| t.name == inherit) {
-            inherited_definition = Some(external_definition);
-        }
+    let for_type = using_directive
+        .ty
+        .as_ref()
+        .map(|t| translate_type_name(project, module.clone(), scope.clone(), t, None))
+        .map_or(Ok(None), |t| Ok(Some(t)))?;
 
-        // Check to see if the definition was defined in the current file
-        if inherited_definition.is_none() {
-            if translated_definition.abis.iter().find(|d| d.name == inherit).is_some() {
-                return Ok(());
-            }
-        }
+    match &using_directive.list {
+        solidity::UsingList::Library(using_library) => {
+            let library_name = using_library
+                .identifiers
+                .iter()
+                .map(|i| i.name.clone())
+                .collect::<Vec<_>>()
+                .join(".");
 
-        let Some(inherited_definition) = inherited_definition else {
-            panic!("Failed to find inherited definition \"{inherit}\" for \"{}\"", translated_definition.name);
-        };
+            // Find the translated library definition
+            let Some(library_definition) =
+                project.find_module_containing_contract(module.clone(), &library_name)
+            else {
+                panic!(
+                    "Failed to find translated library: \"{library_name}\"; from {}",
+                    project.loc_to_file_location_string(module.clone(), &using_directive.loc),
+                )
+            };
 
-        // Extend the toplevel scope
-        let inherited_variables = inherited_definition.toplevel_scope.borrow().variables.clone();
-        let inherited_functions = inherited_definition.toplevel_scope.borrow().functions.clone();
-        translated_definition.toplevel_scope.borrow_mut().variables.extend(inherited_variables);
-        translated_definition.toplevel_scope.borrow_mut().functions.extend(inherited_functions);
+            let mut translated_using_directive = ir::UsingDirective {
+                library_name,
+                for_type,
+                functions: vec![],
+            };
 
-        // Extend the dependencies 
-        for deps in inherited_definition.dependencies.iter() {
-            if !translated_definition.dependencies.contains(deps) {
-                translated_definition.dependencies.push(deps.clone());
-            }
-        }
+            // Collect all functions that support the `for_type`
+            for function in library_definition.borrow().functions.iter() {
+                // If we're using the library for a specific type, ensure the first function parameter matches that type
+                let sway::TypeName::Function { parameters, .. } = &function.signature else {
+                    unreachable!()
+                };
 
-        // Extend the use statements
-        for inherited_use in inherited_definition.uses.iter() {
-            if !translated_definition.uses.contains(inherited_use) {
-                translated_definition.uses.push(inherited_use.clone());
-            }
-        }
-
-        // Extend the inherit statements
-        for inherited_inherit in inherited_definition.inherits.iter() {
-            if !translated_definition.inherits.contains(inherited_inherit) {
-                translated_definition.inherits.push(inherited_inherit.clone());
-            }
-        }
-
-        // Extend the type definitions
-        for inherited_type_definition in inherited_definition.type_definitions.iter() {
-            if !translated_definition.type_definitions.contains(inherited_type_definition) {
-                translated_definition.type_definitions.push(inherited_type_definition.clone());
-            }
-        }
-
-        // Extend the structs
-        for inherited_struct in inherited_definition.structs.iter() {
-            translated_definition.ensure_struct_included(project, inherited_struct);
-        }
-
-        // Extend the struct names
-        for inherited_struct_name in inherited_definition.struct_names.iter() {
-            if !translated_definition.struct_names.contains(inherited_struct_name) {
-                translated_definition.struct_names.push(inherited_struct_name.clone());
-            }
-        }
-
-        // Extend the enums
-        for inherited_enum in inherited_definition.enums.iter() {
-            translated_definition.add_enum(inherited_enum);
-        }
-
-        // Extend the events enum
-        for inherited_enum in inherited_definition.events_enums.iter() {
-            if !translated_definition.events_enums.contains(inherited_enum) {
-                translated_definition.events_enums.push(inherited_enum.clone());
-            }
-        }
-
-        // Extend the errors enum
-        for inherited_enum in inherited_definition.errors_enums.iter() {
-            if !translated_definition.errors_enums.contains(inherited_enum) {
-                translated_definition.errors_enums.push(inherited_enum.clone());
-            }
-        }
-
-        // Extend the constants
-        for constant in inherited_definition.constants.iter() {
-            if !translated_definition.constants.contains(constant) {
-                translated_definition.constants.push(constant.clone());
-            }
-        }
-
-        // Extend the ABIs
-        for abi in inherited_definition.abis.iter() {
-            if !translated_definition.abis.contains(abi) {
-                translated_definition.abis.push(abi.clone());
-            }
-        }
-
-        // Extend the abi
-        if let Some(inherited_abi) = inherited_definition.abi.as_ref() {
-            for inherited_function in inherited_abi.functions.iter() {
-                if inherited_function.name == "constructor" {
+                if translated_using_directive.for_type.is_some()
+                    && translated_using_directive.for_type
+                        != parameters.entries.first().and_then(|p| p.type_name.clone())
+                {
                     continue;
                 }
 
-                let abi = translated_definition.get_abi();
-
-                if !abi.functions.contains(inherited_function) {
-                    abi.functions.push(inherited_function.clone());
-                }
-            }
-        }
-
-        // Extend the configurable fields
-        if let Some(inherited_configurable) = inherited_definition.configurable.as_ref() {
-            let configurable = translated_definition.get_configurable();
-
-            for inherited_field in inherited_configurable.fields.iter() {
-                if !configurable.fields.contains(inherited_field) {
-                    configurable.fields.push(inherited_field.clone());
-                }
-            }
-        }
-
-        // Extend the storage
-        if let Some(inherited_storage) = inherited_definition.storage.as_ref() {
-            let storage = translated_definition.get_storage();
-
-            for inherited_field in inherited_storage.fields.iter() {
-                if storage.fields.contains(inherited_field) {
-                    continue;
-                }
-                
-                storage.fields.push(inherited_field.clone());
+                // Add the function to the translated using directive so we know where it came from
+                translated_using_directive.functions.push({
+                    let sway::TypeName::Function { new_name, .. } = &function.signature else {
+                        unreachable!()
+                    };
+                    new_name.clone()
+                });
             }
 
-            for inherited_namespace in inherited_storage.namespaces.iter() {
-                if storage.namespaces.contains(inherited_namespace) {
-                    continue;
-                }
-
-                storage.namespaces.push(inherited_namespace.clone());
-            }
+            // Add the using directive to the current definition
+            module
+                .borrow_mut()
+                .using_directives
+                .push(translated_using_directive);
         }
 
-        // Extend the modifiers
-        for inherited_modifier in inherited_definition.modifiers.iter() {
-            if !translated_definition.modifiers.contains(inherited_modifier) {
-                translated_definition.modifiers.push(inherited_modifier.clone());
-            }
-        }
+        solidity::UsingList::Functions(_) => todo!(
+            "using directive function list: {}",
+            using_directive.to_string()
+        ),
 
-        // Extend the functions
-        for inherited_function in inherited_definition.functions.iter() {
-            if !translated_definition.functions.contains(inherited_function) {
-                translated_definition.functions.push(inherited_function.clone());
-            }
-        }
-
-        // Extend function name count mapping
-        for (function_name, count) in inherited_definition.function_name_counts.iter() {
-            *translated_definition.function_name_counts.entry(function_name.clone()).or_insert(0) += *count;
-        }
-
-        // Extend function name mapping
-        for (signature, function_name) in inherited_definition.function_names.iter() {
-            if !translated_definition.function_names.contains_key(signature) {
-                translated_definition.function_names.insert(signature.clone(), function_name.clone());
-            }
-        }
-
-        // Extend function call count mapping
-        for (function_call, count) in inherited_definition.function_call_counts.iter() {
-            *translated_definition.function_call_counts.entry(function_call.clone()).or_insert(0) += *count;
-        }
-
-        // Extend functions called mapping
-        for (inherited_calling_function, inherited_called_functions) in inherited_definition.functions_called.iter() {
-            let called_functions = translated_definition.functions_called.entry(inherited_calling_function.clone()).or_default();
-
-            for inherited_called_function in inherited_called_functions {
-                if !called_functions.contains(inherited_called_function) {
-                    called_functions.push(inherited_called_function.clone());
-                }
-            }
-        }
-
-        // Extend the contract impl block
-        if let Some(inherited_impl) = inherited_definition.find_contract_impl() {
-            for inherited_impl_item in inherited_impl.items.iter() {
-                if let sway::ImplItem::Function(inherited_function) = inherited_impl_item {
-                    if inherited_function.name == "constructor" {
-                        let mut inherited_function = inherited_function.clone();
-                        
-                        let prefix = translate_naming_convention(inherited_definition.name.as_str(), Case::Snake);
-                        inherited_function.name = format!("{prefix}_constructor");
-
-                        if !translated_definition.functions.contains(&inherited_function) {
-                            translated_definition.functions.push(inherited_function);
-                        }
-
-                        continue;
-                    }
-                }
-
-                let contract_impl = translated_definition.get_contract_impl();
-
-                if !contract_impl.items.contains(inherited_impl_item) {
-                    contract_impl.items.push(inherited_impl_item.clone());
-                }
-            }
-        }
+        solidity::UsingList::Error => panic!("Failed to parse using directive"),
     }
 
     Ok(())

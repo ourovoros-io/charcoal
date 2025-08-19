@@ -1,4 +1,4 @@
-use crate::{errors::Error, project::Project, sway, translate::*};
+use crate::{error::Error, project::Project, sway, translate::*};
 use convert_case::Case;
 use solang_parser::{helpers::CodeLocation, pt as solidity};
 use std::{cell::RefCell, rc::Rc};
@@ -6,8 +6,8 @@ use std::{cell::RefCell, rc::Rc};
 #[inline]
 pub fn translate_variable_expression(
     project: &mut Project,
-    translated_definition: &mut TranslatedDefinition,
-    scope: &Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
     expression: &solidity::Expression,
 ) -> Result<sway::Expression, Error> {
     //
@@ -22,386 +22,412 @@ pub fn translate_variable_expression(
 
     // Check for built-in variables
     match variable.name.as_str() {
+        "_" => {
+            // Modifier body insertion variable
+            return Ok(sway::Expression::create_identifier("_".into()));
+        }
+
         "now" => {
             // now => std::block::timestamp().as_u256()
-            return Ok(sway::Expression::create_function_calls(None, &[
-                ("std::block::timestamp", Some((None, vec![]))),
-                ("as_u256", Some((None, vec![]))),
-            ]));
+            return Ok(sway::Expression::create_function_call(
+                "std::block::timestamp",
+                None,
+                vec![],
+            )
+            .with_as_u256_call());
         }
 
         _ => {}
     }
 
-    let Ok((variable, expression)) = translate_variable_access_expression(project, translated_definition, scope, expression) else {
+    let Some(ir::VariableAccess {
+        variable,
+        expression,
+    }) = translate_variable_access_expression(project, module.clone(), scope.clone(), expression)?
+    else {
         panic!(
-            "{}ERROR: Variable not found in scope: \"{}\"",
-            match project.loc_to_line_and_column(&translated_definition.path, &expression.loc()) {
-                Some((line, col)) => format!("{}:{}:{} - ", translated_definition.path.to_string_lossy(), line, col),
-                None => format!("{} - ", translated_definition.path.to_string_lossy()),
-            },
+            "{}: ERROR: Variable not found in scope: \"{}\"",
+            project.loc_to_file_location_string(module.clone(), &expression.loc()),
             sway::TabbedDisplayer(&expression),
         );
     };
 
     if let Some(variable) = variable {
-        let mut variable = variable.borrow_mut();
-    
-        variable.read_count += 1;
-        
-        if variable.storage_namespace.is_some() {
-            match &variable.type_name {
-                sway::TypeName::Identifier { name, .. } if name == "StorageString" => {
-                    Ok(sway::Expression::create_function_calls(Some(expression), &[
-                        ("read_slice", Some((None, vec![]))),
-                        ("unwrap", Some((None, vec![]))),
-                    ]))
-                }
-    
-                _ => Ok(sway::Expression::create_function_calls(Some(expression), &[
-                    ("read", Some((None, vec![]))),
-                ]))
-            }
-        } else {
-            Ok(expression)
-        }
-    } else {
-        Ok(expression)
+        variable.borrow_mut().read_count += 1;
     }
+
+    Ok(expression)
 }
 
 pub fn translate_variable_access_expression(
     project: &mut Project,
-    translated_definition: &mut TranslatedDefinition,
-    scope: &Rc<RefCell<TranslationScope>>,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
     solidity_expression: &solidity::Expression,
-) -> Result<(Option<Rc<RefCell<TranslatedVariable>>>, sway::Expression), Error> {
+) -> Result<Option<ir::VariableAccess>, Error> {
     // println!(
-    //     "{}Translating variable access expression: {solidity_expression}",
-    //     match project.loc_to_line_and_column(&translated_definition.path, &solidity_expression.loc()) {
-    //         Some((line, col)) => format!("{}:{}:{} - ", translated_definition.path.to_string_lossy(), line, col),
-    //         None => format!("{} - ", translated_definition.path.to_string_lossy()),
-    //     }
+    //     "{}: Translating variable access expression: {solidity_expression}",
+    //     project.loc_to_file_location_string(module.clone(), &solidity_expression.loc()),
     // );
 
     match solidity_expression {
         solidity::Expression::Variable(solidity::Identifier { name, .. }) => {
-            if let Some(variable) = scope.borrow().get_variable_from_old_name(name) {
-                let variable_name = variable.borrow().new_name.clone();
-                
-                let (is_storage, namespace_name) = match variable.borrow().storage_namespace.as_ref() {
-                    Some(namespace_name) => (true, namespace_name.clone()),
-                    None => (false, String::new()),
+            // Attempt to find a value source matching the name of the variable
+            if let Some(symbol) = resolve_symbol(
+                project,
+                module.clone(),
+                scope.clone(),
+                Symbol::ValueSource(name.into()),
+            ) {
+                let variable = match &symbol {
+                    SymbolData::Variable(variable) => Some(variable.clone()),
+                    _ => None,
                 };
 
-                return Ok((
-                    Some(variable),
-                    if is_storage {
-                        sway::Expression::from(sway::MemberAccess {
-                            expression: sway::Expression::create_identifier(format!("storage::{namespace_name}")),
-                            member: variable_name,
-                        })
-                    } else {
-                        sway::Expression::create_identifier(variable_name)
-                    }
-                ));
-            } else if let Some(function) = scope.borrow().find_function(|f| {
-                f.borrow().old_name == *name
-            }) {
-                return Ok((None, sway::Expression::create_identifier(function.borrow().new_name.clone())));
+                let mut expression: sway::Expression = symbol.try_into()?;
+
+                let expression_type =
+                    get_expression_type(project, module.clone(), scope.clone(), &expression)?;
+
+                if expression_type.is_storage_key() {
+                    scope
+                        .borrow_mut()
+                        .set_function_storage_accesses(module.clone(), true, false);
+
+                    expression = expression.with_read_call();
+                }
+
+                return Ok(Some(ir::VariableAccess {
+                    variable,
+                    expression,
+                }));
             }
 
-            return Err(Error::Wrapped(Box::new(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                format!(
-                    "{}error: Variable not found in scope: \"{name}\" - {solidity_expression}",
-                    match project.loc_to_line_and_column(&translated_definition.path, &solidity_expression.loc()) {
-                        Some((line, col)) => format!("{}:{}:{} - ", translated_definition.path.to_string_lossy(), line, col),
-                        None => format!("{} - ", translated_definition.path.to_string_lossy()),
-                    }
-                ),
-            ))));
+            // Check to see if the variable refers to a function
+            if let Some(function) = module.borrow().functions.iter().find(|f| {
+                let sway::TypeName::Function { old_name, .. } = &f.signature else {
+                    unreachable!()
+                };
+                old_name == name
+            }) {
+                return Ok(Some(ir::VariableAccess {
+                    variable: None,
+                    expression: sway::Expression::create_identifier({
+                        let sway::TypeName::Function { new_name, .. } = &function.signature else {
+                            unreachable!()
+                        };
+                        new_name.as_str()
+                    }),
+                }));
+            }
+
+            Ok(None)
         }
 
         solidity::Expression::ArraySubscript(_, array_expression, Some(index)) => {
-            let mut index = translate_expression(project, translated_definition, scope, index.as_ref())?;
-            
-            let (variable, expression) = translate_variable_access_expression(project, translated_definition, scope, array_expression)?;
+            let mut index =
+                translate_expression(project, module.clone(), scope.clone(), index.as_ref())?;
 
-            if variable.is_none() {
-                return Ok((None, sway::Expression::from(sway::ArrayAccess {
-                    expression,
-                    index,
-                })));
+            let Some(ir::VariableAccess {
+                variable,
+                mut expression,
+            }) = translate_variable_access_expression(
+                project,
+                module.clone(),
+                scope.clone(),
+                array_expression,
+            )?
+            else {
+                return Ok(None);
+            };
+
+            // HACK: remove `.read()` if present
+            if let Some(container) = expression.to_read_call_parts()
+                && get_expression_type(project, module.clone(), scope.clone(), container)?
+                    .is_storage_key()
+            {
+                expression = container.clone();
             }
 
-            let variable = variable.unwrap();
-            let type_name = translated_definition.get_expression_type(scope, &expression)?;
-            let is_storage = variable.borrow().storage_namespace.is_some();
+            let type_name =
+                get_expression_type(project, module.clone(), scope.clone(), &expression)?;
 
-            Ok((
-                Some(variable),
-                match type_name {
-                    sway::TypeName::Identifier { name, generic_parameters } => match (name.as_str(), generic_parameters.as_ref()) {
-                        ("Bytes", None) => sway::Expression::create_function_calls(Some(expression), &[
-                            ("get", Some((None, vec![index]))),
-                            ("unwrap", Some((None, vec![]))),
-                        ]),
+            Ok(Some(ir::VariableAccess {
+                variable,
+                expression: match &type_name {
+                    sway::TypeName::Identifier {
+                        name,
+                        generic_parameters,
+                    } => match (name.as_str(), generic_parameters.as_ref()) {
+                        ("Bytes", None) => expression.with_get_call(index).with_unwrap_call(),
 
-                        ("Option", Some(generic_parameters)) if generic_parameters.entries.len() ==1 => {
-                            if let Some(storage_key_type) = generic_parameters.entries[0].type_name.storage_key_type() {
+                        ("Option", Some(generic_parameters))
+                            if generic_parameters.entries.len() == 1 =>
+                        {
+                            if let Some(storage_key_type) =
+                                generic_parameters.entries[0].type_name.storage_key_type()
+                            {
                                 if storage_key_type.is_storage_map() {
-                                    sway::Expression::create_function_calls(Some(expression), &[
-                                        ("unwrap", Some((None, vec![]))),
-                                        ("get", Some((None, vec![index]))),
-                                    ])
+                                    expression.with_unwrap_call().with_get_call(index)
+                                } else if storage_key_type.is_storage_vec() {
+                                    expression
+                                        .with_unwrap_call()
+                                        .with_get_call(index)
+                                        .with_unwrap_call()
                                 } else {
-                                    todo!()
+                                    todo!("option type: {}", generic_parameters.entries[0])
                                 }
                             } else {
-                                todo!()
+                                todo!("option type: {}", generic_parameters.entries[0])
                             }
                         }
 
-                        ("StorageKey", Some(generic_parameters)) if generic_parameters.entries.len() == 1 => {
-
+                        ("StorageKey", Some(generic_parameters))
+                            if generic_parameters.entries.len() == 1 =>
+                        {
                             match &generic_parameters.entries[0].type_name {
-                                sway::TypeName::Identifier { name, generic_parameters } => match (name.as_str(), generic_parameters.as_ref()) {
-                                    ("StorageMap", Some(_)) => sway::Expression::create_function_calls(Some(expression), &[
-                                        ("get", Some((None, vec![index]))),
-                                    ]),
-            
+                                sway::TypeName::Identifier {
+                                    name,
+                                    generic_parameters,
+                                } => match (name.as_str(), generic_parameters.as_ref()) {
+                                    ("StorageMap", Some(_)) => expression.with_get_call(index),
+
                                     ("StorageVec", Some(_)) => {
-                                        let index_type_name = translated_definition.get_expression_type(scope, &index)?;
-                                        let u64_type = sway::TypeName::Identifier { name: "u64".to_string(), generic_parameters: None };
-                                        index = coerce_expression(&index, &index_type_name, &u64_type).unwrap();
-                                        
-                                        sway::Expression::create_function_calls(Some(expression), &[
-                                            ("get", Some((None, vec![index]))),
-                                            ("unwrap", Some((None, vec![]))),
-                                        ])
-                                    },
-            
-                                    (name, _) => todo!(
-                                        "{}TODO: translate {name} array subscript expression: {solidity_expression} - {} {expression:#?}",
-                                        match project.loc_to_line_and_column(&translated_definition.path, &solidity_expression.loc()) {
-                                            Some((line, col)) => format!("{}:{}:{} - ", translated_definition.path.to_string_lossy(), line, col),
-                                            None => format!("{} - ", translated_definition.path.to_string_lossy()),
-                                        },
+                                        let index_type_name = get_expression_type(
+                                            project,
+                                            module.clone(),
+                                            scope.clone(),
+                                            &index,
+                                        )?;
+
+                                        let u64_type = sway::TypeName::create_identifier("u64");
+
+                                        index = coerce_expression(
+                                            project,
+                                            module.clone(),
+                                            scope.clone(),
+                                            &index,
+                                            &index_type_name,
+                                            &u64_type,
+                                        )
+                                        .unwrap();
+
+                                        expression.with_get_call(index).with_unwrap_call()
+                                    }
+
+                                    (name, _) => panic!(
+                                        "{}: TODO: translate {name} array subscript expression: {solidity_expression} - {} {expression:#?}",
+                                        project.loc_to_file_location_string(
+                                            module.clone(),
+                                            &solidity_expression.loc()
+                                        ),
                                         sway::TabbedDisplayer(&expression),
                                     ),
+                                },
+
+                                sway::TypeName::Array { .. } => {
+                                    scope.borrow_mut().set_function_storage_accesses(
+                                        module.clone(),
+                                        true,
+                                        false,
+                                    );
+
+                                    sway::Expression::from(sway::ArrayAccess {
+                                        expression: expression.with_read_call(),
+                                        index,
+                                    })
                                 }
-                                
+
                                 _ => todo!(
-                                    "{}TODO: translate {name} array subscript expression: {solidity_expression} - {} {expression:#?}",
-                                    match project.loc_to_line_and_column(&translated_definition.path, &solidity_expression.loc()) {
-                                        Some((line, col)) => format!("{}:{}:{} - ", translated_definition.path.to_string_lossy(), line, col),
-                                        None => format!("{} - ", translated_definition.path.to_string_lossy()),
-                                    },
+                                    "{}: TODO: translate {} array subscript expression: {solidity_expression} - {} {expression:#?}",
+                                    project.loc_to_file_location_string(
+                                        module.clone(),
+                                        &solidity_expression.loc()
+                                    ),
+                                    type_name,
                                     sway::TabbedDisplayer(&expression),
                                 ),
                             }
                         }
 
-                        ("Vec", Some(generic_parameters)) if generic_parameters.entries.len() == 1 => {
-                            let index_type_name = translated_definition.get_expression_type(scope, &index)?;
-                            let u64_type = sway::TypeName::Identifier { name: "u64".to_string(), generic_parameters: None };
-                            index = coerce_expression(&index, &index_type_name, &u64_type).unwrap();
-                            
-                            sway::Expression::create_function_calls(Some(expression), &[
-                                ("get", Some((None, vec![index]))),
-                                ("unwrap", Some((None, vec![]))),
-                            ])
+                        ("Vec", Some(generic_parameters))
+                            if generic_parameters.entries.len() == 1 =>
+                        {
+                            let index_type_name = get_expression_type(
+                                project,
+                                module.clone(),
+                                scope.clone(),
+                                &index,
+                            )?;
+
+                            let u64_type = sway::TypeName::create_identifier("u64");
+
+                            index = coerce_expression(
+                                project,
+                                module.clone(),
+                                scope.clone(),
+                                &index,
+                                &index_type_name,
+                                &u64_type,
+                            )
+                            .unwrap();
+
+                            expression.with_get_call(index).with_unwrap_call()
                         }
 
                         (name, _) => todo!(
-                            "{}TODO: translate {name} array subscript expression: {solidity_expression} - {} {expression:#?}",
-                            match project.loc_to_line_and_column(&translated_definition.path, &solidity_expression.loc()) {
-                                Some((line, col)) => format!("{}:{}:{} - ", translated_definition.path.to_string_lossy(), line, col),
-                                None => format!("{} - ", translated_definition.path.to_string_lossy()),
-                            },
+                            "{}: TODO: translate {name} array subscript expression: {solidity_expression} - {} {expression:#?}",
+                            project.loc_to_file_location_string(
+                                module.clone(),
+                                &solidity_expression.loc()
+                            ),
                             sway::TabbedDisplayer(&expression),
                         ),
-                    }
-
-                    _ => if is_storage {
-                        sway::Expression::create_function_calls(Some(expression), &[
-                            ("get", Some((None, vec![index]))),
-                        ])
-                    } else {
-                        sway::Expression::from(sway::ArrayAccess {
-                            expression,
-                            index,
-                        })
                     },
-                }
-            ))
+
+                    _ => sway::Expression::from(sway::ArrayAccess { expression, index }),
+                },
+            }))
         }
-        
+
         solidity::Expression::MemberAccess(_, container, member) => {
-            if let solidity::Expression::Variable(solidity::Identifier { name, .. }) = container.as_ref() {
-                for external_definition in project.translated_definitions.iter() {
-                    if !matches!(external_definition.kind, Some(solidity::ContractTy::Library(_))) {
-                        continue;
-                    }
+            let mut translated_container =
+                translate_expression(project, module.clone(), scope.clone(), container)?;
 
-                    if external_definition.name != *name {
-                        continue;
-                    }
+            let mut container_type_name = get_expression_type(
+                project,
+                module.clone(),
+                scope.clone(),
+                &translated_container,
+            )?;
 
-                    let member_name = translate_naming_convention(&member.name, Case::Snake);
-                    let new_name = format!("{}_{}", translate_naming_convention(&external_definition.name, Case::Snake), member_name);
-                    
-                    if translated_definition.toplevel_scope.borrow().find_function(|f| f.borrow().new_name == new_name).is_none() {
-                        // Get the scope entry for the library function
-                        let Some(scope_entry) = external_definition.toplevel_scope.borrow().find_function(|f| f.borrow().new_name == new_name) else {
-                            panic!("Failed to find function in scope: \"{new_name}\"");
-                        };
+            if let Some(container_type) = container_type_name.storage_key_type() {
+                scope
+                    .borrow_mut()
+                    .set_function_storage_accesses(module.clone(), true, false);
 
-                        let scope_entry = scope_entry.borrow();
-
-                        let sway::TypeName::Function { parameters: scope_parameters, return_type: scope_return_type, .. } = &scope_entry.type_name else {
-                            panic!("Invalid function type name: {:#?}", scope_entry.type_name)
-                        };
-                        
-                        // Add the function to the current definition's toplevel scope
-                        if !translated_definition.toplevel_scope.borrow().functions.iter().any(|f| {
-                            let f = f.borrow();
-
-                            let sway::TypeName::Function { parameters: f_parameters, return_type: f_return_type, .. } = &f.type_name else {
-                                panic!("Invalid function type name: {:#?}", f.type_name)
-                            };
-                            
-                            f.old_name == scope_entry.old_name
-                            && f_parameters == scope_parameters
-                            && f_return_type == scope_return_type
-                        }) {
-                            translated_definition.toplevel_scope.borrow_mut().functions.push(Rc::new(RefCell::new(scope_entry.clone())));
-                        }
-
-                        // Add the function name to the current definition's function name list
-                        *translated_definition.function_name_counts.entry(new_name.clone()).or_insert(0) += 1;
-
-                        let function = external_definition.functions.iter().find(|f| f.name == new_name).unwrap();
-
-                        // Add the function definition to the current definition
-                        if !translated_definition.functions.contains(function) {
-                            translated_definition.functions.push(function.clone());
-                        }
-
-                        // Add the function call count from the library definition to the current definition
-                        translated_definition.function_call_counts.insert(
-                            function.name.clone(),
-                            if let Some(function_call_count) = external_definition.function_call_counts.get(&function.name) {
-                                *function_call_count
-                            } else {
-                                0
-                            }
-                        );
-
-                        // Add the functions called from the library definition to the current definition
-                        for (lib_calling_fn, lib_called_fns) in external_definition.functions_called.iter() {
-                            let called_functions = translated_definition.functions_called.entry(lib_calling_fn.clone()).or_default();
-
-                            for lib_called_fn in lib_called_fns.iter() {
-                                if !called_functions.contains(lib_called_fn) {
-                                    called_functions.push(lib_called_fn.clone());
-                                }
-                            }
-                        }
-                    }
-
-                    return Ok((None, sway::Expression::create_identifier(new_name)));
-                }
+                translated_container = translated_container.with_read_call();
+                container_type_name = container_type;
             }
-            
-            let mut translated_container = translate_expression(project, translated_definition, scope, container)?;
-        
-            let mut container_type_name = translated_definition.get_expression_type(scope, &translated_container)?;
-            let mut container_type_name_string = container_type_name.to_string();
 
-            let (variable, _) = translate_variable_access_expression(project, translated_definition, scope, container)?;
+            let container_type_name_string = container_type_name.to_string();
 
-            // HACK: tack `.read()` onto the end if the container is a StorageKey
-            if variable.as_ref().map(|v| v.borrow().type_name.is_storage_key() || v.borrow().storage_namespace.is_some()).unwrap_or(false) {
-                let storage_key_type = match container_type_name.storage_key_type() {
-                    Some(key_type) => key_type,
-                    None => container_type_name,
-                };
-                
-                let mut has_read = false;
-
-                if let sway::Expression::FunctionCall(f) = &translated_container {
-                    if let sway::Expression::MemberAccess(member_access) = &f.function {
-                        if member_access.member == "read" && f.parameters.len() == 0 {
-                            has_read = true;
-                        }
-                    }
-                }
-                
-                if !has_read {
-                    translated_container = sway::Expression::create_function_calls(Some(translated_container), &[
-                        ("read", Some((None, vec![]))),
-                    ]);
-                }
-                
-                container_type_name = storage_key_type;
-                container_type_name_string = container_type_name.to_string();
-            }
+            let Some(ir::VariableAccess { variable, .. }) = translate_variable_access_expression(
+                project,
+                module.clone(),
+                scope.clone(),
+                container,
+            )?
+            else {
+                return Ok(None);
+            };
 
             // Check if container is a struct
-            if let Some(struct_definition) = translated_definition.structs.iter().find(|s| s.borrow().name == container_type_name_string) {
-                let field_name = translate_naming_convention(member.name.as_str(), Case::Snake);
-                
-                if struct_definition.borrow().fields.iter().any(|f| f.name == field_name) {
-                    return Ok((
+            let field_name = translate_naming_convention(member.name.as_str(), Case::Snake);
+
+            if let Some(struct_definition) =
+                project.find_struct(module.clone(), scope.clone(), &container_type_name_string)
+            {
+                let struct_definition = struct_definition.borrow();
+
+                let fields = if struct_definition.memory.name == container_type_name_string {
+                    struct_definition.memory.fields.as_slice()
+                } else if struct_definition.storage.name == container_type_name_string {
+                    struct_definition.storage.fields.as_slice()
+                } else {
+                    todo!()
+                };
+
+                if fields.iter().any(|f| f.new_name == field_name) {
+                    return Ok(Some(ir::VariableAccess {
                         variable,
-                        sway::Expression::from(sway::MemberAccess {
+                        expression: sway::Expression::from(sway::MemberAccess {
                             expression: translated_container,
                             member: field_name,
-                        })
-                    ))
+                        }),
+                    }));
                 }
             }
-        
-            todo!(
-                "{}TODO: translate variable {container_type_name_string} member access expression: {solidity_expression} - {solidity_expression:#?}",
-                match project.loc_to_line_and_column(&translated_definition.path, &solidity_expression.loc()) {
-                    Some((line, col)) => format!("{}:{}:{} - ", translated_definition.path.to_string_lossy(), line, col),
-                    None => format!("{} - ", translated_definition.path.to_string_lossy()),
-                },
+
+            panic!(
+                "{}: TODO: translate variable {container_type_name_string} member access expression: {solidity_expression}",
+                project.loc_to_file_location_string(module.clone(), &solidity_expression.loc()),
             )
         }
 
         solidity::Expression::FunctionCall(_, function, arguments) => {
-            let arguments = arguments.iter()
-                .map(|a| translate_expression(project, translated_definition, scope, a))
+            let parameters = arguments
+                .iter()
+                .map(|a| translate_expression(project, module.clone(), scope.clone(), a))
                 .collect::<Result<Vec<_>, _>>()?;
 
-            match translate_variable_access_expression(project, translated_definition, scope, function) {
-                Ok((variable, expression)) => Ok((
+            let parameter_types = parameters
+                .iter()
+                .map(|p| get_expression_type(project, module.clone(), scope.clone(), p))
+                .collect::<Result<Vec<_>, _>>()?;
+
+            // Check for explicit contract function calls
+            if let solidity::Expression::MemberAccess(_, container, member) = function.as_ref()
+                && let solidity::Expression::Variable(container) = container.as_ref()
+                && let Some(external_contract) =
+                    project.find_contract(module.clone(), container.name.as_str())
+            {
+                let abi = external_contract.borrow().abi.clone();
+
+                if let Some(result) = resolve_abi_function_call(
+                    project,
+                    module.clone(),
+                    scope.clone(),
+                    &abi,
+                    None,
+                    member.name.as_str(),
+                    None,
+                    parameters.clone(),
+                    parameter_types.clone(),
+                )? {
+                    return Ok(Some(ir::VariableAccess {
+                        variable: None,
+                        expression: result,
+                    }));
+                }
+            }
+
+            match translate_variable_access_expression(
+                project,
+                module.clone(),
+                scope.clone(),
+                function,
+            )? {
+                Some(ir::VariableAccess {
                     variable,
-                    sway::Expression::from(sway::FunctionCall {
+                    expression,
+                }) => Ok(Some(ir::VariableAccess {
+                    variable,
+                    expression: sway::Expression::from(sway::FunctionCall {
                         function: expression,
                         generic_parameters: None,
-                        parameters: arguments,
-                    })
-                )),
+                        parameters,
+                    }),
+                })),
 
-                Err(_) => {
-                    Ok((None, translate_expression(project, translated_definition, scope, solidity_expression)?))
-                }
+                None => Ok(Some(ir::VariableAccess {
+                    variable: None,
+                    expression: translate_expression(
+                        project,
+                        module.clone(),
+                        scope.clone(),
+                        solidity_expression,
+                    )?,
+                })),
             }
         }
 
-        solidity::Expression::Type(_, _) => Err(Error::Wrapped(Box::new(
-            std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!("type expression as variable access expression: {solidity_expression} - {solidity_expression:#?}")
-            )
-        ))),
+        solidity::Expression::Type(_, _) => panic!(
+            "type expression as variable access expression: {solidity_expression} - {solidity_expression:#?}"
+        ),
 
-        _ => todo!("translate variable access expression: {solidity_expression} - {solidity_expression:#?}"),
+        _ => todo!(
+            "translate variable access expression: {solidity_expression} - {solidity_expression:#?}"
+        ),
     }
 }
-

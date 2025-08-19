@@ -1,21 +1,18 @@
 [package]
 name = "charcoal"
-version = "0.1.0"
-edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+version = "0.2.0"
+edition = "2024"
 
 [dependencies]
+clap = { version = "4.5.38", features = ["derive"] }
 convert_case = "0.8.0"
 hex = "0.4.3"
 num-bigint = "0.4.6"
 num-traits = "0.2.19"
 serde_yaml = "0.9.33"
 sha3 = "0.10.8"
-solang-parser = "0.3.4"
-structopt = { version = "0.3.26", default-features = false }
-toml = "0.8.20"
-
+solang-parser = { git = "https://github.com/hyperledger-solang/solang.git", tag = "v0.3.3" }
+toml = "0.8.23"
 
 [dev-dependencies]
 colorize = "0.1.0"

@@ -1,19 +1,52 @@
-
+use crate::{error::Error, wrapped_err};
+use clap::Parser;
 use std::path::PathBuf;
-use structopt::{clap::AppSettings, StructOpt};
 
-#[derive(Default, StructOpt)]
-#[structopt(global_settings = &[AppSettings::ColoredHelp, AppSettings::ArgRequiredElseHelp])]
-pub struct Options {
-    /// The name of the specific definition to translate. (Optional; Leave unused for all)
-    #[structopt(long, short)]
-    pub definition_name: Option<String>,
+#[derive(Parser, Debug, Default, Clone)]
+/// Charcoal is a Solidity to Sway translator.
+pub struct Args {
+    #[arg(short, long)]
+    /// The input directory for the project to be translated. The input must be a valid project root.
+    pub input: PathBuf,
 
-    /// The Solidity target file or folder to translate.
-    #[structopt(long, short)]
-    pub target: PathBuf,
-
-    /// The path to save the translated Forc project to. (Optional; Must be a directory)
-    #[structopt(long, short)]
+    #[arg(short, long)]
+    /// The output folder to store the translated contracts.
     pub output_directory: Option<PathBuf>,
+
+    #[arg(short, long)]
+    /// The name of the generated Sway project.
+    pub name: Option<String>,
+}
+
+impl Args {
+    pub fn canonicalize(mut self) -> Result<Self, Error> {
+        // Validate input directory
+        if !self.input.is_dir() {
+            return Err(Error::InvalidInput(format!(
+                "Input is not a directory: {}",
+                self.input.display()
+            )));
+        }
+
+        self.input = wrapped_err!(self.input.canonicalize())?;
+
+        // Handle output directory if provided
+        if let Some(ref mut output_directory) = self.output_directory {
+            // Check if name is provided when output directory is specified
+            if self.name.is_none() {
+                return Err(Error::InvalidInput(
+                    "No output project name provided".to_string(),
+                ));
+            }
+
+            // Create directory if it doesn't exist
+            if !output_directory.exists() {
+                wrapped_err!(std::fs::create_dir_all(&output_directory))?;
+            }
+
+            *output_directory = wrapped_err!(output_directory.canonicalize())?;
+        }
+
+        Ok(self)
+    }
 }
