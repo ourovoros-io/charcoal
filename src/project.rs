@@ -1193,7 +1193,7 @@ impl Project {
             }
 
             let declaration =
-                translate_function_declaration(self, module.clone(), None, function_definition)?;
+                translate_function_declaration(self, module.clone(), None, None, function_definition)?;
 
             module.borrow_mut().functions.push(ir::Item {
                 signature: declaration.type_name,
@@ -1492,6 +1492,7 @@ impl Project {
                     self,
                     module.clone(),
                     Some(contract_name),
+                    Some(&contract_definition.ty),
                     &function_definition,
                 )?;
 

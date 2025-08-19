@@ -334,6 +334,7 @@ pub fn translate_function_declaration(
     project: &mut Project,
     module: Rc<RefCell<ir::Module>>,
     contract_name: Option<&str>,
+    contract_kind: Option<&solidity::ContractTy>,
     function_definition: &solidity::FunctionDefinition,
 ) -> Result<ir::Function, Error> {
     // println!(
@@ -386,8 +387,7 @@ pub fn translate_function_declaration(
 
     if !function_attributes.is_pure
         && let Some(contract_name) = contract_name.as_ref()
-        && let Some(contract) = project.find_contract(module.clone(), &contract_name)
-        && matches!(contract.borrow().kind, solidity::ContractTy::Library(_))
+        && !matches!(contract_kind, Some(solidity::ContractTy::Library(_)))
     {
         storage_struct_parameter = Some(Box::new(sway::Parameter {
             is_ref: false,
