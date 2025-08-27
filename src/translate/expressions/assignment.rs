@@ -416,15 +416,21 @@ pub fn create_assignment_expression(
                             member: member_access.member.clone(),
                         }),
                         rhs: {
-                            let rhs = coerce_expression(
+                            let Some(rhs) = coerce_expression(
                                 project,
                                 module.clone(),
                                 scope.clone(),
                                 rhs,
                                 rhs_type_name,
                                 &field.type_name,
-                            )
-                            .unwrap();
+                            ) else {
+                                panic!(
+                                    "Failed to coerce from `{}` to `{}`: `{}`",
+                                    rhs_type_name,
+                                    field.type_name,
+                                    sway::TabbedDisplayer(rhs)
+                                )
+                            };
 
                             match operator {
                                 "&=" | "|=" | "^=" => {
@@ -846,15 +852,21 @@ pub fn create_assignment_expression(
     }
 
     // All other assignments
-    let rhs = coerce_expression(
+    let Some(rhs) = coerce_expression(
         project,
         module.clone(),
         scope.clone(),
         rhs,
         rhs_type_name,
         &expr_type_name,
-    )
-    .unwrap();
+    ) else {
+        panic!(
+            "Failed to coerce from `{}` to `{}`: `{}`",
+            rhs_type_name,
+            expr_type_name,
+            sway::TabbedDisplayer(rhs)
+        );
+    };
 
     match operator {
         "&=" | "|=" | "^=" => {

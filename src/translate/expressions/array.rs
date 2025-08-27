@@ -141,17 +141,16 @@ pub fn translate_array_slice_expression(
                     // x.ptr()
                     let ptr_expr = match from_index.as_ref() {
                         // x.ptr().add::<T>(from_index)
-                        Some(from_index) => sway::Expression::create_identifier("ptr")
-                            .with_function_call(
-                                "add",
-                                Some(sway::GenericParameterList {
-                                    entries: vec![sway::GenericParameter {
-                                        type_name: element_type.clone(),
-                                        implements: None,
-                                    }],
-                                }),
-                                vec![from_index.clone()],
-                            ),
+                        Some(from_index) => expression.with_ptr_call().with_function_call(
+                            "add",
+                            Some(sway::GenericParameterList {
+                                entries: vec![sway::GenericParameter {
+                                    type_name: element_type.clone(),
+                                    implements: None,
+                                }],
+                            }),
+                            vec![from_index.clone()],
+                        ),
 
                         // x.ptr()
                         None => expression.with_ptr_call(),

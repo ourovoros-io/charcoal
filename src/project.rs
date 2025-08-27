@@ -1221,6 +1221,32 @@ impl Project {
             assert!(state_variable_info.mapping_names.is_empty());
         }
 
+        for (i, type_definition) in type_definitions.into_iter().enumerate() {
+            module.borrow_mut().type_definitions[type_definitions_index + i].implementation = Some(
+                translate_type_definition(self, module.clone(), None, &type_definition)?,
+            );
+        }
+
+        for (i, enum_definition) in enum_definitions.into_iter().enumerate() {
+            module.borrow_mut().enums[enums_index + i].implementation = Some(
+                translate_enum_definition(self, module.clone(), &enum_definition)?,
+            );
+        }
+
+        for (i, struct_definition) in struct_definitions.into_iter().enumerate() {
+            module.borrow_mut().structs[structs_index + i].implementation = Some(
+                translate_struct_definition(self, module.clone(), None, &struct_definition)?,
+            );
+        }
+
+        for event_definition in event_definitions {
+            translate_event_definition(self, module.clone(), None, &event_definition)?;
+        }
+
+        for error_definition in error_definitions {
+            translate_error_definition(self, module.clone(), None, &error_definition)?;
+        }
+
         // Collect the contract's toplevel item signatures ahead of time
         for (i, contract_definition) in contract_definitions.iter().enumerate() {
             let contract_name = contract_definition.name.as_ref().unwrap().name.as_str();
@@ -1337,6 +1363,7 @@ impl Project {
 
             // Translate contract constants and immutables
             let mut state_variable_infos = vec![];
+
             for variable_definition in variable_definitions.iter() {
                 let state_variable_info = translate_state_variable(
                     self,
@@ -1504,32 +1531,6 @@ impl Project {
 
             module.borrow_mut().contracts[contracts_index + i].implementation =
                 Some(contract.clone());
-        }
-
-        for (i, type_definition) in type_definitions.into_iter().enumerate() {
-            module.borrow_mut().type_definitions[type_definitions_index + i].implementation = Some(
-                translate_type_definition(self, module.clone(), None, &type_definition)?,
-            );
-        }
-
-        for (i, enum_definition) in enum_definitions.into_iter().enumerate() {
-            module.borrow_mut().enums[enums_index + i].implementation = Some(
-                translate_enum_definition(self, module.clone(), &enum_definition)?,
-            );
-        }
-
-        for (i, struct_definition) in struct_definitions.into_iter().enumerate() {
-            module.borrow_mut().structs[structs_index + i].implementation = Some(
-                translate_struct_definition(self, module.clone(), None, &struct_definition)?,
-            );
-        }
-
-        for event_definition in event_definitions {
-            translate_event_definition(self, module.clone(), None, &event_definition)?;
-        }
-
-        for error_definition in error_definitions {
-            translate_error_definition(self, module.clone(), None, &error_definition)?;
         }
 
         // Translate modifiers before functions

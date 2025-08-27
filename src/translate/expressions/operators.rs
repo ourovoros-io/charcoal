@@ -11,23 +11,6 @@ pub fn translate_binary_expression(
     lhs: &solidity::Expression,
     rhs: &solidity::Expression,
 ) -> Result<sway::Expression, Error> {
-    // HACK: x.code.length == 0 => x.as_contract_id().is_none()
-    if let solidity::Expression::MemberAccess(_, x, member2) = lhs
-        && let solidity::Expression::MemberAccess(_, x, member1) = x.as_ref()
-        && member1.name == "code"
-        && member2.name == "length"
-    {
-        let expression = translate_expression(project, module.clone(), scope.clone(), x)?;
-        let type_name = get_expression_type(project, module.clone(), scope.clone(), &expression)?;
-
-        if type_name.is_identity()
-            && let solidity::Expression::NumberLiteral(_, value, _, _) = rhs
-            && value == "0"
-        {
-            return Ok(expression.with_as_contract_id_call().with_is_none_call());
-        }
-    }
-
     let mut lhs = translate_expression(project, module.clone(), scope.clone(), lhs)?;
     let mut lhs_type = get_expression_type(project, module.clone(), scope.clone(), &lhs)?;
 

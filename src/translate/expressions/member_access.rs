@@ -142,10 +142,20 @@ pub fn translate_member_access_expression(
                 // Check to see if expression is an explicit contract function selector
                 if member.name == "selector" {
                     if name == "this" {
-                        // TODO
-                        // if module.borrow().toplevel_scope.borrow().find_function(|f| f.borrow().old_name == member1.name).is_some() {
-                        //     return Ok(sway::Expression::create_todo(Some(expression.to_string())));
-                        // }
+                        if module
+                            .borrow()
+                            .functions
+                            .iter()
+                            .find(|f| {
+                                let sway::TypeName::Function { old_name, .. } = &f.signature else {
+                                    unreachable!()
+                                };
+                                *old_name == member1.name
+                            })
+                            .is_some()
+                        {
+                            return Ok(sway::Expression::create_todo(Some(expression.to_string())));
+                        }
                     }
 
                     if let Some(external_contract) = project.find_contract(module.clone(), name)
@@ -159,32 +169,44 @@ pub fn translate_member_access_expression(
                         return Ok(sway::Expression::create_todo(Some(expression.to_string())));
                     }
 
-                    todo!()
+                    todo!("{}", sway::TabbedDisplayer(expression));
                 }
 
                 //
                 // TODO:
                 //
-                // // Check to see if container is an external definition
-                // if let Some(external_definition) = project.translated_definitions.iter().find(|d| d.name == *name) {
-                //     // Check to see if member is an enum
-                //     if let Some(external_enum) = project.find_enum(module.clone(), &member1.name) {
-                //         let sway::TypeName::Identifier { name: enum_name, generic_parameters: None } = &external_enum.type_definition.name else {
-                //             panic!("Expected Identifier type name, found {:#?}", external_enum.type_definition.name);
-                //         };
-                //
-                //         let variant_name = translate_naming_convention(member.name.as_str(), Case::Constant);
-                //
-                //         // Ensure the variant exists
-                //         if external_enum.variants_impl.items.iter().any(|i| {
-                //             let sway::ImplItem::Constant(c) = i else { return false };
-                //             c.name == variant_name
-                //         }) {
-                //             module.borrow().add_enum(external_enum);
-                //             return Ok(sway::Expression::create_identifier(format!("{enum_name}::{variant_name}")));
-                //         }
-                //     }
-                // }
+                // Check to see if container is an enum in an external definition
+                if let Some(external_module) =
+                    project.find_module_containing_contract(module.clone(), name.as_str())
+                    && let Some(external_enum) =
+                        project.find_enum(external_module.clone(), &member1.name)
+                {
+                    let sway::TypeName::Identifier {
+                        name: enum_name,
+                        generic_parameters: None,
+                    } = &external_enum.type_definition.name
+                    else {
+                        panic!(
+                            "Expected Identifier type name, found {:#?}",
+                            external_enum.type_definition.name
+                        );
+                    };
+
+                    let variant_name =
+                        translate_naming_convention(member.name.as_str(), Case::Constant);
+
+                    // Ensure the variant exists
+                    if external_enum.variants_impl.items.iter().any(|i| {
+                        let sway::ImplItem::Constant(c) = i else {
+                            return false;
+                        };
+                        c.name == variant_name
+                    }) {
+                        return Ok(sway::Expression::create_identifier(
+                            format!("{enum_name}::{variant_name}").as_str(),
+                        ));
+                    }
+                }
             }
 
             _ => {}
@@ -374,14 +396,27 @@ pub fn translate_member_access_expression(
     }
 
     // HACK: tack on `.read()` and try again
-    container = container.with_read_call();
+    if let Some(option_type) = container_type_name.option_type()
+        && option_type.is_storage_key()
+    {
+        container = container.with_read_call();
 
-    if let Ok(Some(result)) = check_container(project, &container) {
-        scope
-            .borrow_mut()
-            .set_function_storage_accesses(module.clone(), true, false);
+        if let Ok(Some(result)) = check_container(project, &container) {
+            scope
+                .borrow_mut()
+                .set_function_storage_accesses(module.clone(), true, false);
 
-        return Ok(result);
+            return Ok(result);
+        }
+    }
+
+    // HACK: `x.code` is current not supported
+    if container_type_name.is_identity() && member.name == "code" {
+        return Ok(sway::Expression::create_todo(Some(format!(
+            "{}.{}",
+            sway::TabbedDisplayer(&container),
+            member,
+        ))));
     }
 
     todo!(

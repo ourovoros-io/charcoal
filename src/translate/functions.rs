@@ -1233,339 +1233,346 @@ pub fn translate_modifier_definition(
         );
     };
 
-    let mut current_body: &mut Option<sway::Block> = &mut modifier.pre_body;
-    let mut current_scope = Rc::new(RefCell::new(scope.borrow().clone()));
+    // let mut current_body: &mut Option<sway::Block> = &mut modifier.pre_body;
+    // let mut current_scope = Rc::new(RefCell::new(scope.borrow().clone()));
 
-    let mut has_pre_storage_read = false;
-    let mut has_pre_storage_write = false;
+    // let mut has_pre_storage_read = false;
+    // let mut has_pre_storage_write = false;
 
-    let mut has_post_storage_read = false;
-    let mut has_post_storage_write = false;
+    // let mut has_post_storage_read = false;
+    // let mut has_post_storage_write = false;
 
-    let mut has_storage_read = &mut has_pre_storage_read;
-    let mut has_storage_write = &mut has_pre_storage_write;
+    // let mut has_storage_read = &mut has_pre_storage_read;
+    // let mut has_storage_write = &mut has_pre_storage_write;
 
-    for statement in statements.iter() {
-        // Translate the statement
-        let sway_statement =
-            translate_statement(project, module.clone(), current_scope.clone(), statement)?;
+    // for statement in statements.iter() {
+    //     // Translate the statement
+    //     let sway_statement =
+    //         translate_statement(project, module.clone(), current_scope.clone(), statement)?;
 
-        // If we encounter the underscore statement, every following statement goes into the modifier's post_body block.
-        if sway_statement
-            .filter_map(|s| {
-                let sway::Statement::Expression(expression) = s else {
-                    return None;
-                };
-                if let Some("_") = expression.as_identifier() {
-                    return Some(expression.clone());
-                }
-                None
-            })
-            .is_some()
-        {
-            modifier.has_underscore = true;
+    //     // If we encounter the underscore statement, every following statement goes into the modifier's post_body block.
+    //     if sway_statement
+    //         .filter_map(|s| {
+    //             let sway::Statement::Expression(expression) = s else {
+    //                 return None;
+    //             };
+    //             if let Some("_") = expression.as_identifier() {
+    //                 return Some(expression.clone());
+    //             }
+    //             None
+    //         })
+    //         .is_some()
+    //     {
+    //         modifier.has_underscore = true;
 
-            if let Some(block) = current_body.as_mut() {
-                {
-                    let mut module = module.borrow_mut();
-                    let &mut (storage_read, storage_write) = module
-                        .function_storage_accesses
-                        .entry(modifier.new_name.clone())
-                        .or_default();
+    //         if let Some(block) = current_body.as_mut() {
+    //             {
+    //                 let mut module = module.borrow_mut();
+    //                 let &mut (storage_read, storage_write) = module
+    //                     .function_storage_accesses
+    //                     .entry(modifier.new_name.clone())
+    //                     .or_default();
 
-                    if storage_read {
-                        *has_storage_read = true;
-                    }
+    //                 if storage_read {
+    //                     *has_storage_read = true;
+    //                 }
 
-                    if storage_write {
-                        *has_storage_write = true;
-                    }
-                }
+    //                 if storage_write {
+    //                     *has_storage_write = true;
+    //                 }
+    //             }
 
-                finalize_block_translation(project, current_scope.clone(), block)?;
-            }
+    //             finalize_block_translation(project, current_scope.clone(), block)?;
+    //         }
 
-            current_body = &mut modifier.post_body;
+    //         current_body = &mut modifier.post_body;
 
-            let mut new_scope = ir::Scope::new(
-                scope.borrow().get_contract_name().as_deref(),
-                Some(&new_name),
-                scope.borrow().get_parent(),
-            );
+    //         let mut new_scope = ir::Scope::new(
+    //             scope.borrow().get_contract_name().as_deref(),
+    //             Some(&new_name),
+    //             scope.borrow().get_parent(),
+    //         );
 
-            for v in scope.borrow().get_variables() {
-                let mut v = v.borrow().clone();
-                v.statement_index = None;
-                new_scope.add_variable(Rc::new(RefCell::new(v)));
-            }
+    //         for v in scope.borrow().get_variables() {
+    //             let mut v = v.borrow().clone();
+    //             v.statement_index = None;
+    //             new_scope.add_variable(Rc::new(RefCell::new(v)));
+    //         }
 
-            current_scope = Rc::new(RefCell::new(new_scope));
+    //         current_scope = Rc::new(RefCell::new(new_scope));
 
-            has_storage_read = &mut has_post_storage_read;
-            has_storage_write = &mut has_post_storage_write;
+    //         has_storage_read = &mut has_post_storage_read;
+    //         has_storage_write = &mut has_post_storage_write;
 
-            continue;
-        }
+    //         continue;
+    //     }
 
-        // Create the current body block if it hasn't already been
-        if current_body.is_none() {
-            *current_body = Some(sway::Block::default());
-        }
+    //     // Create the current body block if it hasn't already been
+    //     if current_body.is_none() {
+    //         *current_body = Some(sway::Block::default());
+    //     }
 
-        let block = current_body.as_mut().unwrap();
+    //     let block = current_body.as_mut().unwrap();
 
-        // Store the index of the sway statement
-        let statement_index = block.statements.len();
+    //     // Store the index of the sway statement
+    //     let statement_index = block.statements.len();
 
-        // Add the sway statement to the sway block
-        block.statements.push(sway_statement);
+    //     // Add the sway statement to the sway block
+    //     block.statements.push(sway_statement);
 
-        // If the sway statement is a variable declaration, keep track of its statement index
-        if let Some(sway::Statement::Let(sway_variable)) = block.statements.last() {
-            let store_variable_statement_index = |id: &sway::LetIdentifier| {
-                let scope = current_scope.borrow_mut();
-                let scope_variables = scope.get_variables();
-                let scope_entry = scope_variables
-                    .iter()
-                    .rev()
-                    .find(|v| v.borrow().new_name == id.name)
-                    .unwrap();
-                scope_entry.borrow_mut().statement_index = Some(statement_index);
-            };
+    //     // If the sway statement is a variable declaration, keep track of its statement index
+    //     if let Some(sway::Statement::Let(sway_variable)) = block.statements.last() {
+    //         let store_variable_statement_index = |id: &sway::LetIdentifier| {
+    //             let scope = current_scope.borrow_mut();
+    //             let scope_variables = scope.get_variables();
+    //             let scope_entry = scope_variables
+    //                 .iter()
+    //                 .rev()
+    //                 .find(|v| v.borrow().new_name == id.name)
+    //                 .unwrap();
+    //             scope_entry.borrow_mut().statement_index = Some(statement_index);
+    //         };
 
-            match &sway_variable.pattern {
-                sway::LetPattern::Identifier(id) => store_variable_statement_index(id),
-                sway::LetPattern::Tuple(ids) => ids.iter().for_each(store_variable_statement_index),
-            }
-        }
-    }
+    //         match &sway_variable.pattern {
+    //             sway::LetPattern::Identifier(id) => store_variable_statement_index(id),
+    //             sway::LetPattern::Tuple(ids) => ids.iter().for_each(store_variable_statement_index),
+    //         }
+    //     }
+    // }
 
-    if let Some(block) = current_body.as_mut() {
-        finalize_block_translation(project, current_scope.clone(), block)?;
-    }
+    // if let Some(block) = current_body.as_mut() {
+    //     finalize_block_translation(project, current_scope.clone(), block)?;
+    // }
 
-    let create_attributes =
-        |has_storage_read: bool, has_storage_write: bool| -> Option<sway::AttributeList> {
-            let mut parameters = vec![];
+    // let create_attributes =
+    //     |has_storage_read: bool, has_storage_write: bool| -> Option<sway::AttributeList> {
+    //         let mut parameters = vec![];
 
-            if has_storage_read {
-                parameters.push("read".into());
-            }
+    //         if has_storage_read {
+    //             parameters.push("read".into());
+    //         }
 
-            if has_storage_write {
-                parameters.push("write".into());
-            }
+    //         if has_storage_write {
+    //             parameters.push("write".into());
+    //         }
 
-            if parameters.is_empty() {
-                None
-            } else {
-                Some(sway::AttributeList {
-                    attributes: vec![sway::Attribute {
-                        name: "storage".into(),
-                        parameters: Some(parameters),
-                    }],
-                })
-            }
-        };
+    //         if parameters.is_empty() {
+    //             None
+    //         } else {
+    //             Some(sway::AttributeList {
+    //                 attributes: vec![sway::Attribute {
+    //                     name: "storage".into(),
+    //                     parameters: Some(parameters),
+    //                 }],
+    //             })
+    //         }
+    //     };
 
-    // Ensure that an underscore statement was encountered while translating the modifier
-    if !modifier.has_underscore {
-        panic!(
-            "Malformed modifier missing underscore statement: {}",
-            modifier.old_name
-        );
-    }
+    // // Ensure that an underscore statement was encountered while translating the modifier
+    // if !modifier.has_underscore {
+    //     panic!(
+    //         "Malformed modifier missing underscore statement: {}",
+    //         modifier.old_name
+    //     );
+    // }
 
-    if let Some(contract_name) = contract_name {
-        let contract = project
-            .find_contract(module.clone(), contract_name)
-            .unwrap();
+    // if let Some(contract_name) = contract_name {
+    //     let contract = project
+    //         .find_contract(module.clone(), contract_name)
+    //         .unwrap();
 
-        if contract.borrow().storage_struct.is_none() {
-            has_pre_storage_read = false;
-            has_pre_storage_write = false;
-            has_post_storage_read = false;
-            has_post_storage_write = false;
-        }
-    }
+    //     if contract.borrow().storage_struct.is_none() {
+    //         has_pre_storage_read = false;
+    //         has_pre_storage_write = false;
+    //         has_post_storage_read = false;
+    //         has_post_storage_write = false;
+    //     }
+    // }
 
-    // Create a storage struct parameter if necessary
-    if has_pre_storage_read
-        || has_pre_storage_write
-        || has_post_storage_read
-        || has_post_storage_write
-    {
-        modifier.storage_struct_parameter = Some(sway::Parameter {
-            is_ref: false,
-            is_mut: false,
-            name: "storage_struct".into(),
-            type_name: Some(sway::TypeName::create_identifier(
-                format!("{}Storage", contract_name.unwrap()).as_str(),
-            )),
-        });
-    }
+    // // Create a storage struct parameter if necessary
+    // if has_pre_storage_read
+    //     || has_pre_storage_write
+    //     || has_post_storage_read
+    //     || has_post_storage_write
+    // {
+    //     modifier.storage_struct_parameter = Some(sway::Parameter {
+    //         is_ref: false,
+    //         is_mut: false,
+    //         name: "storage_struct".into(),
+    //         type_name: Some(sway::TypeName::create_identifier(
+    //             format!("{}Storage", contract_name.unwrap()).as_str(),
+    //         )),
+    //     });
+    // }
 
     // Generate toplevel modifier functions
-    match (modifier.pre_body.as_ref(), modifier.post_body.as_ref()) {
-        (Some(pre_body), Some(post_body)) => {
-            let modifier_pre_function_name = format!("{}_pre", modifier.new_name);
+    // match (modifier.pre_body.as_ref(), modifier.post_body.as_ref()) {
+    //     (Some(pre_body), Some(post_body)) => {
+    //         let modifier_pre_function_name = format!("{}_pre", modifier.new_name);
 
-            let modifier_pre_storage = if has_pre_storage_read || has_pre_storage_write {
-                Some(sway::Parameter {
-                    is_ref: false,
-                    is_mut: false,
-                    name: "storage_struct".into(),
-                    type_name: Some(sway::TypeName::create_identifier(
-                        format!("{}Storage", contract_name.unwrap()).as_str(),
-                    )),
-                })
-            } else {
-                None
-            };
+    //         let modifier_pre_storage = if has_pre_storage_read || has_pre_storage_write {
+    //             Some(sway::Parameter {
+    //                 is_ref: false,
+    //                 is_mut: false,
+    //                 name: "storage_struct".into(),
+    //                 type_name: Some(sway::TypeName::create_identifier(
+    //                     format!("{}Storage", contract_name.unwrap()).as_str(),
+    //                 )),
+    //             })
+    //         } else {
+    //             None
+    //         };
 
-            module.borrow_mut().functions.push(ir::Item {
-                signature: sway::TypeName::Function {
-                    old_name: String::new(),
-                    new_name: String::new(),
-                    generic_parameters: None,
-                    parameters: modifier.parameters.clone(),
-                    storage_struct_parameter: modifier_pre_storage.clone().map(Box::new),
-                    return_type: None,
-                },
-                implementation: Some(sway::Function {
-                    attributes: create_attributes(has_pre_storage_read, has_pre_storage_write),
-                    is_public: true,
-                    old_name: String::new(), // TODO
-                    new_name: modifier_pre_function_name.clone(),
-                    generic_parameters: None,
-                    parameters: modifier.parameters.clone(),
-                    storage_struct_parameter: modifier_pre_storage,
-                    return_type: None,
-                    body: Some(pre_body.clone()),
-                }),
-            });
+    //         module.borrow_mut().functions.push(ir::Item {
+    //             signature: sway::TypeName::Function {
+    //                 old_name: String::new(),
+    //                 new_name: String::new(),
+    //                 generic_parameters: None,
+    //                 parameters: modifier.parameters.clone(),
+    //                 storage_struct_parameter: modifier_pre_storage.clone().map(Box::new),
+    //                 return_type: None,
+    //             },
+    //             implementation: Some(sway::Function {
+    //                 attributes: create_attributes(has_pre_storage_read, has_pre_storage_write),
+    //                 is_public: true,
+    //                 old_name: String::new(), // TODO
+    //                 new_name: modifier_pre_function_name.clone(),
+    //                 generic_parameters: None,
+    //                 parameters: modifier.parameters.clone(),
+    //                 storage_struct_parameter: modifier_pre_storage,
+    //                 return_type: None,
+    //                 body: Some(pre_body.clone()),
+    //             }),
+    //         });
 
-            let modifier_post_function_name = format!("{}_post", modifier.new_name);
+    //         let modifier_post_function_name = format!("{}_post", modifier.new_name);
 
-            let modifier_post_storage = if has_post_storage_read || has_post_storage_write {
-                Some(sway::Parameter {
-                    is_ref: false,
-                    is_mut: false,
-                    name: "storage_struct".into(),
-                    type_name: Some(sway::TypeName::create_identifier(
-                        format!("{}Storage", contract_name.unwrap()).as_str(),
-                    )),
-                })
-            } else {
-                None
-            };
+    //         let modifier_post_storage = if has_post_storage_read || has_post_storage_write {
+    //             Some(sway::Parameter {
+    //                 is_ref: false,
+    //                 is_mut: false,
+    //                 name: "storage_struct".into(),
+    //                 type_name: Some(sway::TypeName::create_identifier(
+    //                     format!("{}Storage", contract_name.unwrap()).as_str(),
+    //                 )),
+    //             })
+    //         } else {
+    //             None
+    //         };
 
-            module.borrow_mut().functions.push(ir::Item {
-                signature: sway::TypeName::Function {
-                    old_name: String::new(),
-                    new_name: String::new(),
-                    generic_parameters: None,
-                    parameters: modifier.parameters.clone(),
-                    storage_struct_parameter: modifier_post_storage.clone().map(Box::new),
-                    return_type: None,
-                },
-                implementation: Some(sway::Function {
-                    attributes: create_attributes(has_post_storage_read, has_post_storage_write),
-                    is_public: true,
-                    old_name: String::new(), // TODO
-                    new_name: modifier_post_function_name.clone(),
-                    generic_parameters: None,
-                    parameters: modifier.parameters.clone(),
-                    storage_struct_parameter: modifier_post_storage,
-                    return_type: None,
-                    body: Some(post_body.clone()),
-                }),
-            });
-        }
+    //         module.borrow_mut().functions.push(ir::Item {
+    //             signature: sway::TypeName::Function {
+    //                 old_name: String::new(),
+    //                 new_name: String::new(),
+    //                 generic_parameters: None,
+    //                 parameters: modifier.parameters.clone(),
+    //                 storage_struct_parameter: modifier_post_storage.clone().map(Box::new),
+    //                 return_type: None,
+    //             },
+    //             implementation: Some(sway::Function {
+    //                 attributes: create_attributes(has_post_storage_read, has_post_storage_write),
+    //                 is_public: true,
+    //                 old_name: String::new(), // TODO
+    //                 new_name: modifier_post_function_name.clone(),
+    //                 generic_parameters: None,
+    //                 parameters: modifier.parameters.clone(),
+    //                 storage_struct_parameter: modifier_post_storage,
+    //                 return_type: None,
+    //                 body: Some(post_body.clone()),
+    //             }),
+    //         });
+    //     }
 
-        (Some(pre_body), None) => {
-            let modifier_pre_storage = if has_pre_storage_read || has_pre_storage_write {
-                Some(sway::Parameter {
-                    is_ref: false,
-                    is_mut: false,
-                    name: "storage_struct".into(),
-                    type_name: Some(sway::TypeName::create_identifier(
-                        format!("{}Storage", contract_name.unwrap()).as_str(),
-                    )),
-                })
-            } else {
-                None
-            };
+    //     (Some(pre_body), None) => {
+    //         let modifier_pre_storage = if has_pre_storage_read || has_pre_storage_write {
+    //             Some(sway::Parameter {
+    //                 is_ref: false,
+    //                 is_mut: false,
+    //                 name: "storage_struct".into(),
+    //                 type_name: Some(sway::TypeName::create_identifier(
+    //                     format!("{}Storage", contract_name.unwrap()).as_str(),
+    //                 )),
+    //             })
+    //         } else {
+    //             None
+    //         };
 
-            module.borrow_mut().functions.push(ir::Item {
-                signature: sway::TypeName::Function {
-                    old_name: String::new(),
-                    new_name: String::new(),
-                    generic_parameters: None,
-                    parameters: modifier.parameters.clone(),
-                    storage_struct_parameter: modifier_pre_storage.clone().map(Box::new),
-                    return_type: None,
-                },
-                implementation: Some(sway::Function {
-                    attributes: create_attributes(has_pre_storage_read, has_pre_storage_write),
-                    is_public: true,
-                    old_name: modifier.old_name.clone(),
-                    new_name: modifier.new_name.clone(),
-                    generic_parameters: None,
-                    parameters: modifier.parameters.clone(),
-                    storage_struct_parameter: modifier_pre_storage,
-                    return_type: None,
-                    body: Some(pre_body.clone()),
-                }),
-            });
-        }
+    //         module.borrow_mut().functions.push(ir::Item {
+    //             signature: sway::TypeName::Function {
+    //                 old_name: String::new(),
+    //                 new_name: String::new(),
+    //                 generic_parameters: None,
+    //                 parameters: modifier.parameters.clone(),
+    //                 storage_struct_parameter: modifier_pre_storage.clone().map(Box::new),
+    //                 return_type: None,
+    //             },
+    //             implementation: Some(sway::Function {
+    //                 attributes: create_attributes(has_pre_storage_read, has_pre_storage_write),
+    //                 is_public: true,
+    //                 old_name: modifier.old_name.clone(),
+    //                 new_name: modifier.new_name.clone(),
+    //                 generic_parameters: None,
+    //                 parameters: modifier.parameters.clone(),
+    //                 storage_struct_parameter: modifier_pre_storage,
+    //                 return_type: None,
+    //                 body: Some(pre_body.clone()),
+    //             }),
+    //         });
+    //     }
 
-        (None, Some(post_body)) => {
-            let modifier_post_storage = if has_post_storage_read || has_post_storage_write {
-                Some(sway::Parameter {
-                    is_ref: false,
-                    is_mut: false,
-                    name: "storage_struct".into(),
-                    type_name: Some(sway::TypeName::create_identifier(
-                        format!("{}Storage", contract_name.unwrap()).as_str(),
-                    )),
-                })
-            } else {
-                None
-            };
+    //     (None, Some(post_body)) => {
+    //         let modifier_post_storage = if has_post_storage_read || has_post_storage_write {
+    //             Some(sway::Parameter {
+    //                 is_ref: false,
+    //                 is_mut: false,
+    //                 name: "storage_struct".into(),
+    //                 type_name: Some(sway::TypeName::create_identifier(
+    //                     format!("{}Storage", contract_name.unwrap()).as_str(),
+    //                 )),
+    //             })
+    //         } else {
+    //             None
+    //         };
 
-            module.borrow_mut().functions.push(ir::Item {
-                signature: sway::TypeName::Function {
-                    old_name: String::new(),
-                    new_name: String::new(),
-                    generic_parameters: None,
-                    parameters: modifier.parameters.clone(),
-                    storage_struct_parameter: modifier_post_storage.clone().map(Box::new),
-                    return_type: None,
-                },
-                implementation: Some(sway::Function {
-                    attributes: create_attributes(has_post_storage_read, has_post_storage_write),
-                    is_public: true,
-                    old_name: modifier.old_name.clone(),
-                    new_name: modifier.new_name.clone(),
-                    generic_parameters: None,
-                    parameters: modifier.parameters.clone(),
-                    storage_struct_parameter: modifier_post_storage,
-                    return_type: None,
-                    body: Some(post_body.clone()),
-                }),
-            });
-        }
+    //         module.borrow_mut().functions.push(ir::Item {
+    //             signature: sway::TypeName::Function {
+    //                 old_name: String::new(),
+    //                 new_name: String::new(),
+    //                 generic_parameters: None,
+    //                 parameters: modifier.parameters.clone(),
+    //                 storage_struct_parameter: modifier_post_storage.clone().map(Box::new),
+    //                 return_type: None,
+    //             },
+    //             implementation: Some(sway::Function {
+    //                 attributes: create_attributes(has_post_storage_read, has_post_storage_write),
+    //                 is_public: true,
+    //                 old_name: modifier.old_name.clone(),
+    //                 new_name: modifier.new_name.clone(),
+    //                 generic_parameters: None,
+    //                 parameters: modifier.parameters.clone(),
+    //                 storage_struct_parameter: modifier_post_storage,
+    //                 return_type: None,
+    //                 body: Some(post_body.clone()),
+    //             }),
+    //         });
+    //     }
 
-        (None, None) => {
-            if !function_definition.params.is_empty() {
-                todo!("Support inlining modifier with parameters");
-            }
+    //     (None, None) => {
+    //         if !function_definition.params.is_empty() {
+    //             todo!("Support inlining modifier with parameters");
+    //         }
 
-            let block = translate_block(project, module.clone(), scope.clone(), statements)?;
-            modifier.inline_body = Some(block);
-        }
-    }
+    //         let block = translate_block(project, module.clone(), scope.clone(), statements)?;
+    //         modifier.inline_body = Some(block);
+    //     }
+    // }
+
+    // HACK: inline all modifiers for now...
+    // if !function_definition.params.is_empty() {
+    //     todo!("Support inlining modifier with parameters");
+    // }
+    let block = translate_block(project, module.clone(), scope.clone(), statements)?;
+    modifier.inline_body = Some(block);
 
     // Add the translated modifier to the translated definition
     let mut module = module.borrow_mut();

@@ -86,6 +86,250 @@ impl TryInto<sway::Expression> for SymbolData {
     }
 }
 
+fn find_storage_struct_field(
+    project: &mut Project,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
+    contract_name: &str,
+    field_name: &str,
+    expression: sway::Expression,
+) -> Option<SymbolData> {
+    let storage_struct_name = format!("{contract_name}Storage");
+
+    // Find the requested contract and the module containing it
+    let Some((module, contract)) = project.find_module_and_contract(module.clone(), contract_name)
+    else {
+        return None;
+    };
+
+    // Attempt to find the field within the contract's storage struct
+    if let Some(SymbolData::Struct(storage_struct)) = resolve_symbol(
+        project,
+        module.clone(),
+        scope.clone(),
+        Symbol::Struct(storage_struct_name.clone()),
+    ) && let Some(field) = storage_struct
+        .borrow()
+        .storage
+        .fields
+        .iter()
+        .find(|f| f.old_name == field_name)
+    {
+        return Some(SymbolData::StorageStructField {
+            parameter_expression: expression,
+            field: field.clone(),
+        });
+    }
+
+    // If not found in the current contract, check inherited contracts
+    for inherited_contract_type_name in contract.borrow().abi.inherits.clone() {
+        let inherited_contract_name = inherited_contract_type_name.to_string();
+
+        if let Some(result) = find_storage_struct_field(
+            project,
+            module.clone(),
+            scope.clone(),
+            inherited_contract_name.as_str(),
+            field_name,
+            sway::Expression::create_member_access(
+                expression.clone(),
+                &[inherited_contract_name.to_case(Case::Snake).as_str()],
+            ),
+        ) {
+            return Some(result);
+        }
+    }
+
+    None
+}
+
+pub fn is_symbol_declared(
+    project: &mut Project,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
+    symbol: Symbol,
+) -> bool {
+    match &symbol {
+        Symbol::TypeDefinition(name) => {
+            if project.is_type_definition_declared(module.clone(), name) {
+                return true;
+            }
+        }
+
+        Symbol::Enum(name) => {
+            if project.is_enum_declared(module.clone(), name) {
+                return true;
+            }
+        }
+
+        Symbol::Event(name) => {
+            let contract_name = scope.borrow().get_contract_name();
+            if let Some(contract_name) = contract_name {
+                let event_name = format!("{contract_name}Event");
+
+                if module.borrow().events_enums.iter().any(|e| {
+                    e.0.borrow().name == event_name
+                        && e.0.borrow().variants.iter().any(|v| v.name == *name)
+                }) {
+                    return true;
+                }
+            }
+        }
+
+        Symbol::Error(name) => {
+            let contract_name = scope.borrow().get_contract_name();
+            if let Some(contract_name) = contract_name {
+                let error_name = format!("{contract_name}Error");
+
+                if module.borrow().errors_enums.iter().any(|e| {
+                    e.0.borrow().name == error_name
+                        && e.0.borrow().variants.iter().any(|v| v.name == *name)
+                }) {
+                    return true;
+                }
+            }
+        }
+
+        Symbol::Struct(name) => {
+            if project.is_struct_declared(module.clone(), scope.clone(), name) {
+                return true;
+            }
+        }
+
+        Symbol::ValueSource(name) => {
+            // Check to see if the variable refers to a local variable or parameter defined in scope
+            if scope.borrow().get_variable_from_old_name(name).is_some() {
+                return true;
+            }
+
+            // Check to see if the variable refers to a constant
+            if module
+                .borrow()
+                .constants
+                .iter()
+                .any(|c| c.old_name == *name)
+            {
+                return true;
+            }
+
+            // Check to see if the variable refers to a configurable
+            if let Some(configurable) = module.borrow().configurable.as_ref()
+                && configurable.fields.iter().any(|f| f.old_name == *name)
+            {
+                return true;
+            }
+
+            // Check to see if the current function has a storage struct parameter and the variable refers to a field of it
+            if let Some(function_name) = scope.borrow().get_function_name() {
+                let (parameter_name, storage_struct_name) = if let Some(function) = module
+                    .borrow()
+                    .functions
+                    .iter()
+                    .find(|f| {
+                        let sway::TypeName::Function { new_name, .. } = &f.signature else {
+                            unreachable!()
+                        };
+                        function_name == *new_name
+                    })
+                    .cloned()
+                    && let sway::TypeName::Function {
+                        storage_struct_parameter: Some(storage_struct_parameter),
+                        ..
+                    } = &function.signature
+                {
+                    (
+                        storage_struct_parameter.name.clone(),
+                        storage_struct_parameter
+                            .type_name
+                            .as_ref()
+                            .unwrap()
+                            .to_string(),
+                    )
+                } else {
+                    let contract_name = scope.borrow().get_contract_name().unwrap();
+                    ("storage_struct".into(), format!("{contract_name}Storage"))
+                };
+
+                if find_storage_struct_field(
+                    project,
+                    module.clone(),
+                    scope.clone(),
+                    storage_struct_name
+                        .trim_end_matches("Storage")
+                        .to_string()
+                        .as_str(),
+                    name,
+                    sway::Expression::create_identifier(parameter_name.as_str()),
+                )
+                .is_some()
+                {
+                    return true;
+                }
+            }
+
+            // Check to see if the variable refers to a storage field
+            if let Some(contract_name) = scope.borrow().get_contract_name()
+                && let Some(contract) =
+                    project.find_contract(module.clone(), contract_name.as_str())
+            {
+                let storage_namespace_name = contract.borrow().name.to_case(Case::Snake);
+                let storage_field_name = name.clone();
+
+                if let Some(storage) = contract.borrow().storage.as_ref()
+                    && let Some(storage_namespace) = storage
+                        .borrow()
+                        .namespaces
+                        .iter()
+                        .find(|n| n.borrow().name == storage_namespace_name)
+                    && storage_namespace
+                        .borrow()
+                        .fields
+                        .iter()
+                        .any(|f| f.old_name == storage_field_name)
+                {
+                    return true;
+                }
+            }
+        }
+    }
+
+    // If we didn't find it in the current contract, try checking inherited contracts
+    if let Some(contract_name) = scope.borrow().get_contract_name()
+        && let Some(contract) = project.find_contract(module.clone(), &contract_name)
+    {
+        let inherits = contract.borrow().abi.inherits.clone();
+
+        for inherit in inherits {
+            let inherit_type_name = inherit.to_string();
+            let scope = Rc::new(RefCell::new(ir::Scope::new(
+                Some(inherit_type_name.as_str()),
+                None,
+                Some(scope.clone()),
+            )));
+
+            if is_symbol_declared(project, module.clone(), scope.clone(), symbol.clone()) {
+                return true;
+            }
+        }
+    }
+
+    // If we didn't find it in the current module, try checking imported modules
+    for use_expr in module.borrow().uses.iter() {
+        if let Some(imported_module) = project.resolve_use(use_expr)
+            && is_symbol_declared(
+                project,
+                imported_module.clone(),
+                scope.clone(),
+                symbol.clone(),
+            )
+        {
+            return true;
+        }
+    }
+
+    false
+}
+
 pub fn resolve_symbol(
     project: &mut Project,
     module: Rc<RefCell<ir::Module>>,
@@ -222,64 +466,6 @@ pub fn resolve_symbol(
                     let contract_name = scope.borrow().get_contract_name().unwrap();
                     ("storage_struct".into(), format!("{contract_name}Storage"))
                 };
-
-                fn find_storage_struct_field(
-                    project: &mut Project,
-                    module: Rc<RefCell<ir::Module>>,
-                    scope: Rc<RefCell<ir::Scope>>,
-                    contract_name: &str,
-                    field_name: &str,
-                    expression: sway::Expression,
-                ) -> Option<SymbolData> {
-                    let storage_struct_name = format!("{contract_name}Storage");
-
-                    // Find the requested contract and the module containing it
-                    let Some((module, contract)) =
-                        project.find_module_and_contract(module.clone(), contract_name)
-                    else {
-                        return None;
-                    };
-
-                    // Attempt to find the field within the contract's storage struct
-                    if let Some(SymbolData::Struct(storage_struct)) = resolve_symbol(
-                        project,
-                        module.clone(),
-                        scope.clone(),
-                        Symbol::Struct(storage_struct_name.clone()),
-                    ) && let Some(field) = storage_struct
-                        .borrow()
-                        .storage
-                        .fields
-                        .iter()
-                        .find(|f| f.old_name == field_name)
-                    {
-                        return Some(SymbolData::StorageStructField {
-                            parameter_expression: expression,
-                            field: field.clone(),
-                        });
-                    }
-
-                    // If not found in the current contract, check inherited contracts
-                    for inherited_contract_type_name in contract.borrow().abi.inherits.clone() {
-                        let inherited_contract_name = inherited_contract_type_name.to_string();
-
-                        if let Some(result) = find_storage_struct_field(
-                            project,
-                            module.clone(),
-                            scope.clone(),
-                            inherited_contract_name.as_str(),
-                            field_name,
-                            sway::Expression::create_member_access(
-                                expression.clone(),
-                                &[inherited_contract_name.to_case(Case::Snake).as_str()],
-                            ),
-                        ) {
-                            return Some(result);
-                        }
-                    }
-
-                    None
-                }
 
                 if let Some(result) = find_storage_struct_field(
                     project,
@@ -465,27 +651,28 @@ pub fn resolve_abi_function_call(
 
     let parameters_cell = Rc::new(RefCell::new(parameters));
 
-    if function.is_none() {
-        function = functions.iter().find(|function| {
-            let function_parameters = &function.parameters;
-            let mut parameters = parameters_cell.borrow_mut();
+    let mut check_function = |function: &sway::Function, coerce: bool| -> bool {
+        if function.old_name != function_name {
+            return false;
+        }
 
-            // Ensure the function's old name matches the function call we're translating
-            if function.old_name != function_name {
-                return false;
-            }
+        let function_parameters = &function.parameters;
+        let storage_struct_parameter = function.storage_struct_parameter.as_ref();
 
-            // Ensure the supplied function call args match the function's parameters
-            if parameters.len() != function_parameters.entries.len() {
-                return false;
-            }
+        let mut parameters = parameters_cell.borrow_mut();
 
-            for (i, value_type_name) in parameter_types.iter().enumerate() {
-                let Some(parameter_type_name) = function_parameters.entries[i].type_name.as_ref()
-                else {
-                    continue;
-                };
+        // Ensure the supplied function call args match the function's parameters
+        if parameters.len() != function_parameters.entries.len() {
+            return false;
+        }
 
+        for (i, value_type_name) in parameter_types.iter().enumerate() {
+            let Some(parameter_type_name) = function_parameters.entries[i].type_name.as_ref()
+            else {
+                continue;
+            };
+
+            if coerce {
                 let Some(expr) = coerce_expression(
                     project,
                     module.clone(),
@@ -498,30 +685,57 @@ pub fn resolve_abi_function_call(
                 };
 
                 parameters[i] = expr;
+            } else if !value_type_name.is_compatible_with(parameter_type_name) {
+                return false;
             }
+        }
 
-            if let Some(storage_struct_parameter) = function.storage_struct_parameter.as_ref()
-                && let Some(function_storage_struct_type) =
-                    storage_struct_parameter.type_name.clone()
+        if let Some(storage_struct_parameter) = storage_struct_parameter.as_ref()
+            && let Some(function_storage_struct_type) = storage_struct_parameter.type_name.clone()
+        {
+            let contract_storage_struct_type =
+                sway::TypeName::create_identifier(format!("{}Storage", abi.name).as_str());
+
+            let mut storage_struct_expression =
+                sway::Expression::create_identifier("storage_struct");
+
+            if coerce {
+                let Some(expr) = coerce_expression(
+                    project,
+                    module.clone(),
+                    scope.clone(),
+                    &storage_struct_expression,
+                    &contract_storage_struct_type,
+                    &function_storage_struct_type,
+                ) else {
+                    return false;
+                };
+
+                storage_struct_expression = expr;
+            } else if !contract_storage_struct_type
+                .is_compatible_with(&function_storage_struct_type)
             {
-                let contract_storage_struct_type =
-                    sway::TypeName::create_identifier(format!("{}Storage", abi.name).as_str());
-
-                parameters.push(
-                    coerce_expression(
-                        project,
-                        module.clone(),
-                        scope.clone(),
-                        &sway::Expression::create_identifier("storage_struct"),
-                        &contract_storage_struct_type,
-                        &function_storage_struct_type,
-                    )
-                    .unwrap(),
-                );
+                return false;
             }
 
-            true
-        });
+            parameters.push(storage_struct_expression);
+        }
+
+        true
+    };
+
+    // Try to find the function without coercing first
+    if function.is_none()
+        && let Some(f) = functions.iter().find(|f| check_function(&f, false))
+    {
+        function = Some(f);
+    }
+
+    // If we couldn't find it without coercing, try it with coercing
+    if function.is_none()
+        && let Some(f) = functions.iter().find(|f| check_function(&f, true))
+    {
+        function = Some(f);
     }
 
     let Some(function) = function else {
@@ -596,6 +810,7 @@ pub fn resolve_abi_function_call(
 #[inline]
 pub fn resolve_function_call(
     project: &mut Project,
+    from_module: Option<Rc<RefCell<ir::Module>>>,
     module: Rc<RefCell<ir::Module>>,
     scope: Rc<RefCell<ir::Scope>>,
     function_name: &str,
@@ -692,13 +907,14 @@ pub fn resolve_function_call(
                 parameter_types.push(value_type);
             }
 
-            function = Some(f.clone());
+            function = Some(f.signature.clone());
         }
     }
 
+    let project_cell = Rc::new(RefCell::new(project));
     let parameters_cell = Rc::new(RefCell::new(parameters.clone()));
 
-    let mut check_type_name = |type_name: &sway::TypeName| -> bool {
+    let check_type_name = |type_name: &sway::TypeName, coerce: bool| -> bool {
         let sway::TypeName::Function {
             parameters: function_parameters,
             ..
@@ -720,18 +936,30 @@ pub fn resolve_function_call(
                 continue;
             };
 
-            let Some(expr) = coerce_expression(
-                project,
-                module.clone(),
-                scope.clone(),
-                &parameters[i],
-                value_type_name,
-                parameter_type_name,
-            ) else {
-                return false;
-            };
+            let project = &mut *project_cell.borrow_mut();
 
-            parameters[i] = expr;
+            if coerce {
+                let Some(expr) = coerce_expression(
+                    project,
+                    if let Some(from_module) = from_module.as_ref() {
+                        from_module.clone()
+                    } else {
+                        module.clone()
+                    },
+                    scope.clone(),
+                    &parameters[i],
+                    &value_type_name,
+                    &parameter_type_name,
+                ) else {
+                    return false;
+                };
+
+                parameters[i] = expr;
+            } else {
+                if !value_type_name.is_compatible_with(&parameter_type_name) {
+                    return false;
+                }
+            }
         }
 
         true
@@ -743,6 +971,7 @@ pub fn resolve_function_call(
         functions
     };
 
+    // Try to find the function without coercing first without underlying types
     if function.is_none()
         && let Some(f) = functions.iter().find(|f| {
             let sway::TypeName::Function { old_name, .. } = &f.signature else {
@@ -753,22 +982,51 @@ pub fn resolve_function_call(
                 return false;
             }
 
-            check_type_name(&f.signature)
+            check_type_name(&f.signature, false)
         })
     {
-        function = Some(f.clone());
+        function = Some(f.signature.clone());
     }
 
-    // Check to see if the function is a local variable function pointer in scope
+    // If we couldn't find it without coercing, try it with coercing without underlying types
+    if function.is_none()
+        && let Some(f) = functions.iter().find(|f| {
+            let sway::TypeName::Function { old_name, .. } = &f.signature else {
+                unreachable!()
+            };
+
+            if old_name != function_name {
+                return false;
+            }
+
+            check_type_name(&f.signature, true)
+        })
+    {
+        function = Some(f.signature.clone());
+    }
+
+    // Check to see if the function is a local variable function pointer in scope without coercing first without underlying types
     if function.is_none()
         && let Some(variable) = scope.borrow().get_variable_from_old_name(function_name)
-        && check_type_name(&variable.borrow().type_name)
+        && check_type_name(&variable.borrow().type_name, false)
     {
-        return Ok(Some(sway::Expression::create_identifier(function_name)));
+        // TODO: check storage accesses of function pointer function
+        function = Some(variable.borrow().type_name.clone());
+    }
+
+    // Check to see if the function is a local variable function pointer in scope with coercing without underlying types
+    if function.is_none()
+        && let Some(variable) = scope.borrow().get_variable_from_old_name(function_name)
+        && check_type_name(&variable.borrow().type_name, true)
+    {
+        // TODO: check storage accesses of function pointer function
+        function = Some(variable.borrow().type_name.clone());
     }
 
     let Some(function) = function else {
         let contract_name = scope.borrow().get_contract_name();
+        let mut project = project_cell.borrow_mut();
+
         // If we didn't find a function, check inherited functions
         if let Some(contract_name) = contract_name
             && let Some(contract) = project.find_contract(module.clone(), &contract_name)
@@ -776,7 +1034,7 @@ pub fn resolve_function_call(
             let abi = contract.borrow().abi.clone();
 
             if let Some(result) = resolve_abi_function_call(
-                project,
+                &mut project,
                 module.clone(),
                 scope.clone(),
                 &abi,
@@ -793,7 +1051,12 @@ pub fn resolve_function_call(
         return Ok(None);
     };
 
-    let sway::TypeName::Function { new_name, .. } = &function.signature else {
+    let sway::TypeName::Function {
+        new_name,
+        storage_struct_parameter,
+        ..
+    } = &function
+    else {
         unreachable!()
     };
 
@@ -804,45 +1067,6 @@ pub fn resolve_function_call(
         .cloned();
 
     let current_function_name = scope.borrow().get_function_name();
-    let current_function = module
-        .borrow()
-        .functions
-        .iter()
-        .find(|f| {
-            let sway::TypeName::Function { new_name, .. } = &f.signature else {
-                unreachable!()
-            };
-            Some(new_name.clone()) == current_function_name
-        })
-        .cloned();
-
-    if let Some(sway::TypeName::Function {
-        storage_struct_parameter: Some(storage_struct_parameter),
-        ..
-    }) = &current_function.as_ref().map(|f| f.signature.clone())
-        && let Some(function_struct_parameter) = {
-            let sway::TypeName::Function {
-                storage_struct_parameter,
-                ..
-            } = &function.signature
-            else {
-                unreachable!()
-            };
-            storage_struct_parameter.clone()
-        }
-    {
-        parameters_cell.borrow_mut().push(
-            coerce_expression(
-                project,
-                module.clone(),
-                scope.clone(),
-                &sway::Expression::create_identifier(storage_struct_parameter.name.as_str()),
-                storage_struct_parameter.type_name.as_ref().unwrap(),
-                function_struct_parameter.type_name.as_ref().unwrap(),
-            )
-            .unwrap(),
-        );
-    }
 
     if let Some(function_storage_access) = function_storage_access
         && let Some(current_function_name) = current_function_name
@@ -856,11 +1080,49 @@ pub fn resolve_function_call(
         *current_function_storage_access = function_storage_access;
     }
 
-    Ok(Some(sway::Expression::create_function_call(
-        new_name,
-        None,
-        parameters_cell.borrow().clone(),
-    )))
+    // let current_function = module
+    //     .borrow()
+    //     .functions
+    //     .iter()
+    //     .find(|f| {
+    //         let sway::TypeName::Function { new_name, .. } = &f.signature else {
+    //             unreachable!()
+    //         };
+    //         Some(new_name.clone()) == current_function_name
+    //     })
+    //     .map(|f| f.signature.clone());
+
+    if let Some(current_storage_struct_parameter) = storage_struct_parameter
+        && let Some(function_struct_parameter) = {
+            let sway::TypeName::Function {
+                storage_struct_parameter,
+                ..
+            } = &function
+            else {
+                unreachable!()
+            };
+            storage_struct_parameter.clone()
+        }
+    {
+        parameters_cell.borrow_mut().push(
+            coerce_expression(
+                &mut *project_cell.borrow_mut(),
+                module.clone(),
+                scope.clone(),
+                &sway::Expression::create_identifier(
+                    current_storage_struct_parameter.name.as_str(),
+                ),
+                current_storage_struct_parameter.type_name.as_ref().unwrap(),
+                function_struct_parameter.type_name.as_ref().unwrap(),
+            )
+            .unwrap(),
+        );
+    }
+
+    let result =
+        sway::Expression::create_function_call(new_name, None, parameters_cell.borrow().clone());
+
+    Ok(Some(result))
 }
 
 #[inline]

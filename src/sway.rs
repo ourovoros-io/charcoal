@@ -416,6 +416,30 @@ impl TypeName {
         Self::Tuple { type_names }
     }
 
+    #[inline(always)]
+    pub fn is_todo(&self) -> bool {
+        match self {
+            TypeName::Identifier {
+                name,
+                generic_parameters: None,
+            } => name == "todo!",
+
+            _ => false,
+        }
+    }
+
+    #[inline(always)]
+    pub fn is_bool(&self) -> bool {
+        match self {
+            TypeName::Identifier {
+                name,
+                generic_parameters: None,
+            } => name == "bool",
+
+            _ => false,
+        }
+    }
+
     /// Checks if the type name is an unsigned integer type
     #[inline(always)]
     pub fn is_uint(&self) -> bool {
@@ -619,6 +643,18 @@ impl TypeName {
     }
 
     #[inline(always)]
+    pub fn is_raw_slice(&self) -> bool {
+        match self {
+            TypeName::Identifier {
+                name,
+                generic_parameters: None,
+            } => name == "raw_slice",
+
+            _ => false,
+        }
+    }
+
+    #[inline(always)]
     pub fn u8_array_length(&self) -> Option<usize> {
         match self {
             TypeName::Array { type_name, length } => match type_name.as_ref() {
@@ -744,11 +780,25 @@ impl TypeName {
 
     #[inline(always)]
     pub fn to_storage_key(&self) -> TypeName {
+        if self.is_storage_key() {
+            return self.clone();
+        }
+
         TypeName::Identifier {
             name: "StorageKey".to_string(),
             generic_parameters: Some(GenericParameterList {
                 entries: vec![GenericParameter {
-                    type_name: self.clone(),
+                    type_name: if self.is_string_slice() {
+                        TypeName::create_identifier("StorageString")
+                    } else if self.is_bytes() {
+                        TypeName::create_identifier("StorageBytes")
+                    } else if let Some(vec_type) = self.vec_type() {
+                        vec_type.to_storage_vec()
+                    } else if let Some(storage_key_type) = self.storage_key_type() {
+                        storage_key_type
+                    } else {
+                        self.clone()
+                    },
                     implements: None,
                 }],
             }),
@@ -810,7 +860,17 @@ impl TypeName {
             name: "StorageVec".to_string(),
             generic_parameters: Some(GenericParameterList {
                 entries: vec![GenericParameter {
-                    type_name: self.clone(),
+                    type_name: if self.is_string_slice() {
+                        TypeName::create_identifier("StorageString")
+                    } else if self.is_bytes() {
+                        TypeName::create_identifier("StorageBytes")
+                    } else if let Some(vec_type) = self.vec_type() {
+                        vec_type.to_storage_vec()
+                    } else if let Some(storage_key_type) = self.storage_key_type() {
+                        storage_key_type
+                    } else {
+                        self.clone()
+                    },
                     implements: None,
                 }],
             }),
@@ -1064,15 +1124,7 @@ impl TypeName {
                 name: "StorageKey".to_string(),
                 generic_parameters: Some(GenericParameterList {
                     entries: vec![GenericParameter {
-                        type_name: TypeName::Identifier {
-                            name: "StorageVec".to_string(),
-                            generic_parameters: Some(GenericParameterList {
-                                entries: vec![GenericParameter {
-                                    type_name: vec_type,
-                                    implements: None,
-                                }],
-                            }),
-                        },
+                        type_name: vec_type.to_storage_vec(),
                         implements: None,
                     }],
                 }),

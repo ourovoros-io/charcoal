@@ -312,15 +312,15 @@ pub fn translate_variable_access_expression(
 
             let container_type_name_string = container_type_name.to_string();
 
-            let Some(ir::VariableAccess { variable, .. }) = translate_variable_access_expression(
-                project,
-                module.clone(),
-                scope.clone(),
-                container,
-            )?
-            else {
-                return Ok(None);
-            };
+            // let Some(ir::VariableAccess { variable, .. }) = translate_variable_access_expression(
+            //     project,
+            //     module.clone(),
+            //     scope.clone(),
+            //     container,
+            // )?
+            // else {
+            //     return Ok(None);
+            // };
 
             // Check if container is a struct
             let field_name = translate_naming_convention(member.name.as_str(), Case::Snake);
@@ -340,7 +340,7 @@ pub fn translate_variable_access_expression(
 
                 if fields.iter().any(|f| f.new_name == field_name) {
                     return Ok(Some(ir::VariableAccess {
-                        variable,
+                        variable: None,
                         expression: sway::Expression::from(sway::MemberAccess {
                             expression: translated_container,
                             member: field_name,
@@ -369,26 +369,28 @@ pub fn translate_variable_access_expression(
             // Check for explicit contract function calls
             if let solidity::Expression::MemberAccess(_, container, member) = function.as_ref()
                 && let solidity::Expression::Variable(container) = container.as_ref()
-                && let Some(external_contract) =
-                    project.find_contract(module.clone(), container.name.as_str())
             {
-                let abi = external_contract.borrow().abi.clone();
+                if let Some((external_module, external_contract)) =
+                    project.find_module_and_contract(module.clone(), container.name.as_str())
+                {
+                    let abi = external_contract.borrow().abi.clone();
 
-                if let Some(result) = resolve_abi_function_call(
-                    project,
-                    module.clone(),
-                    scope.clone(),
-                    &abi,
-                    None,
-                    member.name.as_str(),
-                    None,
-                    parameters.clone(),
-                    parameter_types.clone(),
-                )? {
-                    return Ok(Some(ir::VariableAccess {
-                        variable: None,
-                        expression: result,
-                    }));
+                    if let Some(result) = resolve_abi_function_call(
+                        project,
+                        external_module.clone(),
+                        scope.clone(),
+                        &abi,
+                        None,
+                        member.name.as_str(),
+                        None,
+                        parameters.clone(),
+                        parameter_types.clone(),
+                    )? {
+                        return Ok(Some(ir::VariableAccess {
+                            variable: None,
+                            expression: result,
+                        }));
+                    }
                 }
             }
 

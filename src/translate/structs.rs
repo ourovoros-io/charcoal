@@ -43,6 +43,22 @@ pub fn translate_struct_definition(
             type_name: type_name.clone(),
         });
 
+        let mut type_name = translate_type_name(
+            project,
+            module.clone(),
+            scope.clone(),
+            &field.ty,
+            Some(&solidity::StorageLocation::Storage(Default::default())),
+        );
+
+        if type_name.is_storage_bytes()
+            || type_name.is_storage_map()
+            || type_name.is_storage_string()
+            || type_name.is_storage_vec()
+        {
+            type_name = type_name.to_storage_key();
+        }
+
         // HACK: Wrap `StorageKey<T>` in `Option<T>` so it can be deferred
         if type_name.is_storage_key() {
             type_name = type_name.to_option();

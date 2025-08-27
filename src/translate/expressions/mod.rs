@@ -297,7 +297,10 @@ pub fn evaluate_expression(
                         )
                     }
 
-                    member => todo!("translate {member} member call: {expression:#?}"),
+                    member => todo!(
+                        "translate {member} member call: {}",
+                        sway::TabbedDisplayer(expression)
+                    ),
                 },
 
                 _ => {
@@ -678,15 +681,18 @@ pub fn create_value_expression(
         let value_type =
             get_expression_type(project, module.clone(), scope.clone(), value).unwrap();
 
-        return coerce_expression(
+        let Some(result) = coerce_expression(
             project,
             module.clone(),
             scope.clone(),
             value,
             &value_type,
             type_name,
-        )
-        .unwrap();
+        ) else {
+            panic!("Failed to coerce from `{}` to `{}`: `{}`", value_type, type_name, sway::TabbedDisplayer(value));
+        };
+
+        return result;
     }
 
     match type_name {

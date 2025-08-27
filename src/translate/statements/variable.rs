@@ -26,7 +26,9 @@ pub fn translate_variable_definition_statement(
 
     let mut value = None;
 
-    if let Some(solidity::Expression::New(_, new_expression)) = initializer.as_ref() {
+    if let Some(solidity::Expression::New(_, new_expression)) = initializer.as_ref()
+        && type_name.is_vec()
+    {
         let solidity::Expression::FunctionCall(_, ty, args) = new_expression.as_ref() else {
             panic!("Unexpected new expression: {new_expression} - {new_expression:#?}",);
         };

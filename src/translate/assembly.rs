@@ -973,7 +973,7 @@ pub fn translate_yul_function_call_expression(
                         rhs: parameters[1].clone(),
                     },
                 )]),
-                rhs: parameters[3].clone(),
+                rhs: parameters[2].clone(),
             }))
         }
 

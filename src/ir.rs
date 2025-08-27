@@ -368,7 +368,23 @@ impl Contract {
                 items: vec![],
             },
             storage: None,
-            storage_struct: None,
+            storage_struct: Some(Rc::new(RefCell::new(Struct {
+                name: format!("{}Storage", name),
+                memory: sway::Struct {
+                    attributes: None,
+                    is_public: true,
+                    name: String::new(),
+                    generic_parameters: None,
+                    fields: vec![],
+                },
+                storage: sway::Struct {
+                    attributes: None,
+                    is_public: true,
+                    name: format!("{}Storage", name),
+                    generic_parameters: None,
+                    fields: vec![],
+                },
+            }))),
             storage_struct_constructor_fn: None,
         }
     }

@@ -294,7 +294,7 @@ pub fn translate_new_expression(
 
                     // String::from(v)
                     final_expr: Some(sway::Expression::create_function_call(
-                        "String::from",
+                        "String::from_ascii",
                         None,
                         vec![sway::Expression::create_identifier("v".into())],
                     )),

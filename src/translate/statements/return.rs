@@ -54,15 +54,21 @@ pub fn translate_return_statement(
 
     let expression_type = get_expression_type(project, module.clone(), scope.clone(), &expression)?;
 
-    expression = coerce_expression(
+    let Some(expression) = coerce_expression(
         project,
         module.clone(),
         scope.clone(),
         &expression,
         &expression_type,
         &return_type,
-    )
-    .unwrap();
+    ) else {
+        panic!(
+            "Failed to coerce from `{}` to `{}`: `{}`",
+            expression_type,
+            return_type,
+            sway::TabbedDisplayer(&expression)
+        );
+    };
 
     Ok(sway::Statement::from(sway::Expression::Return(Some(
         Box::new(expression),
