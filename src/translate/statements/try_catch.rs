@@ -25,15 +25,7 @@ pub fn translate_try_catch_statement(
                         sway::LetPattern::Identifier(sway::LetIdentifier {
                             is_mutable: false,
                             name: translate_naming_convention(
-                                params[0]
-                                    .1
-                                    .as_ref()
-                                    .unwrap()
-                                    .name
-                                    .as_ref()
-                                    .unwrap()
-                                    .name
-                                    .as_str(),
+                                params[0].1.as_ref().unwrap().name.as_ref().unwrap().name.as_str(),
                                 Case::Snake,
                             ),
                         })
@@ -55,20 +47,19 @@ pub fn translate_try_catch_statement(
                     value: translate_expression(project, module.clone(), scope.clone(), expr)?,
                 };
 
-                let store_let_identifier =
-                    |id: &sway::LetIdentifier, type_name: &sway::TypeName| {
-                        let variable = Rc::new(RefCell::new(ir::Variable {
-                            old_name: id.name.clone(),
-                            new_name: id.name.clone(),
-                            type_name: type_name.clone(),
-                            ..Default::default()
-                        }));
+                let store_let_identifier = |id: &sway::LetIdentifier, type_name: &sway::TypeName| {
+                    let variable = Rc::new(RefCell::new(ir::Variable {
+                        old_name: id.name.clone(),
+                        new_name: id.name.clone(),
+                        type_name: type_name.clone(),
+                        ..Default::default()
+                    }));
 
-                        scope.borrow_mut().add_variable(variable);
+                    scope.borrow_mut().add_variable(variable);
 
-                        let variable = scope.borrow().get_variable_from_new_name(&id.name).unwrap();
-                        variable.borrow_mut().statement_index = Some(statements.len());
-                    };
+                    let variable = scope.borrow().get_variable_from_new_name(&id.name).unwrap();
+                    variable.borrow_mut().statement_index = Some(statements.len());
+                };
 
                 match &let_statement.pattern {
                     sway::LetPattern::Identifier(id) => {
@@ -109,9 +100,7 @@ pub fn translate_try_catch_statement(
                     if block.statements.len() == 1 {
                         statements.extend(block.statements.clone());
                     } else {
-                        statements.push(sway::Statement::from(sway::Expression::from(
-                            block.as_ref().clone(),
-                        )));
+                        statements.push(sway::Statement::from(sway::Expression::from(block.as_ref().clone())));
                     }
                 }
 
@@ -128,10 +117,7 @@ pub fn translate_try_catch_statement(
     }
 
     for cc in catch_clauses {
-        statements.push(sway::Statement::Commented(
-            format!("unsupported: {cc}"),
-            None,
-        ));
+        statements.push(sway::Statement::Commented(format!("unsupported: {cc}"), None));
     }
 
     Ok(sway::Statement::from(sway::Expression::from(sway::Block {

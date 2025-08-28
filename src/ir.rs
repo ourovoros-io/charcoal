@@ -76,11 +76,7 @@ pub struct Scope {
 }
 
 impl Scope {
-    pub fn new(
-        contract_name: Option<&str>,
-        function_name: Option<&str>,
-        parent: Option<Rc<RefCell<Scope>>>,
-    ) -> Self {
+    pub fn new(contract_name: Option<&str>, function_name: Option<&str>, parent: Option<Rc<RefCell<Scope>>>) -> Self {
         Self {
             contract_name: contract_name.map(str::to_string),
             function_name: function_name.map(str::to_string),
@@ -161,12 +157,7 @@ impl Scope {
 
     /// Attempts to get a reference to a translated variable using its old name
     pub fn get_variable_from_old_name(&self, old_name: &str) -> Option<Rc<RefCell<Variable>>> {
-        if let Some(variable) = self
-            .variables
-            .iter()
-            .rev()
-            .find(|v| v.borrow().old_name == old_name)
-        {
+        if let Some(variable) = self.variables.iter().rev().find(|v| v.borrow().old_name == old_name) {
             return Some(variable.clone());
         }
 
@@ -181,12 +172,7 @@ impl Scope {
 
     /// Attempts to get a reference to a translated variable using its new name
     pub fn get_variable_from_new_name(&self, new_name: &str) -> Option<Rc<RefCell<Variable>>> {
-        if let Some(variable) = self
-            .variables
-            .iter()
-            .rev()
-            .find(|v| v.borrow().new_name == new_name)
-        {
+        if let Some(variable) = self.variables.iter().rev().find(|v| v.borrow().new_name == new_name) {
             return Some(variable.clone());
         }
 
@@ -217,12 +203,7 @@ impl Scope {
         None
     }
 
-    pub fn set_function_storage_accesses(
-        &self,
-        module: Rc<RefCell<Module>>,
-        storage_read: bool,
-        storage_write: bool,
-    ) {
+    pub fn set_function_storage_accesses(&self, module: Rc<RefCell<Module>>, storage_read: bool, storage_write: bool) {
         if let Some(function_name) = self.get_function_name() {
             if storage_read {
                 module
@@ -253,12 +234,7 @@ impl Scope {
         let mut parameters = vec![];
 
         for (_, p) in function_definition.params.iter() {
-            let old_name = p
-                .as_ref()
-                .unwrap()
-                .name
-                .as_ref()
-                .map_or("_".into(), |n| n.name.clone());
+            let old_name = p.as_ref().unwrap().name.as_ref().map_or("_".into(), |n| n.name.clone());
             let new_name = translate_naming_convention(old_name.as_str(), Case::Snake);
 
             let type_name = translate_type_name(
@@ -449,10 +425,7 @@ impl Module {
         let tree = tree.unwrap();
 
         if !self.uses.iter().any(|u| u.tree == tree) {
-            self.uses.push(sway::Use {
-                is_public: false,
-                tree,
-            });
+            self.uses.push(sway::Use { is_public: false, tree });
         }
     }
 
@@ -535,10 +508,7 @@ impl Module {
 
     /// Attempt to get storage namespace by name from the translated definition. If it doesn't exist, it gets created.
     #[inline]
-    pub fn get_storage_namespace(
-        &mut self,
-        scope: Rc<RefCell<Scope>>,
-    ) -> Option<Rc<RefCell<sway::StorageNamespace>>> {
+    pub fn get_storage_namespace(&mut self, scope: Rc<RefCell<Scope>>) -> Option<Rc<RefCell<sway::StorageNamespace>>> {
         let namespace_name = self.get_storage_namespace_name(scope.clone())?;
         let storage = self.get_storage(scope.clone());
 
@@ -579,10 +549,7 @@ impl Module {
         let storage = self.get_storage_namespace(scope.clone()).unwrap();
 
         if let Some(field) = storage.borrow().fields.iter().find(|f| f.name == name) {
-            assert!(
-                field.type_name == *type_name,
-                "{name} field already exists: {field:#?}"
-            );
+            assert!(field.type_name == *type_name, "{name} field already exists: {field:#?}");
         } else {
             storage.borrow_mut().fields.push(sway::StorageField {
                 old_name: String::new(),
@@ -612,16 +579,12 @@ impl Module {
 
             assert!(valid, "{name} field already exists: {field:#?}");
         } else {
-            storage_struct
-                .borrow_mut()
-                .storage
-                .fields
-                .push(sway::StructField {
-                    is_public: true,
-                    new_name: name.to_string(),
-                    old_name: String::new(),
-                    type_name: type_name.to_storage_key(),
-                });
+            storage_struct.borrow_mut().storage.fields.push(sway::StructField {
+                is_public: true,
+                new_name: name.to_string(),
+                old_name: String::new(),
+                type_name: type_name.to_storage_key(),
+            });
         }
     }
 
@@ -637,16 +600,12 @@ impl Module {
     #[inline]
     pub fn find_contract_impl_mut(&mut self, definition_name: &str) -> Option<&mut sway::Impl> {
         self.impls.iter_mut().find(|i| {
-            let sway::TypeName::Identifier {
-                name: type_name, ..
-            } = &i.type_name
-            else {
+            let sway::TypeName::Identifier { name: type_name, .. } = &i.type_name else {
                 return false;
             };
 
             let Some(sway::TypeName::Identifier {
-                name: for_type_name,
-                ..
+                name: for_type_name, ..
             }) = i.for_type_name.as_ref()
             else {
                 return false;
@@ -660,15 +619,11 @@ impl Module {
     #[inline]
     pub fn find_contract_impl(&self, definition_name: &str) -> Option<&sway::Impl> {
         self.impls.iter().find(|i| {
-            let sway::TypeName::Identifier {
-                name: type_name, ..
-            } = &i.type_name
-            else {
+            let sway::TypeName::Identifier { name: type_name, .. } = &i.type_name else {
                 return false;
             };
             let Some(sway::TypeName::Identifier {
-                name: for_type_name,
-                ..
+                name: for_type_name, ..
             }) = i.for_type_name.as_ref()
             else {
                 return false;
@@ -723,9 +678,7 @@ impl From<Module> for sway::Module {
                 x.implementation.as_ref().unwrap().type_definition.clone(),
             ));
 
-            items.push(sway::ModuleItem::Impl(
-                x.implementation.unwrap().variants_impl,
-            ))
+            items.push(sway::ModuleItem::Impl(x.implementation.unwrap().variants_impl))
         }
 
         for (events_enum, abi_encode_impl) in module.events_enums {
@@ -753,9 +706,7 @@ impl From<Module> for sway::Module {
             let contract = contract.borrow();
 
             if let Some(storage_struct) = contract.storage_struct.as_ref() {
-                items.push(sway::ModuleItem::Struct(
-                    storage_struct.borrow().storage.clone(),
-                ));
+                items.push(sway::ModuleItem::Struct(storage_struct.borrow().storage.clone()));
                 assert!(storage_struct.borrow().memory.fields.is_empty());
             }
 
@@ -845,10 +796,7 @@ impl From<Module> for sway::Module {
             let mut function = x.implementation.unwrap();
 
             if let Some(storage_struct_parameter) = function.storage_struct_parameter.as_ref() {
-                function
-                    .parameters
-                    .entries
-                    .push(storage_struct_parameter.clone());
+                function.parameters.entries.push(storage_struct_parameter.clone());
             }
 
             items.push(sway::ModuleItem::Function(function));

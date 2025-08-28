@@ -81,10 +81,7 @@ pub fn translate_state_variable(
     if is_constant {
         let mut module = module.borrow_mut();
         // Increase the constant name count
-        let count = module
-            .constant_name_counts
-            .entry(new_name.clone())
-            .or_insert(0);
+        let count = module.constant_name_counts.entry(new_name.clone()).or_insert(0);
         *count += 1;
 
         // Append the constant name count to the end of the constant name if there is more than 1
@@ -161,8 +158,7 @@ pub fn translate_state_variable(
             let value = translate_expression(project, module.clone(), scope.clone(), x)?;
 
             deferred_initializations.push(ir::DeferredInitialization {
-                expression: sway::Expression::create_identifier("storage_struct")
-                    .with_member(&new_name),
+                expression: sway::Expression::create_identifier("storage_struct").with_member(&new_name),
                 is_storage,
                 is_constant,
                 is_configurable,
@@ -182,8 +178,7 @@ pub fn translate_state_variable(
         }));
     }
 
-    if value.is_none() && ((is_constant || is_configurable) && variable_type_name.is_string_slice())
-    {
+    if value.is_none() && ((is_constant || is_configurable) && variable_type_name.is_string_slice()) {
         let initializer = translate_expression(
             project,
             module.clone(),
@@ -195,9 +190,7 @@ pub fn translate_state_variable(
             panic!("Expected a string literal")
         };
 
-        variable_type_name = sway::TypeName::StringArray {
-            length: string.len(),
-        };
+        variable_type_name = sway::TypeName::StringArray { length: string.len() };
 
         value = Some(sway::Expression::create_function_call(
             "__to_str_array",
@@ -208,11 +201,9 @@ pub fn translate_state_variable(
 
     if value.is_none() {
         // HACK: Add to mapping names for structs in storage that contain fields of type `Option<StorageKey<T>>`
-        if let Some(struct_definition) = project.find_struct(
-            module.clone(),
-            scope.clone(),
-            &variable_type_name.to_string(),
-        ) {
+        if let Some(struct_definition) =
+            project.find_struct(module.clone(), scope.clone(), &variable_type_name.to_string())
+        {
             let struct_definition = struct_definition.borrow();
 
             let fields = if struct_definition.memory.name == variable_type_name.to_string() {
@@ -225,8 +216,7 @@ pub fn translate_state_variable(
 
             let mut field_initializations = vec![];
 
-            let struct_field_name =
-                translate_naming_convention(&variable_type_name.to_string(), Case::Snake);
+            let struct_field_name = translate_naming_convention(&variable_type_name.to_string(), Case::Snake);
 
             let instance_field_name = format!("{struct_field_name}_instance_count");
 
@@ -243,10 +233,7 @@ pub fn translate_state_variable(
                     mapping_names.push((struct_field_name.clone(), vec![]));
                 }
 
-                let mapping_names = mapping_names
-                    .iter_mut()
-                    .find(|m| m.0 == struct_field_name)
-                    .unwrap();
+                let mapping_names = mapping_names.iter_mut().find(|m| m.0 == struct_field_name).unwrap();
                 mapping_names.1.push(field.new_name.clone());
 
                 // Ensure the instance count field exists in storage
@@ -258,18 +245,14 @@ pub fn translate_state_variable(
                 );
 
                 // Ensure the instance mapping field exists in storage
-                let mapping_field_name =
-                    format!("{struct_field_name}_{}_instances", field.new_name,);
+                let mapping_field_name = format!("{struct_field_name}_{}_instances", field.new_name,);
 
                 module.borrow_mut().create_storage_field(
                     scope.clone(),
                     mapping_field_name.as_str(),
                     &sway::TypeName::create_generic(
                         "StorageMap",
-                        vec![
-                            sway::TypeName::create_identifier("u64"),
-                            storage_key_type.clone(),
-                        ],
+                        vec![sway::TypeName::create_identifier("u64"), storage_key_type.clone()],
                     ),
                     &sway::Expression::from(sway::Constructor {
                         type_name: sway::TypeName::create_identifier("StorageMap"),
@@ -277,16 +260,13 @@ pub fn translate_state_variable(
                     }),
                 );
 
-                field_initializations.push(sway::Statement::from(sway::Expression::from(
-                    sway::BinaryExpression {
-                        operator: "=".to_string(),
-                        lhs: sway::Expression::create_identifier(&new_name)
-                            .with_member(&field.new_name),
-                        rhs: sway::Expression::create_identifier("storage_struct")
-                            .with_member(&mapping_field_name)
-                            .with_get_call(sway::Expression::create_identifier("instance_index")),
-                    },
-                )));
+                field_initializations.push(sway::Statement::from(sway::Expression::from(sway::BinaryExpression {
+                    operator: "=".to_string(),
+                    lhs: sway::Expression::create_identifier(&new_name).with_member(&field.new_name),
+                    rhs: sway::Expression::create_identifier("storage_struct")
+                        .with_member(&mapping_field_name)
+                        .with_get_call(sway::Expression::create_identifier("instance_index")),
+                })));
             }
 
             if !field_initializations.is_empty() {
@@ -312,10 +292,7 @@ pub fn translate_state_variable(
                             .with_write_call(sway::Expression::from(sway::BinaryExpression {
                                 operator: "+".to_string(),
                                 lhs: sway::Expression::create_identifier(&instance_field_name),
-                                rhs: sway::Expression::from(sway::Literal::DecInt(
-                                    1_u64.into(),
-                                    None,
-                                )),
+                                rhs: sway::Expression::from(sway::Literal::DecInt(1_u64.into(), None)),
                             })),
                     ),
                 );
@@ -335,8 +312,7 @@ pub fn translate_state_variable(
                 );
 
                 deferred_initializations.push(ir::DeferredInitialization {
-                    expression: sway::Expression::create_identifier("storage_struct")
-                        .with_member(&new_name),
+                    expression: sway::Expression::create_identifier("storage_struct").with_member(&new_name),
                     is_storage,
                     is_constant,
                     is_configurable,
@@ -358,13 +334,7 @@ pub fn translate_state_variable(
                 Some(&value),
             )
         } else {
-            create_value_expression(
-                project,
-                module.clone(),
-                scope.clone(),
-                &variable_type_name,
-                None,
-            )
+            create_value_expression(project, module.clone(), scope.clone(), &variable_type_name, None)
         });
     }
 
@@ -375,13 +345,7 @@ pub fn translate_state_variable(
         let scope = Rc::new(RefCell::new(ir::Scope::new(contract_name, None, None)));
 
         // Evaluate the value ahead of time in order to generate an appropriate constant value expression
-        let value = evaluate_expression(
-            project,
-            module.clone(),
-            scope.clone(),
-            &variable_type_name,
-            &value,
-        );
+        let value = evaluate_expression(project, module.clone(), scope.clone(), &variable_type_name, &value);
 
         module.borrow_mut().constants.push(sway::Constant {
             is_public,
@@ -464,8 +428,7 @@ pub fn generate_state_variable_getter_functions(
 
     // Generate parameters and return type for the public getter function
     let mut parameters = vec![];
-    let mut return_type =
-        get_return_type_name(project, module.clone(), &state_variable_info.type_name);
+    let mut return_type = get_return_type_name(project, module.clone(), &state_variable_info.type_name);
 
     if let Some((inner_parameters, inner_return_type)) = state_variable_info
         .type_name
@@ -540,17 +503,14 @@ pub fn generate_state_variable_getter_functions(
             });
 
             for (parameter, needs_unwrap) in parameters.iter() {
-                expression = expression
-                    .with_get_call(sway::Expression::create_identifier(parameter.name.as_str()));
+                expression = expression.with_get_call(sway::Expression::create_identifier(parameter.name.as_str()));
 
                 if *needs_unwrap {
                     expression = expression.with_unwrap_call();
                 }
             }
 
-            scope
-                .borrow_mut()
-                .set_function_name(&toplevel_function.new_name);
+            scope.borrow_mut().set_function_name(&toplevel_function.new_name);
 
             scope
                 .borrow_mut()
@@ -603,22 +563,15 @@ pub fn generate_state_variable_getter_functions(
 
     if state_variable_info.is_storage {
         let contract_name = contract_name.unwrap();
-        let contract = project
-            .find_contract(module.clone(), contract_name)
-            .unwrap();
+        let contract = project.find_contract(module.clone(), contract_name).unwrap();
 
         let has_storage_struct = contract.borrow().storage_struct.is_some();
 
         if has_storage_struct && contract.borrow().storage_struct_constructor_fn.is_none() {
-            let storage_namespace_name = module
-                .borrow_mut()
-                .get_storage_namespace_name(scope.clone())
-                .unwrap();
+            let storage_namespace_name = module.borrow_mut().get_storage_namespace_name(scope.clone()).unwrap();
 
             let constructor = sway::Constructor {
-                type_name: sway::TypeName::create_identifier(
-                    format!("{contract_name}Storage").as_str(),
-                ),
+                type_name: sway::TypeName::create_identifier(format!("{contract_name}Storage").as_str()),
                 fields: contract
                     .borrow()
                     .storage_struct
@@ -648,10 +601,7 @@ pub fn generate_state_variable_getter_functions(
                 attributes: None,
                 is_public: true,
                 old_name: String::new(),
-                new_name: format!(
-                    "create_{}_storage_struct",
-                    contract_name.to_case(Case::Snake)
-                ),
+                new_name: format!("create_{}_storage_struct", contract_name.to_case(Case::Snake)),
                 generic_parameters: None,
                 parameters: sway::ParameterList::default(),
                 storage_struct_parameter: None,
@@ -685,18 +635,14 @@ pub fn generate_state_variable_getter_functions(
                 ),
             }));
 
-            scope
-                .borrow_mut()
-                .add_variable(Rc::new(RefCell::new(ir::Variable {
-                    old_name: state_variable_info.old_name.clone(),
-                    new_name: "storage_struct".to_string(),
-                    type_name: sway::TypeName::create_identifier(
-                        format!("{contract_name}Storage").as_str(),
-                    ),
-                    statement_index: Some(0),
-                    read_count: 0,
-                    mutation_count: 0,
-                })));
+            scope.borrow_mut().add_variable(Rc::new(RefCell::new(ir::Variable {
+                old_name: state_variable_info.old_name.clone(),
+                new_name: "storage_struct".to_string(),
+                type_name: sway::TypeName::create_identifier(format!("{contract_name}Storage").as_str()),
+                statement_index: Some(0),
+                read_count: 0,
+                mutation_count: 0,
+            })));
 
             parameters.push(sway::Expression::create_identifier("storage_struct"));
         }

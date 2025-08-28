@@ -13,12 +13,7 @@ pub fn translate_conditional_operator_expression(
 ) -> Result<sway::Expression, Error> {
     // if condition { then_value } else { else_value }
     Ok(sway::Expression::from(sway::If {
-        condition: Some(translate_expression(
-            project,
-            module.clone(),
-            scope.clone(),
-            condition,
-        )?),
+        condition: Some(translate_expression(project, module.clone(), scope.clone(), condition)?),
         then_body: sway::Block {
             statements: vec![],
             final_expr: Some(translate_expression(

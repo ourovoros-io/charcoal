@@ -80,10 +80,8 @@ pub fn translate_post_operator_expression(
         &solidity::Expression::NumberLiteral(*loc, "1".into(), String::new(), None),
     )?);
 
-    let Some(ir::VariableAccess {
-        variable,
-        expression,
-    }) = translate_variable_access_expression(project, module.clone(), scope.clone(), x)?
+    let Some(ir::VariableAccess { variable, expression }) =
+        translate_variable_access_expression(project, module.clone(), scope.clone(), x)?
     else {
         panic!("Variable not found: {x}");
     };

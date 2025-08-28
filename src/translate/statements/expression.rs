@@ -20,15 +20,12 @@ pub fn translate_expression_statement(
                     .all(|(_, p)| p.as_ref().is_none_or(|p| p.name.is_none()))
                 {
                     let rhs = translate_expression(project, module.clone(), scope.clone(), rhs)?;
-                    let rhs_type_name =
-                        get_expression_type(project, module.clone(), scope.clone(), &rhs)?;
+                    let rhs_type_name = get_expression_type(project, module.clone(), scope.clone(), &rhs)?;
 
                     let elements = parameters
                         .iter()
                         .map(|(_, p)| match p.as_ref() {
-                            Some(p) => {
-                                translate_expression(project, module.clone(), scope.clone(), &p.ty)
-                            }
+                            Some(p) => translate_expression(project, module.clone(), scope.clone(), &p.ty),
                             None => Ok(sway::Expression::create_identifier("_".into())),
                         })
                         .collect::<Result<Vec<_>, _>>()?;
@@ -109,19 +106,13 @@ pub fn translate_expression_statement(
                             .collect(),
                     }),
 
-                    value: translate_expression(
-                        project,
-                        module.clone(),
-                        scope.clone(),
-                        rhs.as_ref(),
-                    )?,
+                    value: translate_expression(project, module.clone(), scope.clone(), rhs.as_ref())?,
                 }));
             }
         }
 
         // Check for standalone pre/post decrement statements
-        solidity::Expression::PreDecrement(loc, x)
-        | solidity::Expression::PostDecrement(loc, x) => {
+        solidity::Expression::PreDecrement(loc, x) | solidity::Expression::PostDecrement(loc, x) => {
             return Ok(sway::Statement::from(translate_assignment_expression(
                 project,
                 module.clone(),
@@ -133,8 +124,7 @@ pub fn translate_expression_statement(
         }
 
         // Check for standalone pre/post increment statements
-        solidity::Expression::PreIncrement(loc, x)
-        | solidity::Expression::PostIncrement(loc, x) => {
+        solidity::Expression::PreIncrement(loc, x) | solidity::Expression::PostIncrement(loc, x) => {
             return Ok(sway::Statement::from(translate_assignment_expression(
                 project,
                 module.clone(),

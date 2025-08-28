@@ -45,22 +45,14 @@ pub fn translate_statement(
             translate_block_statement(project, module, scope.clone(), statements)
         }
         solidity::Statement::Assembly {
-            dialect,
-            flags,
-            block,
-            ..
+            dialect, flags, block, ..
         } => translate_assembly_statement(project, module, scope.clone(), dialect, flags, block),
         solidity::Statement::Args(_, named_arguments) => {
             translate_args_statement(project, module, scope.clone(), named_arguments)
         }
-        solidity::Statement::If(_, condition, then_body, else_if) => translate_if_statement(
-            project,
-            module,
-            scope.clone(),
-            condition,
-            then_body,
-            else_if,
-        ),
+        solidity::Statement::If(_, condition, then_body, else_if) => {
+            translate_if_statement(project, module, scope.clone(), condition, then_body, else_if)
+        }
         solidity::Statement::While(_, condition, body) => {
             translate_while_statement(project, module, scope.clone(), condition, body)
         }
@@ -77,15 +69,7 @@ pub fn translate_statement(
             )
         }
         solidity::Statement::For(_, initialization, condition, update, body) => {
-            translate_for_statement(
-                project,
-                module,
-                scope.clone(),
-                initialization,
-                condition,
-                update,
-                body,
-            )
+            translate_for_statement(project, module, scope.clone(), initialization, condition, update, body)
         }
         solidity::Statement::DoWhile(_, body, condition) => {
             translate_do_while_statement(project, module, scope.clone(), body, condition)
@@ -105,14 +89,7 @@ pub fn translate_statement(
             translate_emit_statement(project, module, scope.clone(), expression)
         }
         solidity::Statement::Try(_, expr, params_and_body, catch_clauses) => {
-            translate_try_catch_statement(
-                project,
-                module,
-                scope.clone(),
-                expr,
-                params_and_body,
-                catch_clauses,
-            )
+            translate_try_catch_statement(project, module, scope.clone(), expr, params_and_body, catch_clauses)
         }
         solidity::Statement::Error(_) => {
             panic!("Encountered a statement that was not parsed correctly")

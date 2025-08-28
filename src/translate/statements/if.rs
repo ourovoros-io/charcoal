@@ -25,13 +25,11 @@ pub fn translate_if_statement(
     let else_if = if let Some(else_if) = else_if.as_ref() {
         match translate_statement(project, module.clone(), scope.clone(), else_if.as_ref())? {
             sway::Statement::Expression(sway::Expression::If(else_if)) => Some(else_if.clone()),
-            sway::Statement::Expression(sway::Expression::Block(block)) => {
-                Some(Box::new(sway::If {
-                    condition: None,
-                    then_body: *block,
-                    else_if: None,
-                }))
-            }
+            sway::Statement::Expression(sway::Expression::Block(block)) => Some(Box::new(sway::If {
+                condition: None,
+                then_body: *block,
+                else_if: None,
+            })),
             statement => Some(Box::new(sway::If {
                 condition: None,
                 then_body: sway::Block {

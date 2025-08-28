@@ -207,9 +207,7 @@ pub fn translate_function_name(
             }
         }
 
-        function_names
-            .borrow_mut()
-            .insert(signature.clone(), new_name);
+        function_names.borrow_mut().insert(signature.clone(), new_name);
     }
 
     let function_names = function_names.borrow_mut();
@@ -226,11 +224,7 @@ pub fn translate_function_name(
     };
 
     if let Some(contract_name) = contract_name.as_ref() {
-        top_level_fn_name = format!(
-            "{}_{}",
-            contract_name.to_case(Case::Snake),
-            top_level_fn_name
-        );
+        top_level_fn_name = format!("{}_{}", contract_name.to_case(Case::Snake), top_level_fn_name);
     }
 
     FunctionNames {
@@ -300,12 +294,7 @@ pub fn translate_return_type_name(
             module.clone(),
             scope.clone(),
             &function_definition.returns[0].1.as_ref().unwrap().ty,
-            function_definition.returns[0]
-                .1
-                .as_ref()
-                .unwrap()
-                .storage
-                .as_ref(),
+            function_definition.returns[0].1.as_ref().unwrap().storage.as_ref(),
         );
 
         return Some(get_return_type_name(project, module.clone(), &type_name));
@@ -372,8 +361,7 @@ pub fn translate_function_declaration(
         &function_definition.ty,
     );
 
-    let parameters =
-        translate_function_parameters(project, module.clone(), contract_name, function_definition);
+    let parameters = translate_function_parameters(project, module.clone(), contract_name, function_definition);
 
     // Create a scope for modifier invocation translations
     let scope = Rc::new(RefCell::new(ir::Scope::new(
@@ -398,18 +386,14 @@ pub fn translate_function_declaration(
             )),
         }));
 
-        scope
-            .borrow_mut()
-            .add_variable(Rc::new(RefCell::new(ir::Variable {
-                old_name: "".into(),
-                new_name: "storage_struct".into(),
-                type_name: sway::TypeName::create_identifier(
-                    format!("{contract_name}Storage").as_str(),
-                ),
-                statement_index: Some(0),
-                read_count: 0,
-                mutation_count: 0,
-            })));
+        scope.borrow_mut().add_variable(Rc::new(RefCell::new(ir::Variable {
+            old_name: "".into(),
+            new_name: "storage_struct".into(),
+            type_name: sway::TypeName::create_identifier(format!("{contract_name}Storage").as_str()),
+            statement_index: Some(0),
+            read_count: 0,
+            mutation_count: 0,
+        })));
     }
 
     // Add the function parameters to the scope
@@ -421,22 +405,14 @@ pub fn translate_function_declaration(
 
         let old_name = parameter_identifier.name.clone();
         let new_name = translate_naming_convention(old_name.as_str(), Case::Snake);
-        let type_name = translate_type_name(
-            project,
-            module.clone(),
-            scope.clone(),
-            &p.ty,
-            p.storage.as_ref(),
-        );
+        let type_name = translate_type_name(project, module.clone(), scope.clone(), &p.ty, p.storage.as_ref());
 
-        scope
-            .borrow_mut()
-            .add_variable(Rc::new(RefCell::new(ir::Variable {
-                old_name,
-                new_name,
-                type_name,
-                ..Default::default()
-            })));
+        scope.borrow_mut().add_variable(Rc::new(RefCell::new(ir::Variable {
+            old_name,
+            new_name,
+            type_name,
+            ..Default::default()
+        })));
     }
 
     // Translate the function declaration
@@ -450,13 +426,8 @@ pub fn translate_function_declaration(
             generic_parameters: None,
             parameters,
             storage_struct_parameter,
-            return_type: translate_return_type_name(
-                project,
-                module.clone(),
-                scope.clone(),
-                function_definition,
-            )
-            .map(Box::new),
+            return_type: translate_return_type_name(project, module.clone(), scope.clone(), function_definition)
+                .map(Box::new),
         },
     };
 
@@ -487,12 +458,7 @@ pub fn translate_abi_function(
         &function_definition.ty,
     );
 
-    let parameters = translate_function_parameters(
-        project,
-        module.clone(),
-        Some(contract_name),
-        function_definition,
-    );
+    let parameters = translate_function_parameters(project, module.clone(), Some(contract_name), function_definition);
 
     // Create the scope for the body of the toplevel function
     let scope = Rc::new(RefCell::new(ir::Scope::new(
@@ -514,18 +480,14 @@ pub fn translate_abi_function(
             )),
         });
 
-        scope
-            .borrow_mut()
-            .add_variable(Rc::new(RefCell::new(ir::Variable {
-                old_name: "".into(),
-                new_name: "storage_struct".into(),
-                type_name: sway::TypeName::create_identifier(
-                    format!("{contract_name}Storage").as_str(),
-                ),
-                statement_index: Some(0),
-                read_count: 0,
-                mutation_count: 0,
-            })));
+        scope.borrow_mut().add_variable(Rc::new(RefCell::new(ir::Variable {
+            old_name: "".into(),
+            new_name: "storage_struct".into(),
+            type_name: sway::TypeName::create_identifier(format!("{contract_name}Storage").as_str()),
+            statement_index: Some(0),
+            read_count: 0,
+            mutation_count: 0,
+        })));
     }
 
     // Create the function declaration
@@ -537,12 +499,7 @@ pub fn translate_abi_function(
         generic_parameters: None,
         parameters,
         storage_struct_parameter,
-        return_type: translate_return_type_name(
-            project,
-            module.clone(),
-            scope.clone(),
-            function_definition,
-        ),
+        return_type: translate_return_type_name(project, module.clone(), scope.clone(), function_definition),
         body: None,
     };
 
@@ -569,9 +526,7 @@ pub fn translate_abi_function(
             module.borrow_mut().ensure_use_declared("std::string::*");
         }
 
-        sway_function
-            .new_name
-            .clone_from(&function_name.top_level_fn_name)
+        sway_function.new_name.clone_from(&function_name.top_level_fn_name)
     }
 
     abi_fn
@@ -610,10 +565,7 @@ pub fn translate_function_definition(
 
     // We should not translate modifier functions here.
     // Use translate_modifier_definition instead.
-    assert!(!matches!(
-        function_definition.ty,
-        solidity::FunctionTy::Modifier
-    ));
+    assert!(!matches!(function_definition.ty, solidity::FunctionTy::Modifier));
 
     let function_attributes = FunctionAttributes::from(function_definition);
 
@@ -626,8 +578,7 @@ pub fn translate_function_definition(
         &function_definition.ty,
     );
 
-    let parameters =
-        translate_function_parameters(project, module.clone(), contract_name, function_definition);
+    let parameters = translate_function_parameters(project, module.clone(), contract_name, function_definition);
 
     // Create the scope for the body of the toplevel function
     let scope = Rc::new(RefCell::new(ir::Scope::new(
@@ -648,21 +599,17 @@ pub fn translate_function_definition(
             is_ref: false,
             is_mut: false,
             name: "storage_struct".to_string(),
-            type_name: Some(sway::TypeName::create_identifier(
-                storage_struct.borrow().name.as_str(),
-            )),
+            type_name: Some(sway::TypeName::create_identifier(storage_struct.borrow().name.as_str())),
         });
 
-        scope
-            .borrow_mut()
-            .add_variable(Rc::new(RefCell::new(ir::Variable {
-                old_name: "".into(),
-                new_name: "storage_struct".into(),
-                type_name: sway::TypeName::create_identifier(storage_struct.borrow().name.as_str()),
-                statement_index: Some(0),
-                read_count: 0,
-                mutation_count: 0,
-            })));
+        scope.borrow_mut().add_variable(Rc::new(RefCell::new(ir::Variable {
+            old_name: "".into(),
+            new_name: "storage_struct".into(),
+            type_name: sway::TypeName::create_identifier(storage_struct.borrow().name.as_str()),
+            statement_index: Some(0),
+            read_count: 0,
+            mutation_count: 0,
+        })));
     }
 
     // Create the function declaration
@@ -674,42 +621,28 @@ pub fn translate_function_definition(
         generic_parameters: None,
         parameters,
         storage_struct_parameter: storage_struct_parameter.clone(),
-        return_type: translate_return_type_name(
-            project,
-            module.clone(),
-            scope.clone(),
-            function_definition,
-        ),
+        return_type: translate_return_type_name(project, module.clone(), scope.clone(), function_definition),
         body: None,
     };
 
     // Convert the statements in the function's body (if any)
-    let Some(solidity::Statement::Block { statements, .. }) = function_definition.body.as_ref()
-    else {
+    let Some(solidity::Statement::Block { statements, .. }) = function_definition.body.as_ref() else {
         return Ok((None, None));
     };
 
     // Add the function parameters to the scope
-    let parameters = scope.borrow_mut().add_function_parameters(
-        project,
-        module.clone(),
-        function_definition.clone(),
-    );
+    let parameters = scope
+        .borrow_mut()
+        .add_function_parameters(project, module.clone(), function_definition.clone());
 
     // Add the function's named return parameters to the scope
-    let return_parameters = scope.borrow_mut().add_function_return_parameters(
-        project,
-        module.clone(),
-        function_definition.clone(),
-    );
+    let return_parameters =
+        scope
+            .borrow_mut()
+            .add_function_return_parameters(project, module.clone(), function_definition.clone());
 
     // Translate the body for the toplevel function
-    let mut function_body = translate_block(
-        project,
-        module.clone(),
-        scope.clone(),
-        statements.as_slice(),
-    )?;
+    let mut function_body = translate_block(project, module.clone(), scope.clone(), statements.as_slice())?;
 
     // Create a constructor guard if the function is a constructor
     if function_attributes.is_constructor {
@@ -724,14 +657,8 @@ pub fn translate_function_definition(
 
     // Check for parameters that were mutated and make them local variables
     for parameter in parameters.iter().rev() {
-        let Some(variable) = scope
-            .borrow()
-            .get_variable_from_new_name(&parameter.new_name)
-        else {
-            panic!(
-                "error: Variable not found in scope: \"{}\"",
-                parameter.new_name
-            );
+        let Some(variable) = scope.borrow().get_variable_from_new_name(&parameter.new_name) else {
+            panic!("error: Variable not found in scope: \"{}\"", parameter.new_name);
         };
 
         if variable.borrow().mutation_count > 0 {
@@ -785,8 +712,8 @@ pub fn translate_function_definition(
     {
         function_body
             .statements
-            .push(sway::Statement::from(sway::Expression::Return(Some(
-                Box::new(if return_parameters.len() == 1 {
+            .push(sway::Statement::from(sway::Expression::Return(Some(Box::new(
+                if return_parameters.len() == 1 {
                     sway::Expression::create_identifier(return_parameters[0].new_name.as_str())
                 } else {
                     sway::Expression::Tuple(
@@ -795,8 +722,8 @@ pub fn translate_function_definition(
                             .map(|p| sway::Expression::create_identifier(p.new_name.as_str()))
                             .collect(),
                     )
-                }),
-            ))));
+                },
+            )))));
     }
 
     // Check if the final statement returns a value and change it to be the final expression of the block
@@ -841,10 +768,8 @@ pub fn translate_function_definition(
 
         {
             let mut module = module.borrow_mut();
-            let &mut (storage_read, storage_write) = module
-                .function_storage_accesses
-                .entry(new_name.clone())
-                .or_default();
+            let &mut (storage_read, storage_write) =
+                module.function_storage_accesses.entry(new_name.clone()).or_default();
 
             if storage_read || storage_write {
                 if let Some(storage_struct_parameter) = storage_struct_parameter.as_ref() {
@@ -930,24 +855,20 @@ pub fn translate_function_definition(
 
         let parameters_cell = Rc::new(RefCell::new(parameters));
 
-        let Some((modifier_pre_call, modifier_post_call, modifier_body)) =
-            resolve_modifier_invocation(
-                project,
-                module.clone(),
-                scope.clone(),
-                modifier,
-                parameters_cell,
-                function_declaration.return_type.clone(),
-                &mut function_body,
-            )?
+        let Some((modifier_pre_call, modifier_post_call, modifier_body)) = resolve_modifier_invocation(
+            project,
+            module.clone(),
+            scope.clone(),
+            modifier,
+            parameters_cell,
+            function_declaration.return_type.clone(),
+            &mut function_body,
+        )?
         else {
             panic!("Failed to resolve modifier invocation: {new_name}");
         };
 
-        assert!(
-            modifier_body.is_some()
-                != (modifier_pre_call.is_some() || modifier_post_call.is_some())
-        );
+        assert!(modifier_body.is_some() != (modifier_pre_call.is_some() || modifier_post_call.is_some()));
 
         if let Some(modifier_pre_call) = modifier_pre_call {
             modifier_pre_calls.push(modifier_pre_call);
@@ -984,12 +905,11 @@ pub fn translate_function_definition(
     toplevel_function.body = Some(function_body);
 
     // Remove `payable` attribute from toplevel function if present
-    if let Some((index, _)) = toplevel_function.attributes.as_ref().and_then(|a| {
-        a.attributes
-            .iter()
-            .enumerate()
-            .find(|(_, a)| a.name == "payable")
-    }) {
+    if let Some((index, _)) = toplevel_function
+        .attributes
+        .as_ref()
+        .and_then(|a| a.attributes.iter().enumerate().find(|(_, a)| a.name == "payable"))
+    {
         toplevel_function
             .attributes
             .as_mut()
@@ -1037,26 +957,17 @@ pub fn translate_function_definition(
 
         // If the contract has a storage struct, generate bindings and a storage struct parameter for the toplevel function call
         let has_storage_struct = {
-            let contract = project
-                .find_contract(module.clone(), contract_name)
-                .unwrap();
+            let contract = project.find_contract(module.clone(), contract_name).unwrap();
             contract.borrow().storage_struct.is_some()
         };
         if !(function_attributes.is_constant || function_attributes.is_pure) && has_storage_struct {
-            let contract = project
-                .find_contract(module.clone(), contract_name)
-                .unwrap();
+            let contract = project.find_contract(module.clone(), contract_name).unwrap();
 
             if contract.borrow().storage_struct_constructor_fn.is_none() {
-                let storage_namespace_name = module
-                    .borrow_mut()
-                    .get_storage_namespace_name(scope.clone())
-                    .unwrap();
+                let storage_namespace_name = module.borrow_mut().get_storage_namespace_name(scope.clone()).unwrap();
 
                 let constructor = sway::Constructor {
-                    type_name: sway::TypeName::create_identifier(
-                        format!("{contract_name}Storage").as_str(),
-                    ),
+                    type_name: sway::TypeName::create_identifier(format!("{contract_name}Storage").as_str()),
                     fields: contract
                         .borrow()
                         .storage_struct
@@ -1086,10 +997,7 @@ pub fn translate_function_definition(
                     attributes: None,
                     is_public: true,
                     old_name: String::new(),
-                    new_name: format!(
-                        "create_{}_storage_struct",
-                        contract_name.to_case(Case::Snake)
-                    ),
+                    new_name: format!("create_{}_storage_struct", contract_name.to_case(Case::Snake)),
                     generic_parameters: None,
                     parameters: sway::ParameterList::default(),
                     storage_struct_parameter: None,
@@ -1178,11 +1086,7 @@ pub fn translate_modifier_definition(
         post_body: None,
     };
 
-    let scope = Rc::new(RefCell::new(ir::Scope::new(
-        contract_name,
-        Some(&new_name),
-        None,
-    )));
+    let scope = Rc::new(RefCell::new(ir::Scope::new(contract_name, Some(&new_name), None)));
 
     for (_, p) in function_definition.params.iter() {
         let old_name = p
@@ -1215,18 +1119,15 @@ pub fn translate_modifier_definition(
             ..Default::default()
         });
 
-        scope
-            .borrow_mut()
-            .add_variable(Rc::new(RefCell::new(ir::Variable {
-                old_name,
-                new_name,
-                type_name,
-                ..Default::default()
-            })));
+        scope.borrow_mut().add_variable(Rc::new(RefCell::new(ir::Variable {
+            old_name,
+            new_name,
+            type_name,
+            ..Default::default()
+        })));
     }
 
-    let solidity::Statement::Block { statements, .. } = function_definition.body.as_ref().unwrap()
-    else {
+    let solidity::Statement::Block { statements, .. } = function_definition.body.as_ref().unwrap() else {
         panic!(
             "Invalid modifier body, expected block, found: {:#?}",
             function_definition.body
@@ -1656,10 +1557,7 @@ pub fn ensure_constructor_functions_exist(
     // Create the ABI impl function
     let mut impl_function = abi_function.clone();
 
-    let storage_namespace_name = module
-        .borrow()
-        .get_storage_namespace_name(scope.clone())
-        .unwrap();
+    let storage_namespace_name = module.borrow().get_storage_namespace_name(scope.clone()).unwrap();
 
     impl_function.body = Some(sway::Block {
         statements: vec![sway::Statement::from(sway::Let {
@@ -1669,9 +1567,7 @@ pub fn ensure_constructor_functions_exist(
             }),
             type_name: None,
             value: sway::Expression::from(sway::Constructor {
-                type_name: sway::TypeName::create_identifier(
-                    format!("{contract_name}Storage").as_str(),
-                ),
+                type_name: sway::TypeName::create_identifier(format!("{contract_name}Storage").as_str()),
                 fields: contract
                     .borrow()
                     .storage_struct
@@ -1729,11 +1625,7 @@ pub fn ensure_constructor_functions_exist(
     );
 
     // Add the functions to the contract and module
-    contract
-        .borrow_mut()
-        .abi
-        .functions
-        .insert(0, abi_function.clone());
+    contract.borrow_mut().abi.functions.insert(0, abi_function.clone());
 
     contract
         .borrow_mut()
@@ -1780,16 +1672,12 @@ pub fn ensure_constructor_called_fields_exist(
         .any(|f| f.new_name == constructor_called_field_name)
     {
         // Add the `constructor_called` field to the storage struct
-        storage_struct
-            .borrow_mut()
-            .storage
-            .fields
-            .push(sway::StructField {
-                is_public: true,
-                new_name: constructor_called_field_name.clone(),
-                old_name: String::new(),
-                type_name: sway::TypeName::create_identifier("bool").to_storage_key(),
-            });
+        storage_struct.borrow_mut().storage.fields.push(sway::StructField {
+            is_public: true,
+            new_name: constructor_called_field_name.clone(),
+            old_name: String::new(),
+            type_name: sway::TypeName::create_identifier("bool").to_storage_key(),
+        });
     }
 
     // Add the `constructor_called` field to the storage block
@@ -1801,15 +1689,12 @@ pub fn ensure_constructor_called_fields_exist(
         .iter()
         .any(|s| s.name == constructor_called_field_name)
     {
-        storage_namespace
-            .borrow_mut()
-            .fields
-            .push(sway::StorageField {
-                old_name: String::new(),
-                name: constructor_called_field_name.clone(),
-                type_name: sway::TypeName::create_identifier("bool"),
-                value: sway::Expression::from(sway::Literal::Bool(false)),
-            });
+        storage_namespace.borrow_mut().fields.push(sway::StorageField {
+            old_name: String::new(),
+            name: constructor_called_field_name.clone(),
+            type_name: sway::TypeName::create_identifier("bool"),
+            value: sway::Expression::from(sway::Literal::Bool(false)),
+        });
     }
 }
 
@@ -1878,16 +1763,12 @@ fn resolve_modifier_invocation(
     if modifier.pre_body.is_some() && modifier.post_body.is_some() {
         return Ok(Some((
             Some(sway::FunctionCall {
-                function: sway::Expression::create_identifier(
-                    format!("{}_pre", modifier.new_name).as_str(),
-                ),
+                function: sway::Expression::create_identifier(format!("{}_pre", modifier.new_name).as_str()),
                 generic_parameters: None,
                 parameters: parameters_cell.borrow().clone(),
             }),
             Some(sway::FunctionCall {
-                function: sway::Expression::create_identifier(
-                    format!("{}_post", modifier.new_name).as_str(),
-                ),
+                function: sway::Expression::create_identifier(format!("{}_post", modifier.new_name).as_str()),
                 generic_parameters: None,
                 parameters: parameters_cell.borrow().clone(),
             }),
@@ -1914,10 +1795,7 @@ fn resolve_modifier_invocation(
             None,
         )));
     } else if let Some(mut block) = modifier.inline_body.clone() {
-        fn inline_expression(
-            expression: &mut sway::Expression,
-            inline_statements: &[sway::Statement],
-        ) {
+        fn inline_expression(expression: &mut sway::Expression, inline_statements: &[sway::Statement]) {
             match expression {
                 sway::Expression::Literal(_) => {}
                 sway::Expression::PathExpr(_) => {}
@@ -1988,11 +1866,7 @@ fn resolve_modifier_invocation(
                         }
 
                         for i in 0..if_expr.then_body.statements.len() {
-                            inline_statement(
-                                &mut if_expr.then_body.statements,
-                                i,
-                                inline_statements,
-                            );
+                            inline_statement(&mut if_expr.then_body.statements, i, inline_statements);
                         }
 
                         if let Some(final_expr) = if_expr.then_body.final_expr.as_mut() {
@@ -2096,9 +1970,9 @@ fn resolve_modifier_invocation(
         if let Some(final_expr) = function_body.final_expr.take() {
             function_body
                 .statements
-                .push(sway::Statement::from(sway::Expression::Return(Some(
-                    Box::new(final_expr),
-                ))));
+                .push(sway::Statement::from(sway::Expression::Return(Some(Box::new(
+                    final_expr,
+                )))));
 
             needs_return = true;
         }
@@ -2107,9 +1981,9 @@ fn resolve_modifier_invocation(
         if let Some(final_expr) = block.final_expr.take() {
             block
                 .statements
-                .push(sway::Statement::from(sway::Expression::Return(Some(
-                    Box::new(final_expr),
-                ))));
+                .push(sway::Statement::from(sway::Expression::Return(Some(Box::new(
+                    final_expr,
+                )))));
         }
 
         for i in 0..block.statements.len() {
@@ -2149,9 +2023,7 @@ fn resolve_modifier_invocation(
             if has_return {
                 assert!(block.final_expr.is_none() && !block.statements.is_empty());
 
-                let Some(sway::Statement::Expression(sway::Expression::Return(value))) =
-                    block.statements.pop()
-                else {
+                let Some(sway::Statement::Expression(sway::Expression::Return(value))) = block.statements.pop() else {
                     unreachable!()
                 };
 

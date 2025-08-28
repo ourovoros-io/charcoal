@@ -25,11 +25,9 @@ impl fmt::Display for Error {
         match self {
             Error::Wrapped(e) => write!(f, "{e}"),
             Error::MissingContractFile => f.write_str("error: Contract file not specified"),
-            Error::LineNotFound(path, offset) => write!(
-                f,
-                "error: Offset {offset} not found in file: \"{}\"",
-                path.display()
-            ),
+            Error::LineNotFound(path, offset) => {
+                write!(f, "error: Offset {offset} not found in file: \"{}\"", path.display())
+            }
             Error::SolangDiagnostics(path, line_ranges, diagnostics) => {
                 Self::format_diagnostics(f, path, line_ranges, diagnostics)
             }
@@ -38,9 +36,7 @@ impl fmt::Display for Error {
                 "error: Ineffectual statement in file: \"{}\" - {statement}",
                 path.display()
             ),
-            Error::UnknownFramework => {
-                f.write_str("Could not detect a supported Solidity project kind.")
-            }
+            Error::UnknownFramework => f.write_str("Could not detect a supported Solidity project kind."),
             Error::InvalidInput(msg) => write!(f, "error: {msg}"),
         }
     }

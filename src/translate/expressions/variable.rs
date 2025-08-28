@@ -29,21 +29,16 @@ pub fn translate_variable_expression(
 
         "now" => {
             // now => std::block::timestamp().as_u256()
-            return Ok(sway::Expression::create_function_call(
-                "std::block::timestamp",
-                None,
-                vec![],
-            )
-            .with_as_u256_call());
+            return Ok(
+                sway::Expression::create_function_call("std::block::timestamp", None, vec![]).with_as_u256_call(),
+            );
         }
 
         _ => {}
     }
 
-    let Some(ir::VariableAccess {
-        variable,
-        expression,
-    }) = translate_variable_access_expression(project, module.clone(), scope.clone(), expression)?
+    let Some(ir::VariableAccess { variable, expression }) =
+        translate_variable_access_expression(project, module.clone(), scope.clone(), expression)?
     else {
         panic!(
             "{}: ERROR: Variable not found in scope: \"{}\"",
@@ -73,12 +68,9 @@ pub fn translate_variable_access_expression(
     match solidity_expression {
         solidity::Expression::Variable(solidity::Identifier { name, .. }) => {
             // Attempt to find a value source matching the name of the variable
-            if let Some(symbol) = resolve_symbol(
-                project,
-                module.clone(),
-                scope.clone(),
-                Symbol::ValueSource(name.into()),
-            ) {
+            if let Some(symbol) =
+                resolve_symbol(project, module.clone(), scope.clone(), Symbol::ValueSource(name.into()))
+            {
                 let variable = match &symbol {
                     SymbolData::Variable(variable) => Some(variable.clone()),
                     _ => None,
@@ -86,8 +78,7 @@ pub fn translate_variable_access_expression(
 
                 let mut expression: sway::Expression = symbol.try_into()?;
 
-                let expression_type =
-                    get_expression_type(project, module.clone(), scope.clone(), &expression)?;
+                let expression_type = get_expression_type(project, module.clone(), scope.clone(), &expression)?;
 
                 if expression_type.is_storage_key() {
                     scope
@@ -97,10 +88,7 @@ pub fn translate_variable_access_expression(
                     expression = expression.with_read_call();
                 }
 
-                return Ok(Some(ir::VariableAccess {
-                    variable,
-                    expression,
-                }));
+                return Ok(Some(ir::VariableAccess { variable, expression }));
             }
 
             // Check to see if the variable refers to a function
@@ -125,32 +113,24 @@ pub fn translate_variable_access_expression(
         }
 
         solidity::Expression::ArraySubscript(_, array_expression, Some(index)) => {
-            let mut index =
-                translate_expression(project, module.clone(), scope.clone(), index.as_ref())?;
+            let mut index = translate_expression(project, module.clone(), scope.clone(), index.as_ref())?;
 
             let Some(ir::VariableAccess {
                 variable,
                 mut expression,
-            }) = translate_variable_access_expression(
-                project,
-                module.clone(),
-                scope.clone(),
-                array_expression,
-            )?
+            }) = translate_variable_access_expression(project, module.clone(), scope.clone(), array_expression)?
             else {
                 return Ok(None);
             };
 
             // HACK: remove `.read()` if present
             if let Some(container) = expression.to_read_call_parts()
-                && get_expression_type(project, module.clone(), scope.clone(), container)?
-                    .is_storage_key()
+                && get_expression_type(project, module.clone(), scope.clone(), container)?.is_storage_key()
             {
                 expression = container.clone();
             }
 
-            let type_name =
-                get_expression_type(project, module.clone(), scope.clone(), &expression)?;
+            let type_name = get_expression_type(project, module.clone(), scope.clone(), &expression)?;
 
             Ok(Some(ir::VariableAccess {
                 variable,
@@ -161,19 +141,12 @@ pub fn translate_variable_access_expression(
                     } => match (name.as_str(), generic_parameters.as_ref()) {
                         ("Bytes", None) => expression.with_get_call(index).with_unwrap_call(),
 
-                        ("Option", Some(generic_parameters))
-                            if generic_parameters.entries.len() == 1 =>
-                        {
-                            if let Some(storage_key_type) =
-                                generic_parameters.entries[0].type_name.storage_key_type()
-                            {
+                        ("Option", Some(generic_parameters)) if generic_parameters.entries.len() == 1 => {
+                            if let Some(storage_key_type) = generic_parameters.entries[0].type_name.storage_key_type() {
                                 if storage_key_type.is_storage_map() {
                                     expression.with_unwrap_call().with_get_call(index)
                                 } else if storage_key_type.is_storage_vec() {
-                                    expression
-                                        .with_unwrap_call()
-                                        .with_get_call(index)
-                                        .with_unwrap_call()
+                                    expression.with_unwrap_call().with_get_call(index).with_unwrap_call()
                                 } else {
                                     todo!("option type: {}", generic_parameters.entries[0])
                                 }
@@ -182,9 +155,7 @@ pub fn translate_variable_access_expression(
                             }
                         }
 
-                        ("StorageKey", Some(generic_parameters))
-                            if generic_parameters.entries.len() == 1 =>
-                        {
+                        ("StorageKey", Some(generic_parameters)) if generic_parameters.entries.len() == 1 => {
                             match &generic_parameters.entries[0].type_name {
                                 sway::TypeName::Identifier {
                                     name,
@@ -193,12 +164,8 @@ pub fn translate_variable_access_expression(
                                     ("StorageMap", Some(_)) => expression.with_get_call(index),
 
                                     ("StorageVec", Some(_)) => {
-                                        let index_type_name = get_expression_type(
-                                            project,
-                                            module.clone(),
-                                            scope.clone(),
-                                            &index,
-                                        )?;
+                                        let index_type_name =
+                                            get_expression_type(project, module.clone(), scope.clone(), &index)?;
 
                                         let u64_type = sway::TypeName::create_identifier("u64");
 
@@ -217,20 +184,15 @@ pub fn translate_variable_access_expression(
 
                                     (name, _) => panic!(
                                         "{}: TODO: translate {name} array subscript expression: {solidity_expression} - {} {expression:#?}",
-                                        project.loc_to_file_location_string(
-                                            module.clone(),
-                                            &solidity_expression.loc()
-                                        ),
+                                        project.loc_to_file_location_string(module.clone(), &solidity_expression.loc()),
                                         sway::TabbedDisplayer(&expression),
                                     ),
                                 },
 
                                 sway::TypeName::Array { .. } => {
-                                    scope.borrow_mut().set_function_storage_accesses(
-                                        module.clone(),
-                                        true,
-                                        false,
-                                    );
+                                    scope
+                                        .borrow_mut()
+                                        .set_function_storage_accesses(module.clone(), true, false);
 
                                     sway::Expression::from(sway::ArrayAccess {
                                         expression: expression.with_read_call(),
@@ -240,25 +202,15 @@ pub fn translate_variable_access_expression(
 
                                 _ => todo!(
                                     "{}: TODO: translate {} array subscript expression: {solidity_expression} - {} {expression:#?}",
-                                    project.loc_to_file_location_string(
-                                        module.clone(),
-                                        &solidity_expression.loc()
-                                    ),
+                                    project.loc_to_file_location_string(module.clone(), &solidity_expression.loc()),
                                     type_name,
                                     sway::TabbedDisplayer(&expression),
                                 ),
                             }
                         }
 
-                        ("Vec", Some(generic_parameters))
-                            if generic_parameters.entries.len() == 1 =>
-                        {
-                            let index_type_name = get_expression_type(
-                                project,
-                                module.clone(),
-                                scope.clone(),
-                                &index,
-                            )?;
+                        ("Vec", Some(generic_parameters)) if generic_parameters.entries.len() == 1 => {
+                            let index_type_name = get_expression_type(project, module.clone(), scope.clone(), &index)?;
 
                             let u64_type = sway::TypeName::create_identifier("u64");
 
@@ -277,10 +229,7 @@ pub fn translate_variable_access_expression(
 
                         (name, _) => todo!(
                             "{}: TODO: translate {name} array subscript expression: {solidity_expression} - {} {expression:#?}",
-                            project.loc_to_file_location_string(
-                                module.clone(),
-                                &solidity_expression.loc()
-                            ),
+                            project.loc_to_file_location_string(module.clone(), &solidity_expression.loc()),
                             sway::TabbedDisplayer(&expression),
                         ),
                     },
@@ -291,15 +240,10 @@ pub fn translate_variable_access_expression(
         }
 
         solidity::Expression::MemberAccess(_, container, member) => {
-            let mut translated_container =
-                translate_expression(project, module.clone(), scope.clone(), container)?;
+            let mut translated_container = translate_expression(project, module.clone(), scope.clone(), container)?;
 
-            let mut container_type_name = get_expression_type(
-                project,
-                module.clone(),
-                scope.clone(),
-                &translated_container,
-            )?;
+            let mut container_type_name =
+                get_expression_type(project, module.clone(), scope.clone(), &translated_container)?;
 
             if let Some(container_type) = container_type_name.storage_key_type() {
                 scope
@@ -394,16 +338,8 @@ pub fn translate_variable_access_expression(
                 }
             }
 
-            match translate_variable_access_expression(
-                project,
-                module.clone(),
-                scope.clone(),
-                function,
-            )? {
-                Some(ir::VariableAccess {
-                    variable,
-                    expression,
-                }) => Ok(Some(ir::VariableAccess {
+            match translate_variable_access_expression(project, module.clone(), scope.clone(), function)? {
+                Some(ir::VariableAccess { variable, expression }) => Ok(Some(ir::VariableAccess {
                     variable,
                     expression: sway::Expression::from(sway::FunctionCall {
                         function: expression,
@@ -414,22 +350,15 @@ pub fn translate_variable_access_expression(
 
                 None => Ok(Some(ir::VariableAccess {
                     variable: None,
-                    expression: translate_expression(
-                        project,
-                        module.clone(),
-                        scope.clone(),
-                        solidity_expression,
-                    )?,
+                    expression: translate_expression(project, module.clone(), scope.clone(), solidity_expression)?,
                 })),
             }
         }
 
-        solidity::Expression::Type(_, _) => panic!(
-            "type expression as variable access expression: {solidity_expression} - {solidity_expression:#?}"
-        ),
+        solidity::Expression::Type(_, _) => {
+            panic!("type expression as variable access expression: {solidity_expression} - {solidity_expression:#?}")
+        }
 
-        _ => todo!(
-            "translate variable access expression: {solidity_expression} - {solidity_expression:#?}"
-        ),
+        _ => todo!("translate variable access expression: {solidity_expression} - {solidity_expression:#?}"),
     }
 }

@@ -9,10 +9,8 @@ pub fn translate_delete_expression(
     scope: Rc<RefCell<ir::Scope>>,
     expression: &solidity::Expression,
 ) -> Result<sway::Expression, Error> {
-    let Some(ir::VariableAccess {
-        variable,
-        expression,
-    }) = translate_variable_access_expression(project, module.clone(), scope.clone(), expression)?
+    let Some(ir::VariableAccess { variable, expression }) =
+        translate_variable_access_expression(project, module.clone(), scope.clone(), expression)?
     else {
         panic!("Variable not found: {}", sway::TabbedDisplayer(&expression));
     };
@@ -22,8 +20,7 @@ pub fn translate_delete_expression(
     {
         match m.member.as_str() {
             "get" if f.parameters.len() == 1 => {
-                let container_type =
-                    get_expression_type(project, module.clone(), scope.clone(), &m.expression)?;
+                let container_type = get_expression_type(project, module.clone(), scope.clone(), &m.expression)?;
 
                 if let Some(storage_key_type) = container_type.storage_key_type()
                     && let sway::TypeName::Identifier {
@@ -46,26 +43,19 @@ pub fn translate_delete_expression(
                 {
                     match m.member.as_str() {
                         "get" if f.parameters.len() == 1 => {
-                            let container_type = get_expression_type(
-                                project,
-                                module.clone(),
-                                scope.clone(),
-                                &m.expression,
-                            )?;
+                            let container_type =
+                                get_expression_type(project, module.clone(), scope.clone(), &m.expression)?;
 
                             if let Some(storage_key_type) = container_type.storage_key_type()
                                 && let sway::TypeName::Identifier {
                                     name,
                                     generic_parameters,
                                 } = &storage_key_type
-                                && let ("StorageVec", Some(_)) =
-                                    (name.as_str(), generic_parameters.as_ref())
+                                && let ("StorageVec", Some(_)) = (name.as_str(), generic_parameters.as_ref())
                             {
-                                scope.borrow_mut().set_function_storage_accesses(
-                                    module.clone(),
-                                    false,
-                                    true,
-                                );
+                                scope
+                                    .borrow_mut()
+                                    .set_function_storage_accesses(module.clone(), false, true);
 
                                 return Ok(m.expression.with_remove_call(f.parameters[0].clone()));
                             }

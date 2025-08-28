@@ -43,12 +43,7 @@ impl Framework {
                 // Reuse the already parsed foundry_toml instead of reading again
                 find_in_toml_value(&foundry_toml, "profile.default", "remappings")
                     .and_then(|v| v.as_array())
-                    .map(|arr| {
-                        arr.iter()
-                            .filter_map(|x| x.as_str())
-                            .map(String::from)
-                            .collect()
-                    })
+                    .map(|arr| arr.iter().filter_map(|x| x.as_str()).map(String::from).collect())
                     .unwrap_or_default()
             };
 
@@ -60,15 +55,10 @@ impl Framework {
                 }
             }
 
-            return Ok(Framework::Foundry {
-                src_path,
-                remappings,
-            });
+            return Ok(Framework::Foundry { src_path, remappings });
         }
 
-        if path.join(Framework::HARDHAT_CONFIG_FILE).exists()
-            || path.join(Framework::HARDHAT_CONFIG_FILE_TS).exists()
-        {
+        if path.join(Framework::HARDHAT_CONFIG_FILE).exists() || path.join(Framework::HARDHAT_CONFIG_FILE_TS).exists() {
             return Ok(Framework::Hardhat);
         }
 

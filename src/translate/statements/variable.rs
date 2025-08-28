@@ -65,8 +65,7 @@ pub fn translate_variable_definition_statement(
                 }
 
                 let element_type_name = &generic_parameters.entries.first().unwrap().type_name;
-                let length =
-                    translate_expression(project, module.clone(), scope.clone(), &args[0])?;
+                let length = translate_expression(project, module.clone(), scope.clone(), &args[0])?;
 
                 value = Some(sway::Expression::from(sway::Block {
                     statements: vec![
@@ -90,10 +89,7 @@ pub fn translate_variable_definition_statement(
                                 name: "i".into(),
                             }),
                             type_name: None,
-                            value: sway::Expression::from(sway::Literal::DecInt(
-                                BigUint::zero(),
-                                None,
-                            )),
+                            value: sway::Expression::from(sway::Literal::DecInt(BigUint::zero(), None)),
                         }),
                         // while i < length {
                         //     v.push(0);
@@ -111,26 +107,22 @@ pub fn translate_variable_definition_statement(
                                 statements: vec![
                                     // v.push(0);
                                     sway::Statement::from(
-                                        sway::Expression::create_identifier("v".into())
-                                            .with_push_call(create_value_expression(
+                                        sway::Expression::create_identifier("v".into()).with_push_call(
+                                            create_value_expression(
                                                 project,
                                                 module.clone(),
                                                 scope.clone(),
                                                 element_type_name,
                                                 None,
-                                            )),
+                                            ),
+                                        ),
                                     ),
                                     // i += 1;
-                                    sway::Statement::from(sway::Expression::from(
-                                        sway::BinaryExpression {
-                                            operator: "+=".into(),
-                                            lhs: sway::Expression::create_identifier("i".into()),
-                                            rhs: sway::Expression::from(sway::Literal::DecInt(
-                                                BigUint::one(),
-                                                None,
-                                            )),
-                                        },
-                                    )),
+                                    sway::Statement::from(sway::Expression::from(sway::BinaryExpression {
+                                        operator: "+=".into(),
+                                        lhs: sway::Expression::create_identifier("i".into()),
+                                        rhs: sway::Expression::from(sway::Literal::DecInt(BigUint::one(), None)),
+                                    })),
                                 ],
                                 final_expr: None,
                             },
@@ -148,36 +140,19 @@ pub fn translate_variable_definition_statement(
 
     let value = if let Some(value) = value {
         let value_type = get_expression_type(project, module.clone(), scope.clone(), &value)?;
-        coerce_expression(
-            project,
-            module.clone(),
-            scope.clone(),
-            &value,
-            &value_type,
-            &type_name,
-        )
-        .unwrap()
+        coerce_expression(project, module.clone(), scope.clone(), &value, &value_type, &type_name).unwrap()
     } else if let Some(x) = initializer.as_ref() {
         let mut x = translate_expression(project, module.clone(), scope.clone(), x)?;
 
         if let Some(container) = x.to_read_call_parts()
-            && get_expression_type(project, module.clone(), scope.clone(), container)?
-                .is_storage_key()
+            && get_expression_type(project, module.clone(), scope.clone(), container)?.is_storage_key()
         {
             x = container.clone();
         }
 
         let value_type = get_expression_type(project, module.clone(), scope.clone(), &x)?;
 
-        coerce_expression(
-            project,
-            module.clone(),
-            scope.clone(),
-            &x,
-            &value_type,
-            &type_name,
-        )
-        .unwrap()
+        coerce_expression(project, module.clone(), scope.clone(), &x, &value_type, &type_name).unwrap()
     } else {
         create_value_expression(project, module.clone(), scope.clone(), &type_name, None)
     };
@@ -188,9 +163,7 @@ pub fn translate_variable_definition_statement(
             name: new_name.clone(),
         }),
 
-        type_name: if (type_name.is_uint() || type_name.is_int())
-            && matches!(value, sway::Expression::Literal(_))
-        {
+        type_name: if (type_name.is_uint() || type_name.is_int()) && matches!(value, sway::Expression::Literal(_)) {
             Some(type_name.clone())
         } else {
             None
@@ -199,14 +172,12 @@ pub fn translate_variable_definition_statement(
         value,
     });
 
-    scope
-        .borrow_mut()
-        .add_variable(Rc::new(RefCell::new(ir::Variable {
-            old_name,
-            new_name,
-            type_name,
-            ..Default::default()
-        })));
+    scope.borrow_mut().add_variable(Rc::new(RefCell::new(ir::Variable {
+        old_name,
+        new_name,
+        type_name,
+        ..Default::default()
+    })));
 
     Ok(statement)
 }

@@ -70,7 +70,7 @@ pub fn translate_return_statement(
         );
     };
 
-    Ok(sway::Statement::from(sway::Expression::Return(Some(
-        Box::new(expression),
-    ))))
+    Ok(sway::Statement::from(sway::Expression::Return(Some(Box::new(
+        expression,
+    )))))
 }

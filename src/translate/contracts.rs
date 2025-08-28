@@ -68,9 +68,7 @@ pub fn translate_contract_definition(
 
             solidity::ContractPart::Annotation(_annotation) => {}
 
-            solidity::ContractPart::Using(using_directive) => {
-                using_directives.push(using_directive.clone())
-            }
+            solidity::ContractPart::Using(using_directive) => using_directives.push(using_directive.clone()),
 
             solidity::ContractPart::StraySemicolon(_loc) => {}
 
@@ -82,22 +80,12 @@ pub fn translate_contract_definition(
     let contract_name = contract.borrow().name.clone();
 
     for using_directive in using_directives {
-        translate_using_directive(
-            project,
-            module.clone(),
-            Some(&contract_name),
-            &using_directive,
-        )?;
+        translate_using_directive(project, module.clone(), Some(&contract_name), &using_directive)?;
     }
 
     // Translate contract event definitions
     for event_definition in event_definitions {
-        translate_event_definition(
-            project,
-            module.clone(),
-            Some(&contract_name),
-            &event_definition,
-        )?;
+        translate_event_definition(project, module.clone(), Some(&contract_name), &event_definition)?;
     }
 
     // Create the abi encoding function for the events enum (if any)
@@ -110,22 +98,12 @@ pub fn translate_contract_definition(
         .find(|(e, _)| e.borrow().name == events_enum_name)
         .cloned()
     {
-        generate_enum_abi_encode_function(
-            project,
-            module.clone(),
-            events_enum.clone(),
-            abi_encode_impl.clone(),
-        )?;
+        generate_enum_abi_encode_function(project, module.clone(), events_enum.clone(), abi_encode_impl.clone())?;
     }
 
     // Translate contract error definitions
     for error_definition in error_definitions {
-        translate_error_definition(
-            project,
-            module.clone(),
-            Some(&contract_name),
-            &error_definition,
-        )?;
+        translate_error_definition(project, module.clone(), Some(&contract_name), &error_definition)?;
     }
 
     // Create the abi encoding function for the errors enum (if any)
@@ -138,19 +116,10 @@ pub fn translate_contract_definition(
         .find(|(e, _)| e.borrow().name == errors_enum_name)
         .cloned()
     {
-        generate_enum_abi_encode_function(
-            project,
-            module.clone(),
-            errors_enum.clone(),
-            abi_encode_impl.clone(),
-        )?;
+        generate_enum_abi_encode_function(project, module.clone(), errors_enum.clone(), abi_encode_impl.clone())?;
     }
 
-    let scope = Rc::new(RefCell::new(ir::Scope::new(
-        Some(contract_name.as_str()),
-        None,
-        None,
-    )));
+    let scope = Rc::new(RefCell::new(ir::Scope::new(Some(contract_name.as_str()), None, None)));
 
     // HACK: Add an implicit `constructor_called` state variable if we have a constructor function
     if has_constructor {
@@ -167,9 +136,7 @@ pub fn translate_contract_definition(
         let inherits = contract.borrow().abi.inherits.clone();
         for inherited_contract in inherits {
             let inherited_contract_name = inherited_contract.to_string();
-            let inherited_contract = project
-                .find_contract(module.clone(), &inherited_contract_name)
-                .unwrap();
+            let inherited_contract = project.find_contract(module.clone(), &inherited_contract_name).unwrap();
 
             if let Some(inherited_storage) = inherited_contract.borrow().storage.as_ref() {
                 if contract.borrow().storage_struct.is_none() {
@@ -208,18 +175,10 @@ pub fn translate_contract_definition(
                             format!("{inherited_contract_name}Storage").as_str(),
                         ),
                     });
-                storage
-                    .namespaces
-                    .extend(inherited_storage.borrow().namespaces.clone());
+                storage.namespaces.extend(inherited_storage.borrow().namespaces.clone());
             }
 
-            collect_inherited_storage_namespaces(
-                project,
-                module.clone(),
-                scope.clone(),
-                inherited_contract,
-                storage,
-            );
+            collect_inherited_storage_namespaces(project, module.clone(), scope.clone(), inherited_contract, storage);
         }
     }
 
@@ -241,12 +200,8 @@ pub fn translate_contract_definition(
     let mut state_variable_infos = vec![];
 
     for variable_definition in variable_definitions.iter() {
-        let state_variable_info = translate_state_variable(
-            project,
-            module.clone(),
-            Some(&contract_name),
-            variable_definition,
-        )?;
+        let state_variable_info =
+            translate_state_variable(project, module.clone(), Some(&contract_name), variable_definition)?;
 
         deferred_initializations.extend(state_variable_info.deferred_initializations.clone());
         mapping_names.extend(state_variable_info.mapping_names.clone());
@@ -301,12 +256,7 @@ pub fn translate_contract_definition(
             continue;
         }
 
-        translate_modifier_definition(
-            project,
-            module.clone(),
-            Some(&contract_name),
-            function_definition,
-        )?;
+        translate_modifier_definition(project, module.clone(), Some(&contract_name), function_definition)?;
     }
 
     // Translate each function
@@ -316,12 +266,8 @@ pub fn translate_contract_definition(
             continue;
         }
 
-        let (Some(function), impl_item) = translate_function_definition(
-            project,
-            module.clone(),
-            Some(&contract_name),
-            &function_definition,
-        )?
+        let (Some(function), impl_item) =
+            translate_function_definition(project, module.clone(), Some(&contract_name), &function_definition)?
         else {
             continue;
         };
@@ -376,74 +322,53 @@ pub fn translate_contract_definition(
     if !deferred_initializations.is_empty() {
         let namespace_name = translate_naming_convention(&contract_name, Case::Snake);
 
-        let scope = Rc::new(RefCell::new(ir::Scope::new(
-            Some(contract_name.as_str()),
-            None,
-            None,
-        )));
+        let scope = Rc::new(RefCell::new(ir::Scope::new(Some(contract_name.as_str()), None, None)));
 
         let mut assignment_statements = vec![];
 
-        scope
-            .borrow_mut()
-            .add_variable(Rc::new(RefCell::new(ir::Variable {
-                old_name: String::new(),
-                new_name: "storage_struct".to_string(),
-                type_name: sway::TypeName::create_identifier(
-                    format!("{}Storage", contract.borrow().name).as_str(),
-                ),
-                statement_index: None,
-                read_count: 0,
-                mutation_count: 0,
-            })));
+        scope.borrow_mut().add_variable(Rc::new(RefCell::new(ir::Variable {
+            old_name: String::new(),
+            new_name: "storage_struct".to_string(),
+            type_name: sway::TypeName::create_identifier(format!("{}Storage", contract.borrow().name).as_str()),
+            statement_index: None,
+            read_count: 0,
+            mutation_count: 0,
+        })));
 
         // Create assignment statements for all of the deferred initializations
         for deferred_initialization in deferred_initializations.iter().rev() {
             let lhs = deferred_initialization.expression.clone();
 
-            let value_type_name = get_expression_type(
-                project,
-                module.clone(),
-                scope.clone(),
-                &deferred_initialization.value,
-            )?;
+            let value_type_name =
+                get_expression_type(project, module.clone(), scope.clone(), &deferred_initialization.value)?;
 
             match &deferred_initialization.value {
                 sway::Expression::Array(sway::Array { elements }) => {
                     for element in elements {
                         assignment_statements.push(sway::Statement::from(
-                            deferred_initialization.expression.with_function_call(
-                                "push",
-                                None,
-                                vec![element.clone()],
-                            ),
+                            deferred_initialization
+                                .expression
+                                .with_function_call("push", None, vec![element.clone()]),
                         ));
                     }
                 }
 
                 _ => {
-                    assignment_statements.push(sway::Statement::from(
-                        create_assignment_expression(
-                            project,
-                            module.clone(),
-                            scope.clone(),
-                            "=",
-                            &lhs,
-                            None,
-                            &deferred_initialization.value,
-                            &value_type_name,
-                        )?,
-                    ));
+                    assignment_statements.push(sway::Statement::from(create_assignment_expression(
+                        project,
+                        module.clone(),
+                        scope.clone(),
+                        "=",
+                        &lhs,
+                        None,
+                        &deferred_initialization.value,
+                        &value_type_name,
+                    )?));
                 }
             }
         }
 
-        ensure_constructor_functions_exist(
-            project,
-            module.clone(),
-            scope.clone(),
-            contract.clone(),
-        );
+        ensure_constructor_functions_exist(project, module.clone(), scope.clone(), contract.clone());
 
         let mut module = module.borrow_mut();
         let constructor_name = format!("{namespace_name}_constructor");
@@ -470,9 +395,7 @@ pub fn translate_contract_definition(
 
         // Skip past the initial constructor requirements
         for (i, statement) in constructor_body.statements.iter().enumerate() {
-            let sway::Statement::Expression(sway::Expression::FunctionCall(function_call)) =
-                statement
-            else {
+            let sway::Statement::Expression(sway::Expression::FunctionCall(function_call)) = statement else {
                 statement_index = i;
                 break;
             };
@@ -490,9 +413,7 @@ pub fn translate_contract_definition(
 
         // Add the deferred initializations to the constructor body
         for statement in assignment_statements.into_iter().rev() {
-            constructor_body
-                .statements
-                .insert(statement_index, statement);
+            constructor_body.statements.insert(statement_index, statement);
         }
     }
 
@@ -531,8 +452,7 @@ pub fn translate_using_directive(
                 .join(".");
 
             // Find the translated library definition
-            let Some(library_definition) =
-                project.find_module_containing_contract(module.clone(), &library_name)
+            let Some(library_definition) = project.find_module_containing_contract(module.clone(), &library_name)
             else {
                 panic!(
                     "Failed to find translated library: \"{library_name}\"; from {}",
@@ -570,16 +490,10 @@ pub fn translate_using_directive(
             }
 
             // Add the using directive to the current definition
-            module
-                .borrow_mut()
-                .using_directives
-                .push(translated_using_directive);
+            module.borrow_mut().using_directives.push(translated_using_directive);
         }
 
-        solidity::UsingList::Functions(_) => todo!(
-            "using directive function list: {}",
-            using_directive.to_string()
-        ),
+        solidity::UsingList::Functions(_) => todo!("using directive function list: {}", using_directive.to_string()),
 
         solidity::UsingList::Error => panic!("Failed to parse using directive"),
     }

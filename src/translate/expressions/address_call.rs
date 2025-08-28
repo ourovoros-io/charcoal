@@ -35,15 +35,9 @@ pub fn translate_address_call_expression(
     module.borrow_mut().ensure_use_declared("std::bytes::Bytes");
 
     // Create unique variable names
-    let return_ptr_name = scope
-        .borrow_mut()
-        .generate_unique_variable_name("return_ptr");
-    let return_length_name = scope
-        .borrow_mut()
-        .generate_unique_variable_name("return_length");
-    let result_ptr_name = scope
-        .borrow_mut()
-        .generate_unique_variable_name("result_ptr");
+    let return_ptr_name = scope.borrow_mut().generate_unique_variable_name("return_ptr");
+    let return_length_name = scope.borrow_mut().generate_unique_variable_name("return_length");
+    let result_ptr_name = scope.borrow_mut().generate_unique_variable_name("result_ptr");
 
     let payload_type = get_expression_type(project, module.clone(), scope.clone(), payload)?;
 
@@ -84,10 +78,7 @@ pub fn translate_address_call_expression(
                                 sway::Expression::create_function_call(
                                     "std::inputs::input_amount",
                                     None,
-                                    vec![sway::Expression::from(sway::Literal::DecInt(
-                                        BigUint::zero(),
-                                        None,
-                                    ))],
+                                    vec![sway::Expression::from(sway::Literal::DecInt(BigUint::zero(), None))],
                                 )
                             })),
                         },
@@ -97,10 +88,7 @@ pub fn translate_address_call_expression(
                                 sway::Expression::create_function_call(
                                     "std::inputs::input_asset_id",
                                     None,
-                                    vec![sway::Expression::from(sway::Literal::DecInt(
-                                        BigUint::zero(),
-                                        None,
-                                    ))],
+                                    vec![sway::Expression::from(sway::Literal::DecInt(BigUint::zero(), None))],
                                 )
                                 .with_unwrap_call()
                             })),
@@ -108,11 +96,7 @@ pub fn translate_address_call_expression(
                         sway::AsmRegister {
                             name: "r4".into(),
                             value: Some(gas.unwrap_or_else(|| {
-                                sway::Expression::create_function_call(
-                                    "std::registers::global_gas",
-                                    None,
-                                    vec![],
-                                )
+                                sway::Expression::create_function_call("std::registers::global_gas", None, vec![])
                             })),
                         },
                     ],
@@ -156,9 +140,7 @@ pub fn translate_address_call_expression(
                 value: sway::Expression::create_function_call(
                     "std::alloc::alloc_bytes",
                     None,
-                    vec![sway::Expression::create_identifier(
-                        return_length_name.as_str(),
-                    )],
+                    vec![sway::Expression::create_identifier(return_length_name.as_str())],
                 ),
             }),
             // return_ptr.copy_to::<u8>(result_ptr, return_length);

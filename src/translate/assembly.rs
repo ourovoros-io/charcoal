@@ -14,11 +14,7 @@ pub fn translate_assembly_statement(
     _flags: &Option<Vec<solidity::StringLiteral>>,
     yul_block: &solidity::YulBlock,
 ) -> Result<sway::Statement, Error> {
-    let scope = Rc::new(RefCell::new(ir::Scope::new(
-        None,
-        None,
-        Some(scope.clone()),
-    )));
+    let scope = Rc::new(RefCell::new(ir::Scope::new(None, None, Some(scope.clone()))));
 
     // Translate the block
     let translated_block = sway::Statement::from(sway::Expression::from(translate_yul_block(
@@ -40,17 +36,12 @@ pub fn translate_yul_block(
 ) -> Result<sway::Block, Error> {
     let mut block = sway::Block::default();
 
-    let scope = Rc::new(RefCell::new(ir::Scope::new(
-        None,
-        None,
-        Some(scope.clone()),
-    )));
+    let scope = Rc::new(RefCell::new(ir::Scope::new(None, None, Some(scope.clone()))));
 
     // Translate each of the statements in the block
     for statement in yul_block.statements.iter() {
         // Translate the statement
-        let sway_statement =
-            translate_yul_statement(project, module.clone(), scope.clone(), statement)?;
+        let sway_statement = translate_yul_statement(project, module.clone(), scope.clone(), statement)?;
 
         // Store the index of the sway statement
         let statement_index = block.statements.len();
@@ -67,9 +58,7 @@ pub fn translate_yul_block(
 
                 let scope = scope.borrow();
 
-                let scope_entry = scope
-                    .find_variable(|v| v.borrow().new_name == id.name)
-                    .unwrap();
+                let scope_entry = scope.find_variable(|v| v.borrow().new_name == id.name).unwrap();
 
                 scope_entry.borrow_mut().statement_index = Some(statement_index);
             };
@@ -94,29 +83,15 @@ pub fn translate_yul_statement(
     yul_statement: &solidity::YulStatement,
 ) -> Result<sway::Statement, Error> {
     match yul_statement {
-        solidity::YulStatement::Assign(_, identifiers, value) => translate_yul_assign_statement(
-            project,
-            module.clone(),
-            scope.clone(),
-            identifiers,
-            value,
-        ),
-        solidity::YulStatement::VariableDeclaration(_, identifiers, value) => {
-            translate_yul_variable_declaration_statement(
-                project,
-                module.clone(),
-                scope.clone(),
-                identifiers,
-                value,
-            )
+        solidity::YulStatement::Assign(_, identifiers, value) => {
+            translate_yul_assign_statement(project, module.clone(), scope.clone(), identifiers, value)
         }
-        solidity::YulStatement::If(_, condition, then_block) => translate_yul_if_statement(
-            project,
-            module.clone(),
-            scope.clone(),
-            condition,
-            then_block,
-        ),
+        solidity::YulStatement::VariableDeclaration(_, identifiers, value) => {
+            translate_yul_variable_declaration_statement(project, module.clone(), scope.clone(), identifiers, value)
+        }
+        solidity::YulStatement::If(_, condition, then_block) => {
+            translate_yul_if_statement(project, module.clone(), scope.clone(), condition, then_block)
+        }
         solidity::YulStatement::For(yul_for) => {
             translate_yul_for_statement(project, module.clone(), scope.clone(), yul_for)
         }
@@ -127,22 +102,18 @@ pub fn translate_yul_statement(
             todo!("yul leave statement: {yul_statement} - {yul_statement:#?}")
         }
         solidity::YulStatement::Break(_) => Ok(sway::Statement::from(sway::Expression::Break)),
-        solidity::YulStatement::Continue(_) => {
-            Ok(sway::Statement::from(sway::Expression::Continue))
-        }
-        solidity::YulStatement::Block(block) => Ok(sway::Statement::from(sway::Expression::from(
-            translate_yul_block(project, module.clone(), scope.clone(), block)?,
-        ))),
+        solidity::YulStatement::Continue(_) => Ok(sway::Statement::from(sway::Expression::Continue)),
+        solidity::YulStatement::Block(block) => Ok(sway::Statement::from(sway::Expression::from(translate_yul_block(
+            project,
+            module.clone(),
+            scope.clone(),
+            block,
+        )?))),
         solidity::YulStatement::FunctionDefinition(_) => {
             todo!("yul function definition statement: {yul_statement} - {yul_statement:#?}")
         }
         solidity::YulStatement::FunctionCall(yul_function_call) => {
-            translate_yul_function_call_statement(
-                project,
-                module.clone(),
-                scope.clone(),
-                yul_function_call,
-            )
+            translate_yul_function_call_statement(project, module.clone(), scope.clone(), yul_function_call)
         }
         solidity::YulStatement::Error(_) => {
             todo!("yul error statement: {yul_statement} - {yul_statement:#?}")
@@ -180,17 +151,15 @@ pub fn translate_yul_assign_statement(
 
     let value = translate_yul_expression(project, module.clone(), scope.clone(), value)?;
 
-    Ok(sway::Statement::from(sway::Expression::from(
-        sway::BinaryExpression {
-            operator: "=".into(),
-            lhs: if translated_identifiers.len() == 1 {
-                translated_identifiers[0].clone()
-            } else {
-                sway::Expression::Tuple(translated_identifiers)
-            },
-            rhs: value,
+    Ok(sway::Statement::from(sway::Expression::from(sway::BinaryExpression {
+        operator: "=".into(),
+        lhs: if translated_identifiers.len() == 1 {
+            translated_identifiers[0].clone()
+        } else {
+            sway::Expression::Tuple(translated_identifiers)
         },
-    )))
+        rhs: value,
+    })))
 }
 
 #[inline]
@@ -286,11 +255,7 @@ pub fn translate_yul_for_statement(
     // }
 
     // Create a scope for the block that will contain the for loop logic
-    let scope = Rc::new(RefCell::new(ir::Scope::new(
-        None,
-        None,
-        Some(scope.clone()),
-    )));
+    let scope = Rc::new(RefCell::new(ir::Scope::new(None, None, Some(scope.clone()))));
 
     // Collect statements for the for loop logic block
     let mut statements = vec![];
@@ -298,8 +263,7 @@ pub fn translate_yul_for_statement(
     // Translate the initialization statements and add them to the for loop logic block's statements
     for statement in yul_for.init_block.statements.iter() {
         let statement_index = statements.len();
-        let mut statement =
-            translate_yul_statement(project, module.clone(), scope.clone(), statement)?;
+        let mut statement = translate_yul_statement(project, module.clone(), scope.clone(), statement)?;
 
         // Store the statement index of variable declaration statements in their scope entries
         if let sway::Statement::Let(sway::Let { pattern, .. }) = &mut statement {
@@ -313,9 +277,7 @@ pub fn translate_yul_for_statement(
 
             match pattern {
                 sway::LetPattern::Identifier(id) => store_let_identifier_statement_index(id),
-                sway::LetPattern::Tuple(ids) => ids
-                    .iter_mut()
-                    .for_each(store_let_identifier_statement_index),
+                sway::LetPattern::Tuple(ids) => ids.iter_mut().for_each(store_let_identifier_statement_index),
             }
         }
 
@@ -323,16 +285,10 @@ pub fn translate_yul_for_statement(
     }
 
     // Translate the condition of the for loop ahead of time
-    let condition =
-        translate_yul_expression(project, module.clone(), scope.clone(), &yul_for.condition)?;
+    let condition = translate_yul_expression(project, module.clone(), scope.clone(), &yul_for.condition)?;
 
     // Translate the body of the for loop ahead of time
-    let mut body = translate_yul_block(
-        project,
-        module.clone(),
-        scope.clone(),
-        &yul_for.execution_block,
-    )?;
+    let mut body = translate_yul_block(project, module.clone(), scope.clone(), &yul_for.execution_block)?;
 
     // Translate the statements of the post block of the for loop and add them to the end of for loop's body block
     for statement in yul_for.post_block.statements.iter() {
@@ -345,8 +301,7 @@ pub fn translate_yul_for_statement(
     }
 
     // Create the while loop for the for loop logic ahead of time
-    let while_statement =
-        sway::Statement::from(sway::Expression::from(sway::While { condition, body }));
+    let while_statement = sway::Statement::from(sway::Expression::from(sway::While { condition, body }));
 
     // If we don't have any initialization statements, just return the generated while loop
     if statements.is_empty() {
@@ -375,36 +330,20 @@ pub fn translate_yul_switch_statement(
     scope: Rc<RefCell<ir::Scope>>,
     yul_switch: &solidity::YulSwitch,
 ) -> Result<sway::Statement, Error> {
-    let expression = translate_yul_expression(
-        project,
-        module.clone(),
-        scope.clone(),
-        &yul_switch.condition,
-    )?;
+    let expression = translate_yul_expression(project, module.clone(), scope.clone(), &yul_switch.condition)?;
     let mut branches = vec![];
 
     for case in yul_switch.cases.iter() {
         match case {
             solidity::YulSwitchOptions::Case(_, pattern, body) => {
-                let pattern =
-                    translate_yul_expression(project, module.clone(), scope.clone(), pattern)?;
-                let value = sway::Expression::from(translate_yul_block(
-                    project,
-                    module.clone(),
-                    scope.clone(),
-                    body,
-                )?);
+                let pattern = translate_yul_expression(project, module.clone(), scope.clone(), pattern)?;
+                let value = sway::Expression::from(translate_yul_block(project, module.clone(), scope.clone(), body)?);
                 branches.push(sway::MatchBranch { pattern, value });
             }
 
             solidity::YulSwitchOptions::Default(_, body) => {
                 let pattern = sway::Expression::create_identifier("_".into());
-                let value = sway::Expression::from(translate_yul_block(
-                    project,
-                    module.clone(),
-                    scope.clone(),
-                    body,
-                )?);
+                let value = sway::Expression::from(translate_yul_block(project, module.clone(), scope.clone(), body)?);
                 branches.push(sway::MatchBranch { pattern, value });
             }
         }
@@ -423,14 +362,12 @@ pub fn translate_yul_function_call_statement(
     scope: Rc<RefCell<ir::Scope>>,
     yul_function_call: &solidity::YulFunctionCall,
 ) -> Result<sway::Statement, Error> {
-    Ok(sway::Statement::from(
-        translate_yul_function_call_expression(
-            project,
-            module.clone(),
-            scope.clone(),
-            yul_function_call,
-        )?,
-    ))
+    Ok(sway::Statement::from(translate_yul_function_call_expression(
+        project,
+        module.clone(),
+        scope.clone(),
+        yul_function_call,
+    )?))
 }
 
 pub fn translate_yul_expression(
@@ -440,43 +377,27 @@ pub fn translate_yul_expression(
     expression: &solidity::YulExpression,
 ) -> Result<sway::Expression, Error> {
     match expression {
-        solidity::YulExpression::BoolLiteral(_, value, _) => {
-            Ok(sway::Expression::from(sway::Literal::Bool(*value)))
-        }
-        solidity::YulExpression::NumberLiteral(_, value, _, _) => Ok(sway::Expression::from(
-            sway::Literal::DecInt(value.parse().unwrap(), None),
-        )),
-        solidity::YulExpression::HexNumberLiteral(_, value, _) => {
-            Ok(sway::Expression::from(sway::Literal::HexInt(
-                BigUint::from_str_radix(value.trim_start_matches("0x"), 16).unwrap(),
-                None,
-            )))
-        }
-        solidity::YulExpression::HexStringLiteral(hex_literal, _) => {
-            Ok(sway::Expression::from(sway::Literal::HexInt(
-                BigUint::from_str_radix(&hex_literal.to_string(), 16).unwrap(),
-                None,
-            )))
-        }
-        solidity::YulExpression::StringLiteral(string_literal, _) => Ok(sway::Expression::from(
-            sway::Literal::String(string_literal.string.clone()),
-        )),
+        solidity::YulExpression::BoolLiteral(_, value, _) => Ok(sway::Expression::from(sway::Literal::Bool(*value))),
+        solidity::YulExpression::NumberLiteral(_, value, _, _) => Ok(sway::Expression::from(sway::Literal::DecInt(
+            value.parse().unwrap(),
+            None,
+        ))),
+        solidity::YulExpression::HexNumberLiteral(_, value, _) => Ok(sway::Expression::from(sway::Literal::HexInt(
+            BigUint::from_str_radix(value.trim_start_matches("0x"), 16).unwrap(),
+            None,
+        ))),
+        solidity::YulExpression::HexStringLiteral(hex_literal, _) => Ok(sway::Expression::from(sway::Literal::HexInt(
+            BigUint::from_str_radix(&hex_literal.to_string(), 16).unwrap(),
+            None,
+        ))),
+        solidity::YulExpression::StringLiteral(string_literal, _) => Ok(sway::Expression::from(sway::Literal::String(
+            string_literal.string.clone(),
+        ))),
         solidity::YulExpression::Variable(solidity::Identifier { name, .. }) => {
-            translate_yul_variable_expression(
-                project,
-                module.clone(),
-                scope.clone(),
-                expression,
-                name.as_str(),
-            )
+            translate_yul_variable_expression(project, module.clone(), scope.clone(), expression, name.as_str())
         }
         solidity::YulExpression::FunctionCall(function_call) => {
-            translate_yul_function_call_expression(
-                project,
-                module.clone(),
-                scope.clone(),
-                function_call,
-            )
+            translate_yul_function_call_expression(project, module.clone(), scope.clone(), function_call)
         }
         solidity::YulExpression::SuffixAccess(_, _, _) => {
             Ok(sway::Expression::create_todo(Some(expression.to_string())))
@@ -496,10 +417,7 @@ pub fn translate_yul_variable_expression(
     match name {
         "caller" => {
             // caller => msg_sender().unwrap()
-            return Ok(
-                sway::Expression::create_function_call("msg_sender", None, vec![])
-                    .with_unwrap_call(),
-            );
+            return Ok(sway::Expression::create_function_call("msg_sender", None, vec![]).with_unwrap_call());
         }
 
         "chainid" => {
@@ -532,24 +450,16 @@ pub fn translate_yul_variable_expression(
 
         "now" => {
             // now => std::block::timestamp().as_u256()
-            return Ok(sway::Expression::create_function_call(
-                "std::block::timestamp",
-                None,
-                vec![],
-            )
-            .with_as_u256_call());
+            return Ok(
+                sway::Expression::create_function_call("std::block::timestamp", None, vec![]).with_as_u256_call(),
+            );
         }
 
         _ => {}
     }
 
     // Attempt to find a value source matching the name of the variable
-    if let Some(symbol) = resolve_symbol(
-        project,
-        module.clone(),
-        scope.clone(),
-        Symbol::ValueSource(name.into()),
-    ) {
+    if let Some(symbol) = resolve_symbol(project, module.clone(), scope.clone(), Symbol::ValueSource(name.into())) {
         return symbol.try_into();
     }
 
@@ -575,9 +485,7 @@ pub fn translate_yul_function_call_expression(
     match function_call.id.name.as_str() {
         "stop" => {
             // TODO: stop() => ???
-            Ok(sway::Expression::create_todo(Some(
-                function_call.to_string(),
-            )))
+            Ok(sway::Expression::create_todo(Some(function_call.to_string())))
         }
 
         "add" => {
@@ -829,19 +737,12 @@ pub fn translate_yul_function_call_expression(
                 );
             }
 
-            let type_name =
-                get_expression_type(project, module.clone(), scope.clone(), &parameters[0])?;
+            let type_name = get_expression_type(project, module.clone(), scope.clone(), &parameters[0])?;
 
             Ok(sway::Expression::from(sway::BinaryExpression {
                 operator: "==".into(),
                 lhs: parameters[0].clone(),
-                rhs: create_value_expression(
-                    project,
-                    module.clone(),
-                    scope.clone(),
-                    &type_name,
-                    None,
-                ),
+                rhs: create_value_expression(project, module.clone(), scope.clone(), &type_name, None),
             }))
         }
 
@@ -898,9 +799,7 @@ pub fn translate_yul_function_call_expression(
 
         "byte" => {
             // TODO: byte(i, x) => ???
-            Ok(sway::Expression::create_todo(Some(
-                function_call.to_string(),
-            )))
+            Ok(sway::Expression::create_todo(Some(function_call.to_string())))
         }
 
         "shl" => {
@@ -966,13 +865,11 @@ pub fn translate_yul_function_call_expression(
 
             Ok(sway::Expression::from(sway::BinaryExpression {
                 operator: "%".into(),
-                lhs: sway::Expression::Tuple(vec![sway::Expression::from(
-                    sway::BinaryExpression {
-                        operator: "+".into(),
-                        lhs: parameters[0].clone(),
-                        rhs: parameters[1].clone(),
-                    },
-                )]),
+                lhs: sway::Expression::Tuple(vec![sway::Expression::from(sway::BinaryExpression {
+                    operator: "+".into(),
+                    lhs: parameters[0].clone(),
+                    rhs: parameters[1].clone(),
+                })]),
                 rhs: parameters[2].clone(),
             }))
         }
@@ -989,106 +886,78 @@ pub fn translate_yul_function_call_expression(
 
             Ok(sway::Expression::from(sway::BinaryExpression {
                 operator: "%".into(),
-                lhs: sway::Expression::Tuple(vec![sway::Expression::from(
-                    sway::BinaryExpression {
-                        operator: "*".into(),
-                        lhs: parameters[0].clone(),
-                        rhs: parameters[1].clone(),
-                    },
-                )]),
+                lhs: sway::Expression::Tuple(vec![sway::Expression::from(sway::BinaryExpression {
+                    operator: "*".into(),
+                    lhs: parameters[0].clone(),
+                    rhs: parameters[1].clone(),
+                })]),
                 rhs: parameters[2].clone(),
             }))
         }
 
         "signextend" => {
             // TODO: signextend(b, x) => ???
-            Ok(sway::Expression::create_todo(Some(
-                function_call.to_string(),
-            )))
+            Ok(sway::Expression::create_todo(Some(function_call.to_string())))
         }
 
         "sha3" => {
             // TODO: sha3(offset, length) => ???
-            Ok(sway::Expression::create_todo(Some(
-                function_call.to_string(),
-            )))
+            Ok(sway::Expression::create_todo(Some(function_call.to_string())))
         }
 
         "keccak256" => {
             // TODO: keccak256(offset, length) => ???
-            Ok(sway::Expression::create_todo(Some(
-                function_call.to_string(),
-            )))
+            Ok(sway::Expression::create_todo(Some(function_call.to_string())))
         }
 
         "pc" => {
             // TODO: pc() => ???
-            Ok(sway::Expression::create_todo(Some(
-                function_call.to_string(),
-            )))
+            Ok(sway::Expression::create_todo(Some(function_call.to_string())))
         }
 
         "pop" => {
             // TODO: pop(x) => ???
-            Ok(sway::Expression::create_todo(Some(
-                function_call.to_string(),
-            )))
+            Ok(sway::Expression::create_todo(Some(function_call.to_string())))
         }
 
         "mload" => {
             // TODO: mload(offset) => ???
-            Ok(sway::Expression::create_todo(Some(
-                function_call.to_string(),
-            )))
+            Ok(sway::Expression::create_todo(Some(function_call.to_string())))
         }
 
         "mstore" => {
             // TODO: mstore(offset, value) => ???
-            Ok(sway::Expression::create_todo(Some(
-                function_call.to_string(),
-            )))
+            Ok(sway::Expression::create_todo(Some(function_call.to_string())))
         }
 
         "mstore8" => {
             // TODO: mstore8(offset, value) => ???
-            Ok(sway::Expression::create_todo(Some(
-                function_call.to_string(),
-            )))
+            Ok(sway::Expression::create_todo(Some(function_call.to_string())))
         }
 
         "sload" => {
             // TODO: sload(key) => ???
-            Ok(sway::Expression::create_todo(Some(
-                function_call.to_string(),
-            )))
+            Ok(sway::Expression::create_todo(Some(function_call.to_string())))
         }
 
         "sstore" => {
             // TODO: sstore(key, value) => ???
-            Ok(sway::Expression::create_todo(Some(
-                function_call.to_string(),
-            )))
+            Ok(sway::Expression::create_todo(Some(function_call.to_string())))
         }
 
         "tload" => {
             // TODO: tload(p) => ???
-            Ok(sway::Expression::create_todo(Some(
-                function_call.to_string(),
-            )))
+            Ok(sway::Expression::create_todo(Some(function_call.to_string())))
         }
 
         "tstore" => {
             // TODO: tstore(p, v) => ???
-            Ok(sway::Expression::create_todo(Some(
-                function_call.to_string(),
-            )))
+            Ok(sway::Expression::create_todo(Some(function_call.to_string())))
         }
 
         "msize" => {
             // TODO: msize() => ???
-            Ok(sway::Expression::create_todo(Some(
-                function_call.to_string(),
-            )))
+            Ok(sway::Expression::create_todo(Some(function_call.to_string())))
         }
 
         "now" => {
@@ -1101,17 +970,12 @@ pub fn translate_yul_function_call_expression(
                 );
             }
 
-            Ok(
-                sway::Expression::create_function_call("std::block::timestamp", None, vec![])
-                    .with_as_u256_call(),
-            )
+            Ok(sway::Expression::create_function_call("std::block::timestamp", None, vec![]).with_as_u256_call())
         }
 
         "gas" => {
             // TODO: gas() => ???
-            Ok(sway::Expression::create_todo(Some(
-                function_call.to_string(),
-            )))
+            Ok(sway::Expression::create_todo(Some(function_call.to_string())))
         }
 
         "address" => {
@@ -1127,19 +991,13 @@ pub fn translate_yul_function_call_expression(
             Ok(sway::Expression::create_function_call(
                 "Identity::ContractId",
                 None,
-                vec![sway::Expression::create_function_call(
-                    "ContractId::this",
-                    None,
-                    vec![],
-                )],
+                vec![sway::Expression::create_function_call("ContractId::this", None, vec![])],
             ))
         }
 
         "balance" => {
             // TODO: balance(addr) => ???
-            Ok(sway::Expression::create_todo(Some(
-                function_call.to_string(),
-            )))
+            Ok(sway::Expression::create_todo(Some(function_call.to_string())))
         }
 
         "selfbalance" => {
@@ -1155,11 +1013,7 @@ pub fn translate_yul_function_call_expression(
             Ok(sway::Expression::create_function_call(
                 "std::context::this_balance",
                 None,
-                vec![sway::Expression::create_function_call(
-                    "AssetId::default",
-                    None,
-                    vec![],
-                )],
+                vec![sway::Expression::create_function_call("AssetId::default", None, vec![])],
             ))
         }
 
@@ -1173,10 +1027,7 @@ pub fn translate_yul_function_call_expression(
                 );
             }
 
-            Ok(
-                sway::Expression::create_function_call("msg_sender", None, vec![])
-                    .with_unwrap_call(),
-            )
+            Ok(sway::Expression::create_function_call("msg_sender", None, vec![]).with_unwrap_call())
         }
 
         "callvalue" => {
@@ -1198,9 +1049,7 @@ pub fn translate_yul_function_call_expression(
 
         "calldataload" => {
             // TODO: calldataload(i) => ???
-            Ok(sway::Expression::create_todo(Some(
-                function_call.to_string(),
-            )))
+            Ok(sway::Expression::create_todo(Some(function_call.to_string())))
         }
 
         "calldatasize" => {
@@ -1216,46 +1065,33 @@ pub fn translate_yul_function_call_expression(
             Ok(sway::Expression::create_function_call(
                 "std::inputs::input_message_data_length",
                 None,
-                vec![sway::Expression::from(sway::Literal::DecInt(
-                    BigUint::zero(),
-                    None,
-                ))],
+                vec![sway::Expression::from(sway::Literal::DecInt(BigUint::zero(), None))],
             ))
         }
 
         "calldatacopy" => {
             // TODO: calldatacopy(dest_offset, offset, length) => ???
-            Ok(sway::Expression::create_todo(Some(
-                function_call.to_string(),
-            )))
+            Ok(sway::Expression::create_todo(Some(function_call.to_string())))
         }
 
         "codesize" => {
             // TODO: codesize() => ???
-            Ok(sway::Expression::create_todo(Some(
-                function_call.to_string(),
-            )))
+            Ok(sway::Expression::create_todo(Some(function_call.to_string())))
         }
 
         "codecopy" => {
             // TODO: codecopy(dest_offset, offset, length) => ???
-            Ok(sway::Expression::create_todo(Some(
-                function_call.to_string(),
-            )))
+            Ok(sway::Expression::create_todo(Some(function_call.to_string())))
         }
 
         "extcodesize" => {
             // TODO: extcodesize(addr) => ???
-            Ok(sway::Expression::create_todo(Some(
-                function_call.to_string(),
-            )))
+            Ok(sway::Expression::create_todo(Some(function_call.to_string())))
         }
 
         "extcodecopy" => {
             // TODO: extcodecopy(addr, dest_offset, offset, length) => ???
-            Ok(sway::Expression::create_todo(Some(
-                function_call.to_string(),
-            )))
+            Ok(sway::Expression::create_todo(Some(function_call.to_string())))
         }
 
         "returndatasize" => {
@@ -1277,128 +1113,92 @@ pub fn translate_yul_function_call_expression(
 
         "returndatacopy" => {
             // TODO: returndatacopy(dest_offset, offset, length) => ???
-            Ok(sway::Expression::create_todo(Some(
-                function_call.to_string(),
-            )))
+            Ok(sway::Expression::create_todo(Some(function_call.to_string())))
         }
 
         "mcopy" => {
             // TODO: mcopy(t, f, s) => ???
-            Ok(sway::Expression::create_todo(Some(
-                function_call.to_string(),
-            )))
+            Ok(sway::Expression::create_todo(Some(function_call.to_string())))
         }
 
         "extcodehash" => {
             // TODO: extcodehash(addr) => ???
-            Ok(sway::Expression::create_todo(Some(
-                function_call.to_string(),
-            )))
+            Ok(sway::Expression::create_todo(Some(function_call.to_string())))
         }
 
         "create" => {
             // TODO: create(value, offset, length) => ???
-            Ok(sway::Expression::create_todo(Some(
-                function_call.to_string(),
-            )))
+            Ok(sway::Expression::create_todo(Some(function_call.to_string())))
         }
 
         "create2" => {
             // TODO: create2(value, offset, length, salt) => ???
-            Ok(sway::Expression::create_todo(Some(
-                function_call.to_string(),
-            )))
+            Ok(sway::Expression::create_todo(Some(function_call.to_string())))
         }
 
         "call" => {
             // TODO: call(gas, addr, value, args_offset, args_length, ret_offset, ret_length) => ???
-            Ok(sway::Expression::create_todo(Some(
-                function_call.to_string(),
-            )))
+            Ok(sway::Expression::create_todo(Some(function_call.to_string())))
         }
 
         "callcode" => {
             // TODO: callcode(gas, addr, value, args_offset, args_length, ret_offset, ret_length) => ???
-            Ok(sway::Expression::create_todo(Some(
-                function_call.to_string(),
-            )))
+            Ok(sway::Expression::create_todo(Some(function_call.to_string())))
         }
 
         "delegatecall" => {
             // TODO: delegatecall(gas, addr, args_offset, args_length, ret_offset, ret_length) => ???
-            Ok(sway::Expression::create_todo(Some(
-                function_call.to_string(),
-            )))
+            Ok(sway::Expression::create_todo(Some(function_call.to_string())))
         }
 
         "staticcall" => {
             // TODO: staticcall(gas, addr, args_offset, args_length, ret_offset, ret_length) => ???
-            Ok(sway::Expression::create_todo(Some(
-                function_call.to_string(),
-            )))
+            Ok(sway::Expression::create_todo(Some(function_call.to_string())))
         }
 
         "return" => {
             // TODO: return(offset, length) => ???
-            Ok(sway::Expression::create_todo(Some(
-                function_call.to_string(),
-            )))
+            Ok(sway::Expression::create_todo(Some(function_call.to_string())))
         }
 
         "revert" => {
             // TODO: revert(offset, length) => ???
-            Ok(sway::Expression::create_todo(Some(
-                function_call.to_string(),
-            )))
+            Ok(sway::Expression::create_todo(Some(function_call.to_string())))
         }
 
         "selfdestruct" => {
             // TODO: selfdestruct(addr) => ???
-            Ok(sway::Expression::create_todo(Some(
-                function_call.to_string(),
-            )))
+            Ok(sway::Expression::create_todo(Some(function_call.to_string())))
         }
 
         "invalid" => {
             // TODO: invalid() => ???
-            Ok(sway::Expression::create_todo(Some(
-                function_call.to_string(),
-            )))
+            Ok(sway::Expression::create_todo(Some(function_call.to_string())))
         }
 
         "log0" => {
             // TODO: log0(offset, length) => ???
-            Ok(sway::Expression::create_todo(Some(
-                function_call.to_string(),
-            )))
+            Ok(sway::Expression::create_todo(Some(function_call.to_string())))
         }
 
         "log1" => {
             // TODO: log1(offset, length, topic0) => ???
-            Ok(sway::Expression::create_todo(Some(
-                function_call.to_string(),
-            )))
+            Ok(sway::Expression::create_todo(Some(function_call.to_string())))
         }
 
         "log2" => {
             // TODO: log2(offset, length, topic0, topic1) => ???
-            Ok(sway::Expression::create_todo(Some(
-                function_call.to_string(),
-            )))
+            Ok(sway::Expression::create_todo(Some(function_call.to_string())))
         }
 
         "log3" => {
             // TODO: log3(offset, length, topic0, topic1, topic2) => ???
-            Ok(sway::Expression::create_todo(Some(
-                function_call.to_string(),
-            )))
+            Ok(sway::Expression::create_todo(Some(function_call.to_string())))
         }
 
         "log4" => {
             // TODO: log4(offset, length, topic0, topic1, topic2, topic3) => ???
-            Ok(sway::Expression::create_todo(Some(
-                function_call.to_string(),
-            )))
+            Ok(sway::Expression::create_todo(Some(function_call.to_string())))
         }
 
         "chainid" => {
@@ -1433,23 +1233,17 @@ pub fn translate_yul_function_call_expression(
 
         "basefee" => {
             // TODO: basefee() => ???
-            Ok(sway::Expression::create_todo(Some(
-                function_call.to_string(),
-            )))
+            Ok(sway::Expression::create_todo(Some(function_call.to_string())))
         }
 
         "blobbasefee" => {
             // TODO: blobbasefee() => ???
-            Ok(sway::Expression::create_todo(Some(
-                function_call.to_string(),
-            )))
+            Ok(sway::Expression::create_todo(Some(function_call.to_string())))
         }
 
         "origin" => {
             // TODO: origin() => ???
-            Ok(sway::Expression::create_todo(Some(
-                function_call.to_string(),
-            )))
+            Ok(sway::Expression::create_todo(Some(function_call.to_string())))
         }
 
         "gasprice" => {
@@ -1464,25 +1258,18 @@ pub fn translate_yul_function_call_expression(
 
             Ok(
                 sway::Expression::create_function_call("std::tx::tx_gas_price", None, vec![])
-                    .with_unwrap_or_call(sway::Expression::from(sway::Literal::DecInt(
-                        BigUint::zero(),
-                        None,
-                    ))),
+                    .with_unwrap_or_call(sway::Expression::from(sway::Literal::DecInt(BigUint::zero(), None))),
             )
         }
 
         "blockhash" => {
             // TODO: blockhash(block_number) => ???
-            Ok(sway::Expression::create_todo(Some(
-                function_call.to_string(),
-            )))
+            Ok(sway::Expression::create_todo(Some(function_call.to_string())))
         }
 
         "blobhash" => {
             // TODO: blobhash(i) => ???
-            Ok(sway::Expression::create_todo(Some(
-                function_call.to_string(),
-            )))
+            Ok(sway::Expression::create_todo(Some(function_call.to_string())))
         }
 
         "coinbase" => {
@@ -1548,19 +1335,16 @@ pub fn translate_yul_function_call_expression(
                     vec![sway::Expression::create_function_call(
                         "ContractId::from",
                         None,
-                        vec![
-                            sway::Expression::create_identifier("ptr")
-                                .with_function_call(
-                                    "read",
-                                    Some(sway::GenericParameterList {
-                                        entries: vec![sway::GenericParameter {
-                                            type_name: sway::TypeName::create_identifier("b256"),
-                                            implements: None,
-                                        }],
-                                    }),
-                                    vec![],
-                                ),
-                        ],
+                        vec![sway::Expression::create_identifier("ptr").with_function_call(
+                            "read",
+                            Some(sway::GenericParameterList {
+                                entries: vec![sway::GenericParameter {
+                                    type_name: sway::TypeName::create_identifier("b256"),
+                                    implements: None,
+                                }],
+                            }),
+                            vec![],
+                        )],
                     )],
                 )),
             }))
@@ -1576,10 +1360,7 @@ pub fn translate_yul_function_call_expression(
                 );
             }
 
-            Ok(
-                sway::Expression::create_function_call("std::block::timestamp", None, vec![])
-                    .with_as_u256_call(),
-            )
+            Ok(sway::Expression::create_function_call("std::block::timestamp", None, vec![]).with_as_u256_call())
         }
 
         "number" => {
@@ -1601,72 +1382,52 @@ pub fn translate_yul_function_call_expression(
 
         "difficulty" => {
             // TODO: difficulty() => ???
-            Ok(sway::Expression::create_todo(Some(
-                function_call.to_string(),
-            )))
+            Ok(sway::Expression::create_todo(Some(function_call.to_string())))
         }
 
         "prevrandao" => {
             // TODO: prevrandao() => ???
-            Ok(sway::Expression::create_todo(Some(
-                function_call.to_string(),
-            )))
+            Ok(sway::Expression::create_todo(Some(function_call.to_string())))
         }
 
         "gaslimit" => {
             // TODO: gaslimit() => ???
-            Ok(sway::Expression::create_todo(Some(
-                function_call.to_string(),
-            )))
+            Ok(sway::Expression::create_todo(Some(function_call.to_string())))
         }
 
         "datasize" => {
             // TODO: datasize(x) => ???
-            Ok(sway::Expression::create_todo(Some(
-                function_call.to_string(),
-            )))
+            Ok(sway::Expression::create_todo(Some(function_call.to_string())))
         }
 
         "dataoffset" => {
             // TODO: dataoffset(x) => ???
-            Ok(sway::Expression::create_todo(Some(
-                function_call.to_string(),
-            )))
+            Ok(sway::Expression::create_todo(Some(function_call.to_string())))
         }
 
         "datacopy" => {
             // TODO: datacopy(t, f, l) => ???
-            Ok(sway::Expression::create_todo(Some(
-                function_call.to_string(),
-            )))
+            Ok(sway::Expression::create_todo(Some(function_call.to_string())))
         }
 
         "setimmutable" => {
             // TODO: setimmutable(offset, "name", value) => ???
-            Ok(sway::Expression::create_todo(Some(
-                function_call.to_string(),
-            )))
+            Ok(sway::Expression::create_todo(Some(function_call.to_string())))
         }
 
         "loadimmutable" => {
             // TODO: loadimmutable("name") => ???
-            Ok(sway::Expression::create_todo(Some(
-                function_call.to_string(),
-            )))
+            Ok(sway::Expression::create_todo(Some(function_call.to_string())))
         }
 
         "linkersymbol" => {
             // TODO: linkersymbol("library_id") => ???
-            Ok(sway::Expression::create_todo(Some(
-                function_call.to_string(),
-            )))
+            Ok(sway::Expression::create_todo(Some(function_call.to_string())))
         }
 
         "memoryguard" => {
             // TODO: memoryguard(size) => ???
-            Ok(sway::Expression::create_todo(Some(
-                function_call.to_string(),
-            )))
+            Ok(sway::Expression::create_todo(Some(function_call.to_string())))
         }
 
         // TODO: verbatim_<n>i_<m>o("<data>", ...), where

@@ -62,13 +62,11 @@ pub fn translate_array_slice_expression(
     scope: Rc<RefCell<ir::Scope>>,
     expression: &solidity::Expression,
 ) -> Result<sway::Expression, Error> {
-    let solidity::Expression::ArraySlice(_, array_expression, from_index, to_index) = expression
-    else {
+    let solidity::Expression::ArraySlice(_, array_expression, from_index, to_index) = expression else {
         panic!("Expected ArraySlice, found {expression:#?}")
     };
 
-    let expression =
-        translate_expression(project, module.clone(), scope.clone(), array_expression)?;
+    let expression = translate_expression(project, module.clone(), scope.clone(), array_expression)?;
     let type_name = get_expression_type(project, module.clone(), scope.clone(), &expression)?;
 
     let u64_type = sway::TypeName::Identifier {
@@ -85,9 +83,7 @@ pub fn translate_array_slice_expression(
         .map(|x| get_expression_type(project, module.clone(), scope.clone(), x).unwrap());
 
     // Check if from_index needs to be cast to u64
-    if let (Some(from_index), Some(from_index_type)) =
-        (from_index.as_mut(), from_index_type.as_mut())
-    {
+    if let (Some(from_index), Some(from_index_type)) = (from_index.as_mut(), from_index_type.as_mut()) {
         *from_index = coerce_expression(
             project,
             module.clone(),
@@ -163,85 +159,75 @@ pub fn translate_array_slice_expression(
                     // (to_index + 1) * __size_of::<T>()
                     // OR
                     // x.len() * __size_of::<T>()
-                    let len_expr =
-                        match from_index.as_ref() {
-                            // ((to_index + 1) - from_index) * __size_of::<T>()
-                            // OR
-                            // (x.len() - from_index) * __size_of::<T>()
-                            Some(from_index) => sway::Expression::from(sway::BinaryExpression {
-                                operator: "*".into(),
-                                lhs: sway::Expression::Tuple(vec![sway::Expression::from(
-                                    sway::BinaryExpression {
-                                        operator: "-".into(),
-
-                                        lhs: match to_index {
-                                            // (to_index + 1)
-                                            Some(to_index) => sway::Expression::Tuple(vec![
-                                                sway::Expression::from(sway::BinaryExpression {
-                                                    operator: "+".into(),
-                                                    lhs: to_index.clone(),
-                                                    rhs: sway::Expression::from(
-                                                        sway::Literal::DecInt(1u8.into(), None),
-                                                    ),
-                                                }),
-                                            ]),
-
-                                            // x.len()
-                                            None => expression.with_len_call(),
-                                        },
-
-                                        rhs: from_index.clone(),
-                                    },
-                                )]),
-                                rhs: sway::Expression::create_function_call(
-                                    "__size_of",
-                                    Some(sway::GenericParameterList {
-                                        entries: vec![sway::GenericParameter {
-                                            type_name: element_type.clone(),
-                                            implements: None,
-                                        }],
-                                    }),
-                                    vec![],
-                                ),
-                            }),
-
-                            // (to_index + 1) * __size_of::<T>()
-                            // OR
-                            // x.len() * __size_of::<T>()
-                            None => sway::Expression::from(sway::BinaryExpression {
-                                operator: "*".into(),
+                    let len_expr = match from_index.as_ref() {
+                        // ((to_index + 1) - from_index) * __size_of::<T>()
+                        // OR
+                        // (x.len() - from_index) * __size_of::<T>()
+                        Some(from_index) => sway::Expression::from(sway::BinaryExpression {
+                            operator: "*".into(),
+                            lhs: sway::Expression::Tuple(vec![sway::Expression::from(sway::BinaryExpression {
+                                operator: "-".into(),
 
                                 lhs: match to_index {
                                     // (to_index + 1)
                                     Some(to_index) => {
-                                        sway::Expression::Tuple(vec![sway::Expression::from(
-                                            sway::BinaryExpression {
-                                                operator: "+".into(),
-                                                lhs: to_index.clone(),
-                                                rhs: sway::Expression::from(sway::Literal::DecInt(
-                                                    1u8.into(),
-                                                    None,
-                                                )),
-                                            },
-                                        )])
+                                        sway::Expression::Tuple(vec![sway::Expression::from(sway::BinaryExpression {
+                                            operator: "+".into(),
+                                            lhs: to_index.clone(),
+                                            rhs: sway::Expression::from(sway::Literal::DecInt(1u8.into(), None)),
+                                        })])
                                     }
 
                                     // x.len()
                                     None => expression.with_len_call(),
                                 },
 
-                                rhs: sway::Expression::create_function_call(
-                                    "__size_of",
-                                    Some(sway::GenericParameterList {
-                                        entries: vec![sway::GenericParameter {
-                                            type_name: element_type.clone(),
-                                            implements: None,
-                                        }],
-                                    }),
-                                    vec![],
-                                ),
-                            }),
-                        };
+                                rhs: from_index.clone(),
+                            })]),
+                            rhs: sway::Expression::create_function_call(
+                                "__size_of",
+                                Some(sway::GenericParameterList {
+                                    entries: vec![sway::GenericParameter {
+                                        type_name: element_type.clone(),
+                                        implements: None,
+                                    }],
+                                }),
+                                vec![],
+                            ),
+                        }),
+
+                        // (to_index + 1) * __size_of::<T>()
+                        // OR
+                        // x.len() * __size_of::<T>()
+                        None => sway::Expression::from(sway::BinaryExpression {
+                            operator: "*".into(),
+
+                            lhs: match to_index {
+                                // (to_index + 1)
+                                Some(to_index) => {
+                                    sway::Expression::Tuple(vec![sway::Expression::from(sway::BinaryExpression {
+                                        operator: "+".into(),
+                                        lhs: to_index.clone(),
+                                        rhs: sway::Expression::from(sway::Literal::DecInt(1u8.into(), None)),
+                                    })])
+                                }
+
+                                // x.len()
+                                None => expression.with_len_call(),
+                            },
+
+                            rhs: sway::Expression::create_function_call(
+                                "__size_of",
+                                Some(sway::GenericParameterList {
+                                    entries: vec![sway::GenericParameter {
+                                        type_name: element_type.clone(),
+                                        implements: None,
+                                    }],
+                                }),
+                                vec![],
+                            ),
+                        }),
+                    };
 
                     // x[from_index:to_index] => raw_slice::from_parts::<T>(ptr_expr, len_expr)
                     return Ok(sway::Expression::create_function_call(

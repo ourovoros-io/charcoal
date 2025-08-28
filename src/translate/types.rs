@@ -17,8 +17,7 @@ pub fn translate_type_definition(
 
     let scope = Rc::new(RefCell::new(ir::Scope::new(contract_name, None, None)));
 
-    let underlying_type =
-        translate_type_name(project, module.clone(), scope, &type_definition.ty, None);
+    let underlying_type = translate_type_name(project, module.clone(), scope, &type_definition.ty, None);
 
     Ok(sway::TypeDefinition {
         is_public: true,
@@ -93,8 +92,7 @@ pub fn translate_type_name(
             solidity::Type::String => {
                 match storage_location {
                     Some(storage_location) => match storage_location {
-                        solidity::StorageLocation::Memory(_)
-                        | solidity::StorageLocation::Calldata(_) => {
+                        solidity::StorageLocation::Memory(_) | solidity::StorageLocation::Calldata(_) => {
                             // Ensure `std::string::*` is imported
                             module.borrow_mut().ensure_use_declared("std::string::*");
 
@@ -145,9 +143,7 @@ pub fn translate_type_name(
                                 //     ),
                                 // );
                             }
-                            module
-                                .borrow_mut()
-                                .ensure_use_declared("signed_int::i16::*");
+                            module.borrow_mut().ensure_use_declared("signed_int::i16::*");
                             "I16".into()
                         }
                         17..=32 => {
@@ -160,9 +156,7 @@ pub fn translate_type_name(
                                 //     ),
                                 // );
                             }
-                            module
-                                .borrow_mut()
-                                .ensure_use_declared("signed_int::i32::*");
+                            module.borrow_mut().ensure_use_declared("signed_int::i32::*");
                             "I32".into()
                         }
                         33..=64 => {
@@ -175,9 +169,7 @@ pub fn translate_type_name(
                                 //     ),
                                 // );
                             }
-                            module
-                                .borrow_mut()
-                                .ensure_use_declared("signed_int::i64::*");
+                            module.borrow_mut().ensure_use_declared("signed_int::i64::*");
                             "I64".into()
                         }
                         65..=128 => {
@@ -190,9 +182,7 @@ pub fn translate_type_name(
                                 //     ),
                                 // );
                             }
-                            module
-                                .borrow_mut()
-                                .ensure_use_declared("signed_int::i128::*");
+                            module.borrow_mut().ensure_use_declared("signed_int::i128::*");
                             "I128".into()
                         }
                         129..=256 => {
@@ -205,9 +195,7 @@ pub fn translate_type_name(
                                 //     ),
                                 // );
                             }
-                            module
-                                .borrow_mut()
-                                .ensure_use_declared("signed_int::i256::*");
+                            module.borrow_mut().ensure_use_declared("signed_int::i256::*");
                             "I256".into()
                         }
                         _ => panic!("Invalid uint type: {bits}"),
@@ -277,10 +265,7 @@ pub fn translate_type_name(
                 // HACK: bytes32 => b256
                 32 => sway::TypeName::create_identifier("b256"),
 
-                _ => sway::TypeName::create_array(
-                    sway::TypeName::create_identifier("u8"),
-                    *length as usize,
-                ),
+                _ => sway::TypeName::create_array(sway::TypeName::create_identifier("u8"), *length as usize),
             },
 
             solidity::Type::Rational => todo!("rational types"),
@@ -313,13 +298,8 @@ pub fn translate_type_name(
                             type_name
                         },
                         {
-                            let mut type_name = translate_type_name(
-                                project,
-                                module,
-                                scope.clone(),
-                                value.as_ref(),
-                                storage_location,
-                            );
+                            let mut type_name =
+                                translate_type_name(project, module, scope.clone(), value.as_ref(), storage_location);
                             if let Some(storage_key_type) = type_name.storage_key_type() {
                                 type_name = storage_key_type;
                             }
@@ -329,9 +309,7 @@ pub fn translate_type_name(
                 )
             }
 
-            solidity::Type::Function {
-                params, returns, ..
-            } => sway::TypeName::Function {
+            solidity::Type::Function { params, returns, .. } => sway::TypeName::Function {
                 old_name: String::new(),
                 new_name: String::new(),
                 generic_parameters: None,
@@ -392,27 +370,20 @@ pub fn translate_type_name(
             },
         },
 
-        solidity::Expression::Variable(solidity::Identifier { name, .. }) => {
-            translate_variable_type_name(
-                project,
-                module.clone(),
-                scope.clone(),
-                name.to_string(),
-                type_name,
-                storage_location,
-            )
-        }
+        solidity::Expression::Variable(solidity::Identifier { name, .. }) => translate_variable_type_name(
+            project,
+            module.clone(),
+            scope.clone(),
+            name.to_string(),
+            type_name,
+            storage_location,
+        ),
 
         solidity::Expression::ArraySubscript(_, type_name, length) => match length.as_ref() {
             Some(length) => sway::TypeName::Array {
                 type_name: Box::new({
-                    let mut type_name = translate_type_name(
-                        project,
-                        module.clone(),
-                        scope.clone(),
-                        type_name,
-                        storage_location,
-                    );
+                    let mut type_name =
+                        translate_type_name(project, module.clone(), scope.clone(), type_name, storage_location);
 
                     if let Some(storage_key_type) = type_name.storage_key_type() {
                         type_name = storage_key_type;
@@ -428,12 +399,7 @@ pub fn translate_type_name(
                         Some(scope.clone()),
                     )));
 
-                    match translate_expression(
-                        project,
-                        module.clone(),
-                        scope.clone(),
-                        length.as_ref(),
-                    ) {
+                    match translate_expression(project, module.clone(), scope.clone(), length.as_ref()) {
                         Ok(sway::Expression::Literal(
                             sway::Literal::DecInt(length, _) | sway::Literal::HexInt(length, _),
                         )) => length.try_into().unwrap(),
@@ -441,11 +407,9 @@ pub fn translate_type_name(
                         Ok(sway::Expression::PathExpr(path_expr)) => {
                             // Check to see if the expression is a constant
                             if let Some(ident) = path_expr.as_identifier()
-                                && let Some(constant) =
-                                    module.borrow().constants.iter().find(|c| c.name == ident)
+                                && let Some(constant) = module.borrow().constants.iter().find(|c| c.name == ident)
                                 && let Some(sway::Expression::Literal(
-                                    sway::Literal::DecInt(value, _)
-                                    | sway::Literal::HexInt(value, _),
+                                    sway::Literal::DecInt(value, _) | sway::Literal::HexInt(value, _),
                                 )) = constant.value.as_ref()
                             {
                                 // println!(
@@ -470,23 +434,15 @@ pub fn translate_type_name(
                         // Ensure that `std::vec::*` is imported
                         module.borrow_mut().ensure_use_declared("std::vec::*");
 
-                        translate_type_name(project, module, scope.clone(), type_name, None)
-                            .to_vec()
+                        translate_type_name(project, module, scope.clone(), type_name, None).to_vec()
                     }
 
                     solidity::StorageLocation::Storage(_) => {
                         // Ensure that `std::storage::storage_vec::*` is imported
-                        module
-                            .borrow_mut()
-                            .ensure_use_declared("std::storage::storage_vec::*");
+                        module.borrow_mut().ensure_use_declared("std::storage::storage_vec::*");
 
-                        let mut type_name = translate_type_name(
-                            project,
-                            module,
-                            scope.clone(),
-                            type_name,
-                            Some(storage_location),
-                        );
+                        let mut type_name =
+                            translate_type_name(project, module, scope.clone(), type_name, Some(storage_location));
 
                         if let Some(storage_key_type) = type_name.storage_key_type() {
                             type_name = storage_key_type;
@@ -499,8 +455,7 @@ pub fn translate_type_name(
                         // Ensure that `std::vec::*` is imported
                         module.borrow_mut().ensure_use_declared("std::vec::*");
 
-                        translate_type_name(project, module, scope.clone(), type_name, None)
-                            .to_vec()
+                        translate_type_name(project, module, scope.clone(), type_name, None).to_vec()
                     }
                 },
 
@@ -515,9 +470,7 @@ pub fn translate_type_name(
 
         solidity::Expression::MemberAccess(_, container, member) => match container.as_ref() {
             solidity::Expression::Variable(solidity::Identifier { name, .. }) => {
-                if let Some(external_module) =
-                    project.find_module_containing_contract(module.clone(), name.as_str())
-                {
+                if let Some(external_module) = project.find_module_containing_contract(module.clone(), name.as_str()) {
                     translate_variable_type_name(
                         project,
                         external_module.clone(),

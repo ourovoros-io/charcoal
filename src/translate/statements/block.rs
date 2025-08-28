@@ -12,15 +12,14 @@ pub fn translate_block(
     // Translate each of the statements in the block
     for statement in statements {
         // Translate the statement
-        let sway_statement =
-            match translate_statement(project, module.clone(), scope.clone(), statement) {
-                Ok(statement) => statement,
-                Err(Error::IneffectualStatement(_, _statement)) => {
-                    // println!("WARNING: Skipping ineffectual statement: {statement}");
-                    continue;
-                }
-                Err(error) => return Err(error),
-            };
+        let sway_statement = match translate_statement(project, module.clone(), scope.clone(), statement) {
+            Ok(statement) => statement,
+            Err(Error::IneffectualStatement(_, _statement)) => {
+                // println!("WARNING: Skipping ineffectual statement: {statement}");
+                continue;
+            }
+            Err(error) => return Err(error),
+        };
 
         // Store the index of the sway statement
         let statement_index = block.statements.len();
@@ -92,9 +91,7 @@ pub fn finalize_block_translation(
 
             match &mut let_statement.pattern {
                 sway::LetPattern::Identifier(id) => mark_let_identifier_mutable(id),
-                sway::LetPattern::Tuple(ids) => {
-                    ids.iter_mut().for_each(mark_let_identifier_mutable)
-                }
+                sway::LetPattern::Tuple(ids) => ids.iter_mut().for_each(mark_let_identifier_mutable),
             }
         }
     }
@@ -104,9 +101,7 @@ pub fn finalize_block_translation(
         let mut statements = None;
 
         {
-            let sway::Statement::Expression(sway::Expression::Block(sub_block)) =
-                &block.statements[i]
-            else {
+            let sway::Statement::Expression(sway::Expression::Block(sub_block)) = &block.statements[i] else {
                 continue;
             };
 
@@ -121,10 +116,7 @@ pub fn finalize_block_translation(
                     let parent = scope.borrow().get_parent();
 
                     if let Some(scope) = parent
-                        && scope
-                            .borrow()
-                            .get_variable_from_new_name(&identifier.name)
-                            .is_some()
+                        && scope.borrow().get_variable_from_new_name(&identifier.name).is_some()
                     {
                         var_count += 1;
                     }
@@ -158,9 +150,7 @@ pub fn finalize_block_translation(
     }
 
     // If the last statement is a block, flatten it
-    if let Some(sway::Statement::Expression(sway::Expression::Block(inner_block))) =
-        block.statements.last().cloned()
-    {
+    if let Some(sway::Statement::Expression(sway::Expression::Block(inner_block))) = block.statements.last().cloned() {
         block.statements.pop();
         block.statements.extend(inner_block.statements);
     }
@@ -175,11 +165,7 @@ pub fn translate_block_statement(
     scope: Rc<RefCell<ir::Scope>>,
     statements: &[solidity::Statement],
 ) -> Result<sway::Statement, Error> {
-    let scope = Rc::new(RefCell::new(ir::Scope::new(
-        None,
-        None,
-        Some(scope.clone()),
-    )));
+    let scope = Rc::new(RefCell::new(ir::Scope::new(None, None, Some(scope.clone()))));
 
     // Translate the block
     let translated_block = sway::Statement::from(sway::Expression::from(translate_block(

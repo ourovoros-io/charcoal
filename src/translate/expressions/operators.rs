@@ -36,44 +36,34 @@ pub fn translate_binary_expression(
     }
 
     // HACK: de-cast identity abi cast comparisons
-    let mut abi_check = |lhs_type: &sway::TypeName,
-                         rhs: &mut sway::Expression,
-                         rhs_type: &mut sway::TypeName|
-     -> bool {
-        if lhs_type.is_identity()
-            && let sway::Expression::FunctionCall(expr) = &rhs
-            && let Some(ident) = expr.function.as_identifier()
-            && ident == "abi"
-            && expr.parameters.len() == 2
-        {
-            *rhs = expr.parameters[1].clone();
+    let mut abi_check =
+        |lhs_type: &sway::TypeName, rhs: &mut sway::Expression, rhs_type: &mut sway::TypeName| -> bool {
+            if lhs_type.is_identity()
+                && let sway::Expression::FunctionCall(expr) = &rhs
+                && let Some(ident) = expr.function.as_identifier()
+                && ident == "abi"
+                && expr.parameters.len() == 2
+            {
+                *rhs = expr.parameters[1].clone();
 
-            // HACK: remove `.bits()` if present
-            if let Some(container) = rhs.to_bits_call_parts() {
-                *rhs = container.clone();
+                // HACK: remove `.bits()` if present
+                if let Some(container) = rhs.to_bits_call_parts() {
+                    *rhs = container.clone();
+                }
+
+                *rhs_type = get_expression_type(project, module.clone(), scope.clone(), rhs).unwrap();
+
+                return true;
             }
 
-            *rhs_type = get_expression_type(project, module.clone(), scope.clone(), rhs).unwrap();
-
-            return true;
-        }
-
-        false
-    };
+            false
+        };
 
     if !abi_check(&lhs_type, &mut rhs, &mut rhs_type) {
         abi_check(&rhs_type, &mut lhs, &mut lhs_type);
     }
 
-    rhs = coerce_expression(
-        project,
-        module.clone(),
-        scope.clone(),
-        &rhs,
-        &rhs_type,
-        &lhs_type,
-    )
-    .unwrap();
+    rhs = coerce_expression(project, module.clone(), scope.clone(), &rhs, &rhs_type, &lhs_type).unwrap();
 
     Ok(sway::Expression::from(sway::BinaryExpression {
         operator: operator.into(),
@@ -126,9 +116,8 @@ pub fn translate_unary_expression(
 
                 _ => {
                     // HACK: allow literals to be negated
-                    if let sway::Expression::Literal(
-                        sway::Literal::DecInt(_, _) | sway::Literal::HexInt(_, _),
-                    ) = &expression
+                    if let sway::Expression::Literal(sway::Literal::DecInt(_, _) | sway::Literal::HexInt(_, _)) =
+                        &expression
                     {
                         return Ok(expression.with_function_call("wrapping_neg", None, vec![]));
                     }

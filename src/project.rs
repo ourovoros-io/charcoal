@@ -53,10 +53,7 @@ impl Project {
         if !contracts_path.exists() || !contracts_path.is_dir() {
             return Err(Error::Wrapped(Box::new(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
-                format!(
-                    "Contracts folder should be a directory: {}",
-                    contracts_path.display()
-                ),
+                format!("Contracts folder should be a directory: {}", contracts_path.display()),
             ))));
         }
 
@@ -64,11 +61,7 @@ impl Project {
     }
 
     /// Resolve the import path based on the remappings of the [Framework]
-    fn resolve_import_path(
-        &self,
-        source_unit_directory: &Path,
-        filename: &str,
-    ) -> Result<PathBuf, Error> {
+    fn resolve_import_path(&self, source_unit_directory: &Path, filename: &str) -> Result<PathBuf, Error> {
         match &self.framework {
             // Remappings in foundry are handled using the same pattern
             Framework::Foundry { remappings, .. } => {
@@ -98,28 +91,18 @@ impl Project {
     }
 
     /// Recursively search for .sol files in the given directory
-    fn collect_source_unit_paths(
-        path: &Path,
-        framework: &Framework,
-    ) -> Result<Vec<PathBuf>, Error> {
+    fn collect_source_unit_paths(path: &Path, framework: &Framework) -> Result<Vec<PathBuf>, Error> {
         let mut source_unit_paths = vec![];
 
         if let Framework::Hardhat = framework {
             // Skip the node_modules folder. Only translate things that are imported explicitly.
-            if path
-                .to_string_lossy()
-                .replace('\\', "/")
-                .contains("/node_modules/")
-            {
+            if path.to_string_lossy().replace('\\', "/").contains("/node_modules/") {
                 return Ok(vec![]);
             }
         }
 
         if !path.is_dir() {
-            assert!(
-                path.extension().unwrap() == "sol",
-                "Only solidity files are supported."
-            );
+            assert!(path.extension().unwrap() == "sol", "Only solidity files are supported.");
 
             if !path.exists() {
                 return Err(Error::Wrapped(Box::new(std::io::Error::new(
@@ -238,11 +221,7 @@ impl Project {
         (!imports.is_empty()).then_some(imports)
     }
 
-    fn get_import_paths(
-        &mut self,
-        ast: &solidity::SourceUnit,
-        source_unit_path: &Path,
-    ) -> Result<Vec<PathBuf>, Error> {
+    fn get_import_paths(&mut self, ast: &solidity::SourceUnit, source_unit_path: &Path) -> Result<Vec<PathBuf>, Error> {
         let mut import_paths = Vec::new();
         if let Some(import_directives) = Self::get_contract_imports(ast) {
             for import_directive in &import_directives {
@@ -253,12 +232,8 @@ impl Project {
                 };
 
                 let import_path = match import_path {
-                    solang_parser::pt::ImportPath::Filename(path) => {
-                        std::path::PathBuf::from(path.to_string())
-                    }
-                    solang_parser::pt::ImportPath::Path(path) => {
-                        std::path::PathBuf::from(path.to_string())
-                    }
+                    solang_parser::pt::ImportPath::Filename(path) => std::path::PathBuf::from(path.to_string()),
+                    solang_parser::pt::ImportPath::Path(path) => std::path::PathBuf::from(path.to_string()),
                 };
 
                 // Clean the import path and remove quotes
@@ -280,17 +255,11 @@ impl Project {
         Ok(import_paths)
     }
 
-    pub fn canonicalize_import_path(
-        &self,
-        source_unit_directory: &Path,
-        path_string: &str,
-    ) -> Result<PathBuf, Error> {
+    pub fn canonicalize_import_path(&self, source_unit_directory: &Path, path_string: &str) -> Result<PathBuf, Error> {
         let mut import_path = PathBuf::from(path_string);
 
         if !import_path.to_string_lossy().starts_with('.') {
-            import_path = self
-                .resolve_import_path(source_unit_directory, path_string)
-                .unwrap();
+            import_path = self.resolve_import_path(source_unit_directory, path_string).unwrap();
         } else {
             import_path = source_unit_directory.join(import_path);
         }
@@ -309,10 +278,7 @@ impl Project {
 
     /// Attempts to parse the file from the supplied `path`.
     #[inline]
-    fn parse_solidity_source_unit<P: AsRef<Path>>(
-        &mut self,
-        path: P,
-    ) -> Result<&solidity::SourceUnit, Error> {
+    fn parse_solidity_source_unit<P: AsRef<Path>>(&mut self, path: P) -> Result<&solidity::SourceUnit, Error> {
         if self.solidity_source_units.contains_key(path.as_ref()) {
             return Ok(self.solidity_source_units.get(path.as_ref()).unwrap());
         }
@@ -343,30 +309,20 @@ impl Project {
         for (i, c) in source.chars().enumerate() {
             if c == '\n' {
                 line_range.1 = i;
-                self.line_ranges
-                    .entry(path.clone())
-                    .or_default()
-                    .push(line_range);
+                self.line_ranges.entry(path.clone()).or_default().push(line_range);
                 line_range = (i + 1, 0);
             }
         }
 
         if line_range.1 > line_range.0 {
-            self.line_ranges
-                .entry(path.clone())
-                .or_default()
-                .push(line_range);
+            self.line_ranges.entry(path.clone()).or_default().push(line_range);
         }
 
         self.line_ranges.get(path).unwrap()
     }
 
     #[inline]
-    fn loc_to_line_and_column(
-        &self,
-        module: Rc<RefCell<ir::Module>>,
-        loc: &solidity::Loc,
-    ) -> Option<(usize, usize)> {
+    fn loc_to_line_and_column(&self, module: Rc<RefCell<ir::Module>>, loc: &solidity::Loc) -> Option<(usize, usize)> {
         let path = self
             .options
             .input
@@ -377,10 +333,9 @@ impl Project {
         let line_ranges = self.line_ranges.get(&path)?;
 
         let start = match loc {
-            solidity::Loc::Builtin
-            | solidity::Loc::CommandLine
-            | solidity::Loc::Implicit
-            | solidity::Loc::Codegen => return None,
+            solidity::Loc::Builtin | solidity::Loc::CommandLine | solidity::Loc::Implicit | solidity::Loc::Codegen => {
+                return None;
+            }
 
             solidity::Loc::File(_, start, _) => start,
         };
@@ -395,11 +350,7 @@ impl Project {
     }
 
     #[inline]
-    pub fn loc_to_file_location_string(
-        &self,
-        module: Rc<RefCell<ir::Module>>,
-        loc: &solidity::Loc,
-    ) -> String {
+    pub fn loc_to_file_location_string(&self, module: Rc<RefCell<ir::Module>>, loc: &solidity::Loc) -> String {
         match self.loc_to_line_and_column(module.clone(), loc) {
             Some((line, col)) => format!(
                 "{}:{}:{}",
@@ -471,23 +422,14 @@ impl Project {
 
             match parent_module.clone() {
                 Some(parent) => {
-                    if let Some(module) = parent
-                        .borrow()
-                        .submodules
-                        .iter()
-                        .find(|s| s.borrow().name == comp)
-                    {
+                    if let Some(module) = parent.borrow().submodules.iter().find(|s| s.borrow().name == comp) {
                         parent_module = Some(module.clone());
                     } else {
                         return None;
                     }
                 }
                 None => {
-                    if let Some(module) = self
-                        .translated_modules
-                        .iter()
-                        .find(|t| t.borrow().name == comp)
-                    {
+                    if let Some(module) = self.translated_modules.iter().find(|t| t.borrow().name == comp) {
                         parent_module = Some(module.clone());
                     } else {
                         return None;
@@ -521,23 +463,14 @@ impl Project {
 
             match parent_module.clone() {
                 Some(parent) => {
-                    if let Some(module) = parent
-                        .borrow()
-                        .submodules
-                        .iter()
-                        .find(|s| s.borrow().name == comp)
-                    {
+                    if let Some(module) = parent.borrow().submodules.iter().find(|s| s.borrow().name == comp) {
                         parent_module = Some(module.clone());
                     } else {
                         return None;
                     }
                 }
                 None => {
-                    if let Some(module) = self
-                        .translated_modules
-                        .iter()
-                        .find(|t| t.borrow().name == comp)
-                    {
+                    if let Some(module) = self.translated_modules.iter().find(|t| t.borrow().name == comp) {
                         parent_module = Some(module.clone());
                     } else {
                         return None;
@@ -569,19 +502,14 @@ impl Project {
             component = format!("_{component}");
         }
 
-        let mut parent_module = match self
-            .translated_modules
-            .iter()
-            .find(|t| t.borrow().name == component)
-        {
+        let mut parent_module = match self.translated_modules.iter().find(|t| t.borrow().name == component) {
             Some(result) => result.clone(),
             None => {
-                self.translated_modules
-                    .push(Rc::new(RefCell::new(ir::Module {
-                        name: component,
-                        path: current_path.clone(),
-                        ..Default::default()
-                    })));
+                self.translated_modules.push(Rc::new(RefCell::new(ir::Module {
+                    name: component,
+                    path: current_path.clone(),
+                    ..Default::default()
+                })));
 
                 self.translated_modules.last().cloned().unwrap()
             }
@@ -628,11 +556,7 @@ impl Project {
         parent_module
     }
 
-    pub fn is_contract_declared(
-        &mut self,
-        module: Rc<RefCell<ir::Module>>,
-        contract_name: &str,
-    ) -> bool {
+    pub fn is_contract_declared(&mut self, module: Rc<RefCell<ir::Module>>, contract_name: &str) -> bool {
         // Check to see if the contract was declared in the current file
         if module
             .borrow()
@@ -713,10 +637,7 @@ impl Project {
                     .iter()
                     .find(|c| c.signature.to_string() == contract_name)
             {
-                return Some((
-                    found_module.clone(),
-                    contract.implementation.clone().unwrap(),
-                ));
+                return Some((found_module.clone(), contract.implementation.clone().unwrap()));
             }
         }
 
@@ -755,11 +676,7 @@ impl Project {
         None
     }
 
-    pub fn is_type_definition_declared(
-        &mut self,
-        module: Rc<RefCell<ir::Module>>,
-        name: &str,
-    ) -> bool {
+    pub fn is_type_definition_declared(&mut self, module: Rc<RefCell<ir::Module>>, name: &str) -> bool {
         // Check to see if the type definition was defined in the current file
         if module
             .borrow()
@@ -821,12 +738,7 @@ impl Project {
 
     pub fn is_enum_declared(&mut self, module: Rc<RefCell<ir::Module>>, name: &str) -> bool {
         // Check to see if the enum was defined in the current file
-        if module
-            .borrow()
-            .enums
-            .iter()
-            .any(|x| x.signature.to_string() == name)
-        {
+        if module.borrow().enums.iter().any(|x| x.signature.to_string() == name) {
             return true;
         }
 
@@ -849,12 +761,7 @@ impl Project {
 
     pub fn find_enum(&mut self, module: Rc<RefCell<ir::Module>>, name: &str) -> Option<ir::Enum> {
         // Check to see if the enum was defined in the current file
-        if let Some(x) = module
-            .borrow()
-            .enums
-            .iter()
-            .find(|x| x.signature.to_string() == name)
-        {
+        if let Some(x) = module.borrow().enums.iter().find(|x| x.signature.to_string() == name) {
             return x.implementation.clone();
         }
 
@@ -933,8 +840,7 @@ impl Project {
                 return false;
             };
 
-            implementation.borrow().memory.name == name
-                || implementation.borrow().storage.name == name
+            implementation.borrow().memory.name == name || implementation.borrow().storage.name == name
         }) {
             return x.implementation.clone();
         }
@@ -953,8 +859,7 @@ impl Project {
         // find the module being imported, then check if the struct lives there.
         for use_item in module.borrow().uses.iter() {
             if let Some(found_module) = self.resolve_use(use_item)
-                && let Some(struct_definition) =
-                    self.find_struct(found_module.clone(), scope.clone(), name)
+                && let Some(struct_definition) = self.find_struct(found_module.clone(), scope.clone(), name)
             {
                 return Some(struct_definition.clone());
             }
@@ -975,10 +880,7 @@ impl Project {
 
             None => {
                 for module in self.translated_modules.iter() {
-                    println!(
-                        "// Translated from {}",
-                        module.borrow().path.to_string_lossy()
-                    );
+                    println!("// Translated from {}", module.borrow().path.to_string_lossy());
 
                     let module: sway::Module = module.borrow().clone().into();
                     println!("{}", sway::TabbedDisplayer(&module));
@@ -1131,9 +1033,7 @@ impl Project {
 
         for enum_definition in enum_definitions.iter() {
             module.borrow_mut().enums.push(ir::Item {
-                signature: sway::TypeName::create_identifier(
-                    enum_definition.name.as_ref().unwrap().name.as_str(),
-                ),
+                signature: sway::TypeName::create_identifier(enum_definition.name.as_ref().unwrap().name.as_str()),
                 implementation: None,
             });
         }
@@ -1143,9 +1043,7 @@ impl Project {
 
         for struct_definition in struct_definitions.iter() {
             module.borrow_mut().structs.push(ir::Item {
-                signature: sway::TypeName::create_identifier(
-                    struct_definition.name.as_ref().unwrap().name.as_str(),
-                ),
+                signature: sway::TypeName::create_identifier(struct_definition.name.as_ref().unwrap().name.as_str()),
                 implementation: None,
             });
         }
@@ -1164,8 +1062,7 @@ impl Project {
                 &function_definition.ty,
             );
 
-            let parameters =
-                translate_function_parameters(self, module.clone(), None, function_definition);
+            let parameters = translate_function_parameters(self, module.clone(), None, function_definition);
 
             module.borrow_mut().modifiers.push(ir::Item {
                 signature: sway::TypeName::Function {
@@ -1192,8 +1089,7 @@ impl Project {
                 continue;
             }
 
-            let declaration =
-                translate_function_declaration(self, module.clone(), None, None, function_definition)?;
+            let declaration = translate_function_declaration(self, module.clone(), None, None, function_definition)?;
 
             module.borrow_mut().functions.push(ir::Item {
                 signature: declaration.type_name,
@@ -1215,28 +1111,28 @@ impl Project {
 
         // Translate toplevel variable definitions
         for variable_definition in variable_definitions {
-            let state_variable_info =
-                translate_state_variable(self, module.clone(), None, &variable_definition)?;
+            let state_variable_info = translate_state_variable(self, module.clone(), None, &variable_definition)?;
             assert!(state_variable_info.deferred_initializations.is_empty());
             assert!(state_variable_info.mapping_names.is_empty());
         }
 
         for (i, type_definition) in type_definitions.into_iter().enumerate() {
-            module.borrow_mut().type_definitions[type_definitions_index + i].implementation = Some(
-                translate_type_definition(self, module.clone(), None, &type_definition)?,
-            );
+            module.borrow_mut().type_definitions[type_definitions_index + i].implementation =
+                Some(translate_type_definition(self, module.clone(), None, &type_definition)?);
         }
 
         for (i, enum_definition) in enum_definitions.into_iter().enumerate() {
-            module.borrow_mut().enums[enums_index + i].implementation = Some(
-                translate_enum_definition(self, module.clone(), &enum_definition)?,
-            );
+            module.borrow_mut().enums[enums_index + i].implementation =
+                Some(translate_enum_definition(self, module.clone(), &enum_definition)?);
         }
 
         for (i, struct_definition) in struct_definitions.into_iter().enumerate() {
-            module.borrow_mut().structs[structs_index + i].implementation = Some(
-                translate_struct_definition(self, module.clone(), None, &struct_definition)?,
-            );
+            module.borrow_mut().structs[structs_index + i].implementation = Some(translate_struct_definition(
+                self,
+                module.clone(),
+                None,
+                &struct_definition,
+            )?);
         }
 
         for event_definition in event_definitions {
@@ -1330,9 +1226,7 @@ impl Project {
 
             for type_definition in type_definitions.iter() {
                 module.borrow_mut().type_definitions.push(ir::Item {
-                    signature: sway::TypeName::create_identifier(
-                        type_definition.name.name.as_str(),
-                    ),
+                    signature: sway::TypeName::create_identifier(type_definition.name.name.as_str()),
                     implementation: None,
                 });
             }
@@ -1342,9 +1236,7 @@ impl Project {
 
             for enum_definition in enum_definitions.iter() {
                 module.borrow_mut().enums.push(ir::Item {
-                    signature: sway::TypeName::create_identifier(
-                        enum_definition.name.as_ref().unwrap().name.as_str(),
-                    ),
+                    signature: sway::TypeName::create_identifier(enum_definition.name.as_ref().unwrap().name.as_str()),
                     implementation: None,
                 });
             }
@@ -1365,12 +1257,8 @@ impl Project {
             let mut state_variable_infos = vec![];
 
             for variable_definition in variable_definitions.iter() {
-                let state_variable_info = translate_state_variable(
-                    self,
-                    module.clone(),
-                    Some(contract_name),
-                    variable_definition,
-                )?;
+                let state_variable_info =
+                    translate_state_variable(self, module.clone(), Some(contract_name), variable_definition)?;
 
                 assert!(state_variable_info.deferred_initializations.is_empty());
                 assert!(state_variable_info.mapping_names.is_empty());
@@ -1378,21 +1266,16 @@ impl Project {
                 state_variable_infos.push(state_variable_info);
             }
 
-            let scope = Rc::new(RefCell::new(ir::Scope::new(
-                Some(contract_name),
-                None,
-                None,
-            )));
+            let scope = Rc::new(RefCell::new(ir::Scope::new(Some(contract_name), None, None)));
 
             for state_variable_info in state_variable_infos {
-                let Some((abi_fn, toplevel_fn, impl_fn)) =
-                    generate_state_variable_getter_functions(
-                        self,
-                        module.clone(),
-                        scope.clone(),
-                        Some(contract_name),
-                        &state_variable_info,
-                    )?
+                let Some((abi_fn, toplevel_fn, impl_fn)) = generate_state_variable_getter_functions(
+                    self,
+                    module.clone(),
+                    scope.clone(),
+                    Some(contract_name),
+                    &state_variable_info,
+                )?
                 else {
                     continue;
                 };
@@ -1427,31 +1310,25 @@ impl Project {
 
             // Translate contract type definitions
             for (i, type_definition) in type_definitions.into_iter().enumerate() {
-                module.borrow_mut().type_definitions[type_definitions_index + i].implementation =
-                    Some(translate_type_definition(
-                        self,
-                        module.clone(),
-                        Some(contract_name),
-                        type_definition.as_ref(),
-                    )?);
+                module.borrow_mut().type_definitions[type_definitions_index + i].implementation = Some(
+                    translate_type_definition(self, module.clone(), Some(contract_name), type_definition.as_ref())?,
+                );
             }
 
             // Translate contract enum definitions
             for (i, enum_definition) in enum_definitions.into_iter().enumerate() {
-                module.borrow_mut().enums[enums_index + i].implementation = Some(
-                    translate_enum_definition(self, module.clone(), &enum_definition)?,
-                );
+                module.borrow_mut().enums[enums_index + i].implementation =
+                    Some(translate_enum_definition(self, module.clone(), &enum_definition)?);
             }
 
             // Translate contract struct definitions
             for (i, struct_definition) in struct_definitions.into_iter().enumerate() {
-                module.borrow_mut().structs[structs_index + i].implementation =
-                    Some(translate_struct_definition(
-                        self,
-                        module.clone(),
-                        Some(contract_name),
-                        struct_definition.as_ref(),
-                    )?);
+                module.borrow_mut().structs[structs_index + i].implementation = Some(translate_struct_definition(
+                    self,
+                    module.clone(),
+                    Some(contract_name),
+                    struct_definition.as_ref(),
+                )?);
             }
 
             // Translate abi modifiers
@@ -1469,12 +1346,8 @@ impl Project {
                     &function_definition.ty,
                 );
 
-                let parameters = translate_function_parameters(
-                    self,
-                    module.clone(),
-                    Some(contract_name),
-                    function_definition,
-                );
+                let parameters =
+                    translate_function_parameters(self, module.clone(), Some(contract_name), function_definition);
 
                 module.borrow_mut().modifiers.push(ir::Item {
                     signature: sway::TypeName::Function {
@@ -1501,12 +1374,8 @@ impl Project {
                     continue;
                 }
 
-                if let Some(abi_fn) = translate_abi_function(
-                    self,
-                    module.clone(),
-                    contract_name,
-                    &function_definition,
-                ) {
+                if let Some(abi_fn) = translate_abi_function(self, module.clone(), contract_name, &function_definition)
+                {
                     contract.borrow_mut().abi.functions.push(abi_fn);
                 }
 
@@ -1529,8 +1398,7 @@ impl Project {
                 });
             }
 
-            module.borrow_mut().contracts[contracts_index + i].implementation =
-                Some(contract.clone());
+            module.borrow_mut().contracts[contracts_index + i].implementation = Some(contract.clone());
         }
 
         // Translate modifiers before functions
@@ -1571,8 +1439,7 @@ impl Project {
                     unreachable!()
                 };
 
-                *new_name == function.new_name
-                    && f.signature.is_compatible_with(&function_signature)
+                *new_name == function.new_name && f.signature.is_compatible_with(&function_signature)
             }) else {
                 panic!(
                     "Failed to find function {} - {} - in list:\n{}",
@@ -1714,12 +1581,7 @@ impl Project {
             }
 
             // Construct the contract main module's use statements
-            let mut uses = module
-                .uses
-                .iter()
-                .filter(|u| !u.is_public)
-                .cloned()
-                .collect::<Vec<_>>();
+            let mut uses = module.uses.iter().filter(|u| !u.is_public).cloned().collect::<Vec<_>>();
 
             uses.push(sway::Use {
                 is_public: true,
@@ -1782,10 +1644,7 @@ impl Project {
                                     new_name: s.new_name.clone(),
                                     generic_parameters: s.generic_parameters.clone(),
                                     parameters: s.parameters.clone(),
-                                    storage_struct_parameter: s
-                                        .storage_struct_parameter
-                                        .clone()
-                                        .map(Box::new),
+                                    storage_struct_parameter: s.storage_struct_parameter.clone().map(Box::new),
                                     return_type: s.return_type.clone().map(Box::new),
                                 },
                                 implementation: Some(s.clone()),
@@ -1799,8 +1658,7 @@ impl Project {
             for contract_module in contract_modules.iter_mut() {
                 // If the contract has a fallback function remove fallback attribute from the shared code
                 // and add a fallback function on the contract and call the shared fallback function
-                let fallback_function_name =
-                    format!("{}_fallback", contract_module.name).to_case(Case::Snake);
+                let fallback_function_name = format!("{}_fallback", contract_module.name).to_case(Case::Snake);
 
                 if let Some(fallback_function) = module.functions.iter_mut().find(|f| {
                     let sway::TypeName::Function { new_name, .. } = &f.signature else {
@@ -1904,13 +1762,7 @@ impl Project {
             modules.push((module_path.with_extension("sw"), module));
 
             for submodule in submodules.iter() {
-                process_submodules(
-                    options,
-                    dependencies,
-                    modules,
-                    contract_modules,
-                    submodule.clone(),
-                );
+                process_submodules(options, dependencies, modules, contract_modules, submodule.clone());
             }
         }
 
@@ -1925,12 +1777,10 @@ impl Project {
         let mut contract_modules = vec![];
 
         for module in self.translated_modules.iter() {
-            lib_module
-                .items
-                .push(sway::ModuleItem::Submodule(sway::Submodule {
-                    is_public: true,
-                    name: module.borrow().name.clone(),
-                }));
+            lib_module.items.push(sway::ModuleItem::Submodule(sway::Submodule {
+                is_public: true,
+                name: module.borrow().name.clone(),
+            }));
 
             for dependency in module.borrow().dependencies.iter() {
                 if !shared_dependencies.contains(dependency) {
@@ -1970,11 +1820,8 @@ impl Project {
                 .map_err(|e| Error::Wrapped(Box::new(e)))?;
         }
 
-        std::fs::write(
-            output_directory.join(".gitignore"),
-            "out\ntarget\nForc.lock\n",
-        )
-        .map_err(|e| Error::Wrapped(Box::new(e)))?;
+        std::fs::write(output_directory.join(".gitignore"), "out\ntarget\nForc.lock\n")
+            .map_err(|e| Error::Wrapped(Box::new(e)))?;
 
         std::fs::write(
             output_directory.join("Forc.toml"),
@@ -2012,12 +1859,9 @@ impl Project {
             std::fs::create_dir_all(module.path.parent().unwrap()).unwrap();
 
             // Write the project's `.gitignore` file
-            std::fs::write(
-                output_directory.join(".gitignore"),
-                "out\ntarget\nForc.lock\n",
-            )
-            .map_err(|e| Error::Wrapped(Box::new(e)))
-            .unwrap();
+            std::fs::write(output_directory.join(".gitignore"), "out\ntarget\nForc.lock\n")
+                .map_err(|e| Error::Wrapped(Box::new(e)))
+                .unwrap();
 
             // Write the project's `Forc.toml` file
             std::fs::write(

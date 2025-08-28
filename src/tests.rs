@@ -29,13 +29,10 @@ fn test_code_samples_x() {
 
 #[test]
 fn test_solidity_by_example() {
-    Test::new(
-        "solidity_by_example",
-        "./tests/solidity-by-example/contracts",
-    )
-    .with_repo_url("https://github.com/solidity-by-example/solidity-by-example.github.io.git")
-    .with_repo_dir("./tests/solidity-by-example")
-    .run();
+    Test::new("solidity_by_example", "./tests/solidity-by-example/contracts")
+        .with_repo_url("https://github.com/solidity-by-example/solidity-by-example.github.io.git")
+        .with_repo_dir("./tests/solidity-by-example")
+        .run();
 }
 
 #[test]
@@ -133,16 +130,15 @@ impl Test {
 
         self.options = self.options.clone().canonicalize().unwrap();
 
-        let framework = Framework::from_path(&self.options.input)
-            .expect("Failed to detect a Solidity project framework");
+        let framework =
+            Framework::from_path(&self.options.input).expect("Failed to detect a Solidity project framework");
 
         if !self.install_dependencies(&framework) {
             panic!()
         }
 
         let project = Arc::new(Mutex::new(
-            Project::new(self.options.clone(), framework.clone())
-                .expect("Failed to create Charcoal project"),
+            Project::new(self.options.clone(), framework.clone()).expect("Failed to create Charcoal project"),
         ));
 
         if !self.translate(project.clone()) {
@@ -219,27 +215,17 @@ impl Test {
                 // TODO: We might need to redo this...
                 //
 
-                let package_json_path = PathBuf::from(format!(
-                    "{}/package.json",
-                    self.options.input.to_string_lossy()
-                ));
+                let package_json_path = PathBuf::from(format!("{}/package.json", self.options.input.to_string_lossy()));
 
-                let node_modules_folder = PathBuf::from(format!(
-                    "{}/node_modules",
-                    self.options.input.to_string_lossy()
-                ));
+                let node_modules_folder =
+                    PathBuf::from(format!("{}/node_modules", self.options.input.to_string_lossy()));
 
                 if !node_modules_folder.exists() {
                     let yarn_paths: Vec<_> = WalkDir::new(&self.options.input)
                         .into_iter()
                         .filter_map(Result::ok)
                         .filter(|e| e.file_type().is_file())
-                        .filter(|e| {
-                            e.path()
-                                .file_name()
-                                .map(|f| f == "yarn.lock")
-                                .unwrap_or(false)
-                        })
+                        .filter(|e| e.path().file_name().map(|f| f == "yarn.lock").unwrap_or(false))
                         .collect();
 
                     if !yarn_paths.is_empty() {
@@ -262,14 +248,7 @@ impl Test {
             }
         }
 
-        println!(
-            "{}",
-            if result {
-                " OK".green()
-            } else {
-                " FAILED".red()
-            }
-        );
+        println!("{}", if result { " OK".green() } else { " FAILED".red() });
 
         result
     }
@@ -364,10 +343,7 @@ impl Test {
             println!("[Forc Build Results]");
             println!("{}", "-".repeat(Self::LINE_LENGTH));
             if passed > 0 {
-                println!(
-                    "{}",
-                    format!("Total Passed: {} of {}", passed, total).green()
-                );
+                println!("{}", format!("Total Passed: {} of {}", passed, total).green());
             }
             if failed > 0 {
                 println!("{}", format!("Total Failed: {} of {}", failed, total).red());

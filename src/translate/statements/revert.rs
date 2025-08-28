@@ -27,8 +27,7 @@ pub fn translate_revert_statement(
             let external_definition_name = ids_iter.next().unwrap().name.clone();
             let error_variant_name = ids_iter.next().unwrap().name.clone();
 
-            let Some(_) = project
-                .find_module_containing_contract(module.clone(), external_definition_name.as_str())
+            let Some(_) = project.find_module_containing_contract(module.clone(), external_definition_name.as_str())
             else {
                 panic!(
                     "Failed to find module containing contract: {}",
@@ -86,18 +85,10 @@ pub fn translate_revert_statement(
                             format!("{}::{}", error_type_name, error_variant.name).as_str(),
                             None,
                             vec![if parameters.len() == 1 {
-                                let parameter_expression = translate_expression(
-                                    project,
-                                    module.clone(),
-                                    scope.clone(),
-                                    &parameters[0],
-                                )?;
-                                let parameter_expression_type = get_expression_type(
-                                    project,
-                                    module.clone(),
-                                    scope.clone(),
-                                    &parameter_expression,
-                                )?;
+                                let parameter_expression =
+                                    translate_expression(project, module.clone(), scope.clone(), &parameters[0])?;
+                                let parameter_expression_type =
+                                    get_expression_type(project, module.clone(), scope.clone(), &parameter_expression)?;
                                 coerce_expression(
                                     project,
                                     module.clone(),
@@ -108,8 +99,7 @@ pub fn translate_revert_statement(
                                 )
                                 .unwrap()
                             } else {
-                                let sway::TypeName::Tuple { type_names } = &error_variant.type_name
-                                else {
+                                let sway::TypeName::Tuple { type_names } = &error_variant.type_name else {
                                     panic!("Expected type Tuple");
                                 };
                                 sway::Expression::Tuple(
@@ -117,13 +107,9 @@ pub fn translate_revert_statement(
                                         .iter()
                                         .zip(type_names.iter())
                                         .map(|(param, type_name)| {
-                                            let parameter_expression = translate_expression(
-                                                project,
-                                                module.clone(),
-                                                scope.clone(),
-                                                param,
-                                            )
-                                            .unwrap();
+                                            let parameter_expression =
+                                                translate_expression(project, module.clone(), scope.clone(), param)
+                                                    .unwrap();
                                             let parameter_expression_type = get_expression_type(
                                                 project,
                                                 module.clone(),
@@ -151,10 +137,7 @@ pub fn translate_revert_statement(
                 sway::Statement::from(sway::Expression::create_function_call(
                     "revert",
                     None,
-                    vec![sway::Expression::from(sway::Literal::DecInt(
-                        BigUint::zero(),
-                        None,
-                    ))],
+                    vec![sway::Expression::from(sway::Literal::DecInt(BigUint::zero(), None))],
                 )),
             ],
             final_expr: None,
@@ -162,16 +145,11 @@ pub fn translate_revert_statement(
     }
 
     if parameters.is_empty() {
-        return Ok(sway::Statement::from(sway::Expression::from(
-            sway::FunctionCall {
-                function: sway::Expression::create_identifier("revert".into()),
-                generic_parameters: None,
-                parameters: vec![sway::Expression::from(sway::Literal::DecInt(
-                    BigUint::zero(),
-                    None,
-                ))],
-            },
-        )));
+        return Ok(sway::Statement::from(sway::Expression::from(sway::FunctionCall {
+            function: sway::Expression::create_identifier("revert".into()),
+            generic_parameters: None,
+            parameters: vec![sway::Expression::from(sway::Literal::DecInt(BigUint::zero(), None))],
+        })));
     }
 
     match parameters.first().as_ref() {
@@ -190,10 +168,7 @@ pub fn translate_revert_statement(
                     sway::Statement::from(sway::Expression::create_function_call(
                         "revert",
                         None,
-                        vec![sway::Expression::from(sway::Literal::DecInt(
-                            BigUint::zero(),
-                            None,
-                        ))],
+                        vec![sway::Expression::from(sway::Literal::DecInt(BigUint::zero(), None))],
                     )),
                 ],
                 final_expr: None,
@@ -204,19 +179,12 @@ pub fn translate_revert_statement(
             return Ok(sway::Statement::from(sway::Expression::from(sway::Block {
                 statements: vec![
                     // 1. log(reason)
-                    sway::Statement::from(sway::Expression::create_function_call(
-                        "log",
-                        None,
-                        vec![x_expr],
-                    )),
+                    sway::Statement::from(sway::Expression::create_function_call("log", None, vec![x_expr])),
                     // 2. revert(0)
                     sway::Statement::from(sway::Expression::create_function_call(
                         "revert",
                         None,
-                        vec![sway::Expression::from(sway::Literal::DecInt(
-                            BigUint::zero(),
-                            None,
-                        ))],
+                        vec![sway::Expression::from(sway::Literal::DecInt(BigUint::zero(), None))],
                     )),
                 ],
                 final_expr: None,
@@ -225,26 +193,20 @@ pub fn translate_revert_statement(
         _ => {}
     }
 
-    Ok(sway::Statement::from(sway::Expression::create_todo(Some(
-        format!(
-            "revert({}{}{})",
-            if let Some(error_type) = error_type.as_ref() {
-                error_type.to_string()
-            } else {
-                String::new()
-            },
-            if error_type.is_some() && !parameters.is_empty() {
-                ", "
-            } else {
-                ""
-            },
-            parameters
-                .iter()
-                .map(|p| p.to_string())
-                .collect::<Vec<_>>()
-                .join(", "),
-        ),
-    ))))
+    Ok(sway::Statement::from(sway::Expression::create_todo(Some(format!(
+        "revert({}{}{})",
+        if let Some(error_type) = error_type.as_ref() {
+            error_type.to_string()
+        } else {
+            String::new()
+        },
+        if error_type.is_some() && !parameters.is_empty() {
+            ", "
+        } else {
+            ""
+        },
+        parameters.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(", "),
+    )))))
 }
 
 #[inline]
@@ -256,29 +218,16 @@ pub fn translate_revert_named_arguments(
     named_args: &[solidity::NamedArgument],
 ) -> Result<sway::Statement, Error> {
     // TODO: Keep track of the parameter names and order them correctly
-    let error_identifier = path
-        .as_ref()
-        .unwrap()
-        .identifiers
-        .first()
-        .unwrap()
-        .name
-        .clone();
+    let error_identifier = path.as_ref().unwrap().identifiers.first().unwrap().name.clone();
 
-    if module.borrow().errors_enums.iter().any(|e| {
-        e.0.borrow()
-            .variants
-            .iter()
-            .any(|v| v.name == error_identifier)
-    }) {
+    if module
+        .borrow()
+        .errors_enums
+        .iter()
+        .any(|e| e.0.borrow().variants.iter().any(|v| v.name == error_identifier))
+    {
         let error_expressions: Vec<_> = named_args.iter().map(|arg| arg.expr.clone()).collect();
-        return translate_revert_statement(
-            project,
-            module,
-            scope.clone(),
-            path,
-            &error_expressions,
-        );
+        return translate_revert_statement(project, module, scope.clone(), path, &error_expressions);
     }
 
     todo!("translate revert named arguments: {:#?}", path)

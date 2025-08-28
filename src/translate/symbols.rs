@@ -42,17 +42,15 @@ impl TryInto<sway::Expression> for SymbolData {
 
     fn try_into(self) -> Result<sway::Expression, Self::Error> {
         match self {
-            SymbolData::Variable(variable) => Ok(sway::Expression::create_identifier(
-                variable.borrow().new_name.as_str(),
-            )),
-
-            SymbolData::Constant(constant) => {
-                Ok(sway::Expression::create_identifier(constant.name.as_str()))
+            SymbolData::Variable(variable) => {
+                Ok(sway::Expression::create_identifier(variable.borrow().new_name.as_str()))
             }
 
-            SymbolData::ConfigurableField(configurable_field) => Ok(
-                sway::Expression::create_identifier(configurable_field.name.as_str()),
-            ),
+            SymbolData::Constant(constant) => Ok(sway::Expression::create_identifier(constant.name.as_str())),
+
+            SymbolData::ConfigurableField(configurable_field) => {
+                Ok(sway::Expression::create_identifier(configurable_field.name.as_str()))
+            }
 
             SymbolData::StorageField { namespace, field } => {
                 let mut namespace_path = sway::PathExpr {
@@ -97,8 +95,7 @@ fn find_storage_struct_field(
     let storage_struct_name = format!("{contract_name}Storage");
 
     // Find the requested contract and the module containing it
-    let Some((module, contract)) = project.find_module_and_contract(module.clone(), contract_name)
-    else {
+    let Some((module, contract)) = project.find_module_and_contract(module.clone(), contract_name) else {
         return None;
     };
 
@@ -167,10 +164,12 @@ pub fn is_symbol_declared(
             if let Some(contract_name) = contract_name {
                 let event_name = format!("{contract_name}Event");
 
-                if module.borrow().events_enums.iter().any(|e| {
-                    e.0.borrow().name == event_name
-                        && e.0.borrow().variants.iter().any(|v| v.name == *name)
-                }) {
+                if module
+                    .borrow()
+                    .events_enums
+                    .iter()
+                    .any(|e| e.0.borrow().name == event_name && e.0.borrow().variants.iter().any(|v| v.name == *name))
+                {
                     return true;
                 }
             }
@@ -181,10 +180,12 @@ pub fn is_symbol_declared(
             if let Some(contract_name) = contract_name {
                 let error_name = format!("{contract_name}Error");
 
-                if module.borrow().errors_enums.iter().any(|e| {
-                    e.0.borrow().name == error_name
-                        && e.0.borrow().variants.iter().any(|v| v.name == *name)
-                }) {
+                if module
+                    .borrow()
+                    .errors_enums
+                    .iter()
+                    .any(|e| e.0.borrow().name == error_name && e.0.borrow().variants.iter().any(|v| v.name == *name))
+                {
                     return true;
                 }
             }
@@ -203,12 +204,7 @@ pub fn is_symbol_declared(
             }
 
             // Check to see if the variable refers to a constant
-            if module
-                .borrow()
-                .constants
-                .iter()
-                .any(|c| c.old_name == *name)
-            {
+            if module.borrow().constants.iter().any(|c| c.old_name == *name) {
                 return true;
             }
 
@@ -239,11 +235,7 @@ pub fn is_symbol_declared(
                 {
                     (
                         storage_struct_parameter.name.clone(),
-                        storage_struct_parameter
-                            .type_name
-                            .as_ref()
-                            .unwrap()
-                            .to_string(),
+                        storage_struct_parameter.type_name.as_ref().unwrap().to_string(),
                     )
                 } else {
                     let contract_name = scope.borrow().get_contract_name().unwrap();
@@ -254,10 +246,7 @@ pub fn is_symbol_declared(
                     project,
                     module.clone(),
                     scope.clone(),
-                    storage_struct_name
-                        .trim_end_matches("Storage")
-                        .to_string()
-                        .as_str(),
+                    storage_struct_name.trim_end_matches("Storage").to_string().as_str(),
                     name,
                     sway::Expression::create_identifier(parameter_name.as_str()),
                 )
@@ -269,8 +258,7 @@ pub fn is_symbol_declared(
 
             // Check to see if the variable refers to a storage field
             if let Some(contract_name) = scope.borrow().get_contract_name()
-                && let Some(contract) =
-                    project.find_contract(module.clone(), contract_name.as_str())
+                && let Some(contract) = project.find_contract(module.clone(), contract_name.as_str())
             {
                 let storage_namespace_name = contract.borrow().name.to_case(Case::Snake);
                 let storage_field_name = name.clone();
@@ -316,12 +304,7 @@ pub fn is_symbol_declared(
     // If we didn't find it in the current module, try checking imported modules
     for use_expr in module.borrow().uses.iter() {
         if let Some(imported_module) = project.resolve_use(use_expr)
-            && is_symbol_declared(
-                project,
-                imported_module.clone(),
-                scope.clone(),
-                symbol.clone(),
-            )
+            && is_symbol_declared(project, imported_module.clone(), scope.clone(), symbol.clone())
         {
             return true;
         }
@@ -354,10 +337,11 @@ pub fn resolve_symbol(
             if let Some(contract_name) = contract_name {
                 let event_name = format!("{contract_name}Event");
 
-                if let Some(event_enum) = module.borrow().events_enums.iter().find(|e| {
-                    e.0.borrow().name == event_name
-                        && e.0.borrow().variants.iter().any(|v| v.name == *name)
-                }) {
+                if let Some(event_enum) =
+                    module.borrow().events_enums.iter().find(|e| {
+                        e.0.borrow().name == event_name && e.0.borrow().variants.iter().any(|v| v.name == *name)
+                    })
+                {
                     let variant = event_enum
                         .0
                         .borrow()
@@ -368,9 +352,7 @@ pub fn resolve_symbol(
                         .unwrap();
 
                     return Some(SymbolData::EventVariant {
-                        type_name: sway::TypeName::create_identifier(
-                            event_enum.0.borrow().name.as_str(),
-                        ),
+                        type_name: sway::TypeName::create_identifier(event_enum.0.borrow().name.as_str()),
                         variant,
                     });
                 }
@@ -382,10 +364,11 @@ pub fn resolve_symbol(
             if let Some(contract_name) = contract_name {
                 let error_name = format!("{contract_name}Error");
 
-                if let Some(error_enum) = module.borrow().errors_enums.iter().find(|e| {
-                    e.0.borrow().name == error_name
-                        && e.0.borrow().variants.iter().any(|v| v.name == *name)
-                }) {
+                if let Some(error_enum) =
+                    module.borrow().errors_enums.iter().find(|e| {
+                        e.0.borrow().name == error_name && e.0.borrow().variants.iter().any(|v| v.name == *name)
+                    })
+                {
                     let variant = error_enum
                         .0
                         .borrow()
@@ -396,9 +379,7 @@ pub fn resolve_symbol(
                         .unwrap();
 
                     return Some(SymbolData::ErrorVariant {
-                        type_name: sway::TypeName::create_identifier(
-                            error_enum.0.borrow().name.as_str(),
-                        ),
+                        type_name: sway::TypeName::create_identifier(error_enum.0.borrow().name.as_str()),
                         variant,
                     });
                 }
@@ -406,9 +387,7 @@ pub fn resolve_symbol(
         }
 
         Symbol::Struct(name) => {
-            if let Some(struct_definition) =
-                project.find_struct(module.clone(), scope.clone(), name)
-            {
+            if let Some(struct_definition) = project.find_struct(module.clone(), scope.clone(), name) {
                 return Some(SymbolData::Struct(struct_definition.clone()));
             }
         }
@@ -420,12 +399,7 @@ pub fn resolve_symbol(
             }
 
             // Check to see if the variable refers to a constant
-            if let Some(constant) = module
-                .borrow()
-                .constants
-                .iter()
-                .find(|c| c.old_name == *name)
-            {
+            if let Some(constant) = module.borrow().constants.iter().find(|c| c.old_name == *name) {
                 return Some(SymbolData::Constant(constant.clone()));
             }
 
@@ -456,11 +430,7 @@ pub fn resolve_symbol(
                 {
                     (
                         storage_struct_parameter.name.clone(),
-                        storage_struct_parameter
-                            .type_name
-                            .as_ref()
-                            .unwrap()
-                            .to_string(),
+                        storage_struct_parameter.type_name.as_ref().unwrap().to_string(),
                     )
                 } else {
                     let contract_name = scope.borrow().get_contract_name().unwrap();
@@ -471,10 +441,7 @@ pub fn resolve_symbol(
                     project,
                     module.clone(),
                     scope.clone(),
-                    storage_struct_name
-                        .trim_end_matches("Storage")
-                        .to_string()
-                        .as_str(),
+                    storage_struct_name.trim_end_matches("Storage").to_string().as_str(),
                     name,
                     sway::Expression::create_identifier(parameter_name.as_str()),
                 ) {
@@ -484,8 +451,7 @@ pub fn resolve_symbol(
 
             // Check to see if the variable refers to a storage field
             if let Some(contract_name) = scope.borrow().get_contract_name()
-                && let Some(contract) =
-                    project.find_contract(module.clone(), contract_name.as_str())
+                && let Some(contract) = project.find_contract(module.clone(), contract_name.as_str())
             {
                 let storage_namespace_name = contract.borrow().name.to_case(Case::Snake);
                 let storage_field_name = name.clone();
@@ -525,9 +491,7 @@ pub fn resolve_symbol(
                 Some(scope.clone()),
             )));
 
-            if let Some(result) =
-                resolve_symbol(project, module.clone(), scope.clone(), symbol.clone())
-            {
+            if let Some(result) = resolve_symbol(project, module.clone(), scope.clone(), symbol.clone()) {
                 return Some(result);
             }
         }
@@ -536,12 +500,7 @@ pub fn resolve_symbol(
     // If we didn't find it in the current module, try checking imported modules
     for use_expr in module.borrow().uses.iter() {
         if let Some(imported_module) = project.resolve_use(use_expr)
-            && let Some(symbol) = resolve_symbol(
-                project,
-                imported_module.clone(),
-                scope.clone(),
-                symbol.clone(),
-            )
+            && let Some(symbol) = resolve_symbol(project, imported_module.clone(), scope.clone(), symbol.clone())
         {
             return Some(symbol);
         }
@@ -586,9 +545,7 @@ pub fn resolve_abi_function_call(
                     new_name: new_name.clone(),
                     generic_parameters: generic_parameters.clone(),
                     parameters: parameters.clone(),
-                    storage_struct_parameter: storage_struct_parameter
-                        .as_ref()
-                        .map(|x| x.as_ref().clone()),
+                    storage_struct_parameter: storage_struct_parameter.as_ref().map(|x| x.as_ref().clone()),
                     return_type: return_type.as_ref().map(|x| x.as_ref().clone()),
                     body: None,
                 }
@@ -636,10 +593,8 @@ pub fn resolve_abi_function_call(
                     })
                     .unwrap();
 
-                let parameter =
-                    translate_expression(project, module.clone(), scope.clone(), &arg.expr)?;
-                let parameter_type =
-                    get_expression_type(project, module.clone(), scope.clone(), &parameter)?;
+                let parameter = translate_expression(project, module.clone(), scope.clone(), &arg.expr)?;
+                let parameter_type = get_expression_type(project, module.clone(), scope.clone(), &parameter)?;
 
                 parameters.push(parameter);
                 parameter_types.push(parameter_type);
@@ -667,8 +622,7 @@ pub fn resolve_abi_function_call(
         }
 
         for (i, value_type_name) in parameter_types.iter().enumerate() {
-            let Some(parameter_type_name) = function_parameters.entries[i].type_name.as_ref()
-            else {
+            let Some(parameter_type_name) = function_parameters.entries[i].type_name.as_ref() else {
                 continue;
             };
 
@@ -696,8 +650,7 @@ pub fn resolve_abi_function_call(
             let contract_storage_struct_type =
                 sway::TypeName::create_identifier(format!("{}Storage", abi.name).as_str());
 
-            let mut storage_struct_expression =
-                sway::Expression::create_identifier("storage_struct");
+            let mut storage_struct_expression = sway::Expression::create_identifier("storage_struct");
 
             if coerce {
                 let Some(expr) = coerce_expression(
@@ -712,9 +665,7 @@ pub fn resolve_abi_function_call(
                 };
 
                 storage_struct_expression = expr;
-            } else if !contract_storage_struct_type
-                .is_compatible_with(&function_storage_struct_type)
-            {
+            } else if !contract_storage_struct_type.is_compatible_with(&function_storage_struct_type) {
                 return false;
             }
 
@@ -883,11 +834,9 @@ pub fn resolve_function_call(
                     })
                     .unwrap();
 
-                let mut value =
-                    translate_expression(project, module.clone(), scope.clone(), &arg.expr)?;
+                let mut value = translate_expression(project, module.clone(), scope.clone(), &arg.expr)?;
 
-                let mut value_type =
-                    get_expression_type(project, module.clone(), scope.clone(), &value)?;
+                let mut value_type = get_expression_type(project, module.clone(), scope.clone(), &value)?;
 
                 if let Some(parameter_type_name) = parameter.type_name.as_ref() {
                     value = coerce_expression(
@@ -931,8 +880,7 @@ pub fn resolve_function_call(
         }
 
         for (i, value_type_name) in parameter_types.iter().enumerate() {
-            let Some(parameter_type_name) = function_parameters.entries[i].type_name.as_ref()
-            else {
+            let Some(parameter_type_name) = function_parameters.entries[i].type_name.as_ref() else {
                 continue;
             };
 
@@ -1060,11 +1008,7 @@ pub fn resolve_function_call(
         unreachable!()
     };
 
-    let function_storage_access = module
-        .borrow_mut()
-        .function_storage_accesses
-        .get(new_name)
-        .cloned();
+    let function_storage_access = module.borrow_mut().function_storage_accesses.get(new_name).cloned();
 
     let current_function_name = scope.borrow().get_function_name();
 
@@ -1109,9 +1053,7 @@ pub fn resolve_function_call(
                 &mut *project_cell.borrow_mut(),
                 module.clone(),
                 scope.clone(),
-                &sway::Expression::create_identifier(
-                    current_storage_struct_parameter.name.as_str(),
-                ),
+                &sway::Expression::create_identifier(current_storage_struct_parameter.name.as_str()),
                 current_storage_struct_parameter.type_name.as_ref().unwrap(),
                 function_struct_parameter.type_name.as_ref().unwrap(),
             )
@@ -1119,8 +1061,7 @@ pub fn resolve_function_call(
         );
     }
 
-    let result =
-        sway::Expression::create_function_call(new_name, None, parameters_cell.borrow().clone());
+    let result = sway::Expression::create_function_call(new_name, None, parameters_cell.borrow().clone());
 
     Ok(Some(result))
 }
@@ -1158,9 +1099,7 @@ pub fn resolve_modifier(
 
         if let Some(f) = modifiers.iter().find(|f| {
             let sway::TypeName::Function {
-                old_name,
-                parameters,
-                ..
+                old_name, parameters, ..
             } = &f.signature
             else {
                 unreachable!()
@@ -1205,11 +1144,9 @@ pub fn resolve_modifier(
                         })
                         .unwrap();
 
-                    let mut value =
-                        translate_expression(project, module.clone(), scope.clone(), &arg.expr)?;
+                    let mut value = translate_expression(project, module.clone(), scope.clone(), &arg.expr)?;
 
-                    let mut value_type =
-                        get_expression_type(project, module.clone(), scope.clone(), &value)?;
+                    let mut value_type = get_expression_type(project, module.clone(), scope.clone(), &value)?;
 
                     if let Some(parameter_type_name) = parameter.type_name.as_ref() {
                         value = coerce_expression(
@@ -1236,66 +1173,60 @@ pub fn resolve_modifier(
 
     let parameters_cell = Rc::new(RefCell::new(parameters));
 
-    let mut check_parameters = |modifier: Rc<RefCell<ir::Modifier>>,
-                                storage_struct_parameter: Option<&sway::Parameter>|
-     -> bool {
-        let modifier_parameters = modifier.borrow().parameters.clone();
+    let mut check_parameters =
+        |modifier: Rc<RefCell<ir::Modifier>>, storage_struct_parameter: Option<&sway::Parameter>| -> bool {
+            let modifier_parameters = modifier.borrow().parameters.clone();
 
-        let mut parameters = parameters_cell.borrow_mut();
+            let mut parameters = parameters_cell.borrow_mut();
 
-        let modifier_parameter_count = modifier_parameters.entries.len()
-            + if storage_struct_parameter.is_some() {
-                1
-            } else {
-                0
-            };
+            let modifier_parameter_count =
+                modifier_parameters.entries.len() + if storage_struct_parameter.is_some() { 1 } else { 0 };
 
-        // Ensure the supplied modifier call args match the modifier's parameters
-        if parameters.len() != modifier_parameter_count {
-            return false;
-        }
-
-        if let Some(storage_struct_parameter) = storage_struct_parameter {
-            if !storage_struct_parameter
-                .type_name
-                .as_ref()
-                .unwrap()
-                .is_compatible_with(parameter_types.last().unwrap())
-            {
+            // Ensure the supplied modifier call args match the modifier's parameters
+            if parameters.len() != modifier_parameter_count {
                 return false;
             }
-        }
 
-        for (i, parameter) in modifier_parameters.entries.iter().enumerate() {
-            let Some(parameter_type_name) = parameter.type_name.as_ref() else {
-                continue;
-            };
+            if let Some(storage_struct_parameter) = storage_struct_parameter {
+                if !storage_struct_parameter
+                    .type_name
+                    .as_ref()
+                    .unwrap()
+                    .is_compatible_with(parameter_types.last().unwrap())
+                {
+                    return false;
+                }
+            }
 
-            let value_type_name = &parameter_types[i];
+            for (i, parameter) in modifier_parameters.entries.iter().enumerate() {
+                let Some(parameter_type_name) = parameter.type_name.as_ref() else {
+                    continue;
+                };
 
-            let Some(expr) = coerce_expression(
-                project,
-                module.clone(),
-                scope.clone(),
-                &parameters[i],
-                value_type_name,
-                parameter_type_name,
-            ) else {
-                return false;
-            };
+                let value_type_name = &parameter_types[i];
 
-            parameters[i] = expr;
-        }
+                let Some(expr) = coerce_expression(
+                    project,
+                    module.clone(),
+                    scope.clone(),
+                    &parameters[i],
+                    value_type_name,
+                    parameter_type_name,
+                ) else {
+                    return false;
+                };
 
-        true
-    };
+                parameters[i] = expr;
+            }
+
+            true
+        };
 
     // Check to see if the modifier is defined in the current module
     if modifier.is_none()
         && let Some(f) = module.borrow().modifiers.iter().find(|modifier| {
             let sway::TypeName::Function {
-                new_name: f_new_name,
-                ..
+                new_name: f_new_name, ..
             } = &modifier.signature
             else {
                 unreachable!()
@@ -1334,8 +1265,7 @@ pub fn resolve_modifier(
         // If we didn't find a modifier, check inherited modifiers
         let contract_name = scope.borrow().get_contract_name();
         if let Some(contract_name) = contract_name
-            && let Some((module, contract)) =
-                project.find_module_and_contract(module.clone(), &contract_name)
+            && let Some((module, contract)) = project.find_module_and_contract(module.clone(), &contract_name)
         {
             let storage_struct_parameter = {
                 let current_function_name = scope.borrow().get_function_name().unwrap();
@@ -1364,8 +1294,7 @@ pub fn resolve_modifier(
             };
 
             for contract_name in contract.borrow().abi.inherits.iter() {
-                let Some(module) = project
-                    .find_module_containing_contract(module.clone(), &contract_name.to_string())
+                let Some(module) = project.find_module_containing_contract(module.clone(), &contract_name.to_string())
                 else {
                     panic!("Failed to find module with contract `{contract_name}`")
                 };
@@ -1446,10 +1375,7 @@ pub fn resolve_struct_constructor(
     mut parameters: Vec<sway::Expression>,
     mut parameter_types: Vec<sway::TypeName>,
 ) -> Result<Option<sway::Expression>, Error> {
-    let Some(struct_definition) = structs
-        .iter()
-        .find(|s| s.signature.to_string() == struct_name)
-    else {
+    let Some(struct_definition) = structs.iter().find(|s| s.signature.to_string() == struct_name) else {
         return Ok(None);
     };
 
@@ -1484,11 +1410,9 @@ pub fn resolve_struct_constructor(
                 })
                 .unwrap();
 
-            let parameter =
-                translate_expression(project, module.clone(), scope.clone(), &arg.expr)?;
+            let parameter = translate_expression(project, module.clone(), scope.clone(), &arg.expr)?;
 
-            let parameter_type =
-                get_expression_type(project, module.clone(), scope.clone(), &parameter)?;
+            let parameter_type = get_expression_type(project, module.clone(), scope.clone(), &parameter)?;
 
             parameters.push(parameter);
             parameter_types.push(parameter_type);
@@ -1496,10 +1420,7 @@ pub fn resolve_struct_constructor(
     }
 
     // Attempt to coerce each parameter value to the struct's field type
-    for ((parameter, parameter_type), field) in parameters
-        .iter_mut()
-        .zip(parameter_types.iter_mut())
-        .zip(fields.iter())
+    for ((parameter, parameter_type), field) in parameters.iter_mut().zip(parameter_types.iter_mut()).zip(fields.iter())
     {
         match coerce_expression(
             project,

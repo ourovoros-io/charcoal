@@ -34,9 +34,7 @@ impl Args {
         if let Some(ref mut output_directory) = self.output_directory {
             // Check if name is provided when output directory is specified
             if self.name.is_none() {
-                return Err(Error::InvalidInput(
-                    "No output project name provided".to_string(),
-                ));
+                return Err(Error::InvalidInput("No output project name provided".to_string()));
             }
 
             // Create directory if it doesn't exist

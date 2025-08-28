@@ -108,30 +108,26 @@ fn run_test(path: &std::path::Path, target_repo: Option<&str>) {
         clone_repo(path, target_repo);
     }
 
-    let package_json_path =
-        std::path::PathBuf::from(format!("{}/package.json", path.to_string_lossy()));
+    let package_json_path = std::path::PathBuf::from(format!("{}/package.json", path.to_string_lossy()));
     let yarn_paths: Vec<_> = walkdir::WalkDir::new(path)
         .into_iter()
         .filter_map(Result::ok)
         .filter(|e| e.file_type().is_file())
-        .filter(|e| {
-            e.path()
-                .file_name()
-                .map(|f| f == "yarn.lock")
-                .unwrap_or(false)
-        })
+        .filter(|e| e.path().file_name().map(|f| f == "yarn.lock").unwrap_or(false))
         .collect();
 
     println!("{}", "-".repeat(LINE_LENGTH).red());
     println!("{}", "[Installing dependencies]".red());
     println!("{}", "-".repeat(LINE_LENGTH).red());
 
-    let node_modules_folder =
-        std::path::PathBuf::from(format!("{}/node_modules", path.to_string_lossy()));
+    let node_modules_folder = std::path::PathBuf::from(format!("{}/node_modules", path.to_string_lossy()));
 
     if node_modules_folder.exists() {
         println!("{}", "-".repeat(LINE_LENGTH).yellow());
-        println!("{}", "The dependencies are already installed, skipping the dependencies installation process".yellow());
+        println!(
+            "{}",
+            "The dependencies are already installed, skipping the dependencies installation process".yellow()
+        );
         println!("{}", "-".repeat(LINE_LENGTH).yellow());
     } else {
         if !yarn_paths.is_empty() {
@@ -159,24 +155,14 @@ fn run_test(path: &std::path::Path, target_repo: Option<&str>) {
         path
     };
 
-    let build_results = build(
-        path.components()
-            .last()
-            .unwrap()
-            .as_os_str()
-            .to_str()
-            .unwrap(),
-    );
+    let build_results = build(path.components().last().unwrap().as_os_str().to_str().unwrap());
     print_results(None, "[Charcoal Analysis Results]");
     print_results(Some(build_results), "[Forc Build Results]");
 }
 
 fn clone_repo(path: &std::path::Path, target_repo: &str) {
     println!("{}", "-".repeat(LINE_LENGTH).cyan());
-    println!(
-        "{}",
-        format!("Cloning Repository      -> {}", target_repo).cyan()
-    );
+    println!("{}", format!("Cloning Repository      -> {}", target_repo).cyan());
     println!("{}", "-".repeat(LINE_LENGTH).cyan());
 
     if !path.exists() {
@@ -193,11 +179,7 @@ fn clone_repo(path: &std::path::Path, target_repo: &str) {
         println!("{}", "-".repeat(LINE_LENGTH).yellow());
         println!(
             "{}",
-            format!(
-                "The directory {:?} already exists, skipping the cloning process",
-                path
-            )
-            .yellow()
+            format!("The directory {:?} already exists, skipping the cloning process", path).yellow()
         );
         println!("{}", "-".repeat(LINE_LENGTH).yellow());
     }
@@ -227,21 +209,13 @@ fn clone_repo(path: &std::path::Path, target_repo: &str) {
 
 fn translate(path: &std::path::Path) {
     println!("{}", "-".repeat(LINE_LENGTH).cyan());
-    println!(
-        "{}",
-        format!("[Running Charcoal On    -> {}]", path.display()).cyan()
-    );
+    println!("{}", format!("[Running Charcoal On    -> {}]", path.display()).cyan());
 
     let output_name = if path.ends_with("contracts") {
         let p = path.parent().unwrap();
         p.components().last().unwrap().as_os_str().to_str().unwrap()
     } else {
-        path.components()
-            .last()
-            .unwrap()
-            .as_os_str()
-            .to_str()
-            .unwrap()
+        path.components().last().unwrap().as_os_str().to_str().unwrap()
     };
 
     println!("{}", "-".repeat(LINE_LENGTH).cyan());
@@ -260,16 +234,7 @@ fn translate(path: &std::path::Path) {
     let path_string = path.display().to_string();
 
     let output = std::process::Command::new("cargo")
-        .args(&[
-            "run",
-            "--",
-            "-i",
-            &path_string,
-            "-o",
-            output_folder,
-            "-n",
-            output_name,
-        ])
+        .args(&["run", "--", "-i", &path_string, "-o", output_folder, "-n", output_name])
         .output()
         .expect("Failed to execute command");
 
@@ -279,11 +244,7 @@ fn translate(path: &std::path::Path) {
         println!("{}", format!("Failed      : {}", path.display()).red());
         println!(
             "{}",
-            format!(
-                "Output      : {}",
-                std::str::from_utf8(&output.stderr).unwrap()
-            )
-            .red()
+            format!("Output      : {}", std::str::from_utf8(&output.stderr).unwrap()).red()
         );
         std::process::exit(1);
     }
@@ -370,10 +331,7 @@ fn print_results(results: Option<(usize, usize, f32)>, title: &str) {
     if let Some(results) = results {
         println!("{}", format!("[Total      : {}]", results.0).blue());
         println!("{}", format!("[Passed     : {}]", results.1).green());
-        println!(
-            "{}",
-            format!("[Failed     : {}]", results.0 - results.1).red()
-        );
+        println!("{}", format!("[Failed     : {}]", results.0 - results.1).red());
         println!("{}", "-".repeat(LINE_LENGTH).magenta());
         println!("{}", format!("[Coverage   : {:.2}%]", results.2).magenta());
         println!("{}", "-".repeat(LINE_LENGTH).magenta());

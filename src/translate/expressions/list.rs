@@ -15,10 +15,7 @@ pub fn translate_list_expression(
     //
 
     // Ensure all elements of the list have no name (value-only tuple)
-    if !parameters
-        .iter()
-        .all(|(_, p)| p.as_ref().unwrap().name.is_none())
-    {
+    if !parameters.iter().all(|(_, p)| p.as_ref().unwrap().name.is_none()) {
         unimplemented!("non-value list expression")
     }
 
@@ -26,14 +23,7 @@ pub fn translate_list_expression(
     Ok(sway::Expression::Tuple(
         parameters
             .iter()
-            .map(|(_, p)| {
-                translate_expression(
-                    project,
-                    module.clone(),
-                    scope.clone(),
-                    &p.as_ref().unwrap().ty,
-                )
-            })
+            .map(|(_, p)| translate_expression(project, module.clone(), scope.clone(), &p.as_ref().unwrap().ty))
             .collect::<Result<Vec<_>, _>>()?,
     ))
 }

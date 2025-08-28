@@ -67,12 +67,7 @@ pub fn evaluate_expression(
                 todo!("evaluate non-identifier path expression: {path_expr} - {path_expr:#?}")
             };
 
-            if let Some(constant) = module
-                .borrow()
-                .constants
-                .iter()
-                .find(|c| c.name == identifier)
-            {
+            if let Some(constant) = module.borrow().constants.iter().find(|c| c.name == identifier) {
                 assert!(type_name.is_compatible_with(&constant.type_name));
                 return constant.value.as_ref().unwrap().clone();
             }
@@ -103,15 +98,7 @@ pub fn evaluate_expression(
                                 parameters: function_call
                                     .parameters
                                     .iter()
-                                    .map(|p| {
-                                        evaluate_expression(
-                                            project,
-                                            module.clone(),
-                                            scope.clone(),
-                                            type_name,
-                                            p,
-                                        )
-                                    })
+                                    .map(|p| evaluate_expression(project, module.clone(), scope.clone(), type_name, p))
                                     .collect(),
                             });
                         }
@@ -125,9 +112,7 @@ pub fn evaluate_expression(
                             return expression.clone();
                         }
 
-                        "keccak256" | "std::hash::keccak256"
-                            if function_call.parameters.len() == 1 =>
-                        {
+                        "keccak256" | "std::hash::keccak256" if function_call.parameters.len() == 1 => {
                             match &function_call.parameters[0] {
                                 sway::Expression::Literal(sway::Literal::String(s)) => {
                                     use sha3::Digest;
@@ -135,24 +120,15 @@ pub fn evaluate_expression(
                                     let mut hasher = sha3::Keccak256::new();
                                     hasher.update(s.as_bytes());
 
-                                    let value = BigUint::from_str_radix(
-                                        hex::encode(hasher.finalize()).as_str(),
-                                        16,
-                                    )
-                                    .unwrap();
+                                    let value =
+                                        BigUint::from_str_radix(hex::encode(hasher.finalize()).as_str(), 16).unwrap();
 
                                     return sway::Expression::Commented(
                                         format!("{}", sway::TabbedDisplayer(expression)),
                                         Box::new(if value.is_zero() {
-                                            sway::Expression::create_function_call(
-                                                "b256::zero",
-                                                None,
-                                                vec![],
-                                            )
+                                            sway::Expression::create_function_call("b256::zero", None, vec![])
                                         } else {
-                                            sway::Expression::from(sway::Literal::HexInt(
-                                                value, None,
-                                            ))
+                                            sway::Expression::from(sway::Literal::HexInt(value, None))
                                         }),
                                     );
                                 }
@@ -161,8 +137,8 @@ pub fn evaluate_expression(
                             }
                         }
 
-                        "I8::from_uint" | "I16::from_uint" | "I32::from_uint"
-                        | "I64::from_uint" | "I128::from_uint" | "I256::from_uint" => {
+                        "I8::from_uint" | "I16::from_uint" | "I32::from_uint" | "I64::from_uint"
+                        | "I128::from_uint" | "I256::from_uint" => {
                             return evaluate_expression(
                                 project,
                                 module,
@@ -179,33 +155,19 @@ pub fn evaluate_expression(
                                 parameters: function_call
                                     .parameters
                                     .iter()
-                                    .map(|p| {
-                                        evaluate_expression(
-                                            project,
-                                            module.clone(),
-                                            scope.clone(),
-                                            type_name,
-                                            p,
-                                        )
-                                    })
+                                    .map(|p| evaluate_expression(project, module.clone(), scope.clone(), type_name, p))
                                     .collect(),
                             });
                         }
 
                         "u64::max" => {
                             assert!(function_call.parameters.is_empty());
-                            return sway::Expression::from(sway::Literal::DecInt(
-                                u64::MAX.into(),
-                                None,
-                            ));
+                            return sway::Expression::from(sway::Literal::DecInt(u64::MAX.into(), None));
                         }
 
                         "u64::min" => {
                             assert!(function_call.parameters.is_empty());
-                            return sway::Expression::from(sway::Literal::DecInt(
-                                u64::MIN.into(),
-                                None,
-                            ));
+                            return sway::Expression::from(sway::Literal::DecInt(u64::MIN.into(), None));
                         }
 
                         "u256::from_be_bytes" => {
@@ -234,10 +196,7 @@ pub fn evaluate_expression(
                 match identifier {
                     "todo!" => expression.clone(),
 
-                    "abi" => sway::Expression::create_todo(Some(format!(
-                        "{}",
-                        sway::TabbedDisplayer(expression)
-                    ))),
+                    "abi" => sway::Expression::create_todo(Some(format!("{}", sway::TabbedDisplayer(expression)))),
 
                     "__to_str_array" => expression.clone(),
 
@@ -247,8 +206,7 @@ pub fn evaluate_expression(
 
             sway::Expression::MemberAccess(member_access) => match &member_access.expression {
                 sway::Expression::Literal(
-                    sway::Literal::DecInt(lhs_value, lhs_suffix)
-                    | sway::Literal::HexInt(lhs_value, lhs_suffix),
+                    sway::Literal::DecInt(lhs_value, lhs_suffix) | sway::Literal::HexInt(lhs_value, lhs_suffix),
                 ) => match member_access.member.as_str() {
                     "as_u256" if function_call.parameters.is_empty() => expression.clone(),
 
@@ -274,8 +232,7 @@ pub fn evaluate_expression(
                         );
 
                         let sway::Expression::Literal(
-                            sway::Literal::DecInt(rhs_value, _)
-                            | sway::Literal::HexInt(rhs_value, _),
+                            sway::Literal::DecInt(rhs_value, _) | sway::Literal::HexInt(rhs_value, _),
                         ) = rhs
                         else {
                             todo!("integer pow rhs expression: {rhs:#?}")
@@ -297,10 +254,7 @@ pub fn evaluate_expression(
                         )
                     }
 
-                    member => todo!(
-                        "translate {member} member call: {}",
-                        sway::TabbedDisplayer(expression)
-                    ),
+                    member => todo!("translate {member} member call: {}", sway::TabbedDisplayer(expression)),
                 },
 
                 _ => {
@@ -366,24 +320,15 @@ pub fn translate_expression(
         | solidity::Expression::HexNumberLiteral(_, _, _)
         | solidity::Expression::AddressLiteral(_, _)
         | solidity::Expression::HexLiteral(_)
-        | solidity::Expression::StringLiteral(_) => {
-            translate_literal_expression(project, expression)
-        }
+        | solidity::Expression::StringLiteral(_) => translate_literal_expression(project, expression),
 
-        solidity::Expression::Type(_, _) => {
-            translate_type_expression(project, module, scope.clone(), expression)
-        }
+        solidity::Expression::Type(_, _) => translate_type_expression(project, module, scope.clone(), expression),
 
-        solidity::Expression::Variable(_) => {
-            translate_variable_expression(project, module, scope.clone(), expression)
-        }
+        solidity::Expression::Variable(_) => translate_variable_expression(project, module, scope.clone(), expression),
 
-        solidity::Expression::ArrayLiteral(_, expressions) => translate_array_literal_expression(
-            project,
-            module,
-            scope.clone(),
-            expressions.as_slice(),
-        ),
+        solidity::Expression::ArrayLiteral(_, expressions) => {
+            translate_array_literal_expression(project, module, scope.clone(), expressions.as_slice())
+        }
 
         solidity::Expression::ArraySubscript(_, _, _) => {
             translate_array_subscript_expression(project, module, scope.clone(), expression)
@@ -402,65 +347,34 @@ pub fn translate_expression(
         }
 
         solidity::Expression::MemberAccess(_, container, member) => {
-            translate_member_access_expression(
-                project,
-                module,
-                scope.clone(),
-                expression,
-                container,
-                member,
-            )
+            translate_member_access_expression(project, module, scope.clone(), expression, container, member)
         }
 
         solidity::Expression::FunctionCall(_, function, arguments) => {
-            translate_function_call_expression(
-                project,
-                module,
-                scope.clone(),
-                expression,
-                function,
-                None,
-                arguments,
-            )
+            translate_function_call_expression(project, module, scope.clone(), expression, function, None, arguments)
         }
 
         solidity::Expression::FunctionCallBlock(_, function, block) => {
-            translate_function_call_block_expression(
-                project,
-                module,
-                scope.clone(),
-                function,
-                block,
-            )
+            translate_function_call_block_expression(project, module, scope.clone(), function, block)
         }
 
-        solidity::Expression::NamedFunctionCall(_, function, named_arguments) => {
-            translate_function_call_expression(
-                project,
-                module,
-                scope.clone(),
-                expression,
-                function,
-                Some(named_arguments),
-                &[],
-            )
-        }
+        solidity::Expression::NamedFunctionCall(_, function, named_arguments) => translate_function_call_expression(
+            project,
+            module,
+            scope.clone(),
+            expression,
+            function,
+            Some(named_arguments),
+            &[],
+        ),
 
-        solidity::Expression::Not(_, x) => {
-            translate_unary_expression(project, module, scope.clone(), "!", x)
-        }
+        solidity::Expression::Not(_, x) => translate_unary_expression(project, module, scope.clone(), "!", x),
 
-        solidity::Expression::BitwiseNot(_, x) => {
-            translate_unary_expression(project, module, scope.clone(), "!", x)
-        }
+        solidity::Expression::BitwiseNot(_, x) => translate_unary_expression(project, module, scope.clone(), "!", x),
 
-        solidity::Expression::UnaryPlus(_, x) => {
-            translate_expression(project, module, scope.clone(), x)
-        }
+        solidity::Expression::UnaryPlus(_, x) => translate_expression(project, module, scope.clone(), x),
 
-        solidity::Expression::Negate(_, x) => {
-            translate_unary_expression(project, module, scope.clone(), "-", x)
-        }
+        solidity::Expression::Negate(_, x) => translate_unary_expression(project, module, scope.clone(), "-", x),
 
         solidity::Expression::Power(_, lhs, rhs) => {
             translate_power_expression(project, module, scope.clone(), lhs, rhs)
@@ -539,125 +453,58 @@ pub fn translate_expression(
         }
 
         solidity::Expression::ConditionalOperator(_, condition, then_value, else_value) => {
-            translate_conditional_operator_expression(
-                project,
-                module,
-                scope.clone(),
-                condition,
-                then_value,
-                else_value,
-            )
+            translate_conditional_operator_expression(project, module, scope.clone(), condition, then_value, else_value)
         }
 
-        solidity::Expression::Assign(_, lhs, rhs) => translate_assignment_expression(
-            project,
-            module,
-            scope.clone(),
-            "=",
-            lhs.as_ref(),
-            rhs.as_ref(),
-        ),
+        solidity::Expression::Assign(_, lhs, rhs) => {
+            translate_assignment_expression(project, module, scope.clone(), "=", lhs.as_ref(), rhs.as_ref())
+        }
 
-        solidity::Expression::AssignOr(_, lhs, rhs) => translate_assignment_expression(
-            project,
-            module,
-            scope.clone(),
-            "|=",
-            lhs.as_ref(),
-            rhs.as_ref(),
-        ),
+        solidity::Expression::AssignOr(_, lhs, rhs) => {
+            translate_assignment_expression(project, module, scope.clone(), "|=", lhs.as_ref(), rhs.as_ref())
+        }
 
-        solidity::Expression::AssignAnd(_, lhs, rhs) => translate_assignment_expression(
-            project,
-            module,
-            scope.clone(),
-            "&=",
-            lhs.as_ref(),
-            rhs.as_ref(),
-        ),
+        solidity::Expression::AssignAnd(_, lhs, rhs) => {
+            translate_assignment_expression(project, module, scope.clone(), "&=", lhs.as_ref(), rhs.as_ref())
+        }
 
-        solidity::Expression::AssignXor(_, lhs, rhs) => translate_assignment_expression(
-            project,
-            module,
-            scope.clone(),
-            "^=",
-            lhs.as_ref(),
-            rhs.as_ref(),
-        ),
+        solidity::Expression::AssignXor(_, lhs, rhs) => {
+            translate_assignment_expression(project, module, scope.clone(), "^=", lhs.as_ref(), rhs.as_ref())
+        }
 
-        solidity::Expression::AssignShiftLeft(_, lhs, rhs) => translate_assignment_expression(
-            project,
-            module,
-            scope.clone(),
-            "<<=",
-            lhs.as_ref(),
-            rhs.as_ref(),
-        ),
+        solidity::Expression::AssignShiftLeft(_, lhs, rhs) => {
+            translate_assignment_expression(project, module, scope.clone(), "<<=", lhs.as_ref(), rhs.as_ref())
+        }
 
-        solidity::Expression::AssignShiftRight(_, lhs, rhs) => translate_assignment_expression(
-            project,
-            module,
-            scope.clone(),
-            ">>=",
-            lhs.as_ref(),
-            rhs.as_ref(),
-        ),
+        solidity::Expression::AssignShiftRight(_, lhs, rhs) => {
+            translate_assignment_expression(project, module, scope.clone(), ">>=", lhs.as_ref(), rhs.as_ref())
+        }
 
-        solidity::Expression::AssignAdd(_, lhs, rhs) => translate_assignment_expression(
-            project,
-            module,
-            scope.clone(),
-            "+=",
-            lhs.as_ref(),
-            rhs.as_ref(),
-        ),
+        solidity::Expression::AssignAdd(_, lhs, rhs) => {
+            translate_assignment_expression(project, module, scope.clone(), "+=", lhs.as_ref(), rhs.as_ref())
+        }
 
-        solidity::Expression::AssignSubtract(_, lhs, rhs) => translate_assignment_expression(
-            project,
-            module,
-            scope.clone(),
-            "-=",
-            lhs.as_ref(),
-            rhs.as_ref(),
-        ),
+        solidity::Expression::AssignSubtract(_, lhs, rhs) => {
+            translate_assignment_expression(project, module, scope.clone(), "-=", lhs.as_ref(), rhs.as_ref())
+        }
 
-        solidity::Expression::AssignMultiply(_, lhs, rhs) => translate_assignment_expression(
-            project,
-            module,
-            scope.clone(),
-            "*=",
-            lhs.as_ref(),
-            rhs.as_ref(),
-        ),
+        solidity::Expression::AssignMultiply(_, lhs, rhs) => {
+            translate_assignment_expression(project, module, scope.clone(), "*=", lhs.as_ref(), rhs.as_ref())
+        }
 
-        solidity::Expression::AssignDivide(_, lhs, rhs) => translate_assignment_expression(
-            project,
-            module,
-            scope.clone(),
-            "/=",
-            lhs.as_ref(),
-            rhs.as_ref(),
-        ),
+        solidity::Expression::AssignDivide(_, lhs, rhs) => {
+            translate_assignment_expression(project, module, scope.clone(), "/=", lhs.as_ref(), rhs.as_ref())
+        }
 
-        solidity::Expression::AssignModulo(_, lhs, rhs) => translate_assignment_expression(
-            project,
-            module,
-            scope.clone(),
-            "%=",
-            lhs.as_ref(),
-            rhs.as_ref(),
-        ),
+        solidity::Expression::AssignModulo(_, lhs, rhs) => {
+            translate_assignment_expression(project, module, scope.clone(), "%=", lhs.as_ref(), rhs.as_ref())
+        }
 
         solidity::Expression::PreIncrement(_, _)
         | solidity::Expression::PostIncrement(_, _)
         | solidity::Expression::PreDecrement(_, _)
         | solidity::Expression::PostDecrement(_, _) => {
-            translate_pre_or_post_operator_value_expression(
-                project,
-                module,
-                scope.clone(),
-                expression,
-            )
+            translate_pre_or_post_operator_value_expression(project, module, scope.clone(), expression)
         }
 
         solidity::Expression::New(_, expression) => {
@@ -678,18 +525,16 @@ pub fn create_value_expression(
     value: Option<&sway::Expression>,
 ) -> sway::Expression {
     if let Some(value) = value {
-        let value_type =
-            get_expression_type(project, module.clone(), scope.clone(), value).unwrap();
+        let value_type = get_expression_type(project, module.clone(), scope.clone(), value).unwrap();
 
-        let Some(result) = coerce_expression(
-            project,
-            module.clone(),
-            scope.clone(),
-            value,
-            &value_type,
-            type_name,
-        ) else {
-            panic!("Failed to coerce from `{}` to `{}`: `{}`", value_type, type_name, sway::TabbedDisplayer(value));
+        let Some(result) = coerce_expression(project, module.clone(), scope.clone(), value, &value_type, type_name)
+        else {
+            panic!(
+                "Failed to coerce from `{}` to `{}`: `{}`",
+                value_type,
+                type_name,
+                sway::TabbedDisplayer(value)
+            );
         };
 
         return result;
@@ -722,18 +567,9 @@ pub fn create_value_expression(
                     )),
                 };
 
-                let value_type =
-                    get_expression_type(project, module.clone(), scope.clone(), &value).unwrap();
+                let value_type = get_expression_type(project, module.clone(), scope.clone(), &value).unwrap();
 
-                coerce_expression(
-                    project,
-                    module.clone(),
-                    scope.clone(),
-                    &value,
-                    &value_type,
-                    type_name,
-                )
-                .unwrap()
+                coerce_expression(project, module.clone(), scope.clone(), &value, &value_type, type_name).unwrap()
             }
 
             ("u8" | "u16" | "u32" | "u64" | "u256", None) => {
@@ -742,18 +578,13 @@ pub fn create_value_expression(
 
             ("raw_ptr", None) => {
                 // Ensure `std::alloc::alloc_bytes` is imported
-                module
-                    .borrow_mut()
-                    .ensure_use_declared("std::alloc::alloc_bytes");
+                module.borrow_mut().ensure_use_declared("std::alloc::alloc_bytes");
 
                 // alloc_bytes(0)
                 sway::Expression::create_function_call(
                     "alloc_bytes",
                     None,
-                    vec![sway::Expression::from(sway::Literal::DecInt(
-                        0u8.into(),
-                        None,
-                    ))],
+                    vec![sway::Expression::from(sway::Literal::DecInt(0u8.into(), None))],
                 )
             }
 
@@ -770,11 +601,7 @@ pub fn create_value_expression(
                 vec![sway::Expression::create_function_call(
                     "Address::from",
                     None,
-                    vec![sway::Expression::create_function_call(
-                        "b256::zero",
-                        None,
-                        vec![],
-                    )],
+                    vec![sway::Expression::create_function_call("b256::zero", None, vec![])],
                 )],
             ),
 
@@ -810,38 +637,20 @@ pub fn create_value_expression(
                 if project.is_type_definition_declared(module.clone(), name) {
                     let underlying_type = get_underlying_type(project, module.clone(), type_name);
 
-                    return create_value_expression(
-                        project,
-                        module,
-                        scope.clone(),
-                        &underlying_type,
-                        None,
-                    );
+                    return create_value_expression(project, module, scope.clone(), &underlying_type, None);
                 }
                 // Check to see if the type is a translated enum
                 else if let Some(translated_enum) = project.find_enum(module.clone(), name) {
-                    if let Some(sway::ImplItem::Constant(value)) =
-                        translated_enum.variants_impl.items.first()
-                    {
-                        return sway::Expression::create_identifier(
-                            format!("{}::{}", name, value.name).as_str(),
-                        );
+                    if let Some(sway::ImplItem::Constant(value)) = translated_enum.variants_impl.items.first() {
+                        return sway::Expression::create_identifier(format!("{}::{}", name, value.name).as_str());
                     }
 
                     let underlying_type = get_underlying_type(project, module.clone(), type_name);
 
-                    return create_value_expression(
-                        project,
-                        module.clone(),
-                        scope.clone(),
-                        &underlying_type,
-                        None,
-                    );
+                    return create_value_expression(project, module.clone(), scope.clone(), &underlying_type, None);
                 }
                 // Check to see if the type is a struct definition
-                else if let Some(struct_definition) =
-                    project.find_struct(module.clone(), scope.clone(), name)
-                {
+                else if let Some(struct_definition) = project.find_struct(module.clone(), scope.clone(), name) {
                     let struct_definition = struct_definition.borrow();
 
                     let fields = if struct_definition.memory.name == *name {
@@ -876,18 +685,14 @@ pub fn create_value_expression(
 
         sway::TypeName::Array { type_name, length } => sway::Expression::Array(sway::Array {
             elements: (0..*length)
-                .map(|_| {
-                    create_value_expression(project, module.clone(), scope.clone(), type_name, None)
-                })
+                .map(|_| create_value_expression(project, module.clone(), scope.clone(), type_name, None))
                 .collect(),
         }),
 
         sway::TypeName::Tuple { type_names } => sway::Expression::Tuple(
             type_names
                 .iter()
-                .map(|type_name| {
-                    create_value_expression(project, module.clone(), scope.clone(), type_name, None)
-                })
+                .map(|type_name| create_value_expression(project, module.clone(), scope.clone(), type_name, None))
                 .collect(),
         ),
 
@@ -901,9 +706,7 @@ pub fn create_value_expression(
             ))],
         ),
 
-        sway::TypeName::Function { .. } => {
-            sway::Expression::create_todo(Some(type_name.to_string()))
-        }
+        sway::TypeName::Function { .. } => sway::Expression::create_todo(Some(type_name.to_string())),
 
         sway::TypeName::Abi { .. } => sway::Expression::create_function_call(
             "Identity::Address",
@@ -911,11 +714,7 @@ pub fn create_value_expression(
             vec![sway::Expression::create_function_call(
                 "Address::from",
                 None,
-                vec![sway::Expression::create_function_call(
-                    "b256::zero",
-                    None,
-                    vec![],
-                )],
+                vec![sway::Expression::create_function_call("b256::zero", None, vec![])],
             )],
         ),
     }

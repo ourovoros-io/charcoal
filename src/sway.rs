@@ -63,12 +63,10 @@ impl TabbedDisplay for Module {
         for (i, item) in self.items.iter().enumerate() {
             if let Some(prev_item) = prev_item {
                 if !(matches!(prev_item, ModuleItem::Use(_)) && matches!(item, ModuleItem::Use(_))
-                    || matches!(prev_item, ModuleItem::Constant(_))
-                        && matches!(item, ModuleItem::Constant(_))
+                    || matches!(prev_item, ModuleItem::Constant(_)) && matches!(item, ModuleItem::Constant(_))
                     || matches!(prev_item, ModuleItem::TypeDefinition(_))
                         && matches!(item, ModuleItem::TypeDefinition(_))
-                    || matches!(prev_item, ModuleItem::Submodule(_))
-                        && matches!(item, ModuleItem::Submodule(_)))
+                    || matches!(prev_item, ModuleItem::Submodule(_)) && matches!(item, ModuleItem::Submodule(_)))
                 {
                     writeln!(f)?;
                 }
@@ -163,20 +161,10 @@ impl TabbedDisplay for Use {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum UseTree {
-    Path {
-        prefix: String,
-        suffix: Box<UseTree>,
-    },
-    Group {
-        imports: Vec<UseTree>,
-    },
-    Name {
-        name: String,
-    },
-    Rename {
-        name: String,
-        alias: String,
-    },
+    Path { prefix: String, suffix: Box<UseTree> },
+    Group { imports: Vec<UseTree> },
+    Name { name: String },
+    Rename { name: String, alias: String },
     Glob,
 }
 
@@ -187,11 +175,7 @@ impl Display for UseTree {
             UseTree::Group { imports } => write!(
                 f,
                 "{{{}}}",
-                imports
-                    .iter()
-                    .map(|x| format!("{x}"))
-                    .collect::<Vec<_>>()
-                    .join(", ")
+                imports.iter().map(|x| format!("{x}")).collect::<Vec<_>>().join(", ")
             ),
             UseTree::Name { name } => write!(f, "{name}"),
             UseTree::Rename { name, alias } => write!(f, "{name} as {alias}"),
@@ -345,11 +329,7 @@ impl Display for TypeName {
             TypeName::Tuple { type_names } => write!(
                 f,
                 "({})",
-                type_names
-                    .iter()
-                    .map(|t| format!("{t}"))
-                    .collect::<Vec<_>>()
-                    .join(", ")
+                type_names.iter().map(|t| format!("{t}")).collect::<Vec<_>>().join(", ")
             ),
             TypeName::StringSlice => write!(f, "str"),
             TypeName::StringArray { length } => write!(f, "str[{length}]"),
@@ -448,10 +428,7 @@ impl TypeName {
                 name,
                 generic_parameters: None,
             } => {
-                matches!(
-                    name.as_str(),
-                    "u8" | "u16" | "u32" | "u64" | "u256" | "U128" | "U256"
-                )
+                matches!(name.as_str(), "u8" | "u16" | "u32" | "u64" | "u256" | "U128" | "U256")
             }
 
             _ => false,
@@ -465,12 +442,9 @@ impl TypeName {
                 name,
                 generic_parameters: None,
             } => match name.as_str() {
-                "u8" | "u16" | "u32" | "u64" | "u256" | "U128" | "U256" => Some(
-                    name.trim_start_matches("u")
-                        .trim_start_matches("U")
-                        .parse()
-                        .unwrap(),
-                ),
+                "u8" | "u16" | "u32" | "u64" | "u256" | "U128" | "U256" => {
+                    Some(name.trim_start_matches("u").trim_start_matches("U").parse().unwrap())
+                }
 
                 _ => None,
             },
@@ -487,10 +461,7 @@ impl TypeName {
                 name,
                 generic_parameters: None,
             } => {
-                matches!(
-                    name.as_str(),
-                    "I8" | "I16" | "I32" | "I64" | "I128" | "I256"
-                )
+                matches!(name.as_str(), "I8" | "I16" | "I32" | "I64" | "I128" | "I256")
             }
 
             _ => false,
@@ -504,9 +475,7 @@ impl TypeName {
                 name,
                 generic_parameters: None,
             } => match name.as_str() {
-                "I8" | "I16" | "I32" | "I64" | "I128" | "I256" => {
-                    Some(name.trim_start_matches("I").parse().unwrap())
-                }
+                "I8" | "I16" | "I32" | "I64" | "I128" | "I256" => Some(name.trim_start_matches("I").parse().unwrap()),
 
                 _ => None,
             },
@@ -1072,9 +1041,10 @@ impl TypeName {
                     .zip(rhs_parameters.entries.iter())
                     .all(|(lhs, rhs)| {
                         lhs.type_name.is_some() == rhs.type_name.is_some()
-                            && lhs.type_name.as_ref().is_none_or(|x| {
-                                x.is_compatible_with(rhs.type_name.as_ref().unwrap())
-                            })
+                            && lhs
+                                .type_name
+                                .as_ref()
+                                .is_none_or(|x| x.is_compatible_with(rhs.type_name.as_ref().unwrap()))
                     })
                 {
                     match (lhs_return_type.as_ref(), rhs_return_type.as_ref()) {
@@ -1165,9 +1135,7 @@ impl TypeName {
     }
 
     /// Gets the parameters and return type name for the getter function of the type name
-    pub fn getter_function_parameters_and_return_type(
-        &self,
-    ) -> Option<(Vec<(Parameter, bool)>, TypeName)> {
+    pub fn getter_function_parameters_and_return_type(&self) -> Option<(Vec<(Parameter, bool)>, TypeName)> {
         match self {
             TypeName::Undefined => panic!("Undefined type name"),
 
@@ -1179,16 +1147,14 @@ impl TypeName {
                     let mut parameters = vec![(
                         Parameter {
                             name: "_".into(),
-                            type_name: Some(
-                                if generic_parameters.entries[0].type_name.is_storage_string() {
-                                    TypeName::Identifier {
-                                        name: "String".to_string(),
-                                        generic_parameters: None,
-                                    }
-                                } else {
-                                    generic_parameters.entries[0].type_name.clone()
-                                },
-                            ),
+                            type_name: Some(if generic_parameters.entries[0].type_name.is_storage_string() {
+                                TypeName::Identifier {
+                                    name: "String".to_string(),
+                                    generic_parameters: None,
+                                }
+                            } else {
+                                generic_parameters.entries[0].type_name.clone()
+                            }),
                             ..Default::default()
                         },
                         false,
@@ -1196,10 +1162,9 @@ impl TypeName {
 
                     let mut return_type = generic_parameters.entries[1].type_name.clone();
 
-                    if let Some((inner_parameters, inner_return_type)) = generic_parameters.entries
-                        [1]
-                    .type_name
-                    .getter_function_parameters_and_return_type()
+                    if let Some((inner_parameters, inner_return_type)) = generic_parameters.entries[1]
+                        .type_name
+                        .getter_function_parameters_and_return_type()
                     {
                         parameters.extend(inner_parameters);
                         return_type = inner_return_type;
@@ -1233,10 +1198,9 @@ impl TypeName {
 
                     let mut return_type = generic_parameters.entries[0].type_name.clone();
 
-                    if let Some((inner_parameters, inner_return_type)) = generic_parameters.entries
-                        [0]
-                    .type_name
-                    .getter_function_parameters_and_return_type()
+                    if let Some((inner_parameters, inner_return_type)) = generic_parameters.entries[0]
+                        .type_name
+                        .getter_function_parameters_and_return_type()
                     {
                         parameters.extend(inner_parameters);
                         return_type = inner_return_type;
@@ -1355,11 +1319,7 @@ impl TabbedDisplay for Literal {
                     format!("{x:X}")
                 },
                 if let Some(suffix) = suffix.as_ref() {
-                    if suffix != "b256" {
-                        suffix.as_str()
-                    } else {
-                        ""
-                    }
+                    if suffix != "b256" { suffix.as_str() } else { "" }
                 } else {
                     ""
                 },
@@ -2085,10 +2045,7 @@ impl Display for LetPattern {
             LetPattern::Tuple(ids) => write!(
                 f,
                 "({})",
-                ids.iter()
-                    .map(|id| format!("{id}"))
-                    .collect::<Vec<_>>()
-                    .join(", ")
+                ids.iter().map(|id| format!("{id}")).collect::<Vec<_>>().join(", ")
             ),
         }
     }
@@ -2129,10 +2086,7 @@ impl Display for LetIdentifier {
 #[derive(Clone, Debug, PartialEq)]
 pub enum PathExprRoot {
     Identifier(String),
-    Cast {
-        from_type: TypeName,
-        to_type: TypeName,
-    },
+    Cast { from_type: TypeName, to_type: TypeName },
 }
 
 impl Display for PathExprRoot {
@@ -2656,10 +2610,7 @@ impl Expression {
 
     fn create_function_calls(
         container: Option<Expression>,
-        member_calls: &[(
-            &str,
-            Option<(Option<GenericParameterList>, Vec<Expression>)>,
-        )],
+        member_calls: &[(&str, Option<(Option<GenericParameterList>, Vec<Expression>)>)],
     ) -> Expression {
         if container.is_none() {
             assert!(!member_calls.is_empty());
@@ -2717,10 +2668,7 @@ impl Expression {
     where
         F: Clone + Fn(&&Expression) -> Option<T>,
     {
-        fn check_statement<T>(
-            statement: &Statement,
-            f: &impl Fn(&&Expression) -> Option<T>,
-        ) -> Option<T> {
+        fn check_statement<T>(statement: &Statement, f: &impl Fn(&&Expression) -> Option<T>) -> Option<T> {
             match statement {
                 Statement::Let(let_expr) => {
                     if let Some(result) = check_expression(&let_expr.value, f) {
@@ -2746,10 +2694,7 @@ impl Expression {
             None
         }
 
-        fn check_expression<T>(
-            expression: &Expression,
-            f: &impl Fn(&&Expression) -> Option<T>,
-        ) -> Option<T> {
+        fn check_expression<T>(expression: &Expression, f: &impl Fn(&&Expression) -> Option<T>) -> Option<T> {
             if let Some(result) = f(&expression) {
                 return Some(result);
             }

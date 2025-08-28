@@ -1,10 +1,6 @@
 /// Find a key in a [toml::Table] and return the [toml::Value]
 #[inline(always)]
-pub fn find_in_toml_value<'a>(
-    value: &'a toml::Value,
-    section: &str,
-    key: &str,
-) -> Option<&'a toml::Value> {
+pub fn find_in_toml_value<'a>(value: &'a toml::Value, section: &str, key: &str) -> Option<&'a toml::Value> {
     let mut section_iter = section.split('.');
     // Attempt to extract the table from the provided TOML value
     let mut incoming_table = match value {

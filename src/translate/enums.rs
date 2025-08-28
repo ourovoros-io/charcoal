@@ -13,9 +13,7 @@ pub fn translate_enum_definition(
     // Create the enum's type definition
     let type_definition = sway::TypeDefinition {
         is_public: false,
-        name: sway::TypeName::create_identifier(
-            enum_definition.name.as_ref().unwrap().name.as_str(),
-        ),
+        name: sway::TypeName::create_identifier(enum_definition.name.as_ref().unwrap().name.as_str()),
         underlying_type: Some(sway::TypeName::create_identifier("u8")),
     };
 
@@ -29,21 +27,13 @@ pub fn translate_enum_definition(
 
     // Add each variant to the variants impl block
     for (i, value) in enum_definition.values.iter().enumerate() {
-        variants_impl
-            .items
-            .push(sway::ImplItem::Constant(sway::Constant {
-                is_public: false,
-                old_name: value.as_ref().unwrap().name.clone(),
-                name: translate_naming_convention(
-                    value.as_ref().unwrap().name.as_str(),
-                    Case::Constant,
-                ),
-                type_name: type_definition.name.clone(),
-                value: Some(sway::Expression::from(sway::Literal::DecInt(
-                    BigUint::from(i),
-                    None,
-                ))),
-            }));
+        variants_impl.items.push(sway::ImplItem::Constant(sway::Constant {
+            is_public: false,
+            old_name: value.as_ref().unwrap().name.clone(),
+            name: translate_naming_convention(value.as_ref().unwrap().name.as_str(), Case::Constant),
+            type_name: type_definition.name.clone(),
+            value: Some(sway::Expression::from(sway::Literal::DecInt(BigUint::from(i), None))),
+        }));
     }
 
     Ok(ir::Enum {
@@ -100,9 +90,7 @@ pub fn translate_event_definition(
                 })),
                 Rc::new(RefCell::new(sway::Impl {
                     type_name: sway::TypeName::create_identifier("AbiEncode"),
-                    for_type_name: Some(sway::TypeName::create_identifier(
-                        events_enum_name.as_str(),
-                    )),
+                    for_type_name: Some(sway::TypeName::create_identifier(events_enum_name.as_str())),
                     ..Default::default()
                 })),
             ));
@@ -175,9 +163,7 @@ pub fn translate_error_definition(
                 })),
                 Rc::new(RefCell::new(sway::Impl {
                     type_name: sway::TypeName::create_identifier("AbiEncode"),
-                    for_type_name: Some(sway::TypeName::create_identifier(
-                        errors_enum_name.as_str(),
-                    )),
+                    for_type_name: Some(sway::TypeName::create_identifier(errors_enum_name.as_str())),
                     ..Default::default()
                 })),
             ));
@@ -225,21 +211,15 @@ pub fn generate_enum_abi_encode_function(
                 }),
                 type_name: None,
                 value: match type_name {
-                    sway::TypeName::Identifier {
-                        name: type_name, ..
-                    } => match type_name.as_str() {
-                        "bool" | "u8" | "u16" | "u32" | "u64" | "u256" | "b256" | "Bytes"
-                        | "Vec" => sway::Expression::create_identifier(name).with_abi_encode_call(
-                            sway::Expression::create_identifier("buffer".into()),
-                        ),
-
-                        "I8" | "I16" | "I32" | "I64" | "I128" | "I256" => {
+                    sway::TypeName::Identifier { name: type_name, .. } => match type_name.as_str() {
+                        "bool" | "u8" | "u16" | "u32" | "u64" | "u256" | "b256" | "Bytes" | "Vec" => {
                             sway::Expression::create_identifier(name)
-                                .with_member("underlying")
-                                .with_abi_encode_call(sway::Expression::create_identifier(
-                                    "buffer".into(),
-                                ))
+                                .with_abi_encode_call(sway::Expression::create_identifier("buffer".into()))
                         }
+
+                        "I8" | "I16" | "I32" | "I64" | "I128" | "I256" => sway::Expression::create_identifier(name)
+                            .with_member("underlying")
+                            .with_abi_encode_call(sway::Expression::create_identifier("buffer".into())),
 
                         "Identity" => {
                             let identity_variant_branch = |name: &str| -> sway::MatchBranch {
@@ -251,9 +231,7 @@ pub fn generate_enum_abi_encode_function(
                                     ),
                                     value: sway::Expression::create_identifier("x")
                                         .with_bits_call()
-                                        .with_abi_encode_call(sway::Expression::create_identifier(
-                                            "buffer".into(),
-                                        )),
+                                        .with_abi_encode_call(sway::Expression::create_identifier("buffer".into())),
                                 }
                             };
 
@@ -270,9 +248,8 @@ pub fn generate_enum_abi_encode_function(
                     },
 
                     sway::TypeName::Array { .. } | sway::TypeName::StringSlice => {
-                        sway::Expression::create_identifier(name).with_abi_encode_call(
-                            sway::Expression::create_identifier("buffer".into()),
-                        )
+                        sway::Expression::create_identifier(name)
+                            .with_abi_encode_call(sway::Expression::create_identifier("buffer".into()))
                     }
 
                     _ => todo!("ABI encoding for enum parameter type: {type_name}"),

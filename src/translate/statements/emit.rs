@@ -47,8 +47,7 @@ pub fn translate_emit_statement(
                             )
                             .unwrap()
                         } else {
-                            let sway::TypeName::Tuple { ref type_names } = event_variant.type_name
-                            else {
+                            let sway::TypeName::Tuple { ref type_names } = event_variant.type_name else {
                                 panic!("Expected a tuple")
                             };
 
@@ -71,24 +70,21 @@ pub fn translate_emit_statement(
                             sway::Expression::Tuple(coerced)
                         };
 
-                        return Ok(sway::Statement::from(sway::Expression::from(
-                            sway::FunctionCall {
-                                function: sway::Expression::create_identifier("log".into()),
-                                generic_parameters: None,
-                                parameters: vec![if arguments.is_empty() {
-                                    sway::Expression::create_identifier(
-                                        format!("{event_type_name}::{event_variant_name}",)
-                                            .as_str(),
-                                    )
-                                } else {
-                                    sway::Expression::create_function_call(
-                                        format!("{event_type_name}::{event_variant_name}").as_str(),
-                                        None,
-                                        vec![value],
-                                    )
-                                }],
-                            },
-                        )));
+                        return Ok(sway::Statement::from(sway::Expression::from(sway::FunctionCall {
+                            function: sway::Expression::create_identifier("log".into()),
+                            generic_parameters: None,
+                            parameters: vec![if arguments.is_empty() {
+                                sway::Expression::create_identifier(
+                                    format!("{event_type_name}::{event_variant_name}",).as_str(),
+                                )
+                            } else {
+                                sway::Expression::create_function_call(
+                                    format!("{event_type_name}::{event_variant_name}").as_str(),
+                                    None,
+                                    vec![value],
+                                )
+                            }],
+                        })));
                     }
 
                     panic!(
@@ -102,12 +98,11 @@ pub fn translate_emit_statement(
                         todo!()
                     };
 
-                    let event_variant_name =
-                        translate_naming_convention(&member.name, Case::Pascal);
+                    let event_variant_name = translate_naming_convention(&member.name, Case::Pascal);
 
                     // Check if container is contained in an external definition
-                    if let Some(external_module) = project
-                        .find_module_containing_contract(module.clone(), container_id.name.as_str())
+                    if let Some(external_module) =
+                        project.find_module_containing_contract(module.clone(), container_id.name.as_str())
                     {
                         for events_enum in external_module.borrow().events_enums.iter() {
                             for variant in events_enum.0.borrow().variants.clone() {
@@ -123,9 +118,7 @@ pub fn translate_emit_statement(
                                         )
                                         .unwrap()
                                     } else {
-                                        let sway::TypeName::Tuple { ref type_names } =
-                                            variant.type_name
-                                        else {
+                                        let sway::TypeName::Tuple { ref type_names } = variant.type_name else {
                                             panic!("Expected a tuple")
                                         };
 
@@ -148,33 +141,23 @@ pub fn translate_emit_statement(
                                         sway::Expression::Tuple(coerced)
                                     };
 
-                                    return Ok(sway::Statement::from(
-                                        sway::Expression::create_function_call(
-                                            "log",
-                                            None,
-                                            vec![if arguments.is_empty() {
-                                                sway::Expression::create_identifier(
-                                                    format!(
-                                                        "{}::{}",
-                                                        events_enum.0.borrow().name,
-                                                        event_variant_name,
-                                                    )
+                                    return Ok(sway::Statement::from(sway::Expression::create_function_call(
+                                        "log",
+                                        None,
+                                        vec![if arguments.is_empty() {
+                                            sway::Expression::create_identifier(
+                                                format!("{}::{}", events_enum.0.borrow().name, event_variant_name,)
                                                     .as_str(),
-                                                )
-                                            } else {
-                                                sway::Expression::create_function_call(
-                                                    format!(
-                                                        "{}::{}",
-                                                        events_enum.0.borrow().name,
-                                                        event_variant_name,
-                                                    )
+                                            )
+                                        } else {
+                                            sway::Expression::create_function_call(
+                                                format!("{}::{}", events_enum.0.borrow().name, event_variant_name,)
                                                     .as_str(),
-                                                    None,
-                                                    vec![value],
-                                                )
-                                            }],
-                                        ),
-                                    ));
+                                                None,
+                                                vec![value],
+                                            )
+                                        }],
+                                    )));
                                 }
                             }
                         }

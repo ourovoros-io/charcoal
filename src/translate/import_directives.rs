@@ -17,10 +17,7 @@ pub fn translate_import_directives(
                 let import_path = PathBuf::from(
                     project
                         .canonicalize_import_path(
-                            &project
-                                .options
-                                .input
-                                .join(module.borrow().path.parent().unwrap()),
+                            &project.options.input.join(module.borrow().path.parent().unwrap()),
                             &filename.string,
                         )?
                         .to_string_lossy()
@@ -34,8 +31,7 @@ pub fn translate_import_directives(
                 let Some(imported_module) = imported_module else {
                     panic!(
                         "{}: ERROR: failed to resolve import directive from `{import_directive}`",
-                        project
-                            .loc_to_file_location_string(module.clone(), &import_directive.loc(),),
+                        project.loc_to_file_location_string(module.clone(), &import_directive.loc(),),
                     );
                 };
 
@@ -76,10 +72,7 @@ pub fn translate_import_directives(
                     }
                 }
 
-                assert!(
-                    use_tree != sway::UseTree::Glob,
-                    "Invalid import path: {import_path:#?}",
-                );
+                assert!(use_tree != sway::UseTree::Glob, "Invalid import path: {import_path:#?}",);
 
                 // Add the use to the module if we haven't already
                 let use_expr = sway::Use {
