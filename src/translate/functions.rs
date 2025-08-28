@@ -785,8 +785,19 @@ pub fn translate_function_definition(
             .map(|p| get_expression_type(project, module.clone(), scope.clone(), p))
             .collect::<Result<Vec<_>, _>>()?;
 
+        // Check to see if base is a constructor call
+        if project.is_contract_declared(module.clone(), old_name.as_str()) {
+            let prefix = translate_naming_convention(old_name.as_str(), Case::Snake);
+            let name = format!("{prefix}_constructor");
+
+            constructor_calls.push(sway::FunctionCall {
+                function: sway::Expression::create_identifier(name.as_str()),
+                generic_parameters: None,
+                parameters,
+            });
+        }
         // Add the base to the modifiers list
-        if let Some((modifier, parameters, _)) = resolve_modifier(
+        else if let Some((modifier, parameters, _)) = resolve_modifier(
             project,
             module.clone(),
             scope.clone(),
@@ -800,17 +811,6 @@ pub fn translate_function_definition(
             };
             modifiers.push(sway::FunctionCall {
                 function: sway::Expression::create_identifier(new_name.as_str()),
-                generic_parameters: None,
-                parameters,
-            });
-        }
-        // Check to see if base is a constructor call
-        else if project.is_contract_declared(module.clone(), old_name.as_str()) {
-            let prefix = translate_naming_convention(old_name.as_str(), Case::Snake);
-            let name = format!("{prefix}_constructor");
-
-            constructor_calls.push(sway::FunctionCall {
-                function: sway::Expression::create_identifier(name.as_str()),
                 generic_parameters: None,
                 parameters,
             });

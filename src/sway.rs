@@ -2575,6 +2575,19 @@ impl Expression {
     }
 
     #[inline(always)]
+    pub fn to_write_call_parts(&self) -> Option<(&Expression, &Expression)> {
+        if let Self::FunctionCall(f) = self
+            && let Self::MemberAccess(m) = &f.function
+            && m.member == "write"
+            && f.parameters.len() == 1
+        {
+            return Some((&m.expression, &f.parameters[0]));
+        }
+
+        None
+    }
+
+    #[inline(always)]
     pub fn is_read_call(&self) -> bool {
         self.to_read_call_parts().is_some()
     }

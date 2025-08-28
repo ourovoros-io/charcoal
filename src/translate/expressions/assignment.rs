@@ -17,10 +17,15 @@ pub fn translate_assignment_expression(
     //     project.loc_to_file_location_string(module.clone(), &lhs.loc()),
     // );
 
-    let rhs = match operator {
+    let mut rhs = match operator {
         "=" => translate_pre_or_post_operator_value_expression(project, module.clone(), scope.clone(), rhs)?,
         _ => translate_expression(project, module.clone(), scope.clone(), rhs)?,
     };
+
+    // HACK: Take value out of storage write
+    if let Some((_, rhs_write_value)) = rhs.to_write_call_parts() {
+        rhs = rhs_write_value.clone();
+    }
 
     let rhs_type_name = get_expression_type(project, module.clone(), scope.clone(), &rhs)?;
 

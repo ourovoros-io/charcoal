@@ -94,10 +94,6 @@ pub fn get_return_type_name(
         return sway::TypeName::create_identifier("String");
     }
 
-    if let sway::TypeName::Abi { .. } = &type_name {
-        return sway::TypeName::create_identifier("Identity");
-    }
-
     type_name.clone()
 }
 
@@ -936,7 +932,13 @@ fn get_path_expr_function_call_type(
 
     // Check built-ins and standard library types
     match name.as_str() {
-        "__size_of" if generic_parameters.is_none() => {
+        "__size_of" => {
+            if let Some(generic_parameters) = generic_parameters {
+                assert!(generic_parameters.entries.len() == 1);
+
+                return Ok(Some(generic_parameters.entries[0].type_name.clone()));
+            }
+
             return Ok(Some(sway::TypeName::create_identifier("u64")));
         }
 
@@ -1311,19 +1313,29 @@ fn get_path_expr_function_call_type(
     }
 
     // Check custom event and error types
-    if let sway::PathExprRoot::Identifier(_) = &path_expr.root
+    if let sway::PathExprRoot::Identifier(path_root) = &path_expr.root
         && path_expr.segments.len() == 1
     {
         // Check custom event types
+        let event_contract_name = path_root.trim_end_matches("Event");
+        let event_scope = Rc::new(RefCell::new(ir::Scope::new(Some(&event_contract_name), None, None)));
+
         if let Some(SymbolData::EventVariant { type_name, variant }) = resolve_symbol(
             project,
             module.clone(),
-            scope.clone(),
+            event_scope.clone(),
             Symbol::Event(path_expr.segments[0].name.clone()),
         ) {
             let mut valid = true;
 
-            if let Some(tuple_types) = variant.type_name.tuple_type_names() {
+            if let Some(tuple_types) = variant.type_name.tuple_type_names()
+                && !tuple_types.is_empty()
+                && parameters.len() == 1
+                && let sway::Expression::Tuple(parameters) = &parameters[0]
+                && let sway::TypeName::Tuple {
+                    type_names: parameter_types,
+                } = &parameter_types[0]
+            {
                 if parameters.len() != tuple_types.len() {
                     valid = false;
                 } else {
@@ -1350,16 +1362,23 @@ fn get_path_expr_function_call_type(
         }
 
         // Check custom error types
+        let error_contract_name = path_root.trim_end_matches("Error");
+        let error_scope = Rc::new(RefCell::new(ir::Scope::new(Some(&error_contract_name), None, None)));
         if let Some(SymbolData::ErrorVariant { type_name, variant }) = resolve_symbol(
             project,
             module.clone(),
-            scope.clone(),
+            error_scope.clone(),
             Symbol::Error(path_expr.segments[0].name.clone()),
         ) {
             let mut valid = true;
 
             if let Some(tuple_types) = variant.type_name.tuple_type_names()
                 && !tuple_types.is_empty()
+                && parameters.len() == 1
+                && let sway::Expression::Tuple(parameters) = &parameters[0]
+                && let sway::TypeName::Tuple {
+                    type_names: parameter_types,
+                } = &parameter_types[0]
             {
                 if parameters.len() != tuple_types.len() {
                     valid = false;

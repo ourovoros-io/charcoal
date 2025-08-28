@@ -63,7 +63,14 @@ pub fn translate_binary_expression(
         abi_check(&rhs_type, &mut lhs, &mut lhs_type);
     }
 
-    rhs = coerce_expression(project, module.clone(), scope.clone(), &rhs, &rhs_type, &lhs_type).unwrap();
+    let Some(rhs) = coerce_expression(project, module.clone(), scope.clone(), &rhs, &rhs_type, &lhs_type) else {
+        panic!(
+            "Failed to coerce from `{}` to `{}` : `{}`",
+            rhs_type,
+            lhs_type,
+            rhs.display()
+        );
+    };
 
     Ok(sway::Expression::from(sway::BinaryExpression {
         operator: operator.into(),

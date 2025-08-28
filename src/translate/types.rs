@@ -172,20 +172,20 @@ pub fn translate_type_name(
                             module.borrow_mut().ensure_use_declared("signed_int::i64::*");
                             "I64".into()
                         }
-                        65..=128 => {
-                            if *bits != 128 {
-                                // eprintln!(
-                                //     "{}: WARNING: unsupported signed integer type `int{bits}`, using `I128`...",
-                                //     project.loc_to_file_location_string(
-                                //         module.clone(),
-                                //         &type_name.loc()
-                                //     ),
-                                // );
-                            }
-                            module.borrow_mut().ensure_use_declared("signed_int::i128::*");
-                            "I128".into()
-                        }
-                        129..=256 => {
+                        // 65..=128 => {
+                        //     if *bits != 128 {
+                        //         // eprintln!(
+                        //         //     "{}: WARNING: unsupported signed integer type `int{bits}`, using `I128`...",
+                        //         //     project.loc_to_file_location_string(
+                        //         //         module.clone(),
+                        //         //         &type_name.loc()
+                        //         //     ),
+                        //         // );
+                        //     }
+                        //     module.borrow_mut().ensure_use_declared("signed_int::i128::*");
+                        //     "I128".into()
+                        // }
+                        65..=256 => {
                             if *bits != 256 {
                                 // eprintln!(
                                 //     "{}: WARNING: unsupported signed integer type `int{bits}`, using `I256`...",

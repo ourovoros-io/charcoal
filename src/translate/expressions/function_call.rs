@@ -223,80 +223,6 @@ fn translate_variable_function_call(
         return Ok(result);
     }
 
-    fn check_event_or_error_type(
-        project: &mut Project,
-        module: Rc<RefCell<ir::Module>>,
-        scope: Rc<RefCell<ir::Scope>>,
-        type_name: sway::TypeName,
-        variant: sway::EnumVariant,
-        parameters: &mut Vec<sway::Expression>,
-        parameter_types: &mut Vec<sway::TypeName>,
-    ) -> Option<sway::Expression> {
-        let mut valid = true;
-        let mut is_tuple = false;
-
-        if let Some(tuple_types) = variant.type_name.tuple_type_names() {
-            is_tuple = true;
-
-            if parameters.len() != tuple_types.len() {
-                valid = false;
-            } else {
-                let mut new_parameter_types = vec![];
-
-                for (i, (parameter_type, tuple_type)) in parameter_types.iter().zip(tuple_types.iter()).enumerate() {
-                    let Some(parameter) = coerce_expression(
-                        project,
-                        module.clone(),
-                        scope.clone(),
-                        &parameters[i],
-                        parameter_type,
-                        tuple_type,
-                    ) else {
-                        valid = false;
-                        break;
-                    };
-
-                    parameters[i] = parameter;
-                    new_parameter_types.push(tuple_type.clone());
-                }
-
-                *parameter_types = new_parameter_types;
-            }
-        } else {
-            if parameters.len() != 1 {
-                valid = false;
-            } else {
-                if let Some(parameter) = coerce_expression(
-                    project,
-                    module.clone(),
-                    scope.clone(),
-                    &parameters[0],
-                    &parameter_types[0],
-                    &variant.type_name,
-                ) {
-                    parameters[0] = parameter;
-                    parameter_types[0] = variant.type_name.clone();
-                } else {
-                    valid = false;
-                }
-            }
-        }
-
-        if valid {
-            return Some(sway::Expression::create_function_call(
-                format!("{}::{}", type_name, variant.name).as_str(),
-                None,
-                if is_tuple {
-                    vec![sway::Expression::Tuple(parameters.clone())]
-                } else {
-                    parameters.clone()
-                },
-            ));
-        }
-
-        None
-    }
-
     // Check to see if the expression is an event constructor
     if let Some(SymbolData::EventVariant { type_name, variant }) =
         resolve_symbol(project, module.clone(), scope.clone(), Symbol::Event(name.to_string()))
@@ -928,6 +854,46 @@ fn translate_member_access_function_call(
                 return Ok(result);
             }
 
+            let event_scope = Rc::new(RefCell::new(ir::Scope::new(Some(&name.clone()), None, None)));
+            if let Some(SymbolData::EventVariant { type_name, variant }) = resolve_symbol(
+                project,
+                module.clone(),
+                event_scope.clone(),
+                Symbol::Event(member.name.clone()),
+            ) {
+                if let Some(result) = check_event_or_error_type(
+                    project,
+                    module.clone(),
+                    scope.clone(),
+                    type_name,
+                    variant,
+                    &mut parameters.clone(),
+                    &mut parameter_types.clone(),
+                ) {
+                    return Ok(result);
+                }
+            }
+
+            let error_scope = Rc::new(RefCell::new(ir::Scope::new(Some(&name.clone()), None, None)));
+            if let Some(SymbolData::ErrorVariant { type_name, variant }) = resolve_symbol(
+                project,
+                module.clone(),
+                error_scope.clone(),
+                Symbol::Error(member.name.clone()),
+            ) {
+                if let Some(result) = check_event_or_error_type(
+                    project,
+                    module.clone(),
+                    scope.clone(),
+                    type_name,
+                    variant,
+                    &mut parameters.clone(),
+                    &mut parameter_types.clone(),
+                ) {
+                    return Ok(result);
+                }
+            }
+
             // Try to resolve the function call under an explicit contract: `A.foo()`
             if let Some(result) = resolve_function_call(
                 project,
@@ -1200,7 +1166,6 @@ fn translate_member_access_function_call(
         }
     }
 
-    // Try to resolve as an abi function call
     if let Some(contract) = project.find_contract(module.clone(), type_name.to_string().as_str()) {
         let abi = contract.borrow().abi.clone();
 
@@ -1214,6 +1179,7 @@ fn translate_member_access_function_call(
         )
         .unwrap();
 
+        // Try to resolve as an abi function call
         if let Some(result) = resolve_abi_function_call(
             project,
             module.clone(),
@@ -1230,7 +1196,7 @@ fn translate_member_access_function_call(
     }
 
     panic!(
-        "{}: TODO: translate {type_name} member function call: {}.{member}({})",
+        "{}: TODO: translate {type_name:#?} member function call: {}.{member}({})",
         project.loc_to_file_location_string(module.clone(), &expression.loc()),
         sway::TabbedDisplayer(&container),
         parameter_types
@@ -2239,4 +2205,78 @@ fn translate_this_member_access_function_call(
     }
 
     Ok(None)
+}
+
+pub fn check_event_or_error_type(
+    project: &mut Project,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
+    type_name: sway::TypeName,
+    variant: sway::EnumVariant,
+    parameters: &mut Vec<sway::Expression>,
+    parameter_types: &mut Vec<sway::TypeName>,
+) -> Option<sway::Expression> {
+    let mut valid = true;
+    let mut is_tuple = false;
+
+    if let Some(tuple_types) = variant.type_name.tuple_type_names() {
+        is_tuple = true;
+
+        if parameters.len() != tuple_types.len() {
+            valid = false;
+        } else {
+            let mut new_parameter_types = vec![];
+
+            for (i, (parameter_type, tuple_type)) in parameter_types.iter().zip(tuple_types.iter()).enumerate() {
+                let Some(parameter) = coerce_expression(
+                    project,
+                    module.clone(),
+                    scope.clone(),
+                    &parameters[i],
+                    parameter_type,
+                    tuple_type,
+                ) else {
+                    valid = false;
+                    break;
+                };
+
+                parameters[i] = parameter;
+                new_parameter_types.push(tuple_type.clone());
+            }
+
+            *parameter_types = new_parameter_types;
+        }
+    } else {
+        if parameters.len() != 1 {
+            valid = false;
+        } else {
+            if let Some(parameter) = coerce_expression(
+                project,
+                module.clone(),
+                scope.clone(),
+                &parameters[0],
+                &parameter_types[0],
+                &variant.type_name,
+            ) {
+                parameters[0] = parameter;
+                parameter_types[0] = variant.type_name.clone();
+            } else {
+                valid = false;
+            }
+        }
+    }
+
+    if valid {
+        return Some(sway::Expression::create_function_call(
+            format!("{}::{}", type_name, variant.name).as_str(),
+            None,
+            if is_tuple {
+                vec![sway::Expression::Tuple(parameters.clone())]
+            } else {
+                parameters.clone()
+            },
+        ));
+    }
+
+    None
 }

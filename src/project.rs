@@ -1380,9 +1380,9 @@ impl Project {
                 }
 
                 // Only create a toplevel function if the function has a body
-                if function_definition.body.is_none() {
-                    continue;
-                }
+                // if function_definition.body.is_none() {
+                //     continue;
+                // }
 
                 let declaration = translate_function_declaration(
                     self,

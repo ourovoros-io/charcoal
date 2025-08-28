@@ -623,6 +623,16 @@ fn coerce_broken_types(context: &mut CoerceContext) -> Option<sway::Expression> 
         return Some(context.expression.clone());
     }
 
+    // HACK: Check for `str` to `StorageBytes` coercions
+    if context.from_type_name.is_string_slice() && context.to_type_name.is_storage_bytes() {
+        return Some(context.expression.clone());
+    }
+
+    // HACK: Check for `String` to `StorageBytes` coercions
+    if context.from_type_name.is_string() && context.to_type_name.is_storage_bytes() {
+        return Some(context.expression.clone());
+    }
+
     // HACK: Check for `Bytes` to `StorageKey<StorageBytes>` coercions
     if context.from_type_name.is_bytes()
         && let Some(storage_key_type) = context.to_type_name.storage_key_type()
@@ -1466,19 +1476,31 @@ fn coerce_to_u8_arrays(context: &mut CoerceContext) -> Option<sway::Expression> 
             9..=16 => 16,
             17..=32 => 32,
             33..=64 => 64,
-            65..=128 => 128,
-            129..=256 => 256,
+            65..=256 => 256,
             _ => panic!("Unsupported uint bit size: {from_bits}"),
         };
         let to_byte_count = to_bits / 8;
+
+        if to_byte_count == 1 {
+            return Some(sway::Expression::from(sway::Array {
+                elements: vec![expression],
+            }));
+        }
 
         if from_byte_count == to_byte_count {
             return Some(expression.with_to_be_bytes_call());
         } else if from_byte_count < to_byte_count {
             return Some(
-                expression
-                    .with_function_call(format!("as_u{to_bits}").as_str(), None, vec![])
-                    .with_to_be_bytes_call(),
+                coerce_expression(
+                    context.project,
+                    context.module.clone(),
+                    context.scope.clone(),
+                    &expression,
+                    &from_type_name,
+                    &sway::TypeName::create_identifier(format!("u{to_bits}").as_str()),
+                )
+                .unwrap()
+                .with_to_be_bytes_call(),
             );
         } else if from_byte_count > to_byte_count {
             if to_byte_count == 1 {
@@ -1717,6 +1739,22 @@ fn coerce_to_string_slice(context: &mut CoerceContext) -> Option<sway::Expressio
         );
     }
 
+    // Check for `raw_slice` to `str` coercions
+    if context.from_type_name.is_raw_slice() && context.to_type_name.is_string_slice() {
+        return Some(
+            sway::Expression::create_function_call(
+                "String::from_ascii",
+                None,
+                vec![sway::Expression::create_function_call(
+                    "Bytes::from",
+                    None,
+                    vec![context.expression.clone()],
+                )],
+            )
+            .with_as_str_call(),
+        );
+    }
+
     None
 }
 
@@ -1851,27 +1889,45 @@ fn coerce_to_vec(context: &mut CoerceContext) -> Option<sway::Expression> {
 
 /// Coerce array types
 fn coerce_array_types(context: &mut CoerceContext) -> Option<sway::Expression> {
-    let (Some((lhs_type_name, lhs_len)), Some((rhs_type_name, rhs_len))) =
+    // Check for array to array coercions
+    if let (Some((lhs_type_name, lhs_len)), Some((rhs_type_name, rhs_len))) =
         (context.from_type_name.array_info(), context.to_type_name.array_info())
-    else {
-        return None;
-    };
+    {
+        if lhs_len < rhs_len {
+            return None;
+        }
 
-    if lhs_len < rhs_len {
-        return None;
-    }
+        if let sway::Expression::Array(array) = &context.expression {
+            return Some(sway::Expression::from(sway::Array {
+                elements: array
+                    .elements
+                    .iter()
+                    .map(|e| {
+                        coerce_expression(
+                            context.project,
+                            context.module.clone(),
+                            context.scope.clone(),
+                            e,
+                            &lhs_type_name,
+                            &rhs_type_name,
+                        )
+                        .unwrap()
+                    })
+                    .collect(),
+            }));
+        }
 
-    if let sway::Expression::Array(array) = &context.expression {
         return Some(sway::Expression::from(sway::Array {
-            elements: array
-                .elements
-                .iter()
-                .map(|e| {
+            elements: (0..rhs_len)
+                .map(|i| {
                     coerce_expression(
                         context.project,
                         context.module.clone(),
                         context.scope.clone(),
-                        e,
+                        &sway::Expression::from(sway::ArrayAccess {
+                            expression: context.expression.clone(),
+                            index: sway::Expression::from(sway::Literal::DecInt(i.into(), None)),
+                        }),
                         &lhs_type_name,
                         &rhs_type_name,
                     )
@@ -1881,24 +1937,35 @@ fn coerce_array_types(context: &mut CoerceContext) -> Option<sway::Expression> {
         }));
     }
 
-    Some(sway::Expression::from(sway::Array {
-        elements: (0..rhs_len)
-            .map(|i| {
-                coerce_expression(
-                    context.project,
-                    context.module.clone(),
-                    context.scope.clone(),
-                    &sway::Expression::from(sway::ArrayAccess {
-                        expression: context.expression.clone(),
-                        index: sway::Expression::from(sway::Literal::DecInt(i.into(), None)),
-                    }),
-                    &lhs_type_name,
-                    &rhs_type_name,
-                )
-                .unwrap()
-            })
-            .collect(),
-    }))
+    // Check for uint to array coercions
+    if let Some(from_uint_bits) = context.from_type_name.uint_bits()
+        && let Some((array_type, array_length)) = context.to_type_name.array_info()
+        && let Some(to_uint_bits) = array_type.uint_bits()
+    {
+        if from_uint_bits == to_uint_bits && array_length == 1 {
+            return Some(sway::Expression::from(sway::Array {
+                elements: vec![context.expression.clone()],
+            }));
+        }
+
+        if from_uint_bits != to_uint_bits && array_length == 1 {
+            return Some(sway::Expression::from(sway::Array {
+                elements: vec![
+                    coerce_expression(
+                        context.project,
+                        context.module.clone(),
+                        context.scope.clone(),
+                        context.expression,
+                        context.from_type_name,
+                        &array_type,
+                    )
+                    .unwrap(),
+                ],
+            }));
+        }
+    }
+
+    None
 }
 
 /// Coerce tuple types
