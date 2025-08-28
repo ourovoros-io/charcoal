@@ -370,10 +370,23 @@ pub fn translate_member_access_expression(
         return Ok(result);
     }
 
-    // HACK: tack on `.read()` and try again
+    // HACK: tack on `.read()` to `Option<StorageKey<T>>` and try again
     if let Some(option_type) = container_type_name.option_type()
         && option_type.is_storage_key()
     {
+        container = container.with_unwrap_call().with_read_call();
+
+        if let Ok(Some(result)) = check_container(project, &container) {
+            scope
+                .borrow_mut()
+                .set_function_storage_accesses(module.clone(), true, false);
+
+            return Ok(result);
+        }
+    }
+
+    // HACK: tack on `.read()` to `StorageKey<T>` and try again
+    if container_type_name.is_storage_key() {
         container = container.with_read_call();
 
         if let Ok(Some(result)) = check_container(project, &container) {

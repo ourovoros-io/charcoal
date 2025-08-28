@@ -1414,80 +1414,113 @@ fn translate_function_call_block_member_access_function_call(
         }
     }
 
-    if type_name.is_identity() && member.name == "call" {
-        if arguments.len() != 1 {
-            panic!(
-                "Malformed `address.call` call, expected 1 argument, found {}",
-                arguments.len()
-            );
-        }
+    let mut check_function_call =
+        |container: &sway::Expression, type_name: &sway::TypeName| -> Result<Option<sway::Expression>, Error> {
+            let coins = coins.clone();
+            let gas = gas.clone();
 
-        let payload = translate_expression(project, module.clone(), scope.clone(), &arguments[0])?;
+            if type_name.is_identity() && member.name == "call" {
+                if arguments.len() != 1 {
+                    panic!(
+                        "Malformed `address.call` call, expected 1 argument, found {}",
+                        arguments.len()
+                    );
+                }
 
-        return translate_address_call_expression(project, module.clone(), scope.clone(), &payload, coins, None, gas);
+                let payload = translate_expression(project, module.clone(), scope.clone(), &arguments[0])?;
+
+                return Ok(Some(translate_address_call_expression(
+                    project,
+                    module.clone(),
+                    scope.clone(),
+                    &payload,
+                    coins,
+                    None,
+                    gas,
+                )?));
+            }
+
+            // Check to see if the type is a contract ABI
+            {
+                let mut abi_type_name = type_name.clone();
+                let mut was_abi = false;
+
+                if let sway::TypeName::Abi {
+                    type_name: abi_type_name2,
+                } = &abi_type_name
+                {
+                    abi_type_name = abi_type_name2.as_ref().clone();
+                    was_abi = true;
+                }
+
+                if let sway::TypeName::Identifier {
+                    name: contract_name,
+                    generic_parameters: None,
+                } = &abi_type_name
+                    && let Some(contract) = project.find_contract(module.clone(), contract_name)
+                {
+                    let abi = contract.borrow().abi.clone();
+
+                    let parameters = arguments
+                        .iter()
+                        .map(|a| translate_expression(project, module.clone(), scope.clone(), a))
+                        .collect::<Result<Vec<_>, _>>()?;
+
+                    let parameter_types = parameters
+                        .iter()
+                        .map(|p| get_expression_type(project, module.clone(), scope.clone(), p))
+                        .collect::<Result<Vec<_>, _>>()?;
+
+                    let container = coerce_expression(
+                        project,
+                        module.clone(),
+                        scope.clone(),
+                        &container,
+                        &type_name,
+                        &if was_abi {
+                            sway::TypeName::Abi {
+                                type_name: Box::new(abi_type_name),
+                            }
+                        } else {
+                            abi_type_name
+                        },
+                    )
+                    .unwrap();
+
+                    if let Some(result) = resolve_abi_function_call(
+                        project,
+                        module.clone(),
+                        scope.clone(),
+                        &abi,
+                        Some(&container),
+                        &member.name,
+                        None,
+                        parameters,
+                        parameter_types,
+                    )? {
+                        return Ok(Some(result));
+                    }
+                }
+            }
+
+            Ok(None)
+        };
+
+    if let Some(result) = check_function_call(&container, &type_name)? {
+        return Ok(result);
     }
 
-    // Check to see if the type is a contract ABI
+    if let Some(storage_key_type) = type_name.storage_key_type()
+        && let Some(result) = check_function_call(&container.with_read_call(), &storage_key_type)?
     {
-        let mut abi_type_name = type_name.clone();
-        let mut was_abi = false;
+        return Ok(result);
+    }
 
-        if let sway::TypeName::Abi {
-            type_name: abi_type_name2,
-        } = &abi_type_name
-        {
-            abi_type_name = abi_type_name2.as_ref().clone();
-            was_abi = true;
-        }
-
-        if let sway::TypeName::Identifier {
-            name: contract_name,
-            generic_parameters: None,
-        } = &abi_type_name
-            && let Some(contract) = project.find_contract(module.clone(), contract_name)
-        {
-            let abi = contract.borrow().abi.clone();
-
-            let parameters = arguments
-                .iter()
-                .map(|a| translate_expression(project, module.clone(), scope.clone(), a))
-                .collect::<Result<Vec<_>, _>>()?;
-
-            let parameter_types = parameters
-                .iter()
-                .map(|p| get_expression_type(project, module.clone(), scope.clone(), p))
-                .collect::<Result<Vec<_>, _>>()?;
-
-            let container = coerce_expression(
-                project,
-                module.clone(),
-                scope.clone(),
-                &container,
-                &type_name,
-                &if was_abi {
-                    sway::TypeName::Abi {
-                        type_name: Box::new(abi_type_name),
-                    }
-                } else {
-                    abi_type_name
-                },
-            )
-            .unwrap();
-
-            if let Some(result) = resolve_abi_function_call(
-                project,
-                module.clone(),
-                scope.clone(),
-                &abi,
-                Some(&container),
-                &member.name,
-                None,
-                parameters,
-                parameter_types,
-            )? {
-                return Ok(result);
-            }
-        }
+    if let Some(option_type) = type_name.option_type()
+        && let Some(storage_key_type) = option_type.storage_key_type()
+        && let Some(result) = check_function_call(&container.with_unwrap_call().with_read_call(), &storage_key_type)?
+    {
+        return Ok(result);
     }
 
     todo!(

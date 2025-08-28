@@ -2244,7 +2244,7 @@ fn get_member_access_function_call_type(
             }
 
             todo!(
-                "get type of {container_type} function call member_access: {}",
+                "get type of {type_name} function call member_access: {}",
                 sway::TabbedDisplayer(member_access)
             )
         }

@@ -932,6 +932,11 @@ impl TypeName {
 
     /// Checks to see if the type name is compatible with another type name
     pub fn is_compatible_with(&self, other: &TypeName) -> bool {
+        // Check for todo types
+        if self.is_todo() || other.is_todo() {
+            return true;
+        }
+
         // Check for abi and Identity types
         if self.is_identity() && other.is_identity() {
             return true;
@@ -2264,6 +2269,11 @@ impl_expr_box_from!(Constructor);
 impl_expr_box_from!(AsmBlock);
 
 impl Expression {
+    #[inline(always)]
+    pub fn display<'a>(&'a self) -> TabbedDisplayer<'a, Self> {
+        TabbedDisplayer(self)
+    }
+
     #[inline(always)]
     pub fn create_todo(msg: Option<String>) -> Expression {
         Expression::create_function_call(
