@@ -21,7 +21,7 @@ pub fn translate_assignment_expression(
         "=" => translate_pre_or_post_operator_value_expression(project, module.clone(), scope.clone(), rhs)?,
         _ => translate_expression(project, module.clone(), scope.clone(), rhs)?,
     };
-
+    
     // HACK: Take value out of storage write
     if let Some((_, rhs_write_value)) = rhs.to_write_call_parts() {
         rhs = rhs_write_value.clone();
@@ -31,20 +31,22 @@ pub fn translate_assignment_expression(
 
     let Some(ir::VariableAccess {
         variable,
-        mut expression,
+        ..
     }) = translate_variable_access_expression(project, module.clone(), scope.clone(), lhs)?
     else {
         panic!("Failed to translate variable access expression: {lhs}")
     };
 
+    let mut lhs = translate_expression(project, module.clone(), scope.clone(), lhs)?;
+
     // HACK: remove `.read()` if present
-    if let Some(container) = expression.to_read_call_parts()
+    if let Some(container) = lhs.to_read_call_parts()
         && get_expression_type(project, module.clone(), scope.clone(), container)?.is_storage_key()
     {
-        expression = container.clone();
+        lhs = container.clone();
     }
 
-    let expr_type_name = get_expression_type(project, module.clone(), scope.clone(), &expression)?;
+    let expr_type_name = get_expression_type(project, module.clone(), scope.clone(), &lhs)?;
 
     if let Some(storage_key_type) = expr_type_name.storage_key_type() {
         let member = match &storage_key_type {
@@ -68,7 +70,7 @@ pub fn translate_assignment_expression(
                 },
 
                 ("StorageMap", Some(_)) => {
-                    if let Some((container, index)) = expression.to_get_call_parts() {
+                    if let Some((container, index)) = lhs.to_get_call_parts() {
                         scope
                             .borrow_mut()
                             .set_function_storage_accesses(module.clone(), false, true);
@@ -198,7 +200,7 @@ pub fn translate_assignment_expression(
                                         },
                                     })),
                                     // lhs.store_vec(v);
-                                    sway::Statement::from(expression.with_store_vec_call(
+                                    sway::Statement::from(lhs.with_store_vec_call(
                                         sway::Expression::create_identifier(vec_var_name.as_str()),
                                     )),
                                 ],
@@ -300,7 +302,7 @@ pub fn translate_assignment_expression(
 
                     sway::Expression::from(sway::BinaryExpression {
                         operator: operator.trim_end_matches('=').into(),
-                        lhs: expression.with_read_call(),
+                        lhs: lhs.with_read_call(),
                         rhs: coerce_expression(
                             project,
                             module.clone(),
@@ -318,7 +320,7 @@ pub fn translate_assignment_expression(
             .borrow_mut()
             .set_function_storage_accesses(module.clone(), false, true);
 
-        return Ok(expression.with_function_call(member, None, vec![value]));
+        return Ok(lhs.with_function_call(member, None, vec![value]));
     }
 
     create_assignment_expression(
@@ -326,7 +328,7 @@ pub fn translate_assignment_expression(
         module.clone(),
         scope.clone(),
         operator,
-        &expression,
+        &lhs,
         variable,
         &rhs,
         &rhs_type_name,

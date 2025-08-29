@@ -37,7 +37,7 @@ pub fn translate_array_subscript_expression(
     else {
         panic!("Failed to translate variable access expression: {expression}")
     };
-
+    
     let type_name = get_expression_type(project, module.clone(), scope.clone(), &expression)?;
 
     if type_name.is_storage_key() {

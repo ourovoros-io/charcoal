@@ -63,47 +63,7 @@ pub fn coerce_expression(
         return Some(result);
     }
 
-    if let Some(result) = coerce_generic_types(&mut context) {
-        return Some(result);
-    }
-
-    if let Some(result) = coerce_identity_types(&mut context) {
-        return Some(result);
-    }
-
-    if let Some(result) = coerce_to_integer_types(&mut context) {
-        return Some(result);
-    }
-
-    if let Some(result) = coerce_to_u8_arrays(&mut context) {
-        return Some(result);
-    }
-
-    if let Some(result) = coerce_to_bytes(&mut context) {
-        return Some(result);
-    }
-
-    if let Some(result) = coerce_to_string_slice(&mut context) {
-        return Some(result);
-    }
-
-    if let Some(result) = coerce_to_string(&mut context) {
-        return Some(result);
-    }
-
-    if let Some(result) = coerce_to_vec(&mut context) {
-        return Some(result);
-    }
-
-    if let Some(result) = coerce_array_types(&mut context) {
-        return Some(result);
-    }
-
-    if let Some(result) = coerce_tuple_types(&mut context) {
-        return Some(result);
-    }
-
-    if let Some(result) = coerce_contract_storage_struct_types(&mut context) {
+    if let Some(result) = coerce_strandard_types(&mut context) {
         return Some(result);
     }
 
@@ -377,7 +337,11 @@ fn coerce_storage_types(context: &mut CoerceContext) -> Option<sway::Expression>
                                                 storage_constructor_field.value.into_some_call();
                                         }
 
-                                        if storage_key_type.is_storage_bytes() || storage_key_type.is_storage_string() {
+                                        if storage_key_type.is_storage_bytes()
+                                            || storage_key_type.is_storage_string()
+                                            || storage_key_type.is_storage_vec()
+                                            || storage_key_type.is_storage_map()
+                                        {
                                             storage_fields_to_write.push(sway::Statement::from(
                                                 sway::Expression::create_identifier("storage_struct")
                                                     .with_member(&mapping_field_name)
@@ -399,14 +363,7 @@ fn coerce_storage_types(context: &mut CoerceContext) -> Option<sway::Expression>
                                             continue;
                                         }
 
-                                        if storage_key_type.is_uint()
-                                            || storage_key_type.is_identity()
-                                            || storage_key_type.is_bool()
-                                        {
-                                            continue;
-                                        }
-
-                                        todo!("storage key type: {storage_key_type}");
+                                        // todo!("storage key type: {storage_key_type}");
                                     } else {
                                         todo!()
                                     }
@@ -613,6 +570,21 @@ fn coerce_storage_types(context: &mut CoerceContext) -> Option<sway::Expression>
         );
     }
 
+    // Check for standard coercions
+    if let Some(storage_key_type) = from_type_name.storage_key_type()
+        && !context.to_type_name.is_storage_key()
+        && let Some(result) = coerce_strandard_types(&mut CoerceContext {
+            project: context.project,
+            module: context.module.clone(),
+            scope: context.scope.clone(),
+            expression: &expression.with_read_call(),
+            from_type_name: &storage_key_type,
+            to_type_name: context.to_type_name,
+        })
+    {
+        return Some(result);
+    }
+
     None
 }
 
@@ -707,6 +679,54 @@ fn coerce_broken_types(context: &mut CoerceContext) -> Option<sway::Expression> 
         {
             return Some(context.expression.clone());
         }
+    }
+
+    None
+}
+
+fn coerce_strandard_types(context: &mut CoerceContext) -> Option<sway::Expression> {
+    if let Some(result) = coerce_generic_types(context) {
+        return Some(result);
+    }
+
+    if let Some(result) = coerce_identity_types(context) {
+        return Some(result);
+    }
+
+    if let Some(result) = coerce_to_integer_types(context) {
+        return Some(result);
+    }
+
+    if let Some(result) = coerce_to_u8_arrays(context) {
+        return Some(result);
+    }
+
+    if let Some(result) = coerce_to_bytes(context) {
+        return Some(result);
+    }
+
+    if let Some(result) = coerce_to_string_slice(context) {
+        return Some(result);
+    }
+
+    if let Some(result) = coerce_to_string(context) {
+        return Some(result);
+    }
+
+    if let Some(result) = coerce_to_vec(context) {
+        return Some(result);
+    }
+
+    if let Some(result) = coerce_array_types(context) {
+        return Some(result);
+    }
+
+    if let Some(result) = coerce_tuple_types(context) {
+        return Some(result);
+    }
+
+    if let Some(result) = coerce_contract_storage_struct_types(context) {
+        return Some(result);
     }
 
     None

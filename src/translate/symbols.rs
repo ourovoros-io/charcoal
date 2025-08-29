@@ -954,21 +954,71 @@ pub fn resolve_function_call(
     }
 
     // Check to see if the function is a local variable function pointer in scope without coercing first without underlying types
-    if function.is_none()
-        && let Some(variable) = scope.borrow().get_variable_from_old_name(function_name)
-        && check_type_name(&variable.borrow().type_name, false)
-    {
-        // TODO: check storage accesses of function pointer function
-        function = Some(variable.borrow().type_name.clone());
+    if function.is_none() {
+        let variable = {
+            let scope = scope.borrow();
+            let variable = scope.get_variable_from_old_name(function_name);
+            variable.clone()
+        };
+
+        if let Some(variable) = variable
+            && check_type_name(&variable.borrow().type_name, false)
+        {
+            // TODO: check storage accesses of function pointer function
+            let sway::TypeName::Function {
+                generic_parameters,
+                parameters,
+                storage_struct_parameter,
+                return_type,
+                ..
+            } = variable.borrow().type_name.clone()
+            else {
+                unreachable!()
+            };
+
+            function = Some(sway::TypeName::Function {
+                old_name: variable.borrow().old_name.clone(),
+                new_name: variable.borrow().new_name.clone(),
+                generic_parameters: generic_parameters,
+                parameters: parameters,
+                storage_struct_parameter: storage_struct_parameter,
+                return_type: return_type,
+            });
+        }
     }
 
     // Check to see if the function is a local variable function pointer in scope with coercing without underlying types
-    if function.is_none()
-        && let Some(variable) = scope.borrow().get_variable_from_old_name(function_name)
-        && check_type_name(&variable.borrow().type_name, true)
-    {
-        // TODO: check storage accesses of function pointer function
-        function = Some(variable.borrow().type_name.clone());
+    if function.is_none() {
+        let variable = {
+            let scope = scope.borrow();
+            let variable = scope.get_variable_from_old_name(function_name);
+            variable.clone()
+        };
+
+        if let Some(variable) = variable
+            && check_type_name(&variable.borrow().type_name, true)
+        {
+            // TODO: check storage accesses of function pointer function
+            let sway::TypeName::Function {
+                generic_parameters,
+                parameters,
+                storage_struct_parameter,
+                return_type,
+                ..
+            } = variable.borrow().type_name.clone()
+            else {
+                unreachable!()
+            };
+
+            function = Some(sway::TypeName::Function {
+                old_name: variable.borrow().old_name.clone(),
+                new_name: variable.borrow().new_name.clone(),
+                generic_parameters: generic_parameters,
+                parameters: parameters,
+                storage_struct_parameter: storage_struct_parameter,
+                return_type: return_type,
+            });
+        }
     }
 
     let Some(function) = function else {

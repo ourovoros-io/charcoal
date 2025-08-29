@@ -1623,7 +1623,6 @@ fn translate_identity_member_access_function_call(
         && let Some((module, contract)) = project.find_module_and_contract(module.clone(), &name)
     {
         let abi = contract.borrow().abi.clone();
-
         let scope = Rc::new(RefCell::new(ir::Scope::new(Some(&name), None, Some(scope.clone()))));
 
         if let Some(result) = resolve_abi_function_call(

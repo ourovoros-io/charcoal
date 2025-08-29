@@ -2306,9 +2306,20 @@ impl Expression {
     pub fn create_identifier(name: &str) -> Expression {
         assert!(!name.is_empty());
 
+        let mut segments = name.split("::").collect::<Vec<_>>();
+        segments.reverse();
+        let root = segments.pop().unwrap();
+        segments.reverse();
+
         Expression::PathExpr(PathExpr {
-            root: PathExprRoot::Identifier(name.to_string()),
-            segments: vec![],
+            root: PathExprRoot::Identifier(root.to_string()),
+            segments: segments
+                .iter()
+                .map(|s| PathExprSegment {
+                    name: s.to_string(),
+                    generic_parameters: None,
+                })
+                .collect(),
         })
     }
 

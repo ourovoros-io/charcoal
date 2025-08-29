@@ -14,8 +14,30 @@ pub fn translate_binary_expression(
     let mut lhs = translate_expression(project, module.clone(), scope.clone(), lhs)?;
     let mut lhs_type = get_expression_type(project, module.clone(), scope.clone(), &lhs)?;
 
-    let mut rhs = translate_expression(project, module.clone(), scope.clone(), rhs)?;
-    let mut rhs_type = get_expression_type(project, module.clone(), scope.clone(), &rhs)?;
+    let is_this = if lhs_type.is_identity()
+        && let solidity::Expression::Variable(variable) = rhs
+        && variable.name == "this"
+    {
+        true
+    } else {
+        false
+    };
+
+    let mut rhs = if is_this {
+        sway::Expression::create_function_call(
+            "Identity::ContractId",
+            None,
+            vec![sway::Expression::create_function_call("ContractId::this", None, vec![])],
+        )
+    } else {
+        translate_expression(project, module.clone(), scope.clone(), rhs)?
+    };
+
+    let mut rhs_type = if is_this {
+        lhs_type.clone()
+    } else {
+        get_expression_type(project, module.clone(), scope.clone(), &rhs)?
+    };
 
     if lhs_type.is_storage_key() {
         scope

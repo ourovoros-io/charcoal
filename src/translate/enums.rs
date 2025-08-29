@@ -203,6 +203,19 @@ pub fn generate_enum_abi_encode_function(
     for variant in sway_enum.borrow().variants.clone() {
         let mut block = sway::Block::default();
 
+        let identity_variant_branch = |name: &str| -> sway::MatchBranch {
+            sway::MatchBranch {
+                pattern: sway::Expression::create_function_call(
+                    format!("Identity::{name}").as_str(),
+                    None,
+                    vec![sway::Expression::create_identifier("x".into())],
+                ),
+                value: sway::Expression::create_identifier("x")
+                    .with_bits_call()
+                    .with_abi_encode_call(sway::Expression::create_identifier("buffer".into())),
+            }
+        };
+
         let mut add_encode_statement_to_block = |name: &str, type_name: &sway::TypeName| {
             block.statements.push(sway::Statement::Let(sway::Let {
                 pattern: sway::LetPattern::Identifier(sway::LetIdentifier {
@@ -221,28 +234,13 @@ pub fn generate_enum_abi_encode_function(
                             .with_member("underlying")
                             .with_abi_encode_call(sway::Expression::create_identifier("buffer".into())),
 
-                        "Identity" => {
-                            let identity_variant_branch = |name: &str| -> sway::MatchBranch {
-                                sway::MatchBranch {
-                                    pattern: sway::Expression::create_function_call(
-                                        format!("Identity::{name}").as_str(),
-                                        None,
-                                        vec![sway::Expression::create_identifier("x".into())],
-                                    ),
-                                    value: sway::Expression::create_identifier("x")
-                                        .with_bits_call()
-                                        .with_abi_encode_call(sway::Expression::create_identifier("buffer".into())),
-                                }
-                            };
-
-                            sway::Expression::from(sway::Match {
-                                expression: sway::Expression::create_identifier(name.into()),
-                                branches: vec![
-                                    identity_variant_branch("Address"),
-                                    identity_variant_branch("ContractId"),
-                                ],
-                            })
-                        }
+                        "Identity" => sway::Expression::from(sway::Match {
+                            expression: sway::Expression::create_identifier(name.into()),
+                            branches: vec![
+                                identity_variant_branch("Address"),
+                                identity_variant_branch("ContractId"),
+                            ],
+                        }),
 
                         _ => todo!("encode enum member type: {type_name}"),
                     },
@@ -252,7 +250,15 @@ pub fn generate_enum_abi_encode_function(
                             .with_abi_encode_call(sway::Expression::create_identifier("buffer".into()))
                     }
 
-                    _ => todo!("ABI encoding for enum parameter type: {type_name}"),
+                    sway::TypeName::Abi { .. } => sway::Expression::from(sway::Match {
+                        expression: sway::Expression::create_identifier(name.into()),
+                        branches: vec![
+                            identity_variant_branch("Address"),
+                            identity_variant_branch("ContractId"),
+                        ],
+                    }),
+
+                    _ => todo!("ABI encoding for enum parameter type: {type_name:#?}"),
                 },
             }));
         };

@@ -571,11 +571,7 @@ impl Project {
         // find the module being imported, then check if the contract lives there.
         for use_item in module.borrow().uses.iter() {
             if let Some(found_module) = self.resolve_use(use_item)
-                && found_module
-                    .borrow()
-                    .contracts
-                    .iter()
-                    .any(|c| c.signature.to_string() == contract_name)
+                && self.is_contract_declared(found_module.clone(), contract_name)
             {
                 return true;
             }
@@ -631,13 +627,9 @@ impl Project {
         // find the module being imported, then check if the contract lives there.
         for use_item in module.borrow().uses.iter() {
             if let Some(found_module) = self.resolve_use(use_item)
-                && let Some(contract) = found_module
-                    .borrow()
-                    .contracts
-                    .iter()
-                    .find(|c| c.signature.to_string() == contract_name)
+                && let Some(result) = self.find_module_and_contract(found_module, contract_name)
             {
-                return Some((found_module.clone(), contract.implementation.clone().unwrap()));
+                return Some(result);
             }
         }
 
@@ -663,13 +655,9 @@ impl Project {
         // find the module being imported, then check if the contract lives there.
         for use_item in module.borrow().uses.iter() {
             if let Some(found_module) = self.resolve_use(use_item)
-                && found_module
-                    .borrow()
-                    .contracts
-                    .iter()
-                    .any(|c| c.signature.to_string() == contract_name)
+                && let Some(result) = self.find_module_containing_contract(found_module, contract_name)
             {
-                return Some(found_module.clone());
+                return Some(result);
             }
         }
 
@@ -691,11 +679,7 @@ impl Project {
         // find the module being imported, then check if the type definition lives there.
         for use_item in module.borrow().uses.iter() {
             if let Some(found_module) = self.resolve_use(use_item)
-                && found_module
-                    .borrow()
-                    .type_definitions
-                    .iter()
-                    .any(|x| x.signature.to_string() == name)
+                && self.is_type_definition_declared(found_module, name)
             {
                 return true;
             }
@@ -723,13 +707,9 @@ impl Project {
         // find the module being imported, then check if the type definition lives there.
         for use_item in module.borrow().uses.iter() {
             if let Some(found_module) = self.resolve_use(use_item)
-                && let Some(x) = found_module
-                    .borrow()
-                    .type_definitions
-                    .iter()
-                    .find(|x| x.signature.to_string() == name)
+                && let Some(result) = self.find_type_definition(found_module, name)
             {
-                return x.implementation.clone();
+                return Some(result);
             }
         }
 
@@ -746,11 +726,7 @@ impl Project {
         // find the module being imported, then check if the enum lives there.
         for use_item in module.borrow().uses.iter() {
             if let Some(found_module) = self.resolve_use(use_item)
-                && found_module
-                    .borrow()
-                    .enums
-                    .iter()
-                    .any(|x| x.signature.to_string() == name)
+                && self.is_enum_declared(found_module, name)
             {
                 return true;
             }
@@ -769,13 +745,9 @@ impl Project {
         // find the module being imported, then check if the enum lives there.
         for use_item in module.borrow().uses.iter() {
             if let Some(found_module) = self.resolve_use(use_item)
-                && let Some(x) = found_module
-                    .borrow()
-                    .enums
-                    .iter()
-                    .find(|x| x.signature.to_string() == name)
+                && let Some(result) = self.find_enum(found_module, name)
             {
-                return x.implementation.clone();
+                return Some(result);
             }
         }
 
@@ -892,6 +864,8 @@ impl Project {
     }
 
     fn translate_file(&mut self, source_unit_path: &Path) -> Result<(), Error> {
+        // println!("Translating \"{}\"", source_unit_path.display());
+
         // Parse the source unit
         let source_unit = self.parse_solidity_source_unit(source_unit_path)?;
 
@@ -1221,22 +1195,20 @@ impl Project {
                 }
             }
 
+            // Translate all contract enum definitions
+            for enum_definition in enum_definitions.iter() {
+                module.borrow_mut().enums.push(ir::Item {
+                    signature: sway::TypeName::create_identifier(enum_definition.name.as_ref().unwrap().name.as_str()),
+                    implementation: Some(translate_enum_definition(self, module.clone(), &enum_definition)?),
+                });
+            }
+
             // Collect the signatures of the contract type definitions
             let type_definitions_index = module.borrow().type_definitions.len();
 
             for type_definition in type_definitions.iter() {
                 module.borrow_mut().type_definitions.push(ir::Item {
                     signature: sway::TypeName::create_identifier(type_definition.name.name.as_str()),
-                    implementation: None,
-                });
-            }
-
-            // Collect the signatures of the contract enum definitions
-            let enums_index = module.borrow().enums.len();
-
-            for enum_definition in enum_definitions.iter() {
-                module.borrow_mut().enums.push(ir::Item {
-                    signature: sway::TypeName::create_identifier(enum_definition.name.as_ref().unwrap().name.as_str()),
                     implementation: None,
                 });
             }
@@ -1313,12 +1285,6 @@ impl Project {
                 module.borrow_mut().type_definitions[type_definitions_index + i].implementation = Some(
                     translate_type_definition(self, module.clone(), Some(contract_name), type_definition.as_ref())?,
                 );
-            }
-
-            // Translate contract enum definitions
-            for (i, enum_definition) in enum_definitions.into_iter().enumerate() {
-                module.borrow_mut().enums[enums_index + i].implementation =
-                    Some(translate_enum_definition(self, module.clone(), &enum_definition)?);
             }
 
             // Translate contract struct definitions

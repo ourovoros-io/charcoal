@@ -147,6 +147,11 @@ pub fn translate_variable_access_expression(
                                     expression.with_unwrap_call().with_get_call(index)
                                 } else if storage_key_type.is_storage_vec() {
                                     expression.with_unwrap_call().with_get_call(index).with_unwrap_call()
+                                } else if storage_key_type.is_array() {
+                                    sway::Expression::from(sway::ArrayAccess {
+                                        expression: expression.with_unwrap_call().with_read_call(),
+                                        index,
+                                    })
                                 } else {
                                     todo!("option type: {}", generic_parameters.entries[0])
                                 }

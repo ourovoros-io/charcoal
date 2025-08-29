@@ -327,46 +327,51 @@ fn get_path_expr_type(
         scope: Rc<RefCell<ir::Scope>>,
         path_expr: &sway::PathExpr,
     ) -> Option<sway::TypeName> {
+        // Check if the identifier is a translated enum variant
+        if let sway::PathExprRoot::Identifier(path_root) = &path_expr.root
+            && path_expr.segments.len() == 1
+            && path_expr.segments[0].generic_parameters.is_none()
+        {
+            let enum_name = path_root;
+            let variant_name = &path_expr.segments[0].name;
+
+            if let Some(enum_definition) = project.find_enum(module.clone(), &enum_name)
+                && enum_definition.variants_impl.items.iter().any(|i| {
+                    let sway::ImplItem::Constant(variant) = i else {
+                        return false;
+                    };
+
+                    variant.name == *variant_name
+                })
+            {
+                return Some(sway::TypeName::create_identifier(enum_name));
+            }
+        }
+
         let Some(name) = path_expr.as_identifier() else {
             todo!("get type of non-identifier path expressions: {path_expr} - {path_expr:#?}")
         };
 
-        // HACK: Check if the identifier is a translated enum variant
-        if name.contains("::") {
-            let parts = name.split("::").collect::<Vec<_>>();
-
-            if parts.len() == 2 {
-                let enum_name = parts[0];
-                let variant_name = parts[1];
-
-                if module.borrow().enums.iter().any(|e| {
-                    let sway::TypeName::Identifier {
-                        name,
-                        generic_parameters: None,
-                    } = &e.implementation.as_ref().unwrap().type_definition.name
-                    else {
-                        return false;
-                    };
-
-                    if !e.implementation.as_ref().unwrap().variants_impl.items.iter().any(|i| {
-                        let sway::ImplItem::Constant(variant) = i else {
-                            return false;
-                        };
-
-                        variant.name == variant_name
-                    }) {
-                        return false;
-                    }
-
-                    name == enum_name
-                }) {
-                    return Some(sway::TypeName::create_identifier(enum_name));
-                }
-            }
-        }
-
         if let Some(variable) = scope.borrow().get_variable_from_new_name(name) {
             let variable = variable.borrow();
+
+            if let sway::TypeName::Function {
+                generic_parameters,
+                parameters,
+                storage_struct_parameter,
+                return_type,
+                ..
+            } = &variable.type_name
+            {
+                return Some(sway::TypeName::Function {
+                    old_name: variable.old_name.clone(),
+                    new_name: variable.new_name.clone(),
+                    generic_parameters: generic_parameters.clone(),
+                    parameters: parameters.clone(),
+                    storage_struct_parameter: storage_struct_parameter.clone(),
+                    return_type: return_type.clone(),
+                });
+            }
 
             return Some(variable.type_name.clone());
         }
@@ -899,6 +904,7 @@ fn get_path_expr_function_call_type(
     parameters: &[sway::Expression],
 ) -> Result<Option<sway::TypeName>, Error> {
     let name = path_expr.to_string();
+    assert!(!name.is_empty());
 
     // Check special forms
     match name.as_str() {
@@ -1498,7 +1504,26 @@ fn get_path_expr_function_call_type(
         // Attempt to find a function pointer variable in scope
         if let Some(variable) = scope.borrow().find_variable(|v| {
             let v = v.borrow();
-            find_function(&v.type_name)
+
+            let sway::TypeName::Function {
+                generic_parameters,
+                parameters,
+                storage_struct_parameter,
+                return_type,
+                ..
+            } = &v.type_name
+            else {
+                return false;
+            };
+
+            find_function(&sway::TypeName::Function {
+                old_name: v.old_name.clone(),
+                new_name: v.new_name.clone(),
+                generic_parameters: generic_parameters.clone(),
+                parameters: parameters.clone(),
+                storage_struct_parameter: storage_struct_parameter.clone(),
+                return_type: return_type.clone(),
+            })
         }) {
             let variable = variable.borrow();
             let sway::TypeName::Function { return_type, .. } = &variable.type_name else {
@@ -1519,8 +1544,8 @@ fn get_path_expr_function_call_type(
                 project.resolve_use(use_item).clone()
             };
 
-            if let Some(found_module) = found_module
-                && let Some(type_name) = check_function(
+            if let Some(found_module) = found_module {
+                if let Some(type_name) = check_function(
                     &mut *project.borrow_mut(),
                     from_module.clone(),
                     found_module.clone(),
@@ -1530,9 +1555,9 @@ fn get_path_expr_function_call_type(
                     generic_parameters,
                     parameters,
                     parameter_types,
-                )?
-            {
-                return Ok(Some(type_name));
+                )? {
+                    return Ok(Some(type_name));
+                }
             }
         }
 
@@ -1576,6 +1601,7 @@ fn get_path_expr_function_call_type(
             }
         }
 
+        // If we didn't find a function, check using directives
         if !parameters.is_empty() {
             let using_directives = module.borrow().using_directives.clone();
 

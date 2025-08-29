@@ -45,16 +45,16 @@ pub fn translate_pre_operator_expression(
         &solidity::Expression::NumberLiteral(*loc, "1".into(), String::new(), None),
     )?);
 
-    let Some(ir::VariableAccess {
-        variable: Some(variable),
-        expression,
-    }) = translate_variable_access_expression(project, module.clone(), scope.clone(), x)?
+    let Some(ir::VariableAccess { variable, expression }) =
+        translate_variable_access_expression(project, module.clone(), scope.clone(), x)?
     else {
         panic!("Variable not found: {x}");
     };
 
-    let mut variable = variable.borrow_mut();
-    variable.read_count += 1;
+    if let Some(variable) = variable {
+        let mut variable = variable.borrow_mut();
+        variable.read_count += 1;
+    }
 
     Ok(sway::Expression::from(sway::Block {
         statements: vec![assignment],

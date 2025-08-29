@@ -726,14 +726,17 @@ impl From<Module> for sway::Module {
             }
 
             for namespace in storage.borrow().namespaces.iter() {
-                let mut module_storage = module_storage.borrow_mut();
+                let module_namespace = {
+                    let module_storage = module_storage.borrow_mut();
+                    module_storage
+                        .namespaces
+                        .iter()
+                        .find(|n| n.borrow().name == namespace.borrow().name)
+                        .cloned()
+                };
 
-                let Some(module_namespace) = module_storage
-                    .namespaces
-                    .iter()
-                    .find(|n| n.borrow().name == namespace.borrow().name)
-                else {
-                    module_storage.namespaces.push(namespace.clone());
+                let Some(module_namespace) = module_namespace else {
+                    module_storage.borrow_mut().namespaces.push(namespace.clone());
                     continue;
                 };
 
@@ -741,6 +744,10 @@ impl From<Module> for sway::Module {
                     input: Rc<RefCell<sway::StorageNamespace>>,
                     output: Rc<RefCell<sway::StorageNamespace>>,
                 ) {
+                    if input == output {
+                        return;
+                    }
+                    
                     let input = input.borrow();
                     let mut output = output.borrow_mut();
 
@@ -793,6 +800,20 @@ impl From<Module> for sway::Module {
         }
 
         for x in module.functions {
+            if x.implementation.is_none() {
+                let sway::TypeName::Function { new_name, .. } = x.signature else {
+                    unreachable!()
+                };
+
+                println!(
+                    "WARNING: No implementation for function `{}` in \"{}.sw\", skipping...",
+                    new_name,
+                    module.path.display(),
+                );
+
+                continue;
+            }
+
             let mut function = x.implementation.unwrap();
 
             if let Some(storage_struct_parameter) = function.storage_struct_parameter.as_ref() {
