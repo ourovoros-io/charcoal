@@ -39,7 +39,16 @@ pub fn translate_binary_expression(
         get_expression_type(project, module.clone(), scope.clone(), &rhs)?
     };
 
-    if lhs_type.is_storage_key() {
+    if let Some(option_type) = lhs_type.option_type()
+        && option_type.is_storage_key()
+    {
+        scope
+            .borrow_mut()
+            .set_function_storage_accesses(module.clone(), true, false);
+
+        lhs = lhs.with_unwrap_call().with_read_call();
+        lhs_type = get_expression_type(project, module.clone(), scope.clone(), &lhs)?;
+    } else if lhs_type.is_storage_key() {
         scope
             .borrow_mut()
             .set_function_storage_accesses(module.clone(), true, false);
@@ -48,7 +57,16 @@ pub fn translate_binary_expression(
         lhs_type = get_expression_type(project, module.clone(), scope.clone(), &lhs)?;
     }
 
-    if rhs_type.is_storage_key() {
+    if let Some(option_type) = rhs_type.option_type()
+        && option_type.is_storage_key()
+    {
+        scope
+            .borrow_mut()
+            .set_function_storage_accesses(module.clone(), true, false);
+
+        rhs = rhs.with_unwrap_call().with_read_call();
+        rhs_type = get_expression_type(project, module.clone(), scope.clone(), &rhs)?;
+    } else if rhs_type.is_storage_key() {
         scope
             .borrow_mut()
             .set_function_storage_accesses(module.clone(), true, false);
@@ -110,6 +128,7 @@ pub fn translate_unary_expression(
     expression: &solidity::Expression,
 ) -> Result<sway::Expression, Error> {
     let expression = translate_expression(project, module.clone(), scope.clone(), expression)?;
+    let expression_type = get_expression_type(project, module.clone(), scope.clone(), &expression)?;
 
     // NOTE: Sway does not have a negate operator, so we need to make sure to use the correct translation
     if operator == "-" {
@@ -157,6 +176,21 @@ pub fn translate_unary_expression(
 
             _ => panic!("Unhandled {type_name} negate operator translation"),
         }
+    }
+
+    if operator == "!" {
+        return Ok(sway::Expression::from(sway::UnaryExpression {
+            operator: operator.into(),
+            expression: coerce_expression(
+                project,
+                module,
+                scope,
+                &expression,
+                &expression_type,
+                &sway::TypeName::create_identifier("bool"),
+            )
+            .unwrap(),
+        }));
     }
 
     Ok(sway::Expression::from(sway::UnaryExpression {

@@ -747,7 +747,7 @@ impl From<Module> for sway::Module {
                     if input == output {
                         return;
                     }
-                    
+
                     let input = input.borrow();
                     let mut output = output.borrow_mut();
 

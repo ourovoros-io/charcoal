@@ -252,7 +252,7 @@ fn coerce_storage_types(context: &mut CoerceContext) -> Option<sway::Expression>
 
                     if let sway::Expression::Constructor(constructor) = &expression {
                         if memory {
-                            let struct_field_name = translate_naming_convention(&lhs_name, Case::Snake);
+                            let struct_field_name = translate_naming_convention(&rhs_name, Case::Snake);
                             let instance_field_name = format!("{struct_field_name}_instance_count");
 
                             let mut value = create_value_expression(
@@ -315,7 +315,9 @@ fn coerce_storage_types(context: &mut CoerceContext) -> Option<sway::Expression>
                                                     .with_member(&instance_field_name)
                                                     .with_write_call(sway::Expression::from(sway::BinaryExpression {
                                                         operator: "+".to_string(),
-                                                        lhs: sway::Expression::create_identifier(&instance_field_name),
+                                                        lhs: sway::Expression::create_identifier("storage_struct")
+                                                            .with_member(&instance_field_name)
+                                                            .with_read_call(),
                                                         rhs: sway::Expression::from(sway::Literal::DecInt(
                                                             1_u64.into(),
                                                             None,

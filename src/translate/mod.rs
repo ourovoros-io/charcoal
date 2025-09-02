@@ -193,7 +193,7 @@ pub fn get_abi_function_call_type(
         // Ensure the supplied function call parameters match the function's parameters
         let mut function_parameter_count = function_parameters.entries.len();
 
-        if function.storage_struct_parameter.is_some() {
+        if !is_abi_cast && function.storage_struct_parameter.is_some() {
             function_parameter_count += 1;
         }
 

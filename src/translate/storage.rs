@@ -105,8 +105,14 @@ pub fn translate_state_variable(
     );
 
     // Storage fields should not be wrapped in a `StorageKey<T>`
-    if is_storage && let Some(storage_key_type) = variable_type_name.storage_key_type() {
-        variable_type_name = storage_key_type;
+    if is_storage {
+        if let Some(option_type) = variable_type_name.option_type()
+            && let Some(storage_key_type) = option_type.storage_key_type()
+        {
+            variable_type_name = storage_key_type;
+        } else if let Some(storage_key_type) = variable_type_name.storage_key_type() {
+            variable_type_name = storage_key_type;
+        }
     }
 
     // Translate the variable's initial value
@@ -154,6 +160,14 @@ pub fn translate_state_variable(
             || variable_type_name.is_storage_map()
             || variable_type_name.is_storage_bytes())
     {
+        check_generic_parameters_for_storage_structs(
+            project,
+            module.clone(),
+            scope.clone(),
+            variable_type_name.clone(),
+            &mut mapping_names,
+        );
+
         if let Some(x) = variable_definition.initializer.as_ref() {
             let value = translate_expression(project, module.clone(), scope.clone(), x)?;
 
@@ -201,9 +215,13 @@ pub fn translate_state_variable(
 
     if value.is_none() {
         // HACK: Add to mapping names for structs in storage that contain fields of type `Option<StorageKey<T>>`
-        if let Some(struct_definition) =
-            project.find_struct(module.clone(), scope.clone(), &variable_type_name.to_string())
-        {
+        if let Some(struct_definition) = generate_storage_struct_variables(
+            project,
+            module.clone(),
+            scope.clone(),
+            variable_type_name.clone(),
+            &mut mapping_names,
+        ) {
             let struct_definition = struct_definition.borrow();
 
             let fields = if struct_definition.memory.name == variable_type_name.to_string() {
@@ -225,47 +243,20 @@ pub fn translate_state_variable(
                     continue;
                 };
 
-                let Some(storage_key_type) = option_type.storage_key_type() else {
+                if !option_type.is_storage_key() {
                     continue;
-                };
-
-                if !mapping_names.iter().any(|(n, _)| *n == struct_field_name) {
-                    mapping_names.push((struct_field_name.clone(), vec![]));
                 }
-
-                let mapping_names = mapping_names.iter_mut().find(|m| m.0 == struct_field_name).unwrap();
-                mapping_names.1.push(field.new_name.clone());
-
-                // Ensure the instance count field exists in storage
-                module.borrow_mut().create_storage_field(
-                    scope.clone(),
-                    instance_field_name.as_str(),
-                    &sway::TypeName::create_identifier("u64"),
-                    &sway::Expression::Literal(sway::Literal::DecInt(BigUint::zero(), None)),
-                );
 
                 // Ensure the instance mapping field exists in storage
                 let mapping_field_name = format!("{struct_field_name}_{}_instances", field.new_name,);
-
-                module.borrow_mut().create_storage_field(
-                    scope.clone(),
-                    mapping_field_name.as_str(),
-                    &sway::TypeName::create_generic(
-                        "StorageMap",
-                        vec![sway::TypeName::create_identifier("u64"), storage_key_type.clone()],
-                    ),
-                    &sway::Expression::from(sway::Constructor {
-                        type_name: sway::TypeName::create_identifier("StorageMap"),
-                        fields: vec![],
-                    }),
-                );
 
                 field_initializations.push(sway::Statement::from(sway::Expression::from(sway::BinaryExpression {
                     operator: "=".to_string(),
                     lhs: sway::Expression::create_identifier(&new_name).with_member(&field.new_name),
                     rhs: sway::Expression::create_identifier("storage_struct")
                         .with_member(&mapping_field_name)
-                        .with_get_call(sway::Expression::create_identifier("instance_index")),
+                        .with_get_call(sway::Expression::create_identifier("instance_index"))
+                        .into_some_call(),
                 })));
             }
 
@@ -291,7 +282,9 @@ pub fn translate_state_variable(
                             .with_member(&instance_field_name)
                             .with_write_call(sway::Expression::from(sway::BinaryExpression {
                                 operator: "+".to_string(),
-                                lhs: sway::Expression::create_identifier(&instance_field_name),
+                                lhs: sway::Expression::create_identifier("storage_struct")
+                                    .with_member(&instance_field_name)
+                                    .with_read_call(),
                                 rhs: sway::Expression::from(sway::Literal::DecInt(1_u64.into(), None)),
                             })),
                     ),
@@ -374,6 +367,10 @@ pub fn translate_state_variable(
     }
     // Handle regular state variable definitions
     else if storage_namespace.is_some() {
+        if let Some((storage_map_key_type, storage_map_value_type)) = variable_type_name.storage_map_type() {
+            // TODO: recurse through storage map generic parameters and replace `String` keys with `b256`
+        }
+
         module
             .borrow_mut()
             .get_storage_struct(scope.clone())
@@ -503,7 +500,42 @@ pub fn generate_state_variable_getter_functions(
             });
 
             for (parameter, needs_unwrap) in parameters.iter() {
-                expression = expression.with_get_call(sway::Expression::create_identifier(parameter.name.as_str()));
+                let key_expression = if let Some(parameter_type) = parameter.type_name.as_ref()
+                    && parameter_type.is_string()
+                {
+                    // use std::hash::*;
+                    module.borrow_mut().ensure_use_declared("std::hash::*");
+
+                    // {
+                    //     let mut x = Hasher::new();
+                    //     x.write_str(a.as_str());
+                    //     x.keccak256()
+                    // }
+                    let variable_name = scope.borrow_mut().generate_unique_variable_name("x");
+
+                    sway::Expression::from(sway::Block {
+                        statements: vec![
+                            sway::Statement::from(sway::Let {
+                                pattern: sway::LetPattern::Identifier(sway::LetIdentifier {
+                                    is_mutable: true,
+                                    name: variable_name.clone(),
+                                }),
+                                type_name: None,
+                                value: sway::Expression::create_function_call("Hasher::new", None, vec![]),
+                            }),
+                            sway::Statement::from(
+                                sway::Expression::create_identifier(&variable_name).with_write_str_call(
+                                    sway::Expression::create_identifier(&parameter.name).with_as_str_call(),
+                                ),
+                            ),
+                        ],
+                        final_expr: Some(sway::Expression::create_identifier(&variable_name).with_keccak256_call()),
+                    })
+                } else {
+                    sway::Expression::create_identifier(parameter.name.as_str())
+                };
+
+                expression = expression.with_get_call(key_expression);
 
                 if *needs_unwrap {
                     expression = expression.with_unwrap_call();
@@ -519,7 +551,11 @@ pub fn generate_state_variable_getter_functions(
             let value = expression.with_read_call();
             let value_type = get_expression_type(project, module.clone(), scope.clone(), &value)?;
 
-            coerce_expression(
+            if return_type.is_abi_type() {
+                return_type = sway::TypeName::create_identifier("Identity");
+            }
+
+            let result = coerce_expression(
                 project,
                 module.clone(),
                 scope.clone(),
@@ -527,7 +563,9 @@ pub fn generate_state_variable_getter_functions(
                 &value_type,
                 &return_type,
             )
-            .unwrap()
+            .unwrap();
+
+            result
         } else if state_variable_info.is_constant || state_variable_info.is_immutable {
             sway::Expression::create_identifier(state_variable_info.new_name.as_str())
         } else {
@@ -658,4 +696,112 @@ pub fn generate_state_variable_getter_functions(
     });
 
     Ok(Some((abi_function, toplevel_function, impl_function)))
+}
+
+pub fn generate_storage_struct_variables(
+    project: &mut Project,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
+    variable_type_name: sway::TypeName,
+    mapping_names: &mut Vec<(String, Vec<String>)>,
+) -> Option<Rc<RefCell<ir::Struct>>> {
+    let Some(struct_definition) = project.find_struct(module.clone(), scope.clone(), &variable_type_name.to_string())
+    else {
+        return None;
+    };
+
+    let struct_definition_rc = struct_definition.clone();
+    let struct_definition = struct_definition.borrow();
+
+    let fields = if struct_definition.memory.name == variable_type_name.to_string() {
+        struct_definition.memory.fields.as_slice()
+    } else if struct_definition.storage.name == variable_type_name.to_string() {
+        struct_definition.storage.fields.as_slice()
+    } else {
+        todo!()
+    };
+
+    let struct_field_name = translate_naming_convention(&variable_type_name.to_string(), Case::Snake);
+
+    let instance_field_name = format!("{struct_field_name}_instance_count");
+
+    for field in fields.iter() {
+        let Some(option_type) = field.type_name.option_type() else {
+            continue;
+        };
+
+        let Some(storage_key_type) = option_type.storage_key_type() else {
+            continue;
+        };
+
+        if !mapping_names.iter().any(|(n, _)| *n == struct_field_name) {
+            mapping_names.push((struct_field_name.clone(), vec![]));
+        }
+
+        let mapping_names = mapping_names.iter_mut().find(|m| m.0 == struct_field_name).unwrap();
+        mapping_names.1.push(field.new_name.clone());
+
+        // Ensure the instance count field exists in storage
+        module.borrow_mut().create_storage_field(
+            scope.clone(),
+            instance_field_name.as_str(),
+            &sway::TypeName::create_identifier("u64"),
+            &sway::Expression::Literal(sway::Literal::DecInt(BigUint::zero(), None)),
+        );
+
+        // Ensure the instance mapping field exists in storage
+        let mapping_field_name = format!("{struct_field_name}_{}_instances", field.new_name,);
+
+        module.borrow_mut().create_storage_field(
+            scope.clone(),
+            mapping_field_name.as_str(),
+            &sway::TypeName::create_generic(
+                "StorageMap",
+                vec![sway::TypeName::create_identifier("u64"), storage_key_type.clone()],
+            ),
+            &sway::Expression::from(sway::Constructor {
+                type_name: sway::TypeName::create_identifier("StorageMap"),
+                fields: vec![],
+            }),
+        );
+    }
+
+    Some(struct_definition_rc)
+}
+
+pub fn check_generic_parameters_for_storage_structs(
+    project: &mut Project,
+    module: Rc<RefCell<ir::Module>>,
+    scope: Rc<RefCell<ir::Scope>>,
+    variable_type_name: sway::TypeName,
+    mapping_names: &mut Vec<(String, Vec<String>)>,
+) {
+    let sway::TypeName::Identifier { generic_parameters, .. } = &variable_type_name else {
+        return;
+    };
+
+    if generic_parameters.is_none() {
+        generate_storage_struct_variables(
+            project,
+            module.clone(),
+            scope.clone(),
+            variable_type_name,
+            mapping_names,
+        );
+        return;
+    }
+
+    let Some(generic_parameters) = generic_parameters else {
+        return;
+    };
+
+    for generic_parameter in generic_parameters.iter() {
+        check_generic_parameters_for_storage_structs(
+            project,
+            module.clone(),
+            scope.clone(),
+            generic_parameter.type_name.clone(),
+            mapping_names,
+        );
+    }
 }

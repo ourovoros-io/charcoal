@@ -233,6 +233,20 @@ impl Display for GenericParameterList {
     }
 }
 
+impl std::ops::Deref for GenericParameterList {
+    type Target = Vec<GenericParameter>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.entries
+    }
+}
+
+impl std::ops::DerefMut for GenericParameterList {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.entries
+    }
+}
+
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 #[derive(Clone, Debug, PartialEq)]
@@ -2624,6 +2638,11 @@ impl Expression {
     }
 
     #[inline(always)]
+    pub fn with_write_str_call(&self, value: Expression) -> Self {
+        self.with_function_calls(&[("write_str", Some((None, vec![value])))])
+    }
+
+    #[inline(always)]
     pub fn with_store_vec_call(&self, value: Expression) -> Self {
         self.with_function_calls(&[("store_vec", Some((None, vec![value])))])
     }
@@ -2631,6 +2650,11 @@ impl Expression {
     #[inline(always)]
     pub fn with_abi_encode_call(&self, buffer_expression: Expression) -> Self {
         self.with_function_calls(&[("abi_encode", Some((None, vec![buffer_expression])))])
+    }
+
+    #[inline(always)]
+    pub fn with_keccak256_call(&self) -> Self {
+        self.with_function_calls(&[("keccak256", Some((None, vec![])))])
     }
 
     #[inline(always)]

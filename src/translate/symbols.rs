@@ -644,7 +644,8 @@ pub fn resolve_abi_function_call(
             }
         }
 
-        if let Some(storage_struct_parameter) = storage_struct_parameter.as_ref()
+        if contract_id.is_none()
+            && let Some(storage_struct_parameter) = storage_struct_parameter.as_ref()
             && let Some(function_storage_struct_type) = storage_struct_parameter.type_name.clone()
         {
             let contract_storage_struct_type =

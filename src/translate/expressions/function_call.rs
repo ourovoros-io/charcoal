@@ -1618,6 +1618,7 @@ fn translate_identity_member_access_function_call(
     let type_name = get_expression_type(project, module.clone(), scope.clone(), &container)?;
 
     // Check to see if the type is located in an external ABI
+
     if let Some(abi_type_name) = type_name.abi_type()
         && let sway::TypeName::Identifier { name, .. } = abi_type_name
         && let Some((module, contract)) = project.find_module_and_contract(module.clone(), &name)
