@@ -121,11 +121,6 @@ pub fn translate_contract_definition(
 
     let scope = Rc::new(RefCell::new(ir::Scope::new(Some(contract_name.as_str()), None, None)));
 
-    // HACK: Add an implicit `constructor_called` state variable if we have a constructor function
-    if has_constructor {
-        ensure_constructor_called_fields_exist(project, module.clone(), scope.clone());
-    }
-
     fn collect_inherited_storage_namespaces(
         project: &mut Project,
         module: Rc<RefCell<ir::Module>>,
@@ -207,6 +202,11 @@ pub fn translate_contract_definition(
         mapping_names.extend(state_variable_info.mapping_names.clone());
 
         state_variable_infos.push(state_variable_info);
+    }
+
+    // HACK: Add an implicit `constructor_called` state variable if we have a constructor function
+    if has_constructor || !deferred_initializations.is_empty() {
+        ensure_constructor_called_fields_exist(project, module.clone(), scope.clone());
     }
 
     for state_variable_info in state_variable_infos {

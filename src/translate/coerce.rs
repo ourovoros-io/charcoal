@@ -63,7 +63,7 @@ pub fn coerce_expression(
         return Some(result);
     }
 
-    if let Some(result) = coerce_strandard_types(&mut context) {
+    if let Some(result) = coerce_standard_types(&mut context) {
         return Some(result);
     }
 
@@ -359,7 +359,23 @@ fn coerce_storage_types(context: &mut CoerceContext) -> Option<sway::Expression>
                                                     .with_get_call(sway::Expression::create_identifier(
                                                         "instance_index",
                                                     ))
-                                                    .with_write_slice_call(memory_constructor_field.value.clone()),
+                                                    .with_write_slice_call(
+                                                        if storage_key_type.is_storage_string()
+                                                            && memory_struct_field.type_name.is_string_slice()
+                                                        {
+                                                            coerce_expression(
+                                                                context.project,
+                                                                context.module.clone(),
+                                                                context.scope.clone(),
+                                                                &memory_constructor_field.value.clone(),
+                                                                &memory_struct_field.type_name,
+                                                                &sway::TypeName::create_identifier("String"),
+                                                            )
+                                                            .unwrap()
+                                                        } else {
+                                                            memory_constructor_field.value.clone()
+                                                        },
+                                                    ),
                                             ));
 
                                             continue;
@@ -406,6 +422,22 @@ fn coerce_storage_types(context: &mut CoerceContext) -> Option<sway::Expression>
 
                     let variable_name = context.scope.borrow_mut().generate_unique_variable_name("x");
 
+                    let scope = Rc::new(RefCell::new(ir::Scope::new(None, None, Some(context.scope.clone()))));
+                    scope.borrow_mut().add_variable(Rc::new(RefCell::new(ir::Variable {
+                        old_name: String::new(),
+                        new_name: variable_name.clone(),
+                        type_name: get_expression_type(
+                            context.project,
+                            context.module.clone(),
+                            context.scope.clone(),
+                            &expression,
+                        )
+                        .unwrap(),
+                        statement_index: None,
+                        read_count: 0,
+                        mutation_count: 0,
+                    })));
+
                     return Some(sway::Expression::from(sway::Block {
                         statements: vec![sway::Statement::from(sway::Let {
                             pattern: sway::LetPattern::Identifier(sway::LetIdentifier {
@@ -422,10 +454,18 @@ fn coerce_storage_types(context: &mut CoerceContext) -> Option<sway::Expression>
                                 .zip(rhs_fields.iter())
                                 .map(|(lhs_field, rhs_field)| sway::ConstructorField {
                                     name: rhs_field.new_name.clone(),
-                                    value: sway::Expression::from(sway::MemberAccess {
-                                        expression: sway::Expression::create_identifier(variable_name.as_str()),
-                                        member: lhs_field.new_name.clone(),
-                                    }),
+                                    value: coerce_expression(
+                                        context.project,
+                                        context.module.clone(),
+                                        scope.clone(),
+                                        &sway::Expression::from(sway::MemberAccess {
+                                            expression: sway::Expression::create_identifier(variable_name.as_str()),
+                                            member: lhs_field.new_name.clone(),
+                                        }),
+                                        &lhs_field.type_name,
+                                        &rhs_field.type_name,
+                                    )
+                                    .unwrap(),
                                 })
                                 .collect(),
                         })),
@@ -575,7 +615,7 @@ fn coerce_storage_types(context: &mut CoerceContext) -> Option<sway::Expression>
     // Check for standard coercions
     if let Some(storage_key_type) = from_type_name.storage_key_type()
         && !context.to_type_name.is_storage_key()
-        && let Some(result) = coerce_strandard_types(&mut CoerceContext {
+        && let Some(result) = coerce_standard_types(&mut CoerceContext {
             project: context.project,
             module: context.module.clone(),
             scope: context.scope.clone(),
@@ -629,9 +669,13 @@ fn coerce_broken_types(context: &mut CoerceContext) -> Option<sway::Expression> 
         return Some(context.expression.with_as_str_call());
     }
 
-    // HACK: Check for `StorageString` to `str` coercions
-    if context.from_type_name.is_storage_string() && context.to_type_name.is_string_slice() {
-        return Some(context.expression.with_as_str_call());
+    // HACK: Check for `str` to `Option<StorageKey<StorageString>>` coercions
+    if context.from_type_name.is_string_slice()
+        && let Some(option_type) = context.to_type_name.option_type()
+        && let Some(storage_key_type) = option_type.storage_key_type()
+        && storage_key_type.is_storage_string()
+    {
+        return Some(context.expression.clone());
     }
 
     // HACK: Check for `T` to `Option<StorageKey<T>>` coercions
@@ -686,7 +730,7 @@ fn coerce_broken_types(context: &mut CoerceContext) -> Option<sway::Expression> 
     None
 }
 
-fn coerce_strandard_types(context: &mut CoerceContext) -> Option<sway::Expression> {
+fn coerce_standard_types(context: &mut CoerceContext) -> Option<sway::Expression> {
     if let Some(result) = coerce_generic_types(context) {
         return Some(result);
     }
@@ -1777,6 +1821,16 @@ fn coerce_to_string_slice(context: &mut CoerceContext) -> Option<sway::Expressio
         );
     }
 
+    // Check for `StorageString` to `str` coercions
+    if context.from_type_name.is_storage_string() && context.to_type_name.is_string_slice() {
+        let mut expression = context.expression.clone();
+        if let Some(container) = expression.to_read_call_parts() {
+            expression = container.clone();
+        }
+
+        return Some(expression.with_read_slice_call().with_unwrap_call().with_as_str_call());
+    }
+
     None
 }
 
@@ -1784,6 +1838,10 @@ fn coerce_to_string_slice(context: &mut CoerceContext) -> Option<sway::Expressio
 fn coerce_to_string(context: &mut CoerceContext) -> Option<sway::Expression> {
     // Check for `str` to `String` coercions
     if context.from_type_name.is_string_slice() && context.to_type_name.is_string() {
+        if let Some(expression) = context.expression.to_as_str_call_parts() {
+            return Some(expression.clone());
+        }
+
         context.module.borrow_mut().ensure_use_declared("std::string::*");
 
         // String::from_ascii_str(x)

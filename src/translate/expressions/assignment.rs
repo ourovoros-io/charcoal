@@ -350,22 +350,21 @@ pub fn create_assignment_expression(
         variable.borrow_mut().mutation_count += 1;
     }
 
-    let type_name = match variable.clone() {
+    let mut type_name = match variable.clone() {
         Some(variable) => variable.borrow().type_name.clone(),
         None => get_expression_type(project, module.clone(), scope.clone(), expression)?,
     };
 
     let mut expression = expression.clone();
-    let mut expr_type_name = get_expression_type(project, module.clone(), scope.clone(), &expression)?;
 
-    if let Some(option_type) = expr_type_name.option_type()
+    if let Some(option_type) = type_name.option_type()
         && let Some(storage_key_type) = option_type.storage_key_type()
     {
         expression = expression.with_unwrap_call().with_read_call();
-        expr_type_name = storage_key_type;
-    } else if let Some(storage_key_type) = expr_type_name.storage_key_type() {
+        type_name = storage_key_type;
+    } else if let Some(storage_key_type) = type_name.storage_key_type() {
         expression = expression.with_read_call();
-        expr_type_name = storage_key_type;
+        type_name = storage_key_type;
     }
 
     if let Some(container) = expression.to_read_call_parts() {
@@ -484,9 +483,7 @@ pub fn create_assignment_expression(
     }
 
     // Check for assignments to fields of struct variables defined in scope
-    if !type_name.is_compatible_with(&expr_type_name)
-        && let sway::Expression::MemberAccess(member_access) = &expression
-    {
+    if let sway::Expression::MemberAccess(member_access) = &expression {
         let type_name = get_expression_type(project, module.clone(), scope.clone(), &member_access.expression)?;
 
         if let Some(struct_definition) = module.borrow().structs.iter().find(|s| {
@@ -561,68 +558,60 @@ pub fn create_assignment_expression(
         }
     }
 
+    // Check for assignments to arrays
+    if let sway::Expression::ArrayAccess(_) = &expression {
+        let container_type = get_expression_type(project, module.clone(), scope.clone(), &expression)?;
+
+        if let Some(result) = coerce_expression(
+            project,
+            module.clone(),
+            scope.clone(),
+            &rhs,
+            rhs_type_name,
+            &container_type,
+        ) {
+            return Ok(sway::Expression::from(sway::BinaryExpression {
+                operator: "=".to_string(),
+                lhs: expression.clone(),
+                rhs: result,
+            }));
+        }
+    }
+
     if let sway::TypeName::Identifier {
         name,
         generic_parameters,
     } = &type_name
     {
         match (name.as_str(), generic_parameters.as_ref()) {
-            ("StorageKey", Some(generic_parameters)) if generic_parameters.entries.len() == 1 => {
-                if let sway::TypeName::Identifier {
-                    name,
-                    generic_parameters: storage_key_generic_parameters,
-                } = &generic_parameters.entries[0].type_name
-                {
-                    match (name.as_str(), storage_key_generic_parameters.as_ref()) {
-                        ("StorageString", None) | ("StorageBytes", None) => {
-                            scope
-                                .borrow_mut()
-                                .set_function_storage_accesses(module.clone(), false, true);
+            ("StorageString", None) | ("StorageBytes", None) => {
+                let Some(expression) = expression.to_read_call_parts() else {
+                    panic!("Invalid type name for: {} - {}", expression.display(), type_name);
+                };
 
-                            return Ok(expression.with_write_slice_call(match operator {
-                                "=" => coerce_expression(
-                                    project,
-                                    module.clone(),
-                                    scope.clone(),
-                                    rhs,
-                                    &rhs_type_name,
-                                    &if name == "StorageString" {
-                                        sway::TypeName::create_identifier("String")
-                                    } else {
-                                        sway::TypeName::create_identifier("Bytes")
-                                    },
-                                )
-                                .unwrap(),
+                scope
+                    .borrow_mut()
+                    .set_function_storage_accesses(module.clone(), false, true);
 
-                                _ => {
-                                    todo!()
-                                }
-                            }));
-                        }
+                return Ok(expression.with_write_slice_call(match operator {
+                    "=" => coerce_expression(
+                        project,
+                        module.clone(),
+                        scope.clone(),
+                        rhs,
+                        &rhs_type_name,
+                        &if name == "StorageString" {
+                            sway::TypeName::create_identifier("String")
+                        } else {
+                            sway::TypeName::create_identifier("Bytes")
+                        },
+                    )
+                    .unwrap(),
 
-                        _ => {
-                            scope
-                                .borrow_mut()
-                                .set_function_storage_accesses(module.clone(), false, true);
-
-                            return Ok(expression.with_write_call(match operator {
-                                "=" => coerce_expression(
-                                    project,
-                                    module.clone(),
-                                    scope.clone(),
-                                    rhs,
-                                    &rhs_type_name,
-                                    &generic_parameters.entries[0].type_name,
-                                )
-                                .unwrap(),
-
-                                _ => {
-                                    todo!()
-                                }
-                            }));
-                        }
+                    _ => {
+                        todo!()
                     }
-                }
+                }));
             }
 
             ("Vec", Some(generic_parameters)) if generic_parameters.entries.len() == 1 => {
@@ -795,7 +784,7 @@ pub fn create_assignment_expression(
                                 scope.clone(),
                                 rhs,
                                 rhs_type_name,
-                                &expr_type_name,
+                                &type_name,
                             )
                             .unwrap(),
                         }));
@@ -808,18 +797,11 @@ pub fn create_assignment_expression(
     }
 
     // All other assignments
-    let Some(rhs) = coerce_expression(
-        project,
-        module.clone(),
-        scope.clone(),
-        rhs,
-        rhs_type_name,
-        &expr_type_name,
-    ) else {
+    let Some(rhs) = coerce_expression(project, module.clone(), scope.clone(), rhs, rhs_type_name, &type_name) else {
         panic!(
             "Failed to coerce from `{}` to `{}`: `{}`",
             rhs_type_name,
-            expr_type_name,
+            type_name,
             sway::TabbedDisplayer(rhs)
         );
     };
@@ -855,7 +837,7 @@ pub fn create_assignment_expression(
                     sway::TypeName::Tuple {
                         type_names: rhs_type_names,
                     },
-                ) = (expr_type_name, rhs_type_name)
+                ) = (type_name, rhs_type_name)
                 && lhs_type_names.len() == rhs_type_names.len()
             {
                 let variable_name = scope.borrow_mut().generate_unique_variable_name("x");

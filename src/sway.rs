@@ -1152,98 +1152,6 @@ impl TypeName {
 
         self
     }
-
-    /// Gets the parameters and return type name for the getter function of the type name
-    pub fn getter_function_parameters_and_return_type(&self) -> Option<(Vec<(Parameter, bool)>, TypeName)> {
-        match self {
-            TypeName::Undefined => panic!("Undefined type name"),
-
-            TypeName::Identifier {
-                name,
-                generic_parameters: Some(generic_parameters),
-            } => match name.as_str() {
-                "StorageMap" => {
-                    let mut parameters = vec![(
-                        Parameter {
-                            name: "_".into(),
-                            type_name: Some(if generic_parameters.entries[0].type_name.is_storage_string() {
-                                TypeName::Identifier {
-                                    name: "String".to_string(),
-                                    generic_parameters: None,
-                                }
-                            } else {
-                                generic_parameters.entries[0].type_name.clone()
-                            }),
-                            ..Default::default()
-                        },
-                        false,
-                    )];
-
-                    let mut return_type = generic_parameters.entries[1].type_name.clone();
-
-                    if let Some((inner_parameters, inner_return_type)) = generic_parameters.entries[1]
-                        .type_name
-                        .getter_function_parameters_and_return_type()
-                    {
-                        parameters.extend(inner_parameters);
-                        return_type = inner_return_type;
-                    }
-
-                    let parameter_names: Vec<String> = ('a'..='z')
-                        .enumerate()
-                        .take_while(|(i, _)| *i < parameters.len())
-                        .map(|(_, c)| c.into())
-                        .collect();
-
-                    for (i, name) in parameter_names.into_iter().enumerate() {
-                        parameters[i].0.name = name;
-                    }
-
-                    Some((parameters, return_type))
-                }
-
-                "StorageVec" => {
-                    let mut parameters = vec![(
-                        Parameter {
-                            name: "_".into(),
-                            type_name: Some(TypeName::Identifier {
-                                name: "u64".into(),
-                                generic_parameters: None,
-                            }),
-                            ..Default::default()
-                        },
-                        true,
-                    )];
-
-                    let mut return_type = generic_parameters.entries[0].type_name.clone();
-
-                    if let Some((inner_parameters, inner_return_type)) = generic_parameters.entries[0]
-                        .type_name
-                        .getter_function_parameters_and_return_type()
-                    {
-                        parameters.extend(inner_parameters);
-                        return_type = inner_return_type;
-                    }
-
-                    let parameter_names: Vec<String> = ('a'..='z')
-                        .enumerate()
-                        .take_while(|(i, _)| *i < parameters.len())
-                        .map(|(_, c)| c.into())
-                        .collect();
-
-                    for (i, name) in parameter_names.into_iter().enumerate() {
-                        parameters[i].0.name = name;
-                    }
-
-                    Some((parameters, return_type))
-                }
-
-                _ => None,
-            },
-
-            _ => None,
-        }
-    }
 }
 
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -2463,6 +2371,19 @@ impl Expression {
     #[inline(always)]
     pub fn with_as_str_call(&self) -> Self {
         self.with_function_calls(&[("as_str", Some((None, vec![])))])
+    }
+
+    #[inline(always)]
+    pub fn to_as_str_call_parts(&self) -> Option<&Self> {
+        if let Self::FunctionCall(f) = self
+            && let Self::MemberAccess(m) = &f.function
+            && m.member == "as_str"
+            && f.parameters.is_empty()
+        {
+            return Some(&m.expression);
+        }
+
+        None
     }
 
     #[inline(always)]

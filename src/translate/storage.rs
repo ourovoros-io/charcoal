@@ -367,9 +367,22 @@ pub fn translate_state_variable(
     }
     // Handle regular state variable definitions
     else if storage_namespace.is_some() {
-        if let Some((storage_map_key_type, storage_map_value_type)) = variable_type_name.storage_map_type() {
-            // TODO: recurse through storage map generic parameters and replace `String` keys with `b256`
+        // Recurse through storage map generic parameters and replace `String` keys with `b256`
+
+        fn fix_storage_map_key_type(type_name: &mut sway::TypeName) {
+            if let Some((storage_map_key_type, mut storage_map_value_type)) = type_name.storage_map_type() {
+                fix_storage_map_key_type(&mut storage_map_value_type);
+
+                if storage_map_key_type.is_storage_string() {
+                    *type_name = sway::TypeName::create_generic(
+                        "StorageMap",
+                        vec![sway::TypeName::create_identifier("b256"), storage_map_value_type],
+                    )
+                }
+            }
         }
+        let mut variable_type_name = variable_type_name.clone();
+        fix_storage_map_key_type(&mut variable_type_name);
 
         module
             .borrow_mut()
@@ -427,9 +440,8 @@ pub fn generate_state_variable_getter_functions(
     let mut parameters = vec![];
     let mut return_type = get_return_type_name(project, module.clone(), &state_variable_info.type_name);
 
-    if let Some((inner_parameters, inner_return_type)) = state_variable_info
-        .type_name
-        .getter_function_parameters_and_return_type()
+    if let Some((inner_parameters, inner_return_type)) =
+        getter_function_parameters_and_return_type(module.clone(), &state_variable_info.type_name)
     {
         parameters = inner_parameters;
         return_type = inner_return_type;
@@ -696,6 +708,101 @@ pub fn generate_state_variable_getter_functions(
     });
 
     Ok(Some((abi_function, toplevel_function, impl_function)))
+}
+
+/// Gets the parameters and return type name for the getter function of the type name
+pub fn getter_function_parameters_and_return_type(
+    module: Rc<RefCell<ir::Module>>,
+    type_name: &sway::TypeName,
+) -> Option<(Vec<(sway::Parameter, bool)>, sway::TypeName)> {
+    match type_name {
+        sway::TypeName::Undefined => panic!("Undefined type name"),
+
+        sway::TypeName::Identifier {
+            name,
+            generic_parameters: Some(generic_parameters),
+        } => match name.as_str() {
+            "StorageMap" => {
+                let mut parameters = vec![(
+                    sway::Parameter {
+                        name: "_".into(),
+                        type_name: Some(if generic_parameters.entries[0].type_name.is_storage_string() {
+                            module.borrow_mut().ensure_use_declared("std::string::*");
+
+                            sway::TypeName::Identifier {
+                                name: "String".to_string(),
+                                generic_parameters: None,
+                            }
+                        } else {
+                            generic_parameters.entries[0].type_name.clone()
+                        }),
+                        ..Default::default()
+                    },
+                    false,
+                )];
+
+                let mut return_type = generic_parameters.entries[1].type_name.clone();
+
+                if let Some((inner_parameters, inner_return_type)) =
+                    getter_function_parameters_and_return_type(module.clone(), &generic_parameters.entries[1].type_name)
+                {
+                    parameters.extend(inner_parameters);
+                    return_type = inner_return_type;
+                }
+
+                let parameter_names: Vec<String> = ('a'..='z')
+                    .enumerate()
+                    .take_while(|(i, _)| *i < parameters.len())
+                    .map(|(_, c)| c.into())
+                    .collect();
+
+                for (i, name) in parameter_names.into_iter().enumerate() {
+                    parameters[i].0.name = name;
+                }
+
+                Some((parameters, return_type))
+            }
+
+            "StorageVec" => {
+                let mut parameters = vec![(
+                    sway::Parameter {
+                        name: "_".into(),
+                        type_name: Some(sway::TypeName::Identifier {
+                            name: "u64".into(),
+                            generic_parameters: None,
+                        }),
+                        ..Default::default()
+                    },
+                    true,
+                )];
+
+                let mut return_type = generic_parameters.entries[0].type_name.clone();
+
+                if let Some((inner_parameters, inner_return_type)) =
+                    getter_function_parameters_and_return_type(module.clone(), &generic_parameters.entries[0].type_name)
+                {
+                    parameters.extend(inner_parameters);
+                    return_type = inner_return_type;
+                }
+
+                let parameter_names: Vec<String> = ('a'..='z')
+                    .enumerate()
+                    .take_while(|(i, _)| *i < parameters.len())
+                    .map(|(_, c)| c.into())
+                    .collect();
+
+                for (i, name) in parameter_names.into_iter().enumerate() {
+                    parameters[i].0.name = name;
+                }
+
+                Some((parameters, return_type))
+            }
+
+            _ => None,
+        },
+
+        _ => None,
+    }
 }
 
 pub fn generate_storage_struct_variables(

@@ -128,7 +128,6 @@ pub fn translate_unary_expression(
     expression: &solidity::Expression,
 ) -> Result<sway::Expression, Error> {
     let expression = translate_expression(project, module.clone(), scope.clone(), expression)?;
-    let expression_type = get_expression_type(project, module.clone(), scope.clone(), &expression)?;
 
     // NOTE: Sway does not have a negate operator, so we need to make sure to use the correct translation
     if operator == "-" {
@@ -181,15 +180,7 @@ pub fn translate_unary_expression(
     if operator == "!" {
         return Ok(sway::Expression::from(sway::UnaryExpression {
             operator: operator.into(),
-            expression: coerce_expression(
-                project,
-                module,
-                scope,
-                &expression,
-                &expression_type,
-                &sway::TypeName::create_identifier("bool"),
-            )
-            .unwrap(),
+            expression,
         }));
     }
 

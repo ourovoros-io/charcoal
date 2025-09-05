@@ -166,7 +166,57 @@ pub fn translate_variable_access_expression(
                                     name,
                                     generic_parameters,
                                 } => match (name.as_str(), generic_parameters.as_ref()) {
-                                    ("StorageMap", Some(_)) => expression.with_get_call(index),
+                                    ("StorageMap", Some(generic_parameters)) => {
+                                        let index_type =
+                                            get_expression_type(project, module.clone(), scope.clone(), &index)?;
+
+                                        if generic_parameters[0].type_name.is_b256()
+                                            && (index_type.is_string() || index_type.is_string_slice())
+                                        {
+                                            // use std::hash::*;
+                                            module.borrow_mut().ensure_use_declared("std::hash::*");
+
+                                            // {
+                                            //     let mut x = Hasher::new();
+                                            //     x.write_str(a.as_str());
+                                            //     x.keccak256()
+                                            // }
+                                            let variable_name = scope.borrow_mut().generate_unique_variable_name("x");
+
+                                            index = sway::Expression::from(sway::Block {
+                                                statements: vec![
+                                                    sway::Statement::from(sway::Let {
+                                                        pattern: sway::LetPattern::Identifier(sway::LetIdentifier {
+                                                            is_mutable: true,
+                                                            name: variable_name.clone(),
+                                                        }),
+                                                        type_name: None,
+                                                        value: sway::Expression::create_function_call(
+                                                            "Hasher::new",
+                                                            None,
+                                                            vec![],
+                                                        ),
+                                                    }),
+                                                    sway::Statement::from(
+                                                        sway::Expression::create_identifier(&variable_name)
+                                                            .with_write_str_call(if index_type.is_string() {
+                                                                index.with_as_str_call()
+                                                            } else if index_type.is_string_slice() {
+                                                                index
+                                                            } else {
+                                                                todo!()
+                                                            }),
+                                                    ),
+                                                ],
+                                                final_expr: Some(
+                                                    sway::Expression::create_identifier(&variable_name)
+                                                        .with_keccak256_call(),
+                                                ),
+                                            });
+                                        }
+
+                                        expression.with_get_call(index)
+                                    }
 
                                     ("StorageVec", Some(_)) => {
                                         let index_type_name =

@@ -39,4 +39,9 @@ contract Structs {
     function getProduct() public view returns (uint256, uint256) {
         return (product.price, product.stock);
     }
+
+    // Function to set a field
+    function setProductPrice(uint256 _price) public {
+        product.price = _price;
+    }
 }

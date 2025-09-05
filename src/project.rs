@@ -1593,6 +1593,7 @@ impl Project {
                         implementation: Some(Rc::new(RefCell::new(ir::Contract {
                             storage,
                             abi_impl,
+                            storage_struct: None,
                             ..ir::Contract::new(
                                 contract.name.as_str(),
                                 contract.kind.clone(),

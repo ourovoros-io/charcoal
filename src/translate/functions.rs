@@ -1557,8 +1557,6 @@ pub fn ensure_constructor_functions_exist(
     // Create the ABI impl function
     let mut impl_function = abi_function.clone();
 
-    let storage_namespace_name = module.borrow().get_storage_namespace_name(scope.clone()).unwrap();
-
     impl_function.body = Some(sway::Block {
         statements: vec![sway::Statement::from(sway::Let {
             pattern: sway::LetPattern::from(sway::LetIdentifier {
@@ -1566,32 +1564,17 @@ pub fn ensure_constructor_functions_exist(
                 name: "storage_struct".to_string(),
             }),
             type_name: None,
-            value: sway::Expression::from(sway::Constructor {
-                type_name: sway::TypeName::create_identifier(format!("{contract_name}Storage").as_str()),
-                fields: contract
+            value: sway::Expression::create_function_call(
+                contract
                     .borrow()
-                    .storage_struct
+                    .storage_struct_constructor_fn
                     .as_ref()
                     .unwrap()
-                    .borrow()
-                    .storage
-                    .fields
-                    .iter()
-                    .map(|f| sway::ConstructorField {
-                        name: f.new_name.clone(),
-                        value: sway::Expression::from(sway::MemberAccess {
-                            expression: sway::Expression::from(sway::PathExpr {
-                                root: sway::PathExprRoot::Identifier("storage".to_string()),
-                                segments: vec![sway::PathExprSegment {
-                                    name: storage_namespace_name.clone(),
-                                    generic_parameters: None,
-                                }],
-                            }),
-                            member: f.new_name.clone(),
-                        }),
-                    })
-                    .collect(),
-            }),
+                    .new_name
+                    .as_str(),
+                None,
+                vec![],
+            ),
         })],
         final_expr: Some(sway::Expression::create_function_call(
             function_name.top_level_fn_name.as_str(),
