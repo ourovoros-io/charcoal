@@ -368,6 +368,7 @@ pub fn translate_contract_definition(
             }
         }
 
+        ensure_storage_struct_constructor_exists(project, module.clone(), scope.clone(), contract.clone());
         ensure_constructor_functions_exist(project, module.clone(), scope.clone(), contract.clone());
 
         let mut module = module.borrow_mut();

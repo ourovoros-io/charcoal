@@ -1145,11 +1145,101 @@ fn coerce_to_integer_types(context: &mut CoerceContext) -> Option<sway::Expressi
 
     // Check for uint to `Bytes` coercions
     if (context.from_type_name.is_uint() || context.from_type_name.is_b256()) && context.to_type_name.is_bytes() {
-        if context.from_type_name.is_u8() {
-            todo!()
-        }
+        let array_expression = if context.from_type_name.is_u8() {
+            sway::Expression::from(sway::Array {
+                elements: vec![context.expression.clone()],
+            })
+        } else {
+            context.expression.with_to_be_bytes_call()
+        };
 
-        return Some(context.expression.with_to_be_bytes_call());
+        let array_type = get_expression_type(
+            context.project,
+            context.module.clone(),
+            context.scope.clone(),
+            &array_expression,
+        )
+        .unwrap();
+
+        let Some((array_element_type, array_length)) = array_type.array_info() else {
+            panic!("Expected array type, got: {}", array_type);
+        };
+
+        assert!(array_element_type.is_u8());
+
+        // {
+        //     let a = array_expression;
+        //     let mut b = Bytes::new();
+        //     let mut i = 0;
+        //     while i < array_length {
+        //         b.push(a[i]);
+        //         i += 1;
+        //     }
+        //     b
+        // }
+        let variable_name1 = context.scope.borrow_mut().generate_unique_variable_name("a");
+        let variable_name2 = context.scope.borrow_mut().generate_unique_variable_name("b");
+        let variable_name3 = context.scope.borrow_mut().generate_unique_variable_name("i");
+
+        return Some(sway::Expression::from(sway::Block {
+            statements: vec![
+                // let a = array_expression;
+                sway::Statement::from(sway::Let {
+                    pattern: sway::LetPattern::Identifier(sway::LetIdentifier {
+                        is_mutable: false,
+                        name: variable_name1.clone(),
+                    }),
+                    type_name: None,
+                    value: array_expression,
+                }),
+                // let mut b = Bytes::new();
+                sway::Statement::from(sway::Let {
+                    pattern: sway::LetPattern::Identifier(sway::LetIdentifier {
+                        is_mutable: true,
+                        name: variable_name2.clone(),
+                    }),
+                    type_name: None,
+                    value: sway::Expression::create_function_call("Bytes::new", None, vec![]),
+                }),
+                // let mut i = 0;
+                sway::Statement::from(sway::Let {
+                    pattern: sway::LetPattern::Identifier(sway::LetIdentifier {
+                        is_mutable: true,
+                        name: variable_name3.clone(),
+                    }),
+                    type_name: None,
+                    value: sway::Expression::create_dec_int_literal(0u8.into(), None),
+                }),
+                // while i < array_length {
+                sway::Statement::from(sway::Expression::from(sway::While {
+                    condition: sway::Expression::from(sway::BinaryExpression {
+                        operator: "<".into(),
+                        lhs: sway::Expression::create_identifier(&variable_name3),
+                        rhs: sway::Expression::create_dec_int_literal(array_length.into(), None),
+                    }),
+                    body: sway::Block {
+                        statements: vec![
+                            // b.push(a[i]);
+                            sway::Statement::from(
+                                sway::Expression::create_identifier(&variable_name2).with_push_call(
+                                    sway::Expression::create_identifier(&variable_name1)
+                                        .with_array_access(sway::Expression::create_identifier(&variable_name3)),
+                                ),
+                            ),
+                            // i += 1;
+                            sway::Statement::from(sway::Expression::create_binary(
+                                "+=",
+                                sway::Expression::create_identifier(&variable_name3),
+                                sway::Expression::create_dec_int_literal(1u8.into(), None),
+                            )),
+                        ],
+                        final_expr: None,
+                    },
+                })),
+            ],
+            // b
+            final_expr: Some(sway::Expression::create_identifier(&variable_name2)),
+        }));
     }
 
     // Check for `str` to `u8` coercions

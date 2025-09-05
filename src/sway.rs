@@ -2246,6 +2246,25 @@ impl Expression {
     }
 
     #[inline(always)]
+    pub fn create_dec_int_literal(value: BigUint, suffix: Option<&str>) -> Expression {
+        Expression::from(Literal::DecInt(value, suffix.map(str::to_string)))
+    }
+
+    #[inline(always)]
+    pub fn create_hex_int_literal(value: BigUint, suffix: Option<&str>) -> Expression {
+        Expression::from(Literal::DecInt(value, suffix.map(str::to_string)))
+    }
+
+    #[inline(always)]
+    pub fn create_binary(operator: &str, lhs: Expression, rhs: Expression) -> Expression {
+        Expression::from(BinaryExpression {
+            operator: operator.to_string(),
+            lhs,
+            rhs,
+        })
+    }
+
+    #[inline(always)]
     pub fn as_identifier(&self) -> Option<&str> {
         let Expression::PathExpr(path_expr) = self else {
             return None;
@@ -2280,6 +2299,14 @@ impl Expression {
         Self::from(MemberAccess {
             expression: self.clone(),
             member: member.to_string(),
+        })
+    }
+
+    #[inline(always)]
+    pub fn with_array_access(&self, index: Expression) -> Self {
+        Self::from(ArrayAccess {
+            expression: self.clone(),
+            index,
         })
     }
 
