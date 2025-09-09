@@ -19,7 +19,7 @@ pub fn translate_return_statement(
     //     project.loc_to_file_location_string(module.clone(), &expression.loc())
     // );
 
-    let current_function_name = scope.borrow().get_function_name().unwrap();
+    let current_function_name = scope.borrow().get_current_function_name().unwrap();
     let function = module
         .borrow()
         .functions

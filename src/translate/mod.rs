@@ -30,7 +30,7 @@ pub use structs::*;
 pub use symbols::*;
 pub use types::*;
 
-#[inline]
+#[inline(always)]
 pub fn translate_naming_convention(name: &str, case: Case) -> String {
     // HACK: do not allow dollar signs
     let mut name = name.replace('$', "dollar_sign").to_string();
@@ -52,6 +52,17 @@ pub fn translate_naming_convention(name: &str, case: Case) -> String {
         "self" => "this".into(),
         _ => name,
     }
+}
+
+#[inline(always)]
+pub fn check_for_reserved_keywords(name: &str) -> String {
+    if let "lib" | "src" | "main" | "library" | "contract" | "script" | "enum" | "struct" | "trait" | "abi" | "impl"
+    | "fn" | "const" | "pub" | "storage" | "configurable" = name
+    {
+        return format!("_{name}");
+    }
+
+    name.to_string()
 }
 
 /// Gets the base underlying type of the supplied type name
@@ -236,6 +247,7 @@ pub fn get_abi_function_call_type(
         let abi = contract.borrow().abi.clone();
 
         let scope = Rc::new(RefCell::new(ir::Scope::new(
+            Some(module.borrow().path.clone()),
             Some(inherit.to_string().as_str()),
             None,
             Some(scope.clone()),
@@ -395,11 +407,11 @@ fn get_path_expr_type(
             return Some(field.type_name.clone());
         }
 
-        let contract_name = scope.borrow().get_contract_name();
+        let contract_name = scope.borrow().get_current_contract_name();
         if let Some(contract_name) = contract_name
             && let Some(module) = project.find_module_containing_contract(module.clone(), &contract_name)
         {
-            let function_name = scope.borrow().get_function_name();
+            let function_name = scope.borrow().get_current_function_name();
             if let Some(function_name) = function_name {
                 let module = module.borrow();
 
@@ -473,7 +485,12 @@ fn get_block_type(
         return Ok(sway::TypeName::create_tuple(vec![]));
     };
 
-    let inner_scope = Rc::new(RefCell::new(ir::Scope::new(None, None, Some(scope.clone()))));
+    let inner_scope = Rc::new(RefCell::new(ir::Scope::new(
+        Some(module.borrow().path.clone()),
+        None,
+        None,
+        Some(scope.clone()),
+    )));
 
     for statement in block.statements.iter() {
         let sway::Statement::Let(sway::Let {
@@ -559,21 +576,24 @@ fn get_array_access_type(
 ) -> Result<sway::TypeName, Error> {
     let element_type_name = get_expression_type(project, module.clone(), scope.clone(), &array_access.expression)?;
 
-    let type_name = match &element_type_name {
-        sway::TypeName::Identifier {
-            name,
-            generic_parameters: Some(generic_parameters),
-        } if name == "Vec" => &generic_parameters.entries.first().unwrap().type_name,
+    if let Some(vec_type) = element_type_name.vec_type() {
+        return Ok(vec_type);
+    }
 
-        sway::TypeName::Array { type_name, .. } => type_name.as_ref(),
+    if let Some((array_type, _)) = element_type_name.array_info() {
+        return Ok(array_type);
+    }
 
-        _ => todo!(
-            "array access for type {element_type_name}: {}",
-            sway::TabbedDisplayer(array_access)
-        ),
-    };
+    if let Some(storage_key_type) = element_type_name.storage_key_type() {
+        if let Some((array_element_type, _)) = storage_key_type.array_info() {
+            return Ok(sway::TypeName::create_generic("StorageKey", vec![array_element_type]));
+        }
+    }
 
-    Ok(type_name.clone())
+    todo!(
+        "array access for type {element_type_name}: {}",
+        sway::TabbedDisplayer(array_access)
+    )
 }
 
 #[inline(always)]
@@ -592,7 +612,7 @@ fn get_member_access_type(
 
             assert!(parts.len() == 2);
 
-            let contract_name = scope.borrow().get_contract_name().unwrap();
+            let contract_name = scope.borrow().get_current_contract_name().unwrap();
             let storage_namespace_name = parts[1];
 
             fn check_contract(
@@ -683,34 +703,15 @@ fn get_member_access_type(
         generic_parameters: None,
     } = &container_type
     {
-        let mut struct_definition = project.find_struct(module.clone(), scope.clone(), name);
+        let mut struct_definition = None;
 
-        // HACK: if we couldn't find it in the current module, check them ALL
-        if struct_definition.is_none() {
-            fn try_to_find_struct(
-                project: &mut Project,
-                module: Rc<RefCell<ir::Module>>,
-                scope: Rc<RefCell<ir::Scope>>,
-                name: &str,
-            ) -> Option<Rc<RefCell<ir::Struct>>> {
-                if let Some(external_struct_definition) = project.find_struct(module.clone(), scope.clone(), name) {
-                    return Some(external_struct_definition.clone());
-                }
-
-                for submodule in module.borrow().submodules.iter() {
-                    if let Some(result) = try_to_find_struct(project, submodule.clone(), scope.clone(), name) {
-                        return Some(result);
-                    }
-                }
-
-                None
-            }
-
-            for external_module in project.translated_modules.clone() {
-                if let Some(result) = try_to_find_struct(project, external_module.clone(), scope.clone(), name) {
-                    struct_definition = Some(result.clone());
-                    break;
-                }
+        for module_path in scope.borrow().get_module_paths() {
+            let Some(module) = project.find_module(&module_path) else {
+                panic!("Failed to find module: {}", module_path.display())
+            };
+            if let Some(result) = project.find_struct(module.clone(), scope.clone(), name) {
+                struct_definition = Some(result);
+                break;
             }
         }
 
@@ -778,7 +779,12 @@ fn get_match_type(
     match_expr: &sway::Match,
 ) -> Result<sway::TypeName, Error> {
     if let Some(branch) = match_expr.branches.first() {
-        let branch_scope = Rc::new(RefCell::new(ir::Scope::new(None, None, Some(scope.clone()))));
+        let branch_scope = Rc::new(RefCell::new(ir::Scope::new(
+            Some(module.borrow().path.clone()),
+            None,
+            None,
+            Some(scope.clone()),
+        )));
 
         // Add branch pattern destructured variables to branch-specific scope
         if let sway::Expression::FunctionCall(f) = &branch.pattern {
@@ -1324,7 +1330,12 @@ fn get_path_expr_function_call_type(
     {
         // Check custom event types
         let event_contract_name = path_root.trim_end_matches("Event");
-        let event_scope = Rc::new(RefCell::new(ir::Scope::new(Some(&event_contract_name), None, None)));
+        let event_scope = Rc::new(RefCell::new(ir::Scope::new(
+            Some(module.borrow().path.clone()),
+            Some(&event_contract_name),
+            None,
+            None,
+        )));
 
         if let Some(SymbolData::EventVariant { type_name, variant }) = resolve_symbol(
             project,
@@ -1369,7 +1380,12 @@ fn get_path_expr_function_call_type(
 
         // Check custom error types
         let error_contract_name = path_root.trim_end_matches("Error");
-        let error_scope = Rc::new(RefCell::new(ir::Scope::new(Some(&error_contract_name), None, None)));
+        let error_scope = Rc::new(RefCell::new(ir::Scope::new(
+            Some(module.borrow().path.clone()),
+            Some(&error_contract_name),
+            None,
+            None,
+        )));
         if let Some(SymbolData::ErrorVariant { type_name, variant }) = resolve_symbol(
             project,
             module.clone(),
@@ -1562,7 +1578,7 @@ fn get_path_expr_function_call_type(
         }
 
         // If we didn't find a function, check inherited functions
-        let contract_name = scope.borrow().get_contract_name();
+        let contract_name = scope.borrow().get_current_contract_name();
 
         if let Some(contract_name) = contract_name {
             let contract = {
@@ -1581,6 +1597,7 @@ fn get_path_expr_function_call_type(
 
                     if let Some(module) = module {
                         let scope = Rc::new(RefCell::new(ir::Scope::new(
+                            Some(module.borrow().path.clone()),
                             Some(inherit.to_string().as_str()),
                             None,
                             Some(scope.clone()),

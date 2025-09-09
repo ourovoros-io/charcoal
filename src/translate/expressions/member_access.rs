@@ -58,7 +58,12 @@ pub fn translate_member_access_expression(
 
             // Check to see if the variable is an external definition
             if let Some(module) = project.find_module_containing_contract(module.clone(), name) {
-                let scope = Rc::new(RefCell::new(ir::Scope::new(Some(name), None, Some(scope.clone()))));
+                let scope = Rc::new(RefCell::new(ir::Scope::new(
+                    Some(module.borrow().path.clone()),
+                    Some(name),
+                    None,
+                    Some(scope.clone()),
+                )));
 
                 // Check to see if the variable exists in the external definition
                 match resolve_symbol(

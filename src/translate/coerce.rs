@@ -422,7 +422,12 @@ fn coerce_storage_types(context: &mut CoerceContext) -> Option<sway::Expression>
 
                     let variable_name = context.scope.borrow_mut().generate_unique_variable_name("x");
 
-                    let scope = Rc::new(RefCell::new(ir::Scope::new(None, None, Some(context.scope.clone()))));
+                    let scope = Rc::new(RefCell::new(ir::Scope::new(
+                        Some(context.module.borrow().path.clone()),
+                        None,
+                        None,
+                        Some(context.scope.clone()),
+                    )));
                     scope.borrow_mut().add_variable(Rc::new(RefCell::new(ir::Variable {
                         old_name: String::new(),
                         new_name: variable_name.clone(),
@@ -2218,11 +2223,24 @@ fn coerce_tuple_types(context: &mut CoerceContext) -> Option<sway::Expression> {
 
 /// Check for storage struct inheritance coercions
 fn coerce_contract_storage_struct_types(context: &mut CoerceContext) -> Option<sway::Expression> {
-    let Some(from_storage_struct) = context.project.find_struct(
-        context.module.clone(),
-        context.scope.clone(),
-        context.from_type_name.to_string().as_str(),
-    ) else {
+    let mut from_storage_struct = None;
+
+    for module_path in context.scope.borrow().get_module_paths() {
+        let Some(module) = context.project.find_module(&module_path) else {
+            panic!("Failed to find module: {}", module_path.display());
+        };
+
+        if let Some(result) = context.project.find_struct(
+            module.clone(),
+            context.scope.clone(),
+            context.from_type_name.to_string().as_str(),
+        ) {
+            from_storage_struct = Some(result);
+            break;
+        }
+    }
+
+    let Some(from_storage_struct) = from_storage_struct else {
         return None;
     };
 
@@ -2235,15 +2253,9 @@ fn coerce_contract_storage_struct_types(context: &mut CoerceContext) -> Option<s
         return None;
     };
 
-    let external_scope = Rc::new(RefCell::new(ir::Scope::new(
-        Some(&to_contract_name),
-        None,
-        Some(context.scope.clone()),
-    )));
-
     let Some(to_storage_struct) = context.project.find_struct(
         external_module.clone(),
-        external_scope.clone(),
+        context.scope.clone(),
         context.to_type_name.to_string().as_str(),
     ) else {
         return None;
@@ -2257,14 +2269,18 @@ fn coerce_contract_storage_struct_types(context: &mut CoerceContext) -> Option<s
 
     let to_contract_name = to_storage_struct.borrow().name.trim_end_matches("Storage").to_string();
 
-    get_inheritance_storage_struct_field(
+    if let Some(result) = get_inheritance_storage_struct_field(
         context.project,
         context.module.clone(),
         context.scope.clone(),
         &from_contract_name,
         &to_contract_name,
         context.expression.clone(),
-    )
+    ) {
+        return Some(result);
+    }
+
+    None
 }
 
 /// Get the storage struct field associated with an inherited contract
@@ -2276,11 +2292,25 @@ fn get_inheritance_storage_struct_field(
     to_contract_name: &str,
     expression: sway::Expression,
 ) -> Option<sway::Expression> {
-    let Some(module) = project.find_module_containing_contract(module.clone(), from_contract_name) else {
+    let mut found_module = None;
+
+    for module_path in scope.borrow().get_module_paths() {
+        let Some(module) = project.find_module(&module_path) else {
+            panic!("Failed to find module: {}", module_path.display())
+        };
+
+        if let Some(result) = project.find_module_containing_contract(module.clone(), from_contract_name) {
+            found_module = Some(result);
+            break;
+        }
+    }
+
+    let Some(module) = found_module else {
         return None;
     };
 
     let scope = Rc::new(RefCell::new(ir::Scope::new(
+        Some(module.borrow().path.clone()),
         Some(from_contract_name),
         None,
         Some(scope.clone()),
@@ -2291,11 +2321,13 @@ fn get_inheritance_storage_struct_field(
     };
 
     for inherited_contract_name in from_contract.borrow().abi.inherits.clone() {
+        let expression = sway::Expression::from(sway::MemberAccess {
+            expression: expression.clone(),
+            member: inherited_contract_name.to_string().to_case(Case::Snake),
+        });
+
         if to_contract_name == inherited_contract_name.to_string() {
-            return Some(sway::Expression::from(sway::MemberAccess {
-                expression: expression.clone(),
-                member: inherited_contract_name.to_string().to_case(Case::Snake),
-            }));
+            return Some(expression);
         }
 
         if let Some(result) = get_inheritance_storage_struct_field(
@@ -2304,10 +2336,11 @@ fn get_inheritance_storage_struct_field(
             scope.clone(),
             inherited_contract_name.to_string().as_str(),
             to_contract_name,
-            expression.clone(),
+            expression,
         ) {
             return Some(result);
         }
     }
+
     None
 }

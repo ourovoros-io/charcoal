@@ -56,7 +56,12 @@ pub fn translate_event_definition(
             .unwrap_or_else(|| module.borrow().name.clone())
     );
 
-    let scope = Rc::new(RefCell::new(ir::Scope::new(contract_name, None, None)));
+    let scope = Rc::new(RefCell::new(ir::Scope::new(
+        Some(module.borrow().path.clone()),
+        contract_name,
+        None,
+        None,
+    )));
 
     let type_name = if event_definition.fields.len() == 1 {
         translate_type_name(
@@ -85,6 +90,7 @@ pub fn translate_event_definition(
         {
             module.events_enums.push((
                 Rc::new(RefCell::new(sway::Enum {
+                    is_public: true,
                     name: events_enum_name.clone(),
                     ..Default::default()
                 })),
@@ -129,7 +135,12 @@ pub fn translate_error_definition(
             .unwrap_or_else(|| module.borrow().name.clone())
     );
 
-    let scope = Rc::new(RefCell::new(ir::Scope::new(contract_name, None, None)));
+    let scope = Rc::new(RefCell::new(ir::Scope::new(
+        Some(module.borrow().path.clone()),
+        contract_name,
+        None,
+        None,
+    )));
 
     let type_name = if error_definition.fields.len() == 1 {
         translate_type_name(
@@ -158,6 +169,7 @@ pub fn translate_error_definition(
         {
             module.errors_enums.push((
                 Rc::new(RefCell::new(sway::Enum {
+                    is_public: true,
                     name: errors_enum_name.clone(),
                     ..Default::default()
                 })),

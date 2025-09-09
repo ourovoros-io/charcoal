@@ -245,7 +245,12 @@ pub fn translate_function_parameters(
     let mut parameters = sway::ParameterList::default();
     let mut parameter_names = 'a'..='z';
 
-    let scope = Rc::new(RefCell::new(ir::Scope::new(contract_name, None, None)));
+    let scope = Rc::new(RefCell::new(ir::Scope::new(
+        Some(module.borrow().path.clone()),
+        contract_name,
+        None,
+        None,
+    )));
 
     for (_, parameter) in function_definition.params.iter() {
         let old_name = parameter
@@ -365,6 +370,7 @@ pub fn translate_function_declaration(
 
     // Create a scope for modifier invocation translations
     let scope = Rc::new(RefCell::new(ir::Scope::new(
+        Some(module.borrow().path.clone()),
         contract_name,
         Some(&function_names.top_level_fn_name),
         None,
@@ -462,6 +468,7 @@ pub fn translate_abi_function(
 
     // Create the scope for the body of the toplevel function
     let scope = Rc::new(RefCell::new(ir::Scope::new(
+        Some(module.borrow().path.clone()),
         Some(contract_name),
         Some(&function_name.top_level_fn_name),
         None,
@@ -582,6 +589,7 @@ pub fn translate_function_definition(
 
     // Create the scope for the body of the toplevel function
     let scope = Rc::new(RefCell::new(ir::Scope::new(
+        Some(module.borrow().path.clone()),
         contract_name,
         Some(&function_name.top_level_fn_name),
         None,
@@ -679,6 +687,7 @@ pub fn translate_function_definition(
     // Propagate the return variable declarations
     for return_parameter in return_parameters.iter().rev() {
         let scope = Rc::new(RefCell::new(ir::Scope::new(
+            Some(module.borrow().path.clone()),
             contract_name,
             Some(&function_name.top_level_fn_name),
             None,
@@ -1040,7 +1049,12 @@ pub fn translate_modifier_definition(
         post_body: None,
     };
 
-    let scope = Rc::new(RefCell::new(ir::Scope::new(contract_name, Some(&new_name), None)));
+    let scope = Rc::new(RefCell::new(ir::Scope::new(
+        Some(module.borrow().path.clone()),
+        contract_name,
+        Some(&new_name),
+        None,
+    )));
 
     for (_, p) in function_definition.params.iter() {
         let old_name = p
@@ -1688,7 +1702,7 @@ pub fn ensure_storage_struct_constructor_exists(
     contract: Rc<RefCell<ir::Contract>>,
 ) {
     let contract_name = contract.borrow().name.clone();
-    
+
     if contract.borrow().storage_struct.is_none() || contract.borrow().storage_struct_constructor_fn.is_some() {
         return;
     }

@@ -327,7 +327,7 @@ fn translate_variable_function_call(
     }
 
     // Try to resolve the function call under the current contract
-    let contract_name = scope.borrow().get_contract_name();
+    let contract_name = scope.borrow().get_current_contract_name();
     if let Some(contract_name) = contract_name
         && let Some(contract) = project.find_contract(module.clone(), &contract_name)
     {
@@ -804,7 +804,12 @@ fn translate_member_access_function_call(
         if let Some((module, contract)) = project.find_module_and_contract(module.clone(), name) {
             let abi = contract.borrow().abi.clone();
 
-            let scope = Rc::new(RefCell::new(ir::Scope::new(Some(name), None, Some(scope.clone()))));
+            let scope = Rc::new(RefCell::new(ir::Scope::new(
+                Some(module.borrow().path.clone()),
+                Some(name),
+                None,
+                Some(scope.clone()),
+            )));
 
             if let Some(result) = resolve_abi_function_call(
                 project,
@@ -854,7 +859,12 @@ fn translate_member_access_function_call(
                 return Ok(result);
             }
 
-            let event_scope = Rc::new(RefCell::new(ir::Scope::new(Some(&name.clone()), None, None)));
+            let event_scope = Rc::new(RefCell::new(ir::Scope::new(
+                Some(external_module.borrow().path.clone()),
+                Some(&name.clone()),
+                None,
+                None,
+            )));
             if let Some(SymbolData::EventVariant { type_name, variant }) = resolve_symbol(
                 project,
                 module.clone(),
@@ -874,7 +884,12 @@ fn translate_member_access_function_call(
                 }
             }
 
-            let error_scope = Rc::new(RefCell::new(ir::Scope::new(Some(&name.clone()), None, None)));
+            let error_scope = Rc::new(RefCell::new(ir::Scope::new(
+                Some(external_module.borrow().path.clone()),
+                Some(&name.clone()),
+                None,
+                None,
+            )));
             if let Some(SymbolData::ErrorVariant { type_name, variant }) = resolve_symbol(
                 project,
                 module.clone(),
@@ -1624,7 +1639,12 @@ fn translate_identity_member_access_function_call(
         && let Some((module, contract)) = project.find_module_and_contract(module.clone(), &name)
     {
         let abi = contract.borrow().abi.clone();
-        let scope = Rc::new(RefCell::new(ir::Scope::new(Some(&name), None, Some(scope.clone()))));
+        let scope = Rc::new(RefCell::new(ir::Scope::new(
+            Some(module.borrow().path.clone()),
+            Some(&name),
+            None,
+            Some(scope.clone()),
+        )));
 
         if let Some(result) = resolve_abi_function_call(
             project,
@@ -2138,33 +2158,37 @@ fn translate_super_member_access_function_call(
         .map(|p| get_expression_type(project, module.clone(), scope.clone(), p))
         .collect::<Result<Vec<_>, _>>()?;
 
-    let contract_name = scope.borrow().get_contract_name();
-    if let Some(contract_name) = contract_name
-        && let Some((module, contract)) = project.find_module_and_contract(module.clone(), &contract_name)
-    {
-        let abi = contract.borrow().abi.clone();
+    let contract_name = scope.borrow().get_current_contract_name();
 
-        for inherit in abi.inherits.iter() {
-            let contract_name = inherit.to_string();
+    if let Some(contract_name) = contract_name {
+        if let Some((module, contract)) = project.find_module_and_contract(module.clone(), &contract_name) {
+            let abi = contract.borrow().abi.clone();
 
-            let scope = Rc::new(RefCell::new(ir::Scope::new(
-                Some(&contract_name),
-                None,
-                Some(scope.clone()),
-            )));
+            for inherit in abi.inherits.iter() {
+                let contract_name = inherit.to_string();
 
-            if let Some(result) = resolve_abi_function_call(
-                project,
-                module.clone(),
-                scope.clone(),
-                &abi,
-                None,
-                member,
-                named_arguments,
-                parameters.clone(),
-                parameter_types.clone(),
-            )? {
-                return Ok(Some(result));
+                if let Some(external_module) = project.find_module_containing_contract(module.clone(), &contract_name) {
+                    let scope = Rc::new(RefCell::new(ir::Scope::new(
+                        Some(external_module.borrow().path.clone()),
+                        Some(&contract_name),
+                        None,
+                        Some(scope.clone()),
+                    )));
+
+                    if let Some(result) = resolve_abi_function_call(
+                        project,
+                        external_module.clone(),
+                        scope.clone(),
+                        &abi,
+                        None,
+                        member,
+                        named_arguments,
+                        parameters.clone(),
+                        parameter_types.clone(),
+                    )? {
+                        return Ok(Some(result));
+                    }
+                }
             }
         }
     }

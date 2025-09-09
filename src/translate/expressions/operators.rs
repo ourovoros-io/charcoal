@@ -127,12 +127,21 @@ pub fn translate_unary_expression(
     operator: &str,
     expression: &solidity::Expression,
 ) -> Result<sway::Expression, Error> {
-    let expression = translate_expression(project, module.clone(), scope.clone(), expression)?;
+    let mut expression = translate_expression(project, module.clone(), scope.clone(), expression)?;
+    let mut type_name = get_expression_type(project, module.clone(), scope.clone(), &expression)?;
+
+    if let Some(option_type) = type_name.option_type() {
+        expression = expression.with_unwrap_call();
+        type_name = option_type;
+    }
+
+    if let Some(storage_key_type) = type_name.storage_key_type() {
+        expression = expression.with_read_call();
+        type_name = storage_key_type;
+    }
 
     // NOTE: Sway does not have a negate operator, so we need to make sure to use the correct translation
     if operator == "-" {
-        let type_name = get_expression_type(project, module.clone(), scope.clone(), &expression)?;
-
         match &type_name {
             sway::TypeName::Identifier {
                 name,

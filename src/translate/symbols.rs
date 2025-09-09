@@ -160,7 +160,7 @@ pub fn is_symbol_declared(
         }
 
         Symbol::Event(name) => {
-            let contract_name = scope.borrow().get_contract_name();
+            let contract_name = scope.borrow().get_current_contract_name();
             if let Some(contract_name) = contract_name {
                 let event_name = format!("{contract_name}Event");
 
@@ -176,7 +176,7 @@ pub fn is_symbol_declared(
         }
 
         Symbol::Error(name) => {
-            let contract_name = scope.borrow().get_contract_name();
+            let contract_name = scope.borrow().get_current_contract_name();
             if let Some(contract_name) = contract_name {
                 let error_name = format!("{contract_name}Error");
 
@@ -216,7 +216,7 @@ pub fn is_symbol_declared(
             }
 
             // Check to see if the current function has a storage struct parameter and the variable refers to a field of it
-            if let Some(function_name) = scope.borrow().get_function_name() {
+            if let Some(function_name) = scope.borrow().get_current_function_name() {
                 let (parameter_name, storage_struct_name) = if let Some(function) = module
                     .borrow()
                     .functions
@@ -238,7 +238,7 @@ pub fn is_symbol_declared(
                         storage_struct_parameter.type_name.as_ref().unwrap().to_string(),
                     )
                 } else {
-                    let contract_name = scope.borrow().get_contract_name().unwrap();
+                    let contract_name = scope.borrow().get_current_contract_name().unwrap();
                     ("storage_struct".into(), format!("{contract_name}Storage"))
                 };
 
@@ -257,7 +257,7 @@ pub fn is_symbol_declared(
             }
 
             // Check to see if the variable refers to a storage field
-            if let Some(contract_name) = scope.borrow().get_contract_name()
+            if let Some(contract_name) = scope.borrow().get_current_contract_name()
                 && let Some(contract) = project.find_contract(module.clone(), contract_name.as_str())
             {
                 let storage_namespace_name = contract.borrow().name.to_case(Case::Snake);
@@ -282,14 +282,15 @@ pub fn is_symbol_declared(
     }
 
     // If we didn't find it in the current contract, try checking inherited contracts
-    if let Some(contract_name) = scope.borrow().get_contract_name()
-        && let Some(contract) = project.find_contract(module.clone(), &contract_name)
+    if let Some(contract_name) = scope.borrow().get_current_contract_name()
+        && let Some((module, contract)) = project.find_module_and_contract(module.clone(), &contract_name)
     {
         let inherits = contract.borrow().abi.inherits.clone();
 
         for inherit in inherits {
             let inherit_type_name = inherit.to_string();
             let scope = Rc::new(RefCell::new(ir::Scope::new(
+                Some(module.borrow().path.clone()),
                 Some(inherit_type_name.as_str()),
                 None,
                 Some(scope.clone()),
@@ -333,7 +334,7 @@ pub fn resolve_symbol(
         }
 
         Symbol::Event(name) => {
-            let contract_name = scope.borrow().get_contract_name();
+            let contract_name = scope.borrow().get_current_contract_name();
             if let Some(contract_name) = contract_name {
                 let event_name = format!("{contract_name}Event");
 
@@ -360,7 +361,7 @@ pub fn resolve_symbol(
         }
 
         Symbol::Error(name) => {
-            let contract_name = scope.borrow().get_contract_name();
+            let contract_name = scope.borrow().get_current_contract_name();
             if let Some(contract_name) = contract_name {
                 let error_name = format!("{contract_name}Error");
 
@@ -411,7 +412,7 @@ pub fn resolve_symbol(
             }
 
             // Check to see if the current function has a storage struct parameter and the variable refers to a field of it
-            if let Some(function_name) = scope.borrow().get_function_name() {
+            if let Some(function_name) = scope.borrow().get_current_function_name() {
                 let (parameter_name, storage_struct_name) = if let Some(function) = module
                     .borrow()
                     .functions
@@ -433,7 +434,7 @@ pub fn resolve_symbol(
                         storage_struct_parameter.type_name.as_ref().unwrap().to_string(),
                     )
                 } else {
-                    let contract_name = scope.borrow().get_contract_name().unwrap();
+                    let contract_name = scope.borrow().get_current_contract_name().unwrap();
                     ("storage_struct".into(), format!("{contract_name}Storage"))
                 };
 
@@ -450,7 +451,7 @@ pub fn resolve_symbol(
             }
 
             // Check to see if the variable refers to a storage field
-            if let Some(contract_name) = scope.borrow().get_contract_name()
+            if let Some(contract_name) = scope.borrow().get_current_contract_name()
                 && let Some(contract) = project.find_contract(module.clone(), contract_name.as_str())
             {
                 let storage_namespace_name = contract.borrow().name.to_case(Case::Snake);
@@ -478,14 +479,15 @@ pub fn resolve_symbol(
     }
 
     // If we didn't find it in the current contract, try checking inherited contracts
-    if let Some(contract_name) = scope.borrow().get_contract_name()
-        && let Some(contract) = project.find_contract(module.clone(), &contract_name)
+    if let Some(contract_name) = scope.borrow().get_current_contract_name()
+        && let Some((module, contract)) = project.find_module_and_contract(module.clone(), &contract_name)
     {
         let inherits = contract.borrow().abi.inherits.clone();
 
         for inherit in inherits {
             let inherit_type_name = inherit.to_string();
             let scope = Rc::new(RefCell::new(ir::Scope::new(
+                Some(module.borrow().path.clone()),
                 Some(inherit_type_name.as_str()),
                 None,
                 Some(scope.clone()),
@@ -648,29 +650,58 @@ pub fn resolve_abi_function_call(
             && let Some(storage_struct_parameter) = storage_struct_parameter.as_ref()
             && let Some(function_storage_struct_type) = storage_struct_parameter.type_name.clone()
         {
-            let contract_storage_struct_type =
-                sway::TypeName::create_identifier(format!("{}Storage", abi.name).as_str());
+            let function_name = scope.borrow_mut().get_current_function_name().unwrap();
+            let module_paths = scope.borrow_mut().get_module_paths();
 
-            let mut storage_struct_expression = sway::Expression::create_identifier("storage_struct");
-
-            if coerce {
-                let Some(expr) = coerce_expression(
-                    project,
-                    module.clone(),
-                    scope.clone(),
-                    &storage_struct_expression,
-                    &contract_storage_struct_type,
-                    &function_storage_struct_type,
-                ) else {
-                    return false;
+            for module_path in module_paths {
+                let Some(external_module) = project.find_module(&module_path) else {
+                    panic!("failed to get external module: {}", module_path.display());
                 };
 
-                storage_struct_expression = expr;
-            } else if !contract_storage_struct_type.is_compatible_with(&function_storage_struct_type) {
-                return false;
-            }
+                let external_module = external_module.borrow();
+                let Some(external_function) = external_module.functions.iter().find(|f| {
+                    let sway::TypeName::Function { new_name, .. } = &f.signature else {
+                        unreachable!()
+                    };
 
-            parameters.push(storage_struct_expression);
+                    *new_name == function_name
+                }) else {
+                    continue;
+                };
+
+                let sway::TypeName::Function {
+                    storage_struct_parameter: Some(storage_struct_parameter),
+                    ..
+                } = &external_function.signature
+                else {
+                    unreachable!()
+                };
+
+                let mut storage_struct_expression = sway::Expression::create_identifier("storage_struct");
+
+                let contract_storage_struct_type = storage_struct_parameter.as_ref().type_name.as_ref().unwrap();
+
+                if coerce {
+                    let Some(expr) = coerce_expression(
+                        project,
+                        module.clone(),
+                        scope.clone(),
+                        &storage_struct_expression,
+                        &contract_storage_struct_type,
+                        &function_storage_struct_type,
+                    ) else {
+                        return false;
+                    };
+
+                    storage_struct_expression = expr;
+                } else if !contract_storage_struct_type.is_compatible_with(&function_storage_struct_type) {
+                    return false;
+                }
+
+                parameters.push(storage_struct_expression);
+
+                break;
+            }
         }
 
         true
@@ -697,12 +728,6 @@ pub fn resolve_abi_function_call(
                 project.find_module_and_contract(module.clone(), inherit.to_string().as_str())
             {
                 let abi = contract.borrow().abi.clone();
-
-                let scope = Rc::new(RefCell::new(ir::Scope::new(
-                    Some(inherit.to_string().as_str()),
-                    None,
-                    Some(scope.clone()),
-                )));
 
                 if let Some(result) = resolve_abi_function_call(
                     project,
@@ -731,7 +756,7 @@ pub fn resolve_abi_function_call(
         .get(&function.new_name)
         .cloned();
 
-    let current_function_name = scope.borrow().get_function_name();
+    let current_function_name = scope.borrow().get_current_function_name();
     if let Some(function_storage_access) = function_storage_access
         && let Some(current_function_name) = current_function_name
     {
@@ -1023,7 +1048,7 @@ pub fn resolve_function_call(
     }
 
     let Some(function) = function else {
-        let contract_name = scope.borrow().get_contract_name();
+        let contract_name = scope.borrow().get_current_contract_name();
         let mut project = project_cell.borrow_mut();
 
         // If we didn't find a function, check inherited functions
@@ -1061,7 +1086,7 @@ pub fn resolve_function_call(
 
     let function_storage_access = module.borrow_mut().function_storage_accesses.get(new_name).cloned();
 
-    let current_function_name = scope.borrow().get_function_name();
+    let current_function_name = scope.borrow().get_current_function_name();
 
     if let Some(function_storage_access) = function_storage_access
         && let Some(current_function_name) = current_function_name
@@ -1314,12 +1339,12 @@ pub fn resolve_modifier(
 
     if modifier.is_none() {
         // If we didn't find a modifier, check inherited modifiers
-        let contract_name = scope.borrow().get_contract_name();
+        let contract_name = scope.borrow().get_current_contract_name();
         if let Some(contract_name) = contract_name
             && let Some((module, contract)) = project.find_module_and_contract(module.clone(), &contract_name)
         {
             let storage_struct_parameter = {
-                let current_function_name = scope.borrow().get_function_name().unwrap();
+                let current_function_name = scope.borrow().get_current_function_name().unwrap();
 
                 let module = module.borrow();
                 let current_function = module.functions.iter().find(|f| {
@@ -1392,6 +1417,7 @@ pub fn resolve_modifier(
                 }
 
                 let scope = Rc::new(RefCell::new(ir::Scope::new(
+                    Some(module.borrow().path.clone()),
                     Some(&contract_name.to_string()),
                     None,
                     Some(scope.clone()),

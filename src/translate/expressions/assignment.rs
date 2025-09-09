@@ -36,15 +36,27 @@ pub fn translate_assignment_expression(
     };
 
     let mut lhs = translate_expression(project, module.clone(), scope.clone(), lhs)?;
+    let mut expr_type_name = get_expression_type(project, module.clone(), scope.clone(), &lhs)?;
+
+    // HACK: remove `.read()` with array access
+    if let Some((array_expression, array_index)) = lhs.to_array_access_parts()
+        && let Some(container) = array_expression.to_read_call_parts()
+        && let Ok(container_type) = get_expression_type(project, module.clone(), scope.clone(), container)
+        && let Some(storage_key_type) = container_type.storage_key_type()
+        && storage_key_type.is_array()
+    {
+        lhs = container.with_array_access(array_index.clone()).with_read_call();
+        expr_type_name = container_type;
+    }
 
     // HACK: remove `.read()` if present
     if let Some(container) = lhs.to_read_call_parts()
-        && get_expression_type(project, module.clone(), scope.clone(), container)?.is_storage_key()
+        && let Ok(container_type) = get_expression_type(project, module.clone(), scope.clone(), container)
+        && container_type.is_storage_key()
     {
         lhs = container.clone();
+        expr_type_name = container_type;
     }
-
-    let expr_type_name = get_expression_type(project, module.clone(), scope.clone(), &lhs)?;
 
     if let Some(storage_key_type) = expr_type_name.storage_key_type() {
         let member = match &storage_key_type {
@@ -367,6 +379,43 @@ pub fn create_assignment_expression(
         type_name = storage_key_type;
     }
 
+    // Check for assignments to elements of `Bytes` or `Vec<T>`
+    if let Some(container) = expression.to_unwrap_call_parts()
+        && let Some((container, index)) = container.to_get_call_parts()
+        && let Ok(container_type) = get_expression_type(project, module.clone(), scope.clone(), &container)
+        && (container_type.is_bytes() || container_type.is_vec())
+    {
+        let element_type = if container_type.is_bytes() {
+            sway::TypeName::create_identifier("u8")
+        } else if let Some(vec_type) = container_type.vec_type() {
+            vec_type.clone()
+        } else {
+            todo!()
+        };
+
+        if let Some(value) = coerce_expression(
+            project,
+            module.clone(),
+            scope.clone(),
+            &rhs,
+            rhs_type_name,
+            &element_type,
+        ) {
+            return Ok(container.with_set_call(
+                index.clone(),
+                match operator {
+                    "=" => value,
+
+                    _ => sway::Expression::from(sway::BinaryExpression {
+                        operator: operator.trim_end_matches("=").to_string(),
+                        lhs: container.with_get_call(index.clone()).with_unwrap_call(),
+                        rhs: value,
+                    }),
+                },
+            ));
+        }
+    }
+
     if let Some(container) = expression.to_read_call_parts() {
         let container_type = get_expression_type(project, module.clone(), scope.clone(), &container)?;
 
@@ -559,22 +608,40 @@ pub fn create_assignment_expression(
     }
 
     // Check for assignments to arrays
-    if let sway::Expression::ArrayAccess(_) = &expression {
-        let container_type = get_expression_type(project, module.clone(), scope.clone(), &expression)?;
+    if let sway::Expression::ArrayAccess(array_access) = &expression {
+        let container_type = get_expression_type(project, module.clone(), scope.clone(), &array_access.expression)?;
 
-        if let Some(result) = coerce_expression(
-            project,
-            module.clone(),
-            scope.clone(),
-            &rhs,
-            rhs_type_name,
-            &container_type,
-        ) {
-            return Ok(sway::Expression::from(sway::BinaryExpression {
-                operator: "=".to_string(),
-                lhs: expression.clone(),
-                rhs: result,
-            }));
+        if let Some((element_type, _)) = container_type.array_info()
+            && let Some(result) = coerce_expression(
+                project,
+                module.clone(),
+                scope.clone(),
+                &rhs,
+                rhs_type_name,
+                &element_type,
+            )
+        {
+            match operator {
+                "&=" | "|=" | "^=" => {
+                    return Ok(sway::Expression::from(sway::BinaryExpression {
+                        operator: "=".to_string(),
+                        lhs: expression.clone(),
+                        rhs: sway::Expression::from(sway::BinaryExpression {
+                            operator: operator.trim_end_matches("=").to_string(),
+                            lhs: expression.clone(),
+                            rhs: result,
+                        }),
+                    }));
+                }
+
+                _ => {
+                    return Ok(sway::Expression::from(sway::BinaryExpression {
+                        operator: operator.to_string(),
+                        lhs: expression.clone(),
+                        rhs: result,
+                    }));
+                }
+            }
         }
     }
 

@@ -13,7 +13,12 @@ pub fn translate_struct_definition(
     let mut memory_fields = vec![];
     let mut storage_fields = vec![];
 
-    let scope = Rc::new(RefCell::new(ir::Scope::new(contract_name, None, None)));
+    let scope = Rc::new(RefCell::new(ir::Scope::new(
+        Some(module.borrow().path.clone()),
+        contract_name,
+        None,
+        None,
+    )));
 
     for field in struct_definition.fields.iter() {
         let old_name = field.name.as_ref().unwrap().name.clone();

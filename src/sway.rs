@@ -1505,6 +1505,33 @@ impl TabbedDisplay for Storage {
     }
 }
 
+impl Storage {
+    pub fn extend(&mut self, other: &Self) {
+        for member in other.fields.iter() {
+            if !self.fields.contains(member) {
+                self.fields.push(member.clone());
+            }
+        }
+
+        for member in other.namespaces.iter() {
+            if !self.namespaces.iter().any(|n| n.borrow().name == member.borrow().name) {
+                self.namespaces.push(Rc::new(RefCell::new(StorageNamespace {
+                    name: member.borrow().name.clone(),
+                    ..Default::default()
+                })));
+            }
+
+            let namespace = self
+                .namespaces
+                .iter_mut()
+                .find(|n| n.borrow().name == member.borrow().name)
+                .unwrap();
+
+            namespace.borrow_mut().extend(&member.borrow());
+        }
+    }
+}
+
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -1531,6 +1558,35 @@ impl TabbedDisplay for StorageNamespace {
         }
 
         "}".tabbed_fmt(depth, f)
+    }
+}
+
+impl StorageNamespace {
+    pub fn extend(&mut self, other: &Self) {
+        assert!(self.name == other.name);
+
+        for member in other.fields.iter() {
+            if !self.fields.contains(member) {
+                self.fields.push(member.clone());
+            }
+        }
+
+        for member in other.namespaces.iter() {
+            if !self.namespaces.iter().any(|n| n.borrow().name == member.borrow().name) {
+                self.namespaces.push(Rc::new(RefCell::new(Self {
+                    name: member.borrow().name.clone(),
+                    ..Default::default()
+                })));
+            }
+
+            let namespace = self
+                .namespaces
+                .iter_mut()
+                .find(|n| n.borrow().name == member.borrow().name)
+                .unwrap();
+
+            namespace.borrow_mut().extend(&member.borrow());
+        }
     }
 }
 
@@ -2138,6 +2194,7 @@ impl TabbedDisplay for Expression {
                     }
                     expr.tabbed_fmt(depth, f)?;
                 }
+
                 write!(f, ")")
             }
             Expression::UnaryExpression(x) => x.tabbed_fmt(depth, f),
@@ -2308,6 +2365,14 @@ impl Expression {
             expression: self.clone(),
             index,
         })
+    }
+
+    pub fn to_array_access_parts(&self) -> Option<(&Expression, &Expression)> {
+        if let Expression::ArrayAccess(array_access) = self {
+            return Some((&array_access.expression, &array_access.index));
+        }
+
+        None
     }
 
     #[inline(always)]
@@ -2615,10 +2680,14 @@ impl Expression {
     }
 
     fn create_function_calls(
-        container: Option<Expression>,
+        mut container: Option<Expression>,
         member_calls: &[(&str, Option<(Option<GenericParameterList>, Vec<Expression>)>)],
     ) -> Expression {
-        if container.is_none() {
+        if let Some(container) = container.as_mut() {
+            if let Expression::BinaryExpression(_) | Expression::UnaryExpression(_) = container {
+                *container = Expression::Tuple(vec![container.clone()])
+            }
+        } else {
             assert!(!member_calls.is_empty());
         }
 
@@ -3024,20 +3093,7 @@ pub struct MemberAccess {
 
 impl TabbedDisplay for MemberAccess {
     fn tabbed_fmt(&self, depth: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let needs_parens = match self.expression {
-            Expression::UnaryExpression(_) | Expression::BinaryExpression(_) => true,
-            _ => false,
-        };
-
-        if needs_parens {
-            "(".tabbed_fmt(depth, f)?;
-        }
-
         self.expression.tabbed_fmt(depth, f)?;
-
-        if needs_parens {
-            ")".tabbed_fmt(depth, f)?;
-        }
 
         write!(f, ".{}", self.member)
     }

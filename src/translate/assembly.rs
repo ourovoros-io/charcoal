@@ -14,7 +14,12 @@ pub fn translate_assembly_statement(
     _flags: &Option<Vec<solidity::StringLiteral>>,
     yul_block: &solidity::YulBlock,
 ) -> Result<sway::Statement, Error> {
-    let scope = Rc::new(RefCell::new(ir::Scope::new(None, None, Some(scope.clone()))));
+    let scope = Rc::new(RefCell::new(ir::Scope::new(
+        Some(module.borrow().path.clone()),
+        None,
+        None,
+        Some(scope.clone()),
+    )));
 
     // Translate the block
     let translated_block = sway::Statement::from(sway::Expression::from(translate_yul_block(
@@ -36,7 +41,12 @@ pub fn translate_yul_block(
 ) -> Result<sway::Block, Error> {
     let mut block = sway::Block::default();
 
-    let scope = Rc::new(RefCell::new(ir::Scope::new(None, None, Some(scope.clone()))));
+    let scope = Rc::new(RefCell::new(ir::Scope::new(
+        Some(module.borrow().path.clone()),
+        None,
+        None,
+        Some(scope.clone()),
+    )));
 
     // Translate each of the statements in the block
     for statement in yul_block.statements.iter() {
@@ -255,7 +265,12 @@ pub fn translate_yul_for_statement(
     // }
 
     // Create a scope for the block that will contain the for loop logic
-    let scope = Rc::new(RefCell::new(ir::Scope::new(None, None, Some(scope.clone()))));
+    let scope = Rc::new(RefCell::new(ir::Scope::new(
+        Some(module.borrow().path.clone()),
+        None,
+        None,
+        Some(scope.clone()),
+    )));
 
     // Collect statements for the for loop logic block
     let mut statements = vec![];

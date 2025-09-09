@@ -27,7 +27,8 @@ pub fn translate_revert_statement(
             let external_definition_name = ids_iter.next().unwrap().name.clone();
             let error_variant_name = ids_iter.next().unwrap().name.clone();
 
-            let Some(_) = project.find_module_containing_contract(module.clone(), external_definition_name.as_str())
+            let Some(external_module) =
+                project.find_module_containing_contract(module.clone(), external_definition_name.as_str())
             else {
                 panic!(
                     "Failed to find module containing contract: {}",
@@ -36,6 +37,7 @@ pub fn translate_revert_statement(
             };
 
             let scope = Rc::new(RefCell::new(ir::Scope::new(
+                Some(external_module.borrow().path.clone()),
                 Some(&external_definition_name),
                 None,
                 Some(scope.clone()),

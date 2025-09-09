@@ -15,7 +15,12 @@ pub fn translate_type_definition(
     //     project.loc_to_file_location_string(module.clone(), &type_definition.loc),
     // );
 
-    let scope = Rc::new(RefCell::new(ir::Scope::new(contract_name, None, None)));
+    let scope = Rc::new(RefCell::new(ir::Scope::new(
+        Some(module.borrow().path.clone()),
+        contract_name,
+        None,
+        None,
+    )));
 
     let underlying_type = translate_type_name(project, module.clone(), scope, &type_definition.ty, None);
 
@@ -394,7 +399,8 @@ pub fn translate_type_name(
                 length: {
                     // Create an empty scope to translate the array length expression
                     let scope = Rc::new(RefCell::new(ir::Scope::new(
-                        scope.borrow().get_contract_name().as_deref(),
+                        Some(module.borrow().path.clone()),
+                        scope.borrow().get_current_contract_name().as_deref(),
                         None,
                         Some(scope.clone()),
                     )));

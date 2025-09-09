@@ -11,11 +11,7 @@ pub fn translate_contract_definition(
 ) -> Result<(), Error> {
     // println!(
     //     "Translating contract `{}` at {}",
-    //     contract_definition
-    //         .name
-    //         .as_ref()
-    //         .map(|x| x.name.as_str())
-    //         .unwrap(),
+    //     contract_definition.name.as_ref().map(|x| x.name.as_str()).unwrap(),
     //     project.loc_to_file_location_string(module.clone(), &contract_definition.loc),
     // );
 
@@ -119,7 +115,12 @@ pub fn translate_contract_definition(
         generate_enum_abi_encode_function(project, module.clone(), errors_enum.clone(), abi_encode_impl.clone())?;
     }
 
-    let scope = Rc::new(RefCell::new(ir::Scope::new(Some(contract_name.as_str()), None, None)));
+    let scope = Rc::new(RefCell::new(ir::Scope::new(
+        Some(module.borrow().path.clone()),
+        Some(contract_name.as_str()),
+        None,
+        None,
+    )));
 
     fn collect_inherited_storage_namespaces(
         project: &mut Project,
@@ -133,47 +134,31 @@ pub fn translate_contract_definition(
             let inherited_contract_name = inherited_contract.to_string();
             let inherited_contract = project.find_contract(module.clone(), &inherited_contract_name).unwrap();
 
-            if let Some(inherited_storage) = inherited_contract.borrow().storage.as_ref() {
-                if contract.borrow().storage_struct.is_none() {
-                    contract.borrow_mut().storage_struct = Some(Rc::new(RefCell::new(ir::Struct {
-                        name: format!("{}Storage", contract.borrow().name),
-                        memory: sway::Struct {
-                            attributes: None,
-                            is_public: true,
-                            name: String::new(),
-                            generic_parameters: None,
-                            fields: vec![],
-                        },
-                        storage: sway::Struct {
-                            attributes: None,
-                            is_public: true,
-                            name: format!("{}Storage", contract.borrow().name),
-                            generic_parameters: None,
-                            fields: vec![],
-                        },
-                    })))
-                }
+            collect_inherited_storage_namespaces(
+                project,
+                module.clone(),
+                scope.clone(),
+                inherited_contract.clone(),
+                storage,
+            );
 
-                contract
-                    .borrow_mut()
-                    .storage_struct
-                    .as_ref()
-                    .unwrap()
-                    .borrow_mut()
-                    .storage
-                    .fields
-                    .push(sway::StructField {
-                        is_public: true,
-                        new_name: inherited_contract_name.to_case(Case::Snake),
-                        old_name: String::new(),
-                        type_name: sway::TypeName::create_identifier(
-                            format!("{inherited_contract_name}Storage").as_str(),
-                        ),
-                    });
-                storage.namespaces.extend(inherited_storage.borrow().namespaces.clone());
+            let field = sway::StructField {
+                is_public: true,
+                new_name: inherited_contract_name.to_case(Case::Snake),
+                old_name: String::new(),
+                type_name: sway::TypeName::create_identifier(format!("{inherited_contract_name}Storage").as_str()),
+            };
+
+            let contract = contract.borrow_mut();
+            let mut storage_struct = contract.storage_struct.as_ref().unwrap().borrow_mut();
+
+            if !storage_struct.storage.fields.contains(&field) {
+                storage_struct.storage.fields.push(field);
             }
 
-            collect_inherited_storage_namespaces(project, module.clone(), scope.clone(), inherited_contract, storage);
+            if let Some(inherited_storage) = inherited_contract.borrow().storage.as_ref() {
+                storage.extend(&inherited_storage.borrow());
+            }
         }
     }
 
@@ -249,6 +234,19 @@ pub fn translate_contract_definition(
             .push(sway::ImplItem::Function(impl_fn));
     }
 
+    if let Some(storage) = &contract.borrow().storage
+        && storage.borrow().namespaces.is_empty()
+    {
+        storage
+            .borrow_mut()
+            .namespaces
+            .push(Rc::new(RefCell::new(sway::StorageNamespace {
+                name: module.borrow().get_storage_namespace_name(scope.clone()).unwrap(),
+                fields: vec![],
+                namespaces: vec![],
+            })));
+    }
+
     // Translate each modifier
     for function_definition in function_definitions.iter() {
         let is_modifier = matches!(function_definition.ty, solidity::FunctionTy::Modifier);
@@ -322,7 +320,12 @@ pub fn translate_contract_definition(
     if !deferred_initializations.is_empty() {
         let namespace_name = translate_naming_convention(&contract_name, Case::Snake);
 
-        let scope = Rc::new(RefCell::new(ir::Scope::new(Some(contract_name.as_str()), None, None)));
+        let scope = Rc::new(RefCell::new(ir::Scope::new(
+            Some(module.borrow().path.clone()),
+            Some(contract_name.as_str()),
+            None,
+            None,
+        )));
 
         let mut assignment_statements = vec![];
 
@@ -435,7 +438,12 @@ pub fn translate_using_directive(
     contract_name: Option<&str>,
     using_directive: &solidity::Using,
 ) -> Result<(), Error> {
-    let scope = Rc::new(RefCell::new(ir::Scope::new(contract_name, None, None)));
+    let scope = Rc::new(RefCell::new(ir::Scope::new(
+        Some(module.borrow().path.clone()),
+        contract_name,
+        None,
+        None,
+    )));
 
     let for_type = using_directive
         .ty

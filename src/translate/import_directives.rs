@@ -1,4 +1,4 @@
-use crate::{error::Error, ir, project::Project, sway};
+use crate::{error::Error, ir, project::Project, sway, translate::check_for_reserved_keywords};
 use convert_case::{Case, Casing};
 use solang_parser::{helpers::CodeLocation, pt as solidity};
 use std::{cell::RefCell, path::PathBuf, rc::Rc};
@@ -60,9 +60,7 @@ pub fn translate_import_directives(
                                 .replace(".", "_")
                                 .to_case(Case::Snake);
 
-                            if let "lib" | "src" | "main" = name.as_str() {
-                                name = format!("_{name}");
-                            }
+                            name = check_for_reserved_keywords(&name);
 
                             use_tree = sway::UseTree::Path {
                                 prefix: name,
@@ -76,7 +74,7 @@ pub fn translate_import_directives(
 
                 // Add the use to the module if we haven't already
                 let use_expr = sway::Use {
-                    is_public: false,
+                    is_public: true,
                     tree: sway::UseTree::Path {
                         prefix: String::new(), // NOTE: intentionally empty to indicate crate root
                         suffix: Box::new(use_tree),

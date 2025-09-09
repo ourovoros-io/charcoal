@@ -165,7 +165,12 @@ pub fn translate_block_statement(
     scope: Rc<RefCell<ir::Scope>>,
     statements: &[solidity::Statement],
 ) -> Result<sway::Statement, Error> {
-    let scope = Rc::new(RefCell::new(ir::Scope::new(None, None, Some(scope.clone()))));
+    let scope = Rc::new(RefCell::new(ir::Scope::new(
+        Some(module.borrow().path.clone()),
+        None,
+        None,
+        Some(scope.clone()),
+    )));
 
     // Translate the block
     let translated_block = sway::Statement::from(sway::Expression::from(translate_block(

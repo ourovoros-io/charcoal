@@ -29,7 +29,12 @@ pub fn translate_state_variable(
     //     project.loc_to_file_location_string(module.clone(), &variable_definition.loc)
     // );
 
-    let scope = Rc::new(RefCell::new(ir::Scope::new(contract_name, None, None)));
+    let scope = Rc::new(RefCell::new(ir::Scope::new(
+        Some(module.borrow().path.clone()),
+        contract_name,
+        None,
+        None,
+    )));
 
     // Collect information about the variable from its attributes
     let is_public = variable_definition.attrs.iter().any(|x| {
@@ -335,7 +340,12 @@ pub fn translate_state_variable(
 
     // Handle constant variable definitions
     if is_constant {
-        let scope = Rc::new(RefCell::new(ir::Scope::new(contract_name, None, None)));
+        let scope = Rc::new(RefCell::new(ir::Scope::new(
+            Some(module.borrow().path.clone()),
+            contract_name,
+            None,
+            None,
+        )));
 
         // Evaluate the value ahead of time in order to generate an appropriate constant value expression
         let value = evaluate_expression(project, module.clone(), scope.clone(), &variable_type_name, &value);

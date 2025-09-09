@@ -398,7 +398,6 @@ impl Project {
 
         path = path.with_extension("");
         let mut parent_module: Option<Rc<RefCell<ir::Module>>> = None;
-        let mut first = true;
 
         for comp in path.components() {
             if let Component::RootDir = comp {
@@ -412,13 +411,7 @@ impl Project {
                 .replace(".", "_")
                 .to_case(Case::Snake);
 
-            if first {
-                first = false;
-
-                if let "lib" | "src" | "main" = comp.as_str() {
-                    comp = format!("_{comp}");
-                }
-            }
+            comp = check_for_reserved_keywords(&comp);
 
             match parent_module.clone() {
                 Some(parent) => {
@@ -457,9 +450,7 @@ impl Project {
                 .replace(".", "_")
                 .to_case(Case::Snake);
 
-            if let "lib" | "src" | "main" = comp.as_str() {
-                comp = format!("_{comp}");
-            }
+            comp = check_for_reserved_keywords(&comp);
 
             match parent_module.clone() {
                 Some(parent) => {
@@ -498,9 +489,7 @@ impl Project {
             .replace(".", "_")
             .to_case(Case::Snake);
 
-        if let "lib" | "src" | "main" = component.as_str() {
-            component = format!("_{component}");
-        }
+        component = check_for_reserved_keywords(&component);
 
         let mut parent_module = match self.translated_modules.iter().find(|t| t.borrow().name == component) {
             Some(result) => result.clone(),
@@ -524,9 +513,7 @@ impl Project {
                 .replace(".", "_")
                 .to_case(Case::Snake);
 
-            if let "lib" | "src" | "main" = component.as_str() {
-                component = format!("_{component}");
-            }
+            component = check_for_reserved_keywords(&component);
 
             let found = parent_module
                 .borrow()
@@ -726,7 +713,7 @@ impl Project {
         // find the module being imported, then check if the enum lives there.
         for use_item in module.borrow().uses.iter() {
             if let Some(found_module) = self.resolve_use(use_item)
-                && self.is_enum_declared(found_module, name)
+                && self.is_enum_declared(found_module.clone(), name)
             {
                 return true;
             }
@@ -778,7 +765,7 @@ impl Project {
         }
 
         // Check to see if the struct is a storage struct
-        let contract_name = scope.borrow().get_contract_name();
+        let contract_name = scope.borrow().get_current_contract_name();
         if let Some(contract_name) = contract_name
             && let Some(contract) = self.find_contract(module.clone(), &contract_name)
             && let Some(x) = contract.borrow().storage_struct.as_ref()
@@ -1048,7 +1035,12 @@ impl Project {
                     return_type: translate_return_type_name(
                         self,
                         module.clone(),
-                        Rc::new(RefCell::new(ir::Scope::new(None, None, None))),
+                        Rc::new(RefCell::new(ir::Scope::new(
+                            Some(module.borrow().path.clone()),
+                            None,
+                            None,
+                            None,
+                        ))),
                         function_definition,
                     )
                     .map(Box::new),
@@ -1238,7 +1230,12 @@ impl Project {
                 state_variable_infos.push(state_variable_info);
             }
 
-            let scope = Rc::new(RefCell::new(ir::Scope::new(Some(contract_name), None, None)));
+            let scope = Rc::new(RefCell::new(ir::Scope::new(
+                Some(module.borrow().path.clone()),
+                Some(contract_name),
+                None,
+                None,
+            )));
 
             for state_variable_info in state_variable_infos {
                 let Some((abi_fn, toplevel_fn, impl_fn)) = generate_state_variable_getter_functions(
@@ -1457,7 +1454,6 @@ impl Project {
             let dirty_module_path = module.path.clone();
 
             let mut module_path = PathBuf::new();
-            let mut first = true;
 
             for component in dirty_module_path.components() {
                 let mut component = component
@@ -1467,13 +1463,7 @@ impl Project {
                     .replace(".", "_")
                     .to_case(Case::Snake);
 
-                if first {
-                    first = false;
-
-                    if let "lib" | "src" | "main" = component.as_str() {
-                        component = format!("_{component}");
-                    }
-                }
+                component = check_for_reserved_keywords(&component);
 
                 module_path.push(component);
             }
@@ -1510,9 +1500,7 @@ impl Project {
                             .replace(".", "_")
                             .to_case(Case::Snake);
 
-                        if let "lib" | "src" | "main" = name.as_str() {
-                            name = format!("_{name}");
-                        }
+                        name = check_for_reserved_keywords(&name);
 
                         use_tree = sway::UseTree::Path {
                             prefix: name,
@@ -1529,7 +1517,7 @@ impl Project {
             );
 
             use_tree = sway::UseTree::Path {
-                prefix: options.name.clone().unwrap().to_case(Case::Snake),
+                prefix: options.name.clone().unwrap(),
                 suffix: Box::new(use_tree),
             };
 
@@ -1554,16 +1542,15 @@ impl Project {
                 tree: use_tree.clone(),
             });
 
+            let configurable = module.configurable.take();
+
             // Move the storage and abi impls out of the contract IR and into the main modules of the new contract projects
             for contract in module.contracts.iter_mut() {
                 let contract_signature = contract.signature.clone();
                 let mut contract = contract.implementation.as_mut().unwrap().borrow_mut();
 
-                // Don't create projects for empty abi impls (interface translations)
-                if let solidity::ContractTy::Abstract(_)
-                | solidity::ContractTy::Interface(_)
-                | solidity::ContractTy::Library(_) = contract.kind
-                {
+                // Don't create projects for libraries
+                if let solidity::ContractTy::Library(_) = contract.kind {
                     continue;
                 }
 
@@ -1588,6 +1575,7 @@ impl Project {
                     path: module_path.clone(),
                     dependencies: contract_dependencies.clone(),
                     uses: uses.clone(),
+                    configurable: configurable.clone(),
                     contracts: vec![ir::Item {
                         signature: contract_signature,
                         implementation: Some(Rc::new(RefCell::new(ir::Contract {

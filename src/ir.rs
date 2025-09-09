@@ -69,6 +69,7 @@ pub struct Modifier {
 
 #[derive(Debug, Clone)]
 pub struct Scope {
+    module_path: Option<PathBuf>,
     contract_name: Option<String>,
     function_name: Option<String>,
     parent: Option<Rc<RefCell<Scope>>>,
@@ -76,22 +77,60 @@ pub struct Scope {
 }
 
 impl Scope {
-    pub fn new(contract_name: Option<&str>, function_name: Option<&str>, parent: Option<Rc<RefCell<Scope>>>) -> Self {
+    pub fn new(
+        module_path: Option<PathBuf>,
+        contract_name: Option<&str>,
+        function_name: Option<&str>,
+        parent: Option<Rc<RefCell<Scope>>>,
+    ) -> Self {
         Self {
             contract_name: contract_name.map(str::to_string),
             function_name: function_name.map(str::to_string),
             parent,
             variables: vec![],
+            module_path,
         }
     }
 
-    pub fn get_contract_name(&self) -> Option<String> {
+    pub fn get_current_module_path(&self) -> Option<PathBuf> {
+        if let Some(module_path) = self.module_path.as_ref() {
+            return Some(module_path.clone());
+        }
+
+        if let Some(parent) = self.parent.as_ref()
+            && let Some(module_path) = parent.borrow().get_current_module_path()
+        {
+            return Some(module_path.clone());
+        }
+
+        None
+    }
+
+    pub fn get_module_paths(&self) -> Vec<PathBuf> {
+        let mut result = vec![];
+
+        if let Some(module_path) = self.module_path.as_ref() {
+            result.push(module_path.clone());
+        }
+
+        if let Some(parent) = self.parent.as_ref() {
+            for module_path in parent.borrow().get_module_paths() {
+                if !result.contains(&module_path) {
+                    result.push(module_path);
+                }
+            }
+        }
+
+        result
+    }
+
+    pub fn get_current_contract_name(&self) -> Option<String> {
         if let Some(contract_name) = self.contract_name.as_ref() {
             return Some(contract_name.clone());
         }
 
         if let Some(parent) = self.parent.as_ref()
-            && let Some(contract_name) = parent.borrow().get_contract_name()
+            && let Some(contract_name) = parent.borrow().get_current_contract_name()
         {
             return Some(contract_name.clone());
         }
@@ -99,18 +138,54 @@ impl Scope {
         None
     }
 
-    pub fn get_function_name(&self) -> Option<String> {
+    pub fn get_contract_names(&self) -> Vec<String> {
+        let mut result = vec![];
+
+        if let Some(contract_name) = self.contract_name.as_ref() {
+            result.push(contract_name.clone());
+        }
+
+        if let Some(parent) = self.parent.as_ref() {
+            for contract_name in parent.borrow().get_contract_names() {
+                if !result.contains(&contract_name) {
+                    result.push(contract_name);
+                }
+            }
+        }
+
+        result
+    }
+
+    pub fn get_current_function_name(&self) -> Option<String> {
         if let Some(function_name) = self.function_name.as_ref() {
             return Some(function_name.clone());
         }
 
         if let Some(parent) = self.parent.as_ref()
-            && let Some(function_name) = parent.borrow().get_function_name()
+            && let Some(function_name) = parent.borrow().get_current_function_name()
         {
             return Some(function_name.clone());
         }
 
         None
+    }
+
+    pub fn get_function_names(&self) -> Vec<String> {
+        let mut result = vec![];
+
+        if let Some(function_name) = self.function_name.as_ref() {
+            result.push(function_name.clone());
+        }
+
+        if let Some(parent) = self.parent.as_ref() {
+            for function_name in parent.borrow().get_function_names() {
+                if !result.contains(&function_name) {
+                    result.push(function_name);
+                }
+            }
+        }
+
+        result
     }
 
     pub fn set_function_name(&mut self, function_name: &str) {
@@ -204,7 +279,7 @@ impl Scope {
     }
 
     pub fn set_function_storage_accesses(&self, module: Rc<RefCell<Module>>, storage_read: bool, storage_write: bool) {
-        if let Some(function_name) = self.get_function_name() {
+        if let Some(function_name) = self.get_current_function_name() {
             if storage_read {
                 module
                     .borrow_mut()
@@ -453,7 +528,7 @@ impl Module {
     /// Gets the storage block for the translated definition. If it doesn't exist, it gets created.
     #[inline]
     pub fn get_storage(&mut self, scope: Rc<RefCell<Scope>>) -> Rc<RefCell<sway::Storage>> {
-        let contract_name = scope.borrow().get_contract_name().unwrap();
+        let contract_name = scope.borrow().get_current_contract_name().unwrap();
 
         let contract_item = self
             .contracts
@@ -473,7 +548,7 @@ impl Module {
     /// Gets the storage struct for the translated definition. If it doesn't exist, it gets created.
     #[inline]
     pub fn get_storage_struct(&mut self, scope: Rc<RefCell<Scope>>) -> Rc<RefCell<Struct>> {
-        let contract_name = scope.borrow().get_contract_name().unwrap();
+        let contract_name = scope.borrow().get_current_contract_name().unwrap();
 
         let contract_item = self
             .contracts
@@ -591,7 +666,7 @@ impl Module {
     /// Gets the name of the storage namespace from the translated definition.
     #[inline]
     pub fn get_storage_namespace_name(&self, scope: Rc<RefCell<Scope>>) -> Option<String> {
-        let contract_name = scope.borrow().get_contract_name()?;
+        let contract_name = scope.borrow().get_current_contract_name()?;
 
         Some(translate_naming_convention(&contract_name, Case::Snake))
     }
