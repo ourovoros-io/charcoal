@@ -1225,7 +1225,7 @@ impl TabbedDisplay for Literal {
             Literal::DecInt(x, suffix) => write!(
                 f,
                 "{}{}",
-                if suffix.as_ref().is_some_and(|s| s == "u256" || s == "b256") {
+                if suffix.as_ref().is_some_and(|s| s == "b256") {
                     format!("0x{x:064X}")
                 } else {
                     format!("{x}")
@@ -1240,7 +1240,7 @@ impl TabbedDisplay for Literal {
             Literal::HexInt(x, suffix) => write!(
                 f,
                 "0x{}{}",
-                if suffix.as_ref().is_some_and(|s| s == "u256" || s == "b256") {
+                if suffix.as_ref().is_some_and(|s| s == "b256") {
                     format!("{x:064X}")
                 } else {
                     format!("{x:X}")

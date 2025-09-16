@@ -1554,7 +1554,7 @@ impl Project {
                     continue;
                 }
 
-                let contract_project_name = contract.name.to_case(Case::Kebab);
+                let contract_project_name = contract.name.to_case(Case::Snake);
 
                 let output_directory = options
                     .output_directory

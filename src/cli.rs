@@ -1,5 +1,6 @@
 use crate::{error::Error, wrapped_err};
 use clap::Parser;
+use convert_case::{Case, Casing};
 use std::path::PathBuf;
 
 #[derive(Parser, Debug, Default, Clone)]
@@ -33,9 +34,11 @@ impl Args {
         // Handle output directory if provided
         if let Some(ref mut output_directory) = self.output_directory {
             // Check if name is provided when output directory is specified
-            if self.name.is_none() {
+            let Some(name) = self.name.as_mut() else {
                 return Err(Error::InvalidInput("No output project name provided".to_string()));
-            }
+            };
+
+            *name = name.to_case(Case::Snake);
 
             // Create directory if it doesn't exist
             if !output_directory.exists() {
