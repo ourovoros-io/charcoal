@@ -397,6 +397,7 @@ pub struct Contract {
     pub kind: solidity::ContractTy,
     pub abi: sway::Abi,
     pub abi_impl: sway::Impl,
+    pub impls: Vec<sway::Impl>,
     pub storage: Option<Rc<RefCell<sway::Storage>>>,
     pub storage_struct: Option<Rc<RefCell<Struct>>>,
     pub storage_struct_constructor_fn: Option<sway::Function>,
@@ -418,6 +419,7 @@ impl Contract {
                 for_type_name: Some(sway::TypeName::create_identifier("Contract")),
                 items: vec![],
             },
+            impls: vec![],
             storage: None,
             storage_struct: Some(Rc::new(RefCell::new(Struct {
                 name: format!("{}Storage", name),
@@ -868,6 +870,8 @@ impl From<Module> for sway::Module {
             {
                 items.push(sway::ModuleItem::Impl(contract.abi_impl.clone()));
             }
+
+            items.extend(contract.impls.iter().map(|i| sway::ModuleItem::Impl(i.clone())));
         }
 
         for x in module.impls {

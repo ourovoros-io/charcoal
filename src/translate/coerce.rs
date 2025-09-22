@@ -2286,7 +2286,7 @@ fn coerce_contract_storage_struct_types(context: &mut CoerceContext) -> Option<s
 /// Get the storage struct field associated with an inherited contract
 fn get_inheritance_storage_struct_field(
     project: &mut Project,
-    module: Rc<RefCell<ir::Module>>,
+    _module: Rc<RefCell<ir::Module>>,
     scope: Rc<RefCell<ir::Scope>>,
     from_contract_name: &str,
     to_contract_name: &str,
