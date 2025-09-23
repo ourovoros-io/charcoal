@@ -337,20 +337,21 @@ pub fn generate_enum_abi_encode_function(
         );
 
         match_expr.branches.push(sway::MatchBranch {
-            pattern: sway::Expression::create_identifier(
-                format!(
-                    "{}::{}{}",
-                    sway_enum.borrow().name,
-                    variant.name,
-                    if parameter_count == 0 {
-                        String::new()
-                    } else if parameter_count == 1 {
-                        format!("({})", parameter_names[0])
-                    } else {
-                        format!("(({}))", parameter_names.join(", "))
-                    },
-                )
-                .as_str(),
+            pattern: sway::Expression::create_function_call(
+                format!("{}::{}", sway_enum.borrow().name, variant.name,).as_str(),
+                None,
+                if parameter_count == 0 {
+                    vec![]
+                } else if parameter_count == 1 {
+                    vec![sway::Expression::create_identifier(&parameter_names[0])]
+                } else {
+                    vec![sway::Expression::Tuple(
+                        parameter_names
+                            .iter()
+                            .map(|p| sway::Expression::create_identifier(p))
+                            .collect(),
+                    )]
+                },
             ),
             value: sway::Expression::from(block),
         });

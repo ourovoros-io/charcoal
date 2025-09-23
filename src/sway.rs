@@ -1846,6 +1846,27 @@ pub struct Block {
     pub final_expr: Option<Expression>,
 }
 
+impl Block {
+    pub fn find_expression<F>(&self, f: F) -> Option<&Expression>
+    where
+        F: Clone + Fn(&&Expression) -> bool,
+    {
+        for statement in self.statements.iter() {
+            if let Some(result) = statement.find_expression(f.clone()) {
+                return Some(result);
+            }
+        }
+
+        if let Some(final_expr) = self.final_expr.as_ref()
+            && let Some(result) = final_expr.find(f.clone())
+        {
+            return Some(result);
+        }
+
+        None
+    }
+}
+
 impl TabbedDisplay for Block {
     fn tabbed_fmt(&self, depth: usize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "{{")?;
@@ -1935,6 +1956,27 @@ impl Statement {
                     && let Some(result) = statement.filter_map(f.clone())
                 {
                     return Some(result);
+                }
+            }
+        }
+
+        None
+    }
+
+    pub fn find_expression<F>(&self, f: F) -> Option<&Expression>
+    where
+        F: Clone + Fn(&&Expression) -> bool,
+    {
+        match self {
+            Statement::Let(let_stmt) => {
+                if let Some(result) = let_stmt.value.find(f.clone()) {
+                    return Some(result);
+                }
+            }
+            Statement::Expression(expression) => return expression.find(f.clone()),
+            Statement::Commented(_, statement) => {
+                if let Some(statement) = statement.as_ref() {
+                    return statement.as_ref().find_expression(f.clone());
                 }
             }
         }
@@ -2738,6 +2780,130 @@ impl Expression {
         result.unwrap()
     }
 
+    pub fn find<F>(&self, f: F) -> Option<&Self>
+    where
+        F: Clone + Fn(&&Expression) -> bool,
+    {
+        if f.clone()(&self) {
+            return Some(self);
+        }
+
+        match self {
+            Expression::FunctionCall(function_call) => {
+                if let Some(result) = function_call.function.find(f.clone()) {
+                    return Some(result);
+                }
+
+                for parameter in function_call.parameters.iter() {
+                    if let Some(result) = parameter.find(f.clone()) {
+                        return Some(result);
+                    }
+                }
+            }
+            Expression::FunctionCallBlock(function_call_block) => {
+                if let Some(result) = function_call_block.function.find(f.clone()) {
+                    return Some(result);
+                }
+
+                for field in function_call_block.fields.iter() {
+                    if let Some(result) = field.value.find(f.clone()) {
+                        return Some(result);
+                    }
+                }
+
+                for parameter in function_call_block.parameters.iter() {
+                    if let Some(result) = parameter.find(f.clone()) {
+                        return Some(result);
+                    }
+                }
+            }
+            Expression::Block(block) => return block.find_expression(f.clone()),
+            Expression::Return(expression) => {
+                if let Some(return_expr) = expression.as_ref()
+                    && let Some(result) = return_expr.find(f.clone())
+                {
+                    return Some(result);
+                }
+            }
+            Expression::Array(array) => return array.elements.iter().find(f.clone()),
+            Expression::ArrayAccess(array_access) => {
+                if let Some(result) = array_access.expression.find(f.clone()) {
+                    return Some(result);
+                }
+
+                if let Some(result) = array_access.index.find(f.clone()) {
+                    return Some(result);
+                }
+            }
+            Expression::MemberAccess(member_access) => return member_access.as_ref().expression.find(f.clone()),
+            Expression::Tuple(expressions) => return expressions.iter().find(f.clone()),
+            Expression::If(if_expr) => return if_expr.find_expression(f.clone()),
+            Expression::Match(match_expr) => {
+                if let Some(result) = match_expr.expression.find(f.clone()) {
+                    return Some(result);
+                }
+
+                for branch in match_expr.branches.iter() {
+                    if let Some(result) = branch.pattern.find(f.clone()) {
+                        return Some(result);
+                    }
+
+                    if let Some(result) = branch.value.find(f.clone()) {
+                        return Some(result);
+                    }
+                }
+            }
+            Expression::While(while_expr) => {
+                if let Some(result) = while_expr.as_ref().condition.find(f.clone()) {
+                    return Some(result);
+                }
+
+                for statement in while_expr.body.statements.iter() {
+                    if let Some(result) = statement.find_expression(f.clone()) {
+                        return Some(result);
+                    }
+                }
+
+                if let Some(final_expr) = while_expr.body.final_expr.as_ref()
+                    && let Some(result) = final_expr.find(f.clone())
+                {
+                    return Some(result);
+                }
+            }
+            Expression::UnaryExpression(unary_expression) => return unary_expression.expression.find(f.clone()),
+            Expression::BinaryExpression(binary_expression) => {
+                if let Some(result) = binary_expression.lhs.find(f.clone()) {
+                    return Some(result);
+                }
+
+                if let Some(result) = binary_expression.rhs.find(f.clone()) {
+                    return Some(result);
+                }
+            }
+            Expression::Constructor(constructor) => {
+                for field in constructor.fields.iter() {
+                    if let Some(result) = field.value.find(f.clone()) {
+                        return Some(result);
+                    }
+                }
+            }
+            Expression::AsmBlock(asm_block) => {
+                for register in asm_block.registers.iter() {
+                    if let Some(result) = register.value.as_ref()
+                        && let Some(result) = result.find(f.clone())
+                    {
+                        return Some(result);
+                    }
+                }
+            }
+            Expression::Commented(_, expression) => return expression.as_ref().find(f.clone()),
+
+            _ => {}
+        }
+
+        None
+    }
+
     /// Applies a lambda to an expression and all of its child expressions.
     pub fn filter_map<T, F>(&self, f: F) -> Option<T>
     where
@@ -3106,6 +3272,37 @@ pub struct If {
     pub condition: Option<Expression>,
     pub then_body: Block,
     pub else_if: Option<Box<If>>,
+}
+
+impl If {
+    pub fn find_expression<F>(&self, f: F) -> Option<&Expression>
+    where
+        F: Clone + Fn(&&Expression) -> bool,
+    {
+        if let Some(result) = self.condition.as_ref()
+            && let Some(result) = result.find(f.clone())
+        {
+            return Some(result);
+        }
+
+        for statement in self.then_body.statements.iter() {
+            if let Some(result) = statement.find_expression(f.clone()) {
+                return Some(result);
+            }
+        }
+
+        if let Some(final_expr) = self.then_body.final_expr.as_ref()
+            && let Some(result) = final_expr.find(f.clone())
+        {
+            return Some(result);
+        }
+
+        if let Some(if_expr) = self.else_if.as_ref() {
+            return if_expr.find_expression(f.clone());
+        }
+
+        None
+    }
 }
 
 impl TabbedDisplay for If {

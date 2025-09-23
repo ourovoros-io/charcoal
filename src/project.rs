@@ -1,4 +1,13 @@
-use crate::{cli::Args, error::Error, framework::Framework, ir, sway, translate::*, wrapped_err};
+use crate::{
+    cli::Args,
+    error::Error,
+    framework::Framework,
+    ir,
+    standards::{STANDARDS, Standard, StandardDefinitionPart},
+    sway,
+    translate::*,
+    wrapped_err,
+};
 use convert_case::{Case, Casing};
 use solang_parser::pt as solidity;
 use std::{
@@ -1634,6 +1643,8 @@ impl Project {
                             // Remove from abi implementation functions
                             let mut function_bodies = HashMap::new();
 
+                            let mut removed_function_names = vec![];
+
                             let abi_impl_item_count = {
                                 let contract = contract.borrow();
                                 contract.abi_impl.items.len()
@@ -1674,19 +1685,15 @@ impl Project {
                                 panic!("Allowance function body not found");
                             };
 
-                            let Some(allowance_expr) = &allowance_body.final_expr else {
+                            let Some(sway::Expression::FunctionCall(f)) = &allowance_body.final_expr else {
                                 panic!("Failed to get allowance expression from final expression");
                             };
 
-                            let sway::Expression::FunctionCall(f) = allowance_expr else {
-                                panic!("Failed to get function call from allowance expression");
-                            };
-
-                            let Some(function_name) = f.function.as_identifier() else {
+                            let Some(allowance_fn_name) = f.function.as_identifier() else {
                                 panic!("Failed to get the function name for allowance");
                             };
 
-                            let Some((i, toplevel_fn)) = module
+                            let Some((i, allowance_toplevel_fn)) = module
                                 .functions
                                 .iter()
                                 .enumerate()
@@ -1694,14 +1701,14 @@ impl Project {
                                     let sway::TypeName::Function { new_name, .. } = &f.signature else {
                                         return false;
                                     };
-                                    new_name == function_name
+                                    new_name == allowance_fn_name
                                 })
                                 .map(|(i, f)| (i, f.clone()))
                             else {
                                 panic!("Failed to get top level function");
                             };
 
-                            let Some(allowance_expr) = toplevel_fn
+                            let Some(allowance_expr) = allowance_toplevel_fn
                                 .implementation
                                 .as_ref()
                                 .unwrap()
@@ -1733,6 +1740,10 @@ impl Project {
                                 panic!("Failed to get member access");
                             };
 
+                            let allowances_name = member_access.member.clone();
+
+                            removed_function_names.push(allowance_fn_name.to_string());
+
                             module.functions.remove(i);
 
                             let storage = contract.borrow().storage.as_ref().unwrap().clone();
@@ -1755,7 +1766,7 @@ impl Project {
                                 .fields
                                 .iter()
                                 .enumerate()
-                                .find(|(_, f)| f.name == member_access.member)
+                                .find(|(_, f)| f.name == allowances_name)
                             else {
                                 panic!("Failed to find storage field")
                             };
@@ -1768,12 +1779,329 @@ impl Project {
                                 .fields
                                 .iter()
                                 .enumerate()
-                                .find(|(_, f)| f.new_name == member_access.member)
+                                .find(|(_, f)| f.new_name == allowances_name)
                             else {
                                 panic!("Failed to find storage struct field")
                             };
 
                             storage_struct.borrow_mut().storage.fields.remove(i);
+
+                            // Remove storage struct entry from constructor
+                            {
+                                let mut contract = contract.borrow_mut();
+
+                                let body = contract
+                                    .storage_struct_constructor_fn
+                                    .as_mut()
+                                    .unwrap()
+                                    .body
+                                    .as_mut()
+                                    .unwrap();
+
+                                let Some(sway::Expression::Constructor(constructor)) = body.final_expr.as_mut() else {
+                                    panic!("Malformed struct constructor");
+                                };
+
+                                let Some((i, _)) = constructor
+                                    .fields
+                                    .iter()
+                                    .enumerate()
+                                    .find(|(_, c)| c.name == allowances_name)
+                                else {
+                                    panic!("Failed to find constructor storage struct field")
+                                };
+
+                                constructor.fields.remove(i);
+                            }
+
+                            // Remove approval
+                            let Some(approve_body) = function_bodies.get("approve") else {
+                                panic!("Approval function body not found");
+                            };
+
+                            let Some(sway::Expression::FunctionCall(f)) = &approve_body.final_expr else {
+                                panic!("Failed to get approval expression from final expression");
+                            };
+
+                            let Some(approve_fn_name) = f.function.as_identifier() else {
+                                panic!("Failed to get the function name for approval");
+                            };
+
+                            let Some((i, approve_toplevel_fn)) = module
+                                .functions
+                                .iter()
+                                .enumerate()
+                                .find(|(_, f)| {
+                                    let sway::TypeName::Function { new_name, .. } = &f.signature else {
+                                        return false;
+                                    };
+                                    new_name == approve_fn_name
+                                })
+                                .map(|(i, f)| (i, f.clone()))
+                            else {
+                                panic!("Failed to get top level function");
+                            };
+
+                            let toplevel_fn_body = approve_toplevel_fn
+                                .implementation
+                                .as_ref()
+                                .unwrap()
+                                .body
+                                .as_ref()
+                                .unwrap();
+
+                            let toplevel_calls = toplevel_fn_body
+                                .statements
+                                .iter()
+                                .filter(|s| matches!(s, sway::Statement::Expression(sway::Expression::FunctionCall(_))))
+                                .collect::<Vec<_>>();
+
+                            assert!(toplevel_calls.len() == 1);
+
+                            removed_function_names.push(approve_fn_name.to_string());
+
+                            module.functions.remove(i);
+
+                            let sway::Statement::Expression(sway::Expression::FunctionCall(function)) =
+                                toplevel_calls[0]
+                            else {
+                                unreachable!()
+                            };
+
+                            let Some(approve_private_fn_name) = function.function.as_identifier() else {
+                                panic!("Failed to get function name")
+                            };
+
+                            let Some((index, private_function)) = module
+                                .functions
+                                .iter()
+                                .enumerate()
+                                .find(|(_, f)| {
+                                    let sway::TypeName::Function { new_name, .. } = &f.signature else {
+                                        return false;
+                                    };
+                                    new_name == approve_private_fn_name
+                                })
+                                .map(|(i, f)| (i, f.clone()))
+                            else {
+                                panic!("Failed to get private function");
+                            };
+
+                            let private_fn_body =
+                                private_function.implementation.as_ref().unwrap().body.as_ref().unwrap();
+
+                            let mut has_allowance_assignment = false;
+                            let mut has_log = false;
+
+                            if private_fn_body
+                                .find_expression(|expr| {
+                                    if let sway::Expression::FunctionCall(f) = &expr
+                                        && let Some((expr, _)) = expr.to_write_call_parts()
+                                        && let Some((expr, _)) = expr.to_get_call_parts()
+                                        && let Some((expr, _)) = expr.to_get_call_parts()
+                                        && let sway::Expression::MemberAccess(m) = expr
+                                        && let Some("storage_struct") = m.expression.as_identifier()
+                                        && m.member == allowances_name
+                                    {
+                                        return true;
+                                    }
+
+                                    false
+                                })
+                                .is_some()
+                            {
+                                has_allowance_assignment = true;
+                            }
+
+                            if private_fn_body
+                                .find_expression(|expr| {
+                                    if let sway::Expression::FunctionCall(f) = expr
+                                        && let Some(function_name) = f.function.as_identifier()
+                                        && function_name == "log"
+                                        && f.parameters.len() == 1
+                                        && let sway::Expression::FunctionCall(f) = &f.parameters[0]
+                                        && let sway::Expression::PathExpr(path_expr) = &f.function
+                                        && path_expr.segments.len() == 1
+                                        && path_expr.segments[0].name == "Approval"
+                                        && path_expr.segments[0].generic_parameters.is_none()
+                                        && f.parameters.len() == 1
+                                        && let sway::Expression::Tuple(t) = &f.parameters[0]
+                                        && t.len() == 3
+                                    {
+                                        return true;
+                                    }
+                                    false
+                                })
+                                .is_some()
+                            {
+                                has_log = true;
+                            }
+
+                            if has_allowance_assignment && has_log {
+                                removed_function_names.push(approve_private_fn_name.to_string());
+
+                                module.functions.remove(index);
+                            }
+
+                            loop {
+                                let mut remove_fn_indexes = vec![];
+
+                                for (index, function) in module.functions.iter().enumerate() {
+                                    if let Some(function) = &function.implementation
+                                        && let Some(function_body) = &function.body
+                                    {
+                                        if let Some(_) = function_body.find_expression(|x| {
+                                            if let sway::Expression::FunctionCall(f) = &x {
+                                                if let Some(identifier) = f.function.as_identifier()
+                                                    && removed_function_names.contains(&identifier.to_string())
+                                                {
+                                                    return true;
+                                                }
+                                            }
+                                            false
+                                        }) {
+                                            remove_fn_indexes.push(index);
+                                            removed_function_names.push(function.new_name.clone());
+
+                                            break;
+                                        }
+                                    }
+                                }
+
+                                remove_fn_indexes.sort();
+
+                                for i in remove_fn_indexes.iter().rev() {
+                                    let sway::TypeName::Function { new_name, .. } = &module.functions[*i].signature
+                                    else {
+                                        unreachable!()
+                                    };
+
+                                    println!("Removing function: {}", new_name);
+                                    module.functions.remove(*i);
+                                }
+
+                                if remove_fn_indexes.is_empty() {
+                                    break;
+                                }
+                            }
+
+                            // Remove abi functions that called removed functionality
+                            let abi_impl_item_count = {
+                                let contract = contract.borrow();
+                                contract.abi_impl.items.len()
+                            };
+
+                            for i in (0..abi_impl_item_count).rev() {
+                                let item = {
+                                    let contract = contract.borrow();
+                                    contract.abi_impl.items[i].clone()
+                                };
+
+                                let sway::ImplItem::Function(function) = item else {
+                                    continue;
+                                };
+
+                                let remove = function
+                                    .body
+                                    .as_ref()
+                                    .unwrap()
+                                    .find_expression(|x| {
+                                        if let sway::Expression::FunctionCall(f) = &x {
+                                            if let Some(identifier) = f.function.as_identifier() {
+                                                if removed_function_names.contains(&identifier.to_string()) {
+                                                    return true;
+                                                }
+                                            }
+                                        }
+                                        false
+                                    })
+                                    .is_some();
+
+                                if remove {
+                                    let sway::ImplItem::Function(function) =
+                                        contract.borrow().abi_impl.items[i].clone()
+                                    else {
+                                        unreachable!()
+                                    };
+
+                                    let index = {
+                                        let Some((index, _)) = contract
+                                            .borrow()
+                                            .abi
+                                            .functions
+                                            .iter()
+                                            .enumerate()
+                                            .find(|(_, f)| f.new_name == function.new_name)
+                                        else {
+                                            unreachable!()
+                                        };
+
+                                        index
+                                    };
+
+                                    contract.borrow_mut().abi.functions.remove(index);
+                                    contract.borrow_mut().abi_impl.items.remove(i);
+                                }
+                            }
+
+                            // Remove Approval Event
+                            let event_name = format!("{}Event", contract_name);
+                            if let Some(events_enum) =
+                                module.events_enums.iter_mut().find(|e| e.0.borrow().name == event_name)
+                            {
+                                let index = {
+                                    if let Some((index, _)) = events_enum
+                                        .0
+                                        .borrow()
+                                        .variants
+                                        .iter()
+                                        .enumerate()
+                                        .find(|(_, e)| e.name == "Approval")
+                                    {
+                                        Some(index)
+                                    } else {
+                                        None
+                                    }
+                                };
+
+                                if let Some(index) = index {
+                                    events_enum.0.borrow_mut().variants.remove(index);
+                                }
+
+                                if let Some(event_impl) = events_enum.1.borrow_mut().items.iter_mut().find(|i| {
+                                    let sway::ImplItem::Function(f) = i else { return false };
+                                    f.new_name == "abi_encode"
+                                }) {
+                                    let sway::ImplItem::Function(f) = event_impl else {
+                                        unreachable!();
+                                    };
+
+                                    let sway::Statement::Let(let_expr) = &mut f.body.as_mut().unwrap().statements[0]
+                                    else {
+                                        unreachable!()
+                                    };
+
+                                    let sway::Expression::Match(match_expr) = &mut let_expr.value else {
+                                        unreachable!()
+                                    };
+
+                                    if let Some((index, _)) = match_expr.branches.iter().enumerate().find(|(_, b)| {
+                                        if let sway::Expression::FunctionCall(f) = &b.pattern
+                                            && let sway::Expression::PathExpr(path_expr) = &f.function
+                                            && path_expr.segments.len() == 1
+                                            && let sway::PathExprRoot::Identifier(identifier) = &path_expr.root
+                                            && *identifier == event_name
+                                            && path_expr.segments[0].name == "Approval"
+                                        {
+                                            return true;
+                                        }
+
+                                        false
+                                    }) {
+                                        match_expr.branches.remove(index);
+                                    }
+                                }
+                            }
 
                             // impl SRC20 for Contract
                             contract.borrow_mut().impls.push(sway::Impl {
@@ -2497,114 +2825,3 @@ impl Project {
         Ok(())
     }
 }
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Standard {
-    ERC20,
-}
-
-#[derive(Debug)]
-pub struct StandardDefinition {
-    pub name: Standard,
-    pub parts: &'static [StandardDefinitionPart],
-}
-
-#[derive(Debug)]
-pub enum StandardDefinitionPart {
-    Function {
-        name: &'static str,
-        arguments: &'static [solidity::Type],
-        returns: &'static [solidity::Type],
-    },
-    Event {
-        name: &'static str,
-        arguments: &'static [solidity::Type],
-    },
-}
-
-pub const STANDARDS: &[StandardDefinition] = &[
-    // ERC20
-    StandardDefinition {
-        name: Standard::ERC20,
-        parts: &[
-            // Functions
-            // function name() public view returns (string);
-            StandardDefinitionPart::Function {
-                name: "name",
-                arguments: &[],
-                returns: &[solidity::Type::String],
-            },
-            // function symbol() public view returns (string);
-            StandardDefinitionPart::Function {
-                name: "symbol",
-                arguments: &[],
-                returns: &[solidity::Type::String],
-            },
-            // function decimals() public view returns (uint8);
-            StandardDefinitionPart::Function {
-                name: "decimals",
-                arguments: &[],
-                returns: &[solidity::Type::Uint(8)],
-            },
-            // function totalSupply() public view returns (uint256);
-            StandardDefinitionPart::Function {
-                name: "totalSupply",
-                arguments: &[],
-                returns: &[solidity::Type::Uint(256)],
-            },
-            // function balanceOf(address _owner) public view returns (uint256 balance);
-            StandardDefinitionPart::Function {
-                name: "balanceOf",
-                arguments: &[solidity::Type::Address],
-                returns: &[solidity::Type::Uint(256)],
-            },
-            // function transfer(address _to, uint256 _value) public returns (bool success);
-            StandardDefinitionPart::Function {
-                name: "transfer",
-                arguments: &[solidity::Type::Address, solidity::Type::Uint(256)],
-                returns: &[solidity::Type::Bool],
-            },
-            // function transferFrom(address _from, address _to, uint256 _value) public returns (bool success);
-            StandardDefinitionPart::Function {
-                name: "transferFrom",
-                arguments: &[
-                    solidity::Type::Address,
-                    solidity::Type::Address,
-                    solidity::Type::Uint(256),
-                ],
-                returns: &[solidity::Type::Bool],
-            },
-            // function approve(address _spender, uint256 _value) public returns (bool success);
-            StandardDefinitionPart::Function {
-                name: "approve",
-                arguments: &[solidity::Type::Address, solidity::Type::Uint(256)],
-                returns: &[solidity::Type::Bool],
-            },
-            // function allowance(address _owner, address _spender) public view returns (uint256 remaining);
-            StandardDefinitionPart::Function {
-                name: "allowance",
-                arguments: &[solidity::Type::Address, solidity::Type::Address],
-                returns: &[solidity::Type::Uint(256)],
-            },
-            // Events
-            // event Transfer(address indexed _from, address indexed _to, uint256 _value);
-            StandardDefinitionPart::Event {
-                name: "Transfer",
-                arguments: &[
-                    solidity::Type::Address,
-                    solidity::Type::Address,
-                    solidity::Type::Uint(256),
-                ],
-            },
-            // event Approval(address indexed _owner, address indexed _spender, uint256 _value);
-            StandardDefinitionPart::Event {
-                name: "Approval",
-                arguments: &[
-                    solidity::Type::Address,
-                    solidity::Type::Address,
-                    solidity::Type::Uint(256),
-                ],
-            },
-        ],
-    },
-];

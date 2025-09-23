@@ -5,6 +5,7 @@ pub mod error;
 pub mod framework;
 pub mod ir;
 pub mod project;
+pub mod standards;
 pub mod sway;
 pub mod translate;
 pub mod utils;
