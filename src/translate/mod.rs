@@ -964,6 +964,10 @@ fn get_path_expr_function_call_type(
             return Ok(Some(sway::TypeName::create_identifier("Address")));
         }
 
+        "Address::zero" if generic_parameters.is_none() && parameters.len() == 0 => {
+            return Ok(Some(sway::TypeName::create_identifier("Address")));
+        }
+
         "AssetId::default" if generic_parameters.is_none() => {
             return Ok(Some(sway::TypeName::create_identifier("AssetId")));
         }

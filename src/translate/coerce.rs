@@ -876,6 +876,16 @@ fn coerce_identity_types(context: &mut CoerceContext) -> Option<sway::Expression
             .unwrap();
         }
 
+        if let sway::Expression::Literal(sway::Literal::HexInt(a, _)) = &expression
+            && a.is_zero()
+        {
+            return Some(sway::Expression::create_function_call(
+                "Identity::Address",
+                None,
+                vec![sway::Expression::create_function_call("Address::zero", None, vec![])],
+            ));
+        }
+
         return Some(sway::Expression::create_function_call(
             "Identity::Address",
             None,
