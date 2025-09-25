@@ -1865,6 +1865,25 @@ impl Block {
 
         None
     }
+
+    pub fn find_expression_mut<F>(&mut self, f: F) -> Option<&mut Expression>
+    where
+        F: Clone + Fn(&mut Expression) -> bool,
+    {
+        for statement in self.statements.iter_mut() {
+            if let Some(result) = statement.find_expression_mut(f.clone()) {
+                return Some(result);
+            }
+        }
+
+        if let Some(final_expr) = self.final_expr.as_mut()
+            && let Some(result) = final_expr.find_mut(f.clone())
+        {
+            return Some(result);
+        }
+
+        None
+    }
 }
 
 impl TabbedDisplay for Block {
@@ -1977,6 +1996,27 @@ impl Statement {
             Statement::Commented(_, statement) => {
                 if let Some(statement) = statement.as_ref() {
                     return statement.as_ref().find_expression(f.clone());
+                }
+            }
+        }
+
+        None
+    }
+
+    pub fn find_expression_mut<F>(&mut self, f: F) -> Option<&mut Expression>
+    where
+        F: Clone + Fn(&mut Expression) -> bool,
+    {
+        match self {
+            Statement::Let(let_stmt) => {
+                if let Some(result) = let_stmt.value.find_mut(f.clone()) {
+                    return Some(result);
+                }
+            }
+            Statement::Expression(expression) => return expression.find_mut(f.clone()),
+            Statement::Commented(_, statement) => {
+                if let Some(statement) = statement.as_mut() {
+                    return statement.as_mut().find_expression_mut(f.clone());
                 }
             }
         }
@@ -2904,6 +2944,144 @@ impl Expression {
         None
     }
 
+    pub fn find_mut<F>(&mut self, f: F) -> Option<&mut Self>
+    where
+        F: Clone + Fn(&mut Expression) -> bool,
+    {
+        if f.clone()(self) {
+            return Some(self);
+        }
+
+        match self {
+            Expression::FunctionCall(function_call) => {
+                if let Some(result) = function_call.function.find_mut(f.clone()) {
+                    return Some(result);
+                }
+
+                for parameter in function_call.parameters.iter_mut() {
+                    if let Some(result) = parameter.find_mut(f.clone()) {
+                        return Some(result);
+                    }
+                }
+            }
+            Expression::FunctionCallBlock(function_call_block) => {
+                if let Some(result) = function_call_block.function.find_mut(f.clone()) {
+                    return Some(result);
+                }
+
+                for field in function_call_block.fields.iter_mut() {
+                    if let Some(result) = field.value.find_mut(f.clone()) {
+                        return Some(result);
+                    }
+                }
+
+                for parameter in function_call_block.parameters.iter_mut() {
+                    if let Some(result) = parameter.find_mut(f.clone()) {
+                        return Some(result);
+                    }
+                }
+            }
+            Expression::Block(block) => return block.find_expression_mut(f.clone()),
+            Expression::Return(expression) => {
+                if let Some(return_expr) = expression.as_mut()
+                    && let Some(result) = return_expr.find_mut(f.clone())
+                {
+                    return Some(result);
+                }
+            }
+            Expression::Array(array) => {
+                for elements in array.elements.iter_mut() {
+                    if let Some(result) = elements.find_mut(f.clone()) {
+                        return Some(result);
+                    }
+                }
+            }
+            Expression::ArrayAccess(array_access) => {
+                if let Some(result) = array_access.expression.find_mut(f.clone()) {
+                    return Some(result);
+                }
+
+                if let Some(result) = array_access.index.find_mut(f.clone()) {
+                    return Some(result);
+                }
+            }
+            Expression::MemberAccess(member_access) => return member_access.as_mut().expression.find_mut(f.clone()),
+            Expression::Tuple(expressions) => {
+                for expression in expressions.iter_mut() {
+                    if let Some(result) = expression.find_mut(f.clone()) {
+                        return Some(result);
+                    }
+                }
+            }
+            Expression::If(if_expr) => return if_expr.find_expression_mut(f.clone()),
+            Expression::Match(match_expr) => {
+                if let Some(result) = match_expr.expression.find_mut(f.clone()) {
+                    return Some(result);
+                }
+
+                for branch in match_expr.branches.iter_mut() {
+                    if let Some(result) = branch.pattern.find_mut(f.clone()) {
+                        return Some(result);
+                    }
+
+                    if let Some(result) = branch.value.find_mut(f.clone()) {
+                        return Some(result);
+                    }
+                }
+            }
+            Expression::While(while_expr) => {
+                let while_expr = while_expr.as_mut();
+
+                if let Some(result) = while_expr.condition.find_mut(f.clone()) {
+                    return Some(result);
+                }
+
+                for statement in while_expr.body.statements.iter_mut() {
+                    if let Some(result) = statement.find_expression_mut(f.clone()) {
+                        return Some(result);
+                    }
+                }
+
+                if let Some(final_expr) = while_expr.body.final_expr.as_mut()
+                    && let Some(result) = final_expr.find_mut(f.clone())
+                {
+                    return Some(result);
+                }
+            }
+            Expression::UnaryExpression(unary_expression) => return unary_expression.expression.find_mut(f.clone()),
+            Expression::BinaryExpression(binary_expression) => {
+                if let Some(result) = binary_expression.lhs.find_mut(f.clone()) {
+                    return Some(result);
+                }
+
+                if let Some(result) = binary_expression.rhs.find_mut(f.clone()) {
+                    return Some(result);
+                }
+            }
+            Expression::Constructor(constructor) => {
+                for field in constructor.fields.iter_mut() {
+                    if let Some(result) = field.value.find_mut(f.clone()) {
+                        return Some(result);
+                    }
+                }
+            }
+            Expression::AsmBlock(asm_block) => {
+                for register in asm_block.registers.iter_mut() {
+                    if let Some(result) = register.value.as_mut()
+                        && let Some(result) = result.find_mut(f.clone())
+                    {
+                        return Some(result);
+                    }
+                }
+            }
+            Expression::Commented(_, expression) => return expression.as_mut().find_mut(f.clone()),
+
+            _ => {}
+        }
+
+        None
+    }
+
     /// Applies a lambda to an expression and all of its child expressions.
     pub fn filter_map<T, F>(&self, f: F) -> Option<T>
     where
@@ -3299,6 +3477,35 @@ impl If {
 
         if let Some(if_expr) = self.else_if.as_ref() {
             return if_expr.find_expression(f.clone());
+        }
+
+        None
+    }
+
+    pub fn find_expression_mut<F>(&mut self, f: F) -> Option<&mut Expression>
+    where
+        F: Clone + Fn(&mut Expression) -> bool,
+    {
+        if let Some(result) = self.condition.as_mut()
+            && let Some(result) = result.find_mut(f.clone())
+        {
+            return Some(result);
+        }
+
+        for statement in self.then_body.statements.iter_mut() {
+            if let Some(result) = statement.find_expression_mut(f.clone()) {
+                return Some(result);
+            }
+        }
+
+        if let Some(final_expr) = self.then_body.final_expr.as_mut()
+            && let Some(result) = final_expr.find_mut(f.clone())
+        {
+            return Some(result);
+        }
+
+        if let Some(if_expr) = self.else_if.as_mut() {
+            return if_expr.find_expression_mut(f.clone());
         }
 
         None
