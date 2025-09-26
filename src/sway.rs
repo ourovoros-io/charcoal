@@ -2718,6 +2718,19 @@ impl Expression {
     }
 
     #[inline(always)]
+    pub fn to_read_slice_call_parts(&self) -> Option<&Expression> {
+        if let Self::FunctionCall(f) = self
+            && let Self::MemberAccess(m) = &f.function
+            && m.member == "read_slice"
+            && f.parameters.is_empty()
+        {
+            return Some(&m.expression);
+        }
+
+        None
+    }
+
+    #[inline(always)]
     pub fn with_load_vec_call(&self) -> Self {
         self.with_function_calls(&[("load_vec", Some((None, vec![])))])
     }
@@ -2730,6 +2743,19 @@ impl Expression {
     #[inline(always)]
     pub fn with_write_slice_call(&self, value: Expression) -> Self {
         self.with_function_calls(&[("write_slice", Some((None, vec![value])))])
+    }
+
+    #[inline(always)]
+    pub fn to_write_slice_call_parts(&self) -> Option<(&Expression, &Expression)> {
+        if let Self::FunctionCall(f) = self
+            && let Self::MemberAccess(m) = &f.function
+            && m.member == "write_slice"
+            && f.parameters.len() == 1
+        {
+            return Some((&m.expression, &f.parameters[0]));
+        }
+
+        None
     }
 
     #[inline(always)]

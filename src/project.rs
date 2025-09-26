@@ -1612,6 +1612,13 @@ impl Project {
 
                             let mut removed_function_names = vec![];
 
+                            // Remove transfer
+                            crate::standards::remove_transfer_function(
+                                &mut module,
+                                &function_bodies,
+                                &mut removed_function_names,
+                            );
+
                             // Remove allowances
                             let allowances_name = crate::standards::remove_allowances(
                                 &mut module,
@@ -1669,6 +1676,8 @@ impl Project {
                             {
                                 module.events_enums.remove(index);
                             }
+
+                            crate::standards::emplace_src20_events(&mut module, &function_bodies);
 
                             // impl SRC20 for Contract
                             crate::standards::implement_src20_for_contract(contract, &function_bodies);

@@ -202,6 +202,81 @@ pub fn remove_abi_functions_for_standard(
     function_bodies
 }
 
+pub fn remove_transfer_function(
+    module: &mut ir::Module,
+    function_bodies: &HashMap<String, sway::Block>,
+    removed_function_names: &mut Vec<String>,
+) {
+    let Some(abi_body) = function_bodies.get("transfer") else {
+        panic!("Transfer function body not found");
+    };
+
+    let Some(sway::Expression::FunctionCall(f)) = &abi_body.final_expr else {
+        panic!("Failed to get transfer expression from final expression");
+    };
+
+    let Some(toplevel_fn_name) = f.function.as_identifier() else {
+        panic!("Failed to get the function name for transfer");
+    };
+
+    // Get the top level function and index
+    let Some((i, toplevel_fn)) = module
+        .functions
+        .iter()
+        .enumerate()
+        .find(|(_, f)| {
+            let sway::TypeName::Function { new_name, .. } = &f.signature else {
+                return false;
+            };
+            new_name == toplevel_fn_name
+        })
+        .map(|(i, f)| (i, f.clone()))
+    else {
+        panic!("Failed to get top level function");
+    };
+
+    let toplevel_fn_body = toplevel_fn.implementation.as_ref().unwrap().body.as_ref().unwrap();
+
+    let toplevel_calls = toplevel_fn_body
+        .statements
+        .iter()
+        .filter(|s| matches!(s, sway::Statement::Expression(sway::Expression::FunctionCall(_))))
+        .collect::<Vec<_>>();
+
+    for toplevel_call in toplevel_calls {
+        let sway::Statement::Expression(sway::Expression::FunctionCall(function)) = toplevel_call else {
+            unreachable!()
+        };
+
+        let Some(private_fn_name) = function.function.as_identifier() else {
+            panic!("Failed to get function name")
+        };
+
+        let Some((index, _)) = module
+            .functions
+            .iter()
+            .enumerate()
+            .find(|(_, f)| {
+                let sway::TypeName::Function { new_name, .. } = &f.signature else {
+                    return false;
+                };
+                new_name == private_fn_name
+            })
+            .map(|(i, f)| (i, f.clone()))
+        else {
+            panic!("Failed to get private function");
+        };
+
+        module.functions.remove(index);
+        removed_function_names.push(private_fn_name.to_string());
+    }
+
+    module.functions.remove(i);
+    removed_function_names.push(toplevel_fn_name.to_string());
+
+    remove_unnecessary_functions(module, removed_function_names);
+}
+
 pub fn remove_allowances(
     module: &mut ir::Module,
     function_bodies: &HashMap<String, sway::Block>,
@@ -273,6 +348,8 @@ pub fn remove_allowances(
 
     module.functions.remove(i);
 
+    remove_unnecessary_functions(module, removed_function_names);
+
     member_access.member.clone()
 }
 
@@ -342,6 +419,8 @@ pub fn remove_balance_of(
     removed_function_names.push(balance_of_fn_name.to_string());
 
     module.functions.remove(i);
+
+    remove_unnecessary_functions(module, removed_function_names);
 
     member_access.member.clone()
 }
@@ -597,6 +676,10 @@ pub fn remove_approval(
         module.functions.remove(index);
     }
 
+    remove_unnecessary_functions(module, removed_function_names);
+}
+
+pub fn remove_unnecessary_functions(module: &mut ir::Module, removed_function_names: &mut Vec<String>) {
     loop {
         let mut remove_fn_indexes = vec![];
 
@@ -909,6 +992,475 @@ pub fn remove_event_variant(module: &mut ir::Module, contract_name: &str, varian
         }
 
         check_block(body, &event_name, variant_name);
+    }
+}
+
+pub fn emplace_src20_events(module: &mut ir::Module, function_bodies: &HashMap<String, sway::Block>) {
+    let mut name_name = None;
+    let mut symbol_name = None;
+    let mut decimals_name = None;
+    let mut total_supply_name = None;
+
+    let name_fn_body = function_bodies.get("name").unwrap();
+    let symbol_fn_body = function_bodies.get("symbol").unwrap();
+    let decimals_fn_body = function_bodies.get("decimals").unwrap();
+    let total_supply_fn_body = function_bodies.get("totalSupply").unwrap();
+
+    //
+    // Get the name of the `name` storage field
+    //
+
+    let Some(sway::Expression::FunctionCall(function_call)) = name_fn_body.final_expr.as_ref() else {
+        unreachable!();
+    };
+
+    let Some(toplevel_fn_name) = function_call.function.as_identifier() else {
+        unreachable!();
+    };
+
+    let Some(toplevel_fn) = module.functions.iter().find(|f| {
+        let sway::TypeName::Function { new_name, .. } = &f.signature else {
+            unreachable!()
+        };
+        new_name == toplevel_fn_name
+    }) else {
+        unreachable!();
+    };
+
+    let Some(final_expr) = toplevel_fn
+        .implementation
+        .as_ref()
+        .unwrap()
+        .body
+        .as_ref()
+        .unwrap()
+        .final_expr
+        .as_ref()
+    else {
+        unreachable!();
+    };
+
+    let Some(expr) = final_expr.to_unwrap_call_parts() else {
+        unreachable!();
+    };
+
+    let Some(expr) = expr.to_read_slice_call_parts() else {
+        unreachable!();
+    };
+
+    let sway::Expression::MemberAccess(member_access) = expr else {
+        unreachable!()
+    };
+
+    let Some(storage_struct_parameter) = toplevel_fn
+        .implementation
+        .as_ref()
+        .unwrap()
+        .storage_struct_parameter
+        .as_ref()
+    else {
+        unreachable!();
+    };
+
+    let Some(identifier) = member_access.expression.as_identifier() else {
+        unreachable!();
+    };
+
+    assert!(identifier == storage_struct_parameter.name);
+
+    name_name = Some(member_access.member.clone());
+
+    //
+    // Get the name of the `symbol` storage field
+    //
+
+    let Some(sway::Expression::FunctionCall(function_call)) = symbol_fn_body.final_expr.as_ref() else {
+        unreachable!();
+    };
+
+    let Some(toplevel_fn_name) = function_call.function.as_identifier() else {
+        unreachable!();
+    };
+
+    let Some(toplevel_fn) = module.functions.iter().find(|f| {
+        let sway::TypeName::Function { new_name, .. } = &f.signature else {
+            unreachable!()
+        };
+        new_name == toplevel_fn_name
+    }) else {
+        unreachable!();
+    };
+
+    let Some(final_expr) = toplevel_fn
+        .implementation
+        .as_ref()
+        .unwrap()
+        .body
+        .as_ref()
+        .unwrap()
+        .final_expr
+        .as_ref()
+    else {
+        unreachable!();
+    };
+
+    let Some(expr) = final_expr.to_unwrap_call_parts() else {
+        unreachable!();
+    };
+
+    let Some(expr) = expr.to_read_slice_call_parts() else {
+        unreachable!();
+    };
+
+    let sway::Expression::MemberAccess(member_access) = expr else {
+        unreachable!()
+    };
+
+    let Some(storage_struct_parameter) = toplevel_fn
+        .implementation
+        .as_ref()
+        .unwrap()
+        .storage_struct_parameter
+        .as_ref()
+    else {
+        unreachable!();
+    };
+
+    let Some(identifier) = member_access.expression.as_identifier() else {
+        unreachable!();
+    };
+
+    assert!(identifier == storage_struct_parameter.name);
+
+    symbol_name = Some(member_access.member.clone());
+
+    //
+    // Get the name of the `decimals` storage field
+    //
+
+    let Some(sway::Expression::FunctionCall(function_call)) = decimals_fn_body.final_expr.as_ref() else {
+        unreachable!();
+    };
+
+    let Some(toplevel_fn_name) = function_call.function.as_identifier() else {
+        unreachable!();
+    };
+
+    let Some(toplevel_fn) = module.functions.iter().find(|f| {
+        let sway::TypeName::Function { new_name, .. } = &f.signature else {
+            unreachable!()
+        };
+        new_name == toplevel_fn_name
+    }) else {
+        unreachable!();
+    };
+
+    let Some(final_expr) = toplevel_fn
+        .implementation
+        .as_ref()
+        .unwrap()
+        .body
+        .as_ref()
+        .unwrap()
+        .final_expr
+        .as_ref()
+    else {
+        unreachable!();
+    };
+
+    let Some(expr) = final_expr.to_read_call_parts() else {
+        unreachable!();
+    };
+
+    let sway::Expression::MemberAccess(member_access) = expr else {
+        unreachable!()
+    };
+
+    let Some(storage_struct_parameter) = toplevel_fn
+        .implementation
+        .as_ref()
+        .unwrap()
+        .storage_struct_parameter
+        .as_ref()
+    else {
+        unreachable!();
+    };
+
+    let Some(identifier) = member_access.expression.as_identifier() else {
+        unreachable!();
+    };
+
+    assert!(identifier == storage_struct_parameter.name);
+
+    decimals_name = Some(member_access.member.clone());
+
+    //
+    // Get the name of the `total_supply` storage field
+    //
+
+    let Some(sway::Expression::FunctionCall(function_call)) = total_supply_fn_body.final_expr.as_ref() else {
+        unreachable!();
+    };
+
+    let Some(toplevel_fn_name) = function_call.function.as_identifier() else {
+        unreachable!();
+    };
+
+    let Some(toplevel_fn) = module.functions.iter().find(|f| {
+        let sway::TypeName::Function { new_name, .. } = &f.signature else {
+            unreachable!()
+        };
+        new_name == toplevel_fn_name
+    }) else {
+        unreachable!();
+    };
+
+    let Some(final_expr) = toplevel_fn
+        .implementation
+        .as_ref()
+        .unwrap()
+        .body
+        .as_ref()
+        .unwrap()
+        .final_expr
+        .as_ref()
+    else {
+        unreachable!();
+    };
+
+    let Some(expr) = final_expr.to_read_call_parts() else {
+        unreachable!();
+    };
+
+    let sway::Expression::MemberAccess(member_access) = expr else {
+        unreachable!()
+    };
+
+    let Some(storage_struct_parameter) = toplevel_fn
+        .implementation
+        .as_ref()
+        .unwrap()
+        .storage_struct_parameter
+        .as_ref()
+    else {
+        unreachable!();
+    };
+
+    let Some(identifier) = member_access.expression.as_identifier() else {
+        unreachable!();
+    };
+
+    assert!(identifier == storage_struct_parameter.name);
+
+    total_supply_name = Some(member_access.member.clone());
+
+    //
+    // Emplace event logs when any storage fields are written to
+    //
+
+    let name_name = (name_name.unwrap(), true);
+    let symbol_name = (symbol_name.unwrap(), true);
+    let decimals_name = (decimals_name.unwrap(), false);
+    let total_supply_name = (total_supply_name.unwrap(), false);
+
+    for function in module.functions.iter_mut() {
+        if let Some(implementation) = function.implementation.as_mut() {
+            if let Some(body) = implementation.body.as_mut() {
+                if let Some(storage_struct_parameter) = implementation.storage_struct_parameter.as_ref() {
+                    let mut check_expression = |(name, is_write_slice): (String, bool)| {
+                        if let Some(expression) = body.find_expression_mut(|expr| {
+                            if let Some((expr, _)) = expr.to_write_slice_call_parts()
+                                && is_write_slice
+                            {
+                                let sway::Expression::MemberAccess(member_access) = expr else {
+                                    return false;
+                                };
+
+                                let Some(storage_struct_name) = member_access.expression.as_identifier() else {
+                                    return false;
+                                };
+
+                                if storage_struct_name != storage_struct_parameter.name {
+                                    return false;
+                                }
+
+                                return member_access.member == name;
+                            } else if let Some((expr, _)) = expr.to_write_call_parts()
+                                && !is_write_slice
+                            {
+                                let sway::Expression::MemberAccess(member_access) = expr else {
+                                    return false;
+                                };
+
+                                let Some(storage_struct_name) = member_access.expression.as_identifier() else {
+                                    return false;
+                                };
+
+                                if storage_struct_name != storage_struct_parameter.name {
+                                    return false;
+                                }
+
+                                return member_access.member == name;
+                            }
+                            false
+                        }) {
+                            if let Some((expr, value)) = expression.to_write_slice_call_parts() {
+                                let sway::Expression::MemberAccess(member_access) = expr else {
+                                    unreachable!();
+                                };
+
+                                *expression = sway::Expression::from(sway::Block {
+                                    statements: vec![
+                                        sway::Statement::from(expression.clone()),
+                                        sway::Statement::from(if member_access.member == name_name.0 {
+                                            sway::Expression::create_function_call(
+                                                "src20::SetNameEvent::new",
+                                                None,
+                                                vec![
+                                                    sway::Expression::create_function_call(
+                                                        "AssetId::default",
+                                                        None,
+                                                        vec![],
+                                                    ),
+                                                    value.into_some_call(),
+                                                    sway::Expression::create_function_call("msg_sender", None, vec![])
+                                                        .with_unwrap_call(),
+                                                ],
+                                            )
+                                            .with_function_call(
+                                                "log",
+                                                None,
+                                                vec![],
+                                            )
+                                        } else if member_access.member == symbol_name.0 {
+                                            sway::Expression::create_function_call(
+                                                "src20::SetSymbolEvent::new",
+                                                None,
+                                                vec![
+                                                    sway::Expression::create_function_call(
+                                                        "AssetId::default",
+                                                        None,
+                                                        vec![],
+                                                    ),
+                                                    value.into_some_call(),
+                                                    sway::Expression::create_function_call("msg_sender", None, vec![])
+                                                        .with_unwrap_call(),
+                                                ],
+                                            )
+                                            .with_function_call(
+                                                "log",
+                                                None,
+                                                vec![],
+                                            )
+                                        } else {
+                                            unreachable!()
+                                        }),
+                                    ],
+                                    final_expr: None,
+                                });
+                            } else if let Some((expr, value)) = expression.to_write_call_parts() {
+                                let sway::Expression::MemberAccess(member_access) = expr else {
+                                    unreachable!();
+                                };
+
+                                if member_access.member == decimals_name.0 {
+                                    *expression =
+                                        sway::Expression::from(sway::Block {
+                                            statements: vec![
+                                                sway::Statement::from(expression.clone()),
+                                                sway::Statement::from(
+                                                    sway::Expression::create_function_call(
+                                                        "src20::SetDecimalsEvent::new",
+                                                        None,
+                                                        vec![
+                                                            sway::Expression::create_function_call(
+                                                                "AssetId::default",
+                                                                None,
+                                                                vec![],
+                                                            ),
+                                                            value.clone(),
+                                                            sway::Expression::create_function_call(
+                                                                "msg_sender",
+                                                                None,
+                                                                vec![],
+                                                            )
+                                                            .with_unwrap_call(),
+                                                        ],
+                                                    )
+                                                    .with_function_call("log", None, vec![]),
+                                                ),
+                                            ],
+                                            final_expr: None,
+                                        })
+                                } else if member_access.member == total_supply_name.0 {
+                                    let is_burn = if let sway::Expression::BinaryExpression(binary_expr) = &value {
+                                        binary_expr.operator == "-" || binary_expr.operator == "/"
+                                    } else {
+                                        false
+                                    };
+
+                                    let value = sway::Expression::create_function_call(
+                                        "u64::try_from",
+                                        None,
+                                        vec![value.clone()],
+                                    )
+                                    .with_unwrap_call();
+
+                                    *expression = sway::Expression::from(sway::Block {
+                                        statements: vec![
+                                            sway::Statement::from(expression.clone()),
+                                            sway::Statement::from(sway::Expression::create_function_call(
+                                                if is_burn {
+                                                    "std::asset::burn"
+                                                } else {
+                                                    "std::asset::mint"
+                                                },
+                                                None,
+                                                vec![
+                                                    sway::Expression::create_function_call("SubId::zero", None, vec![]),
+                                                    value.clone(),
+                                                ],
+                                            )),
+                                            sway::Statement::from(
+                                                sway::Expression::create_function_call(
+                                                    "src20::TotalSupplyEvent::new",
+                                                    None,
+                                                    vec![
+                                                        sway::Expression::create_function_call(
+                                                            "AssetId::default",
+                                                            None,
+                                                            vec![],
+                                                        ),
+                                                        value.clone(),
+                                                        sway::Expression::create_function_call(
+                                                            "msg_sender",
+                                                            None,
+                                                            vec![],
+                                                        )
+                                                        .with_unwrap_call(),
+                                                    ],
+                                                )
+                                                .with_function_call(
+                                                    "log",
+                                                    None,
+                                                    vec![],
+                                                ),
+                                            ),
+                                        ],
+                                        final_expr: None,
+                                    })
+                                }
+                            }
+                        }
+                    };
+
+                    check_expression(name_name.clone());
+                    check_expression(symbol_name.clone());
+                    check_expression(decimals_name.clone());
+                    check_expression(total_supply_name.clone());
+                }
+            }
+        }
     }
 }
 
