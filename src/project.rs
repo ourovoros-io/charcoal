@@ -318,6 +318,7 @@ impl Project {
                             name,
                             arguments,
                             returns,
+                            optional,
                         } => {
                             'contract_part_loop: for contract_part in contract.parts.iter() {
                                 let solidity::ContractPart::FunctionDefinition(function) = contract_part else {
@@ -363,6 +364,111 @@ impl Project {
 
                                 part_satisfied = true;
                                 break;
+                            }
+
+                            'contract_part_loop: for contract_part in contract.parts.iter() {
+                                let solidity::ContractPart::VariableDefinition(variable) = contract_part else {
+                                    continue;
+                                };
+
+                                let Some(variable_name) = variable.name.as_ref() else {
+                                    continue;
+                                };
+
+                                if variable_name.name != *name {
+                                    continue;
+                                }
+
+                                fn generate_parameters_for_getter_function(
+                                    expr: &solidity::Expression,
+                                ) -> (Vec<solidity::Expression>, Vec<solidity::Expression>)
+                                {
+                                    let mut variable_parameters = vec![];
+                                    let mut return_types = vec![];
+
+                                    match &expr {
+                                        solidity::Expression::Type(_, expr_type) => match &expr_type {
+                                            solidity::Type::DynamicBytes | solidity::Type::Bytes(_) => {
+                                                variable_parameters.push(solidity::Expression::Type(
+                                                    solidity::Loc::default(),
+                                                    solidity::Type::Uint(256),
+                                                ));
+
+                                                return_types.push(solidity::Expression::Type(
+                                                    solidity::Loc::default(),
+                                                    solidity::Type::Uint(8),
+                                                ));
+                                            }
+                                            solidity::Type::Mapping { key, value, .. } => {
+                                                variable_parameters.push(key.as_ref().clone());
+
+                                                let (inner_parameters, inner_return_type) =
+                                                    generate_parameters_for_getter_function(value);
+                                                variable_parameters.extend(inner_parameters);
+
+                                                return_types.extend(inner_return_type);
+                                            }
+
+                                            _ => return_types.push(expr.clone()),
+                                        },
+
+                                        solidity::Expression::ArraySubscript(_, element_type, _) => {
+                                            variable_parameters.push(solidity::Expression::Type(
+                                                solidity::Loc::default(),
+                                                solidity::Type::Uint(256),
+                                            ));
+
+                                            return_types.push(element_type.as_ref().clone());
+                                        }
+
+                                        solidity::Expression::List(_, parameter_list) => {
+                                            for (_, parameter) in parameter_list.iter() {
+                                                if let Some(parameter) = parameter.as_ref() {
+                                                    return_types.push(parameter.ty.clone());
+                                                }
+                                            }
+                                        }
+
+                                        solidity::Expression::Variable(_)
+                                        | solidity::Expression::MemberAccess(_, _, _) => {
+                                            return_types.push(expr.clone());
+                                        }
+
+                                        _ => todo!("Expression: {:#?}", expr),
+                                    }
+
+                                    (variable_parameters, return_types)
+                                }
+
+                                let (variable_parameters, return_types) =
+                                    generate_parameters_for_getter_function(&variable.ty);
+
+                                for (parameter, expected_type) in variable_parameters.iter().zip(arguments.iter()) {
+                                    let solidity::Expression::Type(_, ty) = &parameter else {
+                                        panic!("unexpected parameter type expression type {:#?}", parameter);
+                                    };
+
+                                    if ty != expected_type {
+                                        continue 'contract_part_loop;
+                                    }
+                                }
+
+                                for (parameter, expected_type) in return_types.iter().zip(returns.iter()) {
+                                    let solidity::Expression::Type(_, ty) = &parameter else {
+                                        panic!("unexpected parameter type expression type {:#?}", parameter);
+                                    };
+
+                                    if ty != expected_type {
+                                        continue 'contract_part_loop;
+                                    }
+                                }
+
+                                part_satisfied = true;
+                                break;
+                            }
+
+                            if *optional {
+                                part_satisfied = true;
                             }
                         }
                         StandardDefinitionPart::Event { name, arguments } => {
@@ -1592,9 +1698,6 @@ impl Project {
 
                             let mut module = module.borrow_mut();
 
-                            // Ensure all dependencies and uses are added
-                            crate::standards::ensure_src20_dependencies(&mut module);
-
                             let Some(contract) = module
                                 .contracts
                                 .iter_mut()
@@ -1614,6 +1717,13 @@ impl Project {
 
                             // Remove transfer
                             crate::standards::remove_transfer_function(
+                                &mut module,
+                                &function_bodies,
+                                &mut removed_function_names,
+                            );
+
+                            // Remove transferFrom
+                            crate::standards::remove_transfer_from_function(
                                 &mut module,
                                 &function_bodies,
                                 &mut removed_function_names,
@@ -1680,7 +1790,18 @@ impl Project {
                             crate::standards::emplace_src20_events(&mut module, &function_bodies);
 
                             // impl SRC20 for Contract
-                            crate::standards::implement_src20_for_contract(contract, &function_bodies);
+                            crate::standards::implement_src20_for_contract(
+                                &mut module,
+                                contract.clone(),
+                                &function_bodies,
+                            );
+
+                            // impl SRC3 for Contract
+                            crate::standards::implement_src3_for_contract(
+                                &mut module,
+                                contract.clone(),
+                                &function_bodies,
+                            );
                         }
                     }
                 }

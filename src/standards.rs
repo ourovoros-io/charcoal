@@ -22,6 +22,7 @@ pub enum StandardDefinitionPart {
         name: &'static str,
         arguments: &'static [solidity::Type],
         returns: &'static [solidity::Type],
+        optional: bool,
     },
     Event {
         name: &'static str,
@@ -40,36 +41,42 @@ pub const STANDARDS: &[StandardDefinition] = &[
                 name: "name",
                 arguments: &[],
                 returns: &[solidity::Type::String],
+                optional: false,
             },
             // function symbol() public view returns (string);
             StandardDefinitionPart::Function {
                 name: "symbol",
                 arguments: &[],
                 returns: &[solidity::Type::String],
+                optional: false,
             },
             // function decimals() public view returns (uint8);
             StandardDefinitionPart::Function {
                 name: "decimals",
                 arguments: &[],
                 returns: &[solidity::Type::Uint(8)],
+                optional: false,
             },
             // function totalSupply() public view returns (uint256);
             StandardDefinitionPart::Function {
                 name: "totalSupply",
                 arguments: &[],
                 returns: &[solidity::Type::Uint(256)],
+                optional: false,
             },
             // function balanceOf(address _owner) public view returns (uint256 balance);
             StandardDefinitionPart::Function {
                 name: "balanceOf",
                 arguments: &[solidity::Type::Address],
                 returns: &[solidity::Type::Uint(256)],
+                optional: false,
             },
             // function transfer(address _to, uint256 _value) public returns (bool success);
             StandardDefinitionPart::Function {
                 name: "transfer",
                 arguments: &[solidity::Type::Address, solidity::Type::Uint(256)],
                 returns: &[solidity::Type::Bool],
+                optional: false,
             },
             // function transferFrom(address _from, address _to, uint256 _value) public returns (bool success);
             StandardDefinitionPart::Function {
@@ -80,18 +87,35 @@ pub const STANDARDS: &[StandardDefinition] = &[
                     solidity::Type::Uint(256),
                 ],
                 returns: &[solidity::Type::Bool],
+                optional: false,
             },
             // function approve(address _spender, uint256 _value) public returns (bool success);
             StandardDefinitionPart::Function {
                 name: "approve",
                 arguments: &[solidity::Type::Address, solidity::Type::Uint(256)],
                 returns: &[solidity::Type::Bool],
+                optional: false,
             },
             // function allowance(address _owner, address _spender) public view returns (uint256 remaining);
             StandardDefinitionPart::Function {
                 name: "allowance",
                 arguments: &[solidity::Type::Address, solidity::Type::Address],
                 returns: &[solidity::Type::Uint(256)],
+                optional: false,
+            },
+            // function mint(address to, uint256 amount) external;
+            StandardDefinitionPart::Function {
+                name: "mint",
+                arguments: &[solidity::Type::Address, solidity::Type::Uint(256)],
+                returns: &[],
+                optional: true,
+            },
+            // function burn(address to, uint256 amount) external;
+            StandardDefinitionPart::Function {
+                name: "burn",
+                arguments: &[solidity::Type::Address, solidity::Type::Uint(256)],
+                returns: &[],
+                optional: true,
             },
             // Events
             // event Transfer(address indexed _from, address indexed _to, uint256 _value);
@@ -115,19 +139,6 @@ pub const STANDARDS: &[StandardDefinition] = &[
         ],
     },
 ];
-
-/// ERC20 to SRC20
-pub fn ensure_src20_dependencies(module: &mut ir::Module) {
-    // src20 = "0.8.1"
-    module.ensure_dependency_declared("src20 = \"0.8.1\"");
-
-    // use src20::{SetDecimalsEvent, SetNameEvent, SetSymbolEvent, SRC20, TotalSupplyEvent};
-    module.ensure_use_declared("src20::SetDecimalsEvent");
-    module.ensure_use_declared("src20::SetNameEvent");
-    module.ensure_use_declared("src20::SetSymbolEvent");
-    module.ensure_use_declared("src20::TotalSupplyEvent");
-    module.ensure_use_declared("src20::SRC20");
-}
 
 pub fn remove_abi_functions_for_standard(
     contract: Rc<RefCell<ir::Contract>>,
@@ -249,7 +260,7 @@ pub fn remove_transfer_function(
         };
 
         let Some(private_fn_name) = function.function.as_identifier() else {
-            panic!("Failed to get function name")
+            continue;
         };
 
         let Some((index, _)) = module
@@ -264,7 +275,82 @@ pub fn remove_transfer_function(
             })
             .map(|(i, f)| (i, f.clone()))
         else {
-            panic!("Failed to get private function");
+            continue;
+        };
+
+        module.functions.remove(index);
+        removed_function_names.push(private_fn_name.to_string());
+    }
+
+    module.functions.remove(i);
+    removed_function_names.push(toplevel_fn_name.to_string());
+
+    remove_unnecessary_functions(module, removed_function_names);
+}
+
+pub fn remove_transfer_from_function(
+    module: &mut ir::Module,
+    function_bodies: &HashMap<String, sway::Block>,
+    removed_function_names: &mut Vec<String>,
+) {
+    let Some(abi_body) = function_bodies.get("transferFrom") else {
+        panic!("Transfer from function body not found");
+    };
+
+    let Some(sway::Expression::FunctionCall(f)) = &abi_body.final_expr else {
+        panic!("Failed to get transfer from expression from final expression");
+    };
+
+    let Some(toplevel_fn_name) = f.function.as_identifier() else {
+        panic!("Failed to get the function name for transfer from");
+    };
+
+    // Get the top level function and index
+    let Some((i, toplevel_fn)) = module
+        .functions
+        .iter()
+        .enumerate()
+        .find(|(_, f)| {
+            let sway::TypeName::Function { new_name, .. } = &f.signature else {
+                return false;
+            };
+            new_name == toplevel_fn_name
+        })
+        .map(|(i, f)| (i, f.clone()))
+    else {
+        panic!("Failed to get top level function");
+    };
+
+    let toplevel_fn_body = toplevel_fn.implementation.as_ref().unwrap().body.as_ref().unwrap();
+
+    let toplevel_calls = toplevel_fn_body
+        .statements
+        .iter()
+        .filter(|s| matches!(s, sway::Statement::Expression(sway::Expression::FunctionCall(_))))
+        .collect::<Vec<_>>();
+
+    for toplevel_call in toplevel_calls {
+        let sway::Statement::Expression(sway::Expression::FunctionCall(function)) = toplevel_call else {
+            unreachable!()
+        };
+
+        let Some(private_fn_name) = function.function.as_identifier() else {
+            continue;
+        };
+
+        let Some((index, _)) = module
+            .functions
+            .iter()
+            .enumerate()
+            .find(|(_, f)| {
+                let sway::TypeName::Function { new_name, .. } = &f.signature else {
+                    return false;
+                };
+                new_name == private_fn_name
+            })
+            .map(|(i, f)| (i, f.clone()))
+        else {
+            continue;
         };
 
         module.functions.remove(index);
@@ -462,13 +548,68 @@ pub fn update_balance_of_usage(module: &mut ir::Module, name: &str) {
 
             identifier == storage_struct_parameter.name
         }) {
-            let Some((expr, value)) = expression.to_write_call_parts() else {
+            let expr2 = expression.clone();
+            let Some((expr, value)) = expr2.to_write_call_parts() else {
                 unreachable!()
             };
+
+            let mut value = value.clone();
 
             let Some((_expr, recipient)) = expr.to_get_call_parts() else {
                 unreachable!()
             };
+
+            match &value {
+                sway::Expression::BinaryExpression(binary_expression) => {
+                    let is_balance_of_read = |expr: &sway::Expression| -> bool {
+                        let Some(expr) = expr.to_read_call_parts() else {
+                            return false;
+                        };
+
+                        let Some((expr, _recipient)) = expr.to_get_call_parts() else {
+                            return false;
+                        };
+
+                        let sway::Expression::MemberAccess(member_access) = expr else {
+                            return false;
+                        };
+
+                        if member_access.member != name {
+                            return false;
+                        }
+
+                        let Some(identifier) = member_access.expression.as_identifier() else {
+                            return false;
+                        };
+
+                        identifier == storage_struct_parameter.name
+                    };
+
+                    if is_balance_of_read(&binary_expression.lhs) && is_balance_of_read(&binary_expression.rhs) {
+                        panic!("lhs and rhs are balance of reads");
+                    } else if is_balance_of_read(&binary_expression.lhs) {
+                        if binary_expression.operator == "-" {
+                            *expression = sway::Expression::Comment(format!("Not supported: {}", expression.display()));
+                            continue;
+                        }
+
+                        assert!(binary_expression.operator == "+");
+                        value = binary_expression.rhs.clone();
+                    } else if is_balance_of_read(&binary_expression.rhs) {
+                        if binary_expression.operator == "-" {
+                            *expression = sway::Expression::Comment(format!("Not supported: {}", expression.display()));
+                            continue;
+                        }
+
+                        assert!(binary_expression.operator == "+");
+                        value = binary_expression.lhs.clone();
+                    } else {
+                        panic!("unexpected binary expression: {}", value.display());
+                    }
+                }
+
+                _ => todo!(),
+            }
 
             *expression = sway::Expression::create_function_call(
                 "std::asset::transfer",
@@ -592,91 +733,106 @@ pub fn remove_approval(
         .filter(|s| matches!(s, sway::Statement::Expression(sway::Expression::FunctionCall(_))))
         .collect::<Vec<_>>();
 
-    assert!(toplevel_calls.len() == 1);
+    if toplevel_calls.len() == 1 {
+        removed_function_names.push(approve_fn_name.to_string());
 
-    removed_function_names.push(approve_fn_name.to_string());
+        module.functions.remove(i);
 
-    module.functions.remove(i);
+        let sway::Statement::Expression(sway::Expression::FunctionCall(function)) = toplevel_calls[0] else {
+            unreachable!()
+        };
 
-    let sway::Statement::Expression(sway::Expression::FunctionCall(function)) = toplevel_calls[0] else {
-        unreachable!()
-    };
+        let Some(approve_private_fn_name) = function.function.as_identifier() else {
+            panic!("Failed to get function name")
+        };
 
-    let Some(approve_private_fn_name) = function.function.as_identifier() else {
-        panic!("Failed to get function name")
-    };
+        let Some((index, private_toplevel_fn)) = module
+            .functions
+            .iter()
+            .enumerate()
+            .find(|(_, f)| {
+                let sway::TypeName::Function { new_name, .. } = &f.signature else {
+                    return false;
+                };
+                new_name == approve_private_fn_name
+            })
+            .map(|(i, f)| (i, f.clone()))
+        else {
+            panic!("Failed to get private function");
+        };
 
-    let Some((index, private_function)) = module
-        .functions
-        .iter()
-        .enumerate()
-        .find(|(_, f)| {
-            let sway::TypeName::Function { new_name, .. } = &f.signature else {
-                return false;
-            };
-            new_name == approve_private_fn_name
-        })
-        .map(|(i, f)| (i, f.clone()))
-    else {
-        panic!("Failed to get private function");
-    };
+        let private_toplevel_fn_body = private_toplevel_fn
+            .implementation
+            .as_ref()
+            .unwrap()
+            .body
+            .as_ref()
+            .unwrap();
 
-    let private_fn_body = private_function.implementation.as_ref().unwrap().body.as_ref().unwrap();
-
-    let mut has_allowance_assignment = false;
-    let mut has_log = false;
-
-    if private_fn_body
-        .find_expression(|expr| {
-            if let sway::Expression::FunctionCall(_) = &expr
-                && let Some((expr, _)) = expr.to_write_call_parts()
-                && let Some((expr, _)) = expr.to_get_call_parts()
-                && let Some((expr, _)) = expr.to_get_call_parts()
-                && let sway::Expression::MemberAccess(m) = expr
-                && let Some("storage_struct") = m.expression.as_identifier()
-                && m.member == allowances_name
-            {
-                return true;
-            }
-
-            false
-        })
-        .is_some()
-    {
-        has_allowance_assignment = true;
+        if check_for_allowance_assignment_and_log(private_toplevel_fn_body, allowances_name) {
+            removed_function_names.push(approve_private_fn_name.to_string());
+            module.functions.remove(index);
+            remove_unnecessary_functions(module, removed_function_names);
+            return;
+        }
     }
 
-    if private_fn_body
-        .find_expression(|expr| {
-            if let sway::Expression::FunctionCall(f) = expr
-                && let Some(function_name) = f.function.as_identifier()
-                && function_name == "log"
-                && f.parameters.len() == 1
-                && let sway::Expression::FunctionCall(f) = &f.parameters[0]
-                && let sway::Expression::PathExpr(path_expr) = &f.function
-                && path_expr.segments.len() == 1
-                && path_expr.segments[0].name == "Approval"
-                && path_expr.segments[0].generic_parameters.is_none()
-                && f.parameters.len() == 1
-                && let sway::Expression::Tuple(t) = &f.parameters[0]
-                && t.len() == 3
-            {
-                return true;
-            }
-            false
-        })
-        .is_some()
-    {
-        has_log = true;
+    fn check_for_allowance_assignment_and_log(toplevel_fn_body: &sway::Block, allowances_name: &str) -> bool {
+        let mut has_allowance_assignment = false;
+        let mut has_log = false;
+
+        if toplevel_fn_body
+            .find_expression(|expr| {
+                if let sway::Expression::FunctionCall(_) = &expr
+                    && let Some((expr, _)) = expr.to_write_call_parts()
+                    && let Some((expr, _)) = expr.to_get_call_parts()
+                    && let Some((expr, _)) = expr.to_get_call_parts()
+                    && let sway::Expression::MemberAccess(m) = expr
+                    && let Some("storage_struct") = m.expression.as_identifier()
+                    && m.member == allowances_name
+                {
+                    return true;
+                }
+
+                false
+            })
+            .is_some()
+        {
+            has_allowance_assignment = true;
+        }
+
+        if toplevel_fn_body
+            .find_expression(|expr| {
+                if let sway::Expression::FunctionCall(f) = expr
+                    && let Some(function_name) = f.function.as_identifier()
+                    && function_name == "log"
+                    && f.parameters.len() == 1
+                    && let sway::Expression::FunctionCall(f) = &f.parameters[0]
+                    && let sway::Expression::PathExpr(path_expr) = &f.function
+                    && path_expr.segments.len() == 1
+                    && path_expr.segments[0].name == "Approval"
+                    && path_expr.segments[0].generic_parameters.is_none()
+                    && f.parameters.len() == 1
+                    && let sway::Expression::Tuple(t) = &f.parameters[0]
+                    && t.len() == 3
+                {
+                    return true;
+                }
+                false
+            })
+            .is_some()
+        {
+            has_log = true;
+        }
+
+        has_allowance_assignment && has_log
     }
 
-    if has_allowance_assignment && has_log {
-        removed_function_names.push(approve_private_fn_name.to_string());
-
-        module.functions.remove(index);
+    if check_for_allowance_assignment_and_log(toplevel_fn_body, allowances_name) {
+        removed_function_names.push(approve_fn_name.to_string());
+        module.functions.remove(i);
+        remove_unnecessary_functions(module, removed_function_names);
     }
-
-    remove_unnecessary_functions(module, removed_function_names);
 }
 
 pub fn remove_unnecessary_functions(module: &mut ir::Module, removed_function_names: &mut Vec<String>) {
@@ -1393,7 +1549,31 @@ pub fn emplace_src20_events(module: &mut ir::Module, function_bodies: &HashMap<S
                                             final_expr: None,
                                         })
                                 } else if member_access.member == total_supply_name.0 {
-                                    let is_burn = if let sway::Expression::BinaryExpression(binary_expr) = &value {
+                                    let mut value = value.clone();
+
+                                    let is_burn = if let sway::Expression::BinaryExpression(binary_expr) = value.clone()
+                                    {
+                                        if let Some(expr) = binary_expr.lhs.to_read_call_parts() {
+                                            let sway::Expression::MemberAccess(member_access) = expr else {
+                                                unreachable!()
+                                            };
+
+                                            let Some(storage_struct_name) = member_access.expression.as_identifier()
+                                            else {
+                                                unreachable!()
+                                            };
+
+                                            if storage_struct_name != storage_struct_parameter.name {
+                                                unreachable!()
+                                            }
+
+                                            if member_access.member == name {
+                                                value = binary_expr.rhs.clone();
+                                            } else {
+                                                panic!()
+                                            }
+                                        }
+
                                         binary_expr.operator == "-" || binary_expr.operator == "/"
                                     } else {
                                         false
@@ -1465,9 +1645,20 @@ pub fn emplace_src20_events(module: &mut ir::Module, function_bodies: &HashMap<S
 }
 
 pub fn implement_src20_for_contract(
+    module: &mut ir::Module,
     contract: Rc<RefCell<ir::Contract>>,
     function_bodies: &HashMap<String, sway::Block>,
 ) {
+    // src20 = "0.8.1"
+    module.ensure_dependency_declared("src20 = \"0.8.1\"");
+
+    // use src20::{SetDecimalsEvent, SetNameEvent, SetSymbolEvent, SRC20, TotalSupplyEvent};
+    module.ensure_use_declared("src20::SetDecimalsEvent");
+    module.ensure_use_declared("src20::SetNameEvent");
+    module.ensure_use_declared("src20::SetSymbolEvent");
+    module.ensure_use_declared("src20::TotalSupplyEvent");
+    module.ensure_use_declared("src20::SRC20");
+
     contract.borrow_mut().impls.push(sway::Impl {
         generic_parameters: None,
         type_name: sway::TypeName::create_identifier("SRC20"),
@@ -1729,4 +1920,172 @@ pub fn implement_src20_for_contract(
             }),
         ],
     });
+}
+
+pub fn implement_src3_for_contract(
+    module: &mut ir::Module,
+    contract: Rc<RefCell<ir::Contract>>,
+    function_bodies: &HashMap<String, sway::Block>,
+) {
+    // src3 = "0.8.1"
+    module.ensure_dependency_declared("src3 = \"0.8.1\"");
+
+    // use src3::SRC3;
+    module.ensure_use_declared("src3::SRC3");
+
+    let Some(mut mint_body) = function_bodies.get("mint").cloned() else {
+        return;
+    };
+
+    let Some(mut burn_body) = function_bodies.get("burn").cloned() else {
+        return;
+    };
+
+    // require(sub_id.is_some() && sub_id.unwrap() == DEFAULT_SUB_ID,"Incorrect Sub Id");
+    mint_body.statements.insert(
+        0,
+        sway::Statement::from(sway::Expression::create_function_call(
+            "require",
+            None,
+            vec![
+                sway::Expression::from(sway::BinaryExpression {
+                    operator: "&&".to_string(),
+                    lhs: sway::Expression::create_identifier("sub_id").with_function_call("is_some", None, vec![]),
+                    rhs: sway::Expression::from(sway::BinaryExpression {
+                        operator: "==".to_string(),
+                        lhs: sway::Expression::create_identifier("sub_id").with_unwrap_call(),
+                        rhs: sway::Expression::create_identifier("DEFAULT_SUB_ID"),
+                    }),
+                }),
+                sway::Expression::create_string_literal("Incorrect Sub Id"),
+            ],
+        )),
+    );
+
+    // require(msg_asset_id() == AssetId::default(), "Incorrect asset provided");
+    burn_body.statements.insert(
+        0,
+        sway::Statement::from(sway::Expression::create_function_call(
+            "require",
+            None,
+            vec![
+                sway::Expression::from(sway::BinaryExpression {
+                    operator: "==".to_string(),
+                    lhs: sway::Expression::create_function_call("std::call_frames::msg_asset_id", None, vec![]),
+                    rhs: sway::Expression::create_function_call("AssetId::default", None, vec![]),
+                }),
+                sway::Expression::create_string_literal("Incorrect asset provided"),
+            ],
+        )),
+    );
+
+    // require(msg_amount() >= amount, "Incorrect amount provided");
+    burn_body.statements.insert(
+        0,
+        sway::Statement::from(sway::Expression::create_function_call(
+            "require",
+            None,
+            vec![
+                sway::Expression::from(sway::BinaryExpression {
+                    operator: ">=".to_string(),
+                    lhs: sway::Expression::create_function_call("std::context::msg_amount", None, vec![]),
+                    rhs: sway::Expression::create_identifier("amount"),
+                }),
+                sway::Expression::create_string_literal("Incorrect amount provided"),
+            ],
+        )),
+    );
+
+    // require(sub_id == DEFAULT_SUB_ID, "Incorrect Sub Id");
+    burn_body.statements.insert(
+        0,
+        sway::Statement::from(sway::Expression::create_function_call(
+            "require",
+            None,
+            vec![
+                sway::Expression::from(sway::BinaryExpression {
+                    operator: "==".to_string(),
+                    lhs: sway::Expression::create_identifier("sub_id"),
+                    rhs: sway::Expression::create_identifier("DEFAULT_SUB_ID"),
+                }),
+                sway::Expression::create_string_literal("Incorrect Sub Id"),
+            ],
+        )),
+    );
+
+    contract.borrow_mut().impls.push(sway::Impl {
+        generic_parameters: None,
+        type_name: sway::TypeName::create_identifier("SRC3"),
+        for_type_name: Some(sway::TypeName::create_identifier("Contract")),
+        items: vec![
+            sway::ImplItem::Function(sway::Function {
+                attributes: Some(sway::AttributeList {
+                    attributes: vec![sway::Attribute {
+                        name: "storage".to_string(),
+                        parameters: Some(vec!["read".to_string(), "write".to_string().to_string()]),
+                    }],
+                }),
+                is_public: false,
+                old_name: String::new(),
+                new_name: "mint".to_string(),
+                generic_parameters: None,
+                parameters: sway::ParameterList {
+                    entries: vec![
+                        sway::Parameter {
+                            is_ref: false,
+                            is_mut: false,
+                            name: "recipient".to_string(),
+                            type_name: Some(sway::TypeName::create_identifier("Identity")),
+                        },
+                        sway::Parameter {
+                            is_ref: false,
+                            is_mut: false,
+                            name: "sub_id".to_string(),
+                            type_name: Some(sway::TypeName::create_identifier("SubId").to_option()),
+                        },
+                    ],
+                },
+                storage_struct_parameter: None,
+                return_type: None,
+                body: Some(mint_body),
+            }),
+            sway::ImplItem::Function(sway::Function {
+                attributes: Some(sway::AttributeList {
+                    attributes: vec![
+                        sway::Attribute {
+                            name: "storage".to_string(),
+                            parameters: Some(vec!["read".to_string(), "write".to_string().to_string()]),
+                        },
+                        sway::Attribute {
+                            name: "payable".to_string(),
+                            parameters: None,
+                        },
+                    ],
+                }),
+                is_public: false,
+                old_name: String::new(),
+                new_name: "burn".to_string(),
+                generic_parameters: None,
+                parameters: sway::ParameterList {
+                    entries: vec![
+                        sway::Parameter {
+                            is_ref: false,
+                            is_mut: false,
+                            name: "sub_id".to_string(),
+                            type_name: Some(sway::TypeName::create_identifier("SubId")),
+                        },
+                        sway::Parameter {
+                            is_ref: false,
+                            is_mut: false,
+                            name: "amount".to_string(),
+                            type_name: Some(sway::TypeName::create_identifier("u64")),
+                        },
+                    ],
+                },
+                storage_struct_parameter: None,
+                return_type: None,
+                body: Some(burn_body),
+            }),
+        ],
+    })
 }

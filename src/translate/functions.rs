@@ -1938,6 +1938,8 @@ fn resolve_modifier_invocation(
                 sway::Expression::Commented(_, expression) => {
                     inline_expression(expression, inline_statements);
                 }
+
+                sway::Expression::Comment(_) => {}
             }
         }
 

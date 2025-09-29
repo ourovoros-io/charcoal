@@ -298,6 +298,8 @@ pub fn evaluate_expression(
                 expression,
             )),
         ),
+
+        sway::Expression::Comment(comment) => sway::Expression::Comment(comment.clone()),
     }
 }
 

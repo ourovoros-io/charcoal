@@ -2243,6 +2243,7 @@ pub enum Expression {
     Break,
     AsmBlock(Box<AsmBlock>),
     Commented(String, Box<Expression>),
+    Comment(String),
     // TODO: finish
 }
 
@@ -2288,6 +2289,9 @@ impl TabbedDisplay for Expression {
             Expression::Commented(comment, x) => {
                 write!(f, "/*{comment}*/ ")?;
                 x.tabbed_fmt(depth, f)
+            }
+            Expression::Comment(comment) => {
+                write!(f, "/*{comment}*/")
             }
         }
     }
@@ -2382,6 +2386,11 @@ impl Expression {
                 })
                 .collect(),
         })
+    }
+
+    #[inline(always)]
+    pub fn create_string_literal(value: &str) -> Expression {
+        Expression::from(Literal::String(value.to_string()))
     }
 
     #[inline(always)]

@@ -147,6 +147,7 @@ pub fn get_expression_type(
         sway::Expression::Break => Ok(sway::TypeName::create_tuple(vec![])),
         sway::Expression::AsmBlock(asm_block) => get_asm_block_type(asm_block),
         sway::Expression::Commented(_, x) => get_expression_type(project, module.clone(), scope.clone(), x),
+        sway::Expression::Comment(_) => Ok(sway::TypeName::Tuple { type_names: vec![] }),
     }
 }
 
