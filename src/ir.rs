@@ -865,13 +865,13 @@ impl From<Module> for sway::Module {
                 items.push(sway::ModuleItem::Abi(contract.abi.clone()));
             }
 
+            items.extend(contract.impls.iter().map(|i| sway::ModuleItem::Impl(i.clone())));
+
             if contract.abi.functions.is_empty() == contract.abi_impl.items.is_empty()
                 || !contract.abi_impl.items.is_empty()
             {
                 items.push(sway::ModuleItem::Impl(contract.abi_impl.clone()));
             }
-
-            items.extend(contract.impls.iter().map(|i| sway::ModuleItem::Impl(i.clone())));
         }
 
         for x in module.impls {

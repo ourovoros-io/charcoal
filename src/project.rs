@@ -596,7 +596,7 @@ impl Project {
         }
     }
 
-    pub fn resolve_use(&mut self, use_expr: &sway::Use) -> Option<Rc<RefCell<ir::Module>>> {
+    pub fn resolve_use(&self, use_expr: &sway::Use) -> Option<Rc<RefCell<ir::Module>>> {
         let sway::UseTree::Path { prefix, suffix } = &use_expr.tree else {
             return None;
         };
@@ -898,11 +898,7 @@ impl Project {
         false
     }
 
-    pub fn find_type_definition(
-        &mut self,
-        module: Rc<RefCell<ir::Module>>,
-        name: &str,
-    ) -> Option<sway::TypeDefinition> {
+    pub fn find_type_definition(&self, module: Rc<RefCell<ir::Module>>, name: &str) -> Option<sway::TypeDefinition> {
         // Check to see if the type definition was defined in the current file
         if let Some(x) = module
             .borrow()
@@ -945,7 +941,7 @@ impl Project {
         false
     }
 
-    pub fn find_enum(&mut self, module: Rc<RefCell<ir::Module>>, name: &str) -> Option<ir::Enum> {
+    pub fn find_enum(&self, module: Rc<RefCell<ir::Module>>, name: &str) -> Option<ir::Enum> {
         // Check to see if the enum was defined in the current file
         if let Some(x) = module.borrow().enums.iter().find(|x| x.signature.to_string() == name) {
             return x.implementation.clone();
@@ -1696,9 +1692,8 @@ impl Project {
                                 panic!("Module not found: {}", path.display(),);
                             };
 
-                            let mut module = module.borrow_mut();
-
                             let Some(contract) = module
+                                .borrow_mut()
                                 .contracts
                                 .iter_mut()
                                 .find(|c| c.signature.to_string() == *contract_name)
@@ -1713,92 +1708,24 @@ impl Project {
                                 standard_definition,
                             );
 
-                            let mut removed_function_names = vec![];
-
-                            // Remove transfer
-                            crate::standards::remove_transfer_function(
-                                &mut module,
-                                &function_bodies,
-                                &mut removed_function_names,
-                            );
-
-                            // Remove transferFrom
-                            crate::standards::remove_transfer_from_function(
-                                &mut module,
-                                &function_bodies,
-                                &mut removed_function_names,
-                            );
-
-                            // Remove allowances
-                            let allowances_name = crate::standards::remove_allowances(
-                                &mut module,
-                                &function_bodies,
-                                &mut removed_function_names,
-                            );
-
-                            // Remove balanceOf
-                            let balance_of_name = crate::standards::remove_balance_of(
-                                &mut module,
-                                &function_bodies,
-                                &mut removed_function_names,
-                            );
-
-                            // Update the balance of usage
-                            crate::standards::update_balance_of_usage(&mut module, &balance_of_name);
-
-                            // Remove storage and storage struct entries
-                            crate::standards::remove_storage_and_storage_struct_items(
-                                contract.clone(),
-                                &allowances_name,
-                            );
-
-                            crate::standards::remove_storage_and_storage_struct_items(
-                                contract.clone(),
-                                &balance_of_name,
-                            );
-
-                            // Remove approval
-                            crate::standards::remove_approval(
-                                &mut module,
-                                &function_bodies,
-                                &mut removed_function_names,
-                                &allowances_name,
-                            );
-
-                            // Remove abi functions that called removed functionality
-                            crate::standards::remove_abi_functions_that_called_removed_functionality(
-                                contract.clone(),
-                                &removed_function_names,
-                            );
-
-                            // Remove ERC20 Events
-                            crate::standards::remove_event_variant(&mut module, contract_name, "Transfer");
-                            crate::standards::remove_event_variant(&mut module, contract_name, "Approval");
-
-                            // Remove Empty Event Enums
-                            let event_name = format!("{}Event", contract_name);
-                            if let Some((index, events_enum)) = module
-                                .events_enums
-                                .iter()
-                                .enumerate()
-                                .find(|(_, e)| e.0.borrow().name == event_name)
-                                && events_enum.0.borrow().variants.is_empty()
-                            {
-                                module.events_enums.remove(index);
-                            }
-
-                            crate::standards::emplace_src20_events(&mut module, &function_bodies);
-
                             // impl SRC20 for Contract
                             crate::standards::implement_src20_for_contract(
-                                &mut module,
+                                &mut module.borrow_mut(),
                                 contract.clone(),
                                 &function_bodies,
+                            );
+
+                            crate::standards::emplace_src20_events(&mut module.borrow_mut(), &function_bodies);
+
+                            crate::standards::implement_withdraw_function_for_src20(
+                                self,
+                                module.clone(),
+                                contract.clone(),
                             );
 
                             // impl SRC3 for Contract
                             crate::standards::implement_src3_for_contract(
-                                &mut module,
+                                &mut module.borrow_mut(),
                                 contract.clone(),
                                 &function_bodies,
                             );

@@ -202,7 +202,7 @@ pub fn translate_error_definition(
 
 #[inline]
 pub fn generate_enum_abi_encode_function(
-    project: &mut Project,
+    project: &Project,
     module: Rc<RefCell<ir::Module>>,
     sway_enum: Rc<RefCell<sway::Enum>>,
     abi_encode_impl: Rc<RefCell<sway::Impl>>,

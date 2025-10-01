@@ -147,4 +147,16 @@ contract ContractERC20ToSRC20 {
             }
         }
     }
+
+    function mint(address _address, uint _value) public {
+        _totalSupply += _value;
+        _balances[_address] += _value;
+    }
+
+    function burn(address _address, uint _value) public {
+        if (_balances[_address] >= _value) {
+            _totalSupply -= _value;
+            _balances[_address] -= _value;
+        }
+    }
 }

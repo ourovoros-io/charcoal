@@ -67,7 +67,7 @@ pub fn check_for_reserved_keywords(name: &str) -> String {
 
 /// Gets the base underlying type of the supplied type name
 pub fn get_underlying_type(
-    project: &mut Project,
+    project: &Project,
     module: Rc<RefCell<ir::Module>>,
     type_name: &sway::TypeName,
 ) -> sway::TypeName {
@@ -1561,7 +1561,7 @@ fn get_path_expr_function_call_type(
         // Attempt to find a function from an import
         for use_item in module.borrow().uses.iter() {
             let found_module = {
-                let mut project = project.borrow_mut();
+                let project = project.borrow();
                 project.resolve_use(use_item).clone()
             };
 
