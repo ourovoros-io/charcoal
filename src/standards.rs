@@ -1566,3 +1566,217 @@ pub fn implement_src3_for_contract(
         ],
     })
 }
+
+#[inline(always)]
+pub fn implement_src5_for_contract(module: Rc<RefCell<ir::Module>>, contract: Rc<RefCell<ir::Contract>>) {
+    let mut found_owner_check = false;
+    let mut storage_field_name = String::new();
+
+    for modifier in module.borrow().modifiers.iter() {
+        let Some(implementation) = modifier.implementation.as_ref() else {
+            continue;
+        };
+
+        let implementation = implementation.borrow();
+
+        let Some(inline_body) = implementation.inline_body.as_ref() else {
+            continue;
+        };
+
+        for statement in inline_body.statements.iter() {
+            let sway::Statement::Expression(sway::Expression::If(if_expr)) = statement else {
+                continue;
+            };
+
+            let Some(sway::Expression::BinaryExpression(binary_expr)) = if_expr.condition.as_ref() else {
+                continue;
+            };
+
+            if binary_expr.operator != "!=" {
+                continue;
+            }
+
+            let sway::Expression::FunctionCall(func_call) = &binary_expr.lhs else {
+                continue;
+            };
+
+            let sway::Expression::MemberAccess(member_access) = &func_call.function else {
+                continue;
+            };
+
+            let sway::Expression::MemberAccess(member_access) = &member_access.expression else {
+                continue;
+            };
+
+            if !member_access.member.contains("owner") {
+                continue;
+            }
+
+            if binary_expr.rhs != sway::Expression::create_function_call("msg_sender", None, vec![]).with_unwrap_call()
+            {
+                continue;
+            }
+
+            found_owner_check = true;
+            storage_field_name = member_access.member.clone();
+        }
+    }
+
+    if found_owner_check {
+        let mut module = module.borrow_mut();
+        // src5 = "0.8.1"
+        module.ensure_dependency_declared("src5 = \"0.8.1\"");
+
+        // use src5::{SRC5, State};
+        module.ensure_use_declared("src5::SRC5");
+        module.ensure_use_declared("src5::State");
+
+        let contract_name = {
+            let contract = contract.borrow();
+            contract.name.to_case(Case::Snake)
+        };
+
+        contract.borrow_mut().impls.push(sway::Impl {
+            generic_parameters: None,
+            type_name: sway::TypeName::create_identifier("SRC5"),
+            for_type_name: Some(sway::TypeName::create_identifier("Contract")),
+            items: vec![sway::ImplItem::Function(sway::Function {
+                attributes: Some(sway::AttributeList {
+                    attributes: vec![sway::Attribute {
+                        name: "storage".to_string(),
+                        parameters: Some(vec!["read".to_string()]),
+                    }],
+                }),
+                is_public: false,
+                old_name: String::new(),
+                new_name: "owner".to_string(),
+                generic_parameters: None,
+                parameters: sway::ParameterList { entries: vec![] },
+                storage_struct_parameter: None,
+                return_type: Some(sway::TypeName::create_identifier("State")),
+                body: Some(sway::Block {
+                    statements: vec![],
+                    final_expr: Some(
+                        sway::Expression::create_identifier(format!("storage::{}", contract_name).as_str())
+                            .with_member(storage_field_name.as_str())
+                            .with_read_call(),
+                    ),
+                }),
+            })],
+        });
+
+        let storage = contract.borrow_mut().storage.as_ref().unwrap().clone();
+
+        if let Some(namespace) = storage
+            .borrow_mut()
+            .namespaces
+            .iter_mut()
+            .find(|ns| ns.borrow().name == contract_name)
+        {
+            if let Some(owner_field) = namespace
+                .borrow_mut()
+                .fields
+                .iter_mut()
+                .find(|f| f.name == storage_field_name)
+            {
+                if owner_field.type_name != sway::TypeName::create_identifier("Identity") {
+                    panic!("Owner field must be of type Identity");
+                }
+
+                *owner_field = sway::StorageField {
+                    old_name: String::new(),
+                    name: storage_field_name.clone(),
+                    type_name: sway::TypeName::create_identifier("State"),
+                    value: sway::Expression::create_identifier("State::Uninitialized"),
+                };
+            } else {
+                panic!("Owner field not found in storage struct");
+            }
+        }
+
+        let storage_struct_rc = contract.borrow_mut().storage_struct.as_ref().unwrap().clone();
+
+        // Now we need to update the owner field in the storage struct
+        if let Some(owner_field) = storage_struct_rc
+            .borrow_mut()
+            .storage
+            .fields
+            .iter_mut()
+            .find(|f| f.new_name.contains(&storage_field_name) && f.type_name.is_storage_key())
+        {
+            owner_field.type_name = sway::TypeName::create_identifier("StorageKey<State>");
+        }
+
+        // Finally, we need to update the constructor to initialize the owner field
+        for item in contract.borrow_mut().abi_impl.items.iter_mut() {
+            let sway::ImplItem::Function(sway::Function { new_name, body, .. }) = item else {
+                continue;
+            };
+
+            if new_name != "constructor" {
+                continue;
+            }
+
+            let Some(body) = body.as_mut() else {
+                continue;
+            };
+
+            let Some(sway::Expression::FunctionCall(function_call)) = body.final_expr.as_mut() else {
+                unreachable!();
+            };
+
+            // First we need to get the toplevel function constructor function name
+            let Some(toplevel_fn_name) = function_call.function.as_identifier() else {
+                unreachable!();
+            };
+
+            let Some(toplevel_fn) = module.functions.iter_mut().find(|f| {
+                let sway::TypeName::Function { new_name, .. } = &f.signature else {
+                    unreachable!()
+                };
+                new_name == toplevel_fn_name
+            }) else {
+                unreachable!();
+            };
+
+            let Some(expr) = toplevel_fn.implementation.as_mut() else {
+                unreachable!();
+            };
+
+            let Some(function_body) = expr.body.as_mut() else {
+                unreachable!();
+            };
+
+            // Now we can iterate over the statements in the function body to find the statement that initializes the owner field
+            for statement in function_body.statements.iter_mut() {
+                let sway::Statement::Expression(sway::Expression::FunctionCall(function_call)) = statement else {
+                    continue;
+                };
+
+                let sway::Expression::MemberAccess(member_access) = &function_call.function else {
+                    continue;
+                };
+
+                let sway::Expression::MemberAccess(member_access) = &member_access.expression else {
+                    continue;
+                };
+
+                if member_access.member != storage_field_name {
+                    continue;
+                }
+
+                *statement = sway::Statement::from(
+                    sway::Expression::create_identifier("storage_struct")
+                        .with_member(storage_field_name.as_str())
+                        .with_write_call(sway::Expression::create_function_call(
+                            "State::Initialized",
+                            None,
+                            vec![sway::Expression::create_function_call("msg_sender", None, vec![]).with_unwrap_call()],
+                        )),
+                );
+            }
+
+            // TODO: We should check any functions that had the owner check modifier and insert the owner check logic in the top of the function
+        }
+    }
+}

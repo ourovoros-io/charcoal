@@ -1729,6 +1729,9 @@ impl Project {
                                 contract.clone(),
                                 &function_bodies,
                             );
+
+                            // impl SRC5 for Contract
+                            crate::standards::implement_src5_for_contract(module, contract.clone());
                         }
                     }
                 }
