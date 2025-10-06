@@ -10,7 +10,7 @@ contract ContractERC20ToSRC20Ownable {
     string private _symbol;
     uint8 private _decimals;
 
-    address private _owner;
+    address private _admin;
 
     event Transfer(address indexed from, address indexed to, uint256 value);
     event Approval(
@@ -25,7 +25,7 @@ contract ContractERC20ToSRC20Ownable {
         uint8 decimals_,
         uint256 totalSupply_
     ) {
-        _owner = msg.sender;
+        _admin = msg.sender;
         _name = name_;
         _symbol = symbol_;
         _decimals = decimals_;
@@ -34,8 +34,8 @@ contract ContractERC20ToSRC20Ownable {
         emit Transfer(address(0), msg.sender, _totalSupply);
     }
 
-    modifier onlyOwner() {
-        if (_owner != msg.sender) {
+    modifier onlyAdmin() {
+        if (_admin != msg.sender) {
             revert("Only owner can call this function");
         }
         _;
@@ -158,12 +158,12 @@ contract ContractERC20ToSRC20Ownable {
         }
     }
 
-    function mint(address _address, uint _value) public onlyOwner {
+    function mint(address _address, uint _value) public onlyAdmin {
         _totalSupply += _value;
         _balances[_address] += _value;
     }
 
-    function burn(address _address, uint _value) public onlyOwner {
+    function burn(address _address, uint _value) public onlyAdmin {
         if (_balances[_address] >= _value) {
             _totalSupply -= _value;
             _balances[_address] -= _value;

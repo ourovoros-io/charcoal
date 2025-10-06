@@ -1577,7 +1577,7 @@ pub fn implement_src3_for_contract(
 
 #[inline(always)]
 pub fn implement_src5_for_contract(module: Rc<RefCell<ir::Module>>, contract: Rc<RefCell<ir::Contract>>) {
-    let mut found_owner_check = false;
+    let mut only_owner_modifiers = vec![];
     let mut storage_field_name = String::new();
 
     for modifier in module.borrow().modifiers.iter() {
@@ -1591,6 +1591,7 @@ pub fn implement_src5_for_contract(module: Rc<RefCell<ir::Module>>, contract: Rc
             continue;
         };
 
+        // If case
         if let Some(expr) = inline_body.find_expression(|expr| {
             let sway::Expression::If(if_expr) = expr else {
                 return false;
@@ -1604,23 +1605,33 @@ pub fn implement_src5_for_contract(module: Rc<RefCell<ir::Module>>, contract: Rc
                 return false;
             }
 
-            let sway::Expression::FunctionCall(func_call) = &binary_expr.lhs else {
-                return false;
-            };
-
-            let sway::Expression::MemberAccess(member_access) = &func_call.function else {
-                return false;
-            };
-
-            let sway::Expression::MemberAccess(member_access) = &member_access.expression else {
-                return false;
-            };
-
-            if !member_access.member.contains("owner") {
+            if binary_expr.rhs != sway::Expression::create_function_call("msg_sender", None, vec![]).with_unwrap_call()
+            {
                 return false;
             }
 
-            if binary_expr.rhs != sway::Expression::create_function_call("msg_sender", None, vec![]).with_unwrap_call()
+            if !if_expr
+                .then_body
+                .find_expression(|expr| {
+                    let sway::Expression::FunctionCall(f) = &expr else {
+                        return false;
+                    };
+
+                    let Some("revert") = f.function.as_identifier() else {
+                        return false;
+                    };
+
+                    if f.parameters.len() != 1 {
+                        return false;
+                    }
+
+                    if f.parameters[0] != sway::Expression::create_dec_int_literal(0_u8.into(), None) {
+                        return false;
+                    }
+
+                    true
+                })
+                .is_some()
             {
                 return false;
             }
@@ -1647,12 +1658,130 @@ pub fn implement_src5_for_contract(module: Rc<RefCell<ir::Module>>, contract: Rc
                 unreachable!();
             };
 
-            found_owner_check = true;
+            if !only_owner_modifiers.contains(&implementation.new_name) {
+                only_owner_modifiers.push(implementation.new_name.clone());
+            }
+
             storage_field_name = member_access.member.clone();
+            continue;
+        }
+
+        // Require case
+        if let Some(expr) = inline_body.find_expression(|expr| {
+            let sway::Expression::FunctionCall(function_call) = expr else {
+                return false;
+            };
+
+            let Some("require") = function_call.function.as_identifier() else {
+                return false;
+            };
+
+            if function_call.parameters.len() != 2 {
+                return false;
+            }
+
+            let sway::Expression::BinaryExpression(binary_expr) = &function_call.parameters[0] else {
+                return false;
+            };
+
+            if binary_expr.operator != "==" {
+                return false;
+            }
+
+            if binary_expr.rhs != sway::Expression::create_function_call("msg_sender", None, vec![]).with_unwrap_call()
+            {
+                return false;
+            }
+
+            true
+        }) {
+            let sway::Expression::FunctionCall(function_call) = expr else {
+                unreachable!();
+            };
+
+            let sway::Expression::BinaryExpression(binary_expr) = &function_call.parameters[0] else {
+                unreachable!();
+            };
+
+            let sway::Expression::FunctionCall(func_call) = &binary_expr.lhs else {
+                unreachable!();
+            };
+
+            let sway::Expression::MemberAccess(member_access) = &func_call.function else {
+                unreachable!();
+            };
+
+            let sway::Expression::MemberAccess(member_access) = &member_access.expression else {
+                unreachable!();
+            };
+
+            if !only_owner_modifiers.contains(&implementation.new_name) {
+                only_owner_modifiers.push(implementation.new_name.clone());
+            }
+
+            storage_field_name = member_access.member.clone();
+            continue;
+        }
+
+        // Assert case
+        if let Some(expr) = inline_body.find_expression(|expr| {
+            let sway::Expression::FunctionCall(function_call) = expr else {
+                return false;
+            };
+
+            let Some("assert") = function_call.function.as_identifier() else {
+                return false;
+            };
+
+            if function_call.parameters.len() != 1 {
+                return false;
+            }
+
+            let sway::Expression::BinaryExpression(binary_expr) = &function_call.parameters[0] else {
+                return false;
+            };
+
+            if binary_expr.operator != "==" {
+                return false;
+            }
+
+            if binary_expr.rhs != sway::Expression::create_function_call("msg_sender", None, vec![]).with_unwrap_call()
+            {
+                return false;
+            }
+
+            true
+        }) {
+            let sway::Expression::FunctionCall(function_call) = expr else {
+                unreachable!();
+            };
+
+            let sway::Expression::BinaryExpression(binary_expr) = &function_call.parameters[0] else {
+                unreachable!();
+            };
+
+            let sway::Expression::FunctionCall(func_call) = &binary_expr.lhs else {
+                unreachable!();
+            };
+
+            let sway::Expression::MemberAccess(member_access) = &func_call.function else {
+                unreachable!();
+            };
+
+            let sway::Expression::MemberAccess(member_access) = &member_access.expression else {
+                unreachable!();
+            };
+
+            if !only_owner_modifiers.contains(&implementation.new_name) {
+                only_owner_modifiers.push(implementation.new_name.clone());
+            }
+
+            storage_field_name = member_access.member.clone();
+            continue;
         }
     }
 
-    if found_owner_check {
+    if !only_owner_modifiers.is_empty() {
         let mut module = module.borrow_mut();
         // src5 = "0.8.1"
         module.ensure_dependency_declared("src5 = \"0.8.1\"");
@@ -1811,7 +1940,6 @@ pub fn implement_src5_for_contract(module: Rc<RefCell<ir::Module>>, contract: Rc
         }
 
         // We need to add the only_owner function to the contract shared code
-
         module.functions.push(ir::Item {
             signature: sway::TypeName::Function {
                 old_name: String::new(),
@@ -1872,7 +2000,7 @@ pub fn implement_src5_for_contract(module: Rc<RefCell<ir::Module>>, contract: Rc
             }),
         });
 
-        // TODO: We should check any functions that had the owner check modifier and insert the owner check logic in the top of the function
+        // check any functions that had the owner check modifier and insert the owner check logic in the top of the function
         for function in module.functions.iter_mut() {
             let Some(implementation) = function.implementation.as_mut() else {
                 unreachable!()
@@ -1885,7 +2013,7 @@ pub fn implement_src5_for_contract(module: Rc<RefCell<ir::Module>>, contract: Rc
             let mut modifier_new_name = None;
 
             for modifier_call in implementation.modifier_calls.iter() {
-                if modifier_call.old_name == "onlyOwner" {
+                if only_owner_modifiers.contains(&modifier_call.new_name) {
                     modifier_new_name = Some(modifier_call.new_name.clone());
                     break;
                 }
@@ -1903,6 +2031,138 @@ pub fn implement_src5_for_contract(module: Rc<RefCell<ir::Module>>, contract: Rc
                 if comment.starts_with(format!("inlined modifier invocation: {}(", modifier_new_name).as_str()) {
                     body.statements.remove(i);
                 }
+            }
+
+            // If case
+            if let Some(expr) = body.find_expression_mut(|expr| {
+                let sway::Expression::If(if_expr) = expr else {
+                    return false;
+                };
+
+                let Some(sway::Expression::BinaryExpression(binary_expr)) = if_expr.condition.as_ref() else {
+                    return false;
+                };
+
+                if binary_expr.operator != "!=" {
+                    return false;
+                }
+
+                if binary_expr.rhs
+                    != sway::Expression::create_function_call("msg_sender", None, vec![]).with_unwrap_call()
+                {
+                    return false;
+                }
+
+                if !if_expr
+                    .then_body
+                    .find_expression(|expr| {
+                        let sway::Expression::FunctionCall(f) = &expr else {
+                            return false;
+                        };
+
+                        let Some("revert") = f.function.as_identifier() else {
+                            return false;
+                        };
+
+                        if f.parameters.len() != 1 {
+                            return false;
+                        }
+
+                        if f.parameters[0] != sway::Expression::create_dec_int_literal(0_u8.into(), None) {
+                            return false;
+                        }
+
+                        true
+                    })
+                    .is_some()
+                {
+                    return false;
+                }
+
+                true
+            }) {
+                *expr = sway::Expression::create_function_call(
+                    format!("{}_only_owner", contract_name.to_case(Case::Snake)).as_str(),
+                    None,
+                    vec![sway::Expression::create_identifier("storage_struct")],
+                );
+                continue;
+            }
+
+            // Require case
+            if let Some(expr) = body.find_expression_mut(|expr| {
+                let sway::Expression::FunctionCall(function_call) = expr else {
+                    return false;
+                };
+
+                let Some("require") = function_call.function.as_identifier() else {
+                    return false;
+                };
+
+                if function_call.parameters.len() != 2 {
+                    return false;
+                }
+
+                let sway::Expression::BinaryExpression(binary_expr) = &function_call.parameters[0] else {
+                    return false;
+                };
+
+                if binary_expr.operator != "==" {
+                    return false;
+                }
+
+                if binary_expr.rhs
+                    != sway::Expression::create_function_call("msg_sender", None, vec![]).with_unwrap_call()
+                {
+                    return false;
+                }
+
+                true
+            }) {
+                *expr = sway::Expression::create_function_call(
+                    format!("{}_only_owner", contract_name.to_case(Case::Snake)).as_str(),
+                    None,
+                    vec![sway::Expression::create_identifier("storage_struct")],
+                );
+                continue;
+            }
+
+            // Assert case
+            if let Some(expr) = body.find_expression_mut(|expr| {
+                let sway::Expression::FunctionCall(function_call) = expr else {
+                    return false;
+                };
+
+                let Some("assert") = function_call.function.as_identifier() else {
+                    return false;
+                };
+
+                if function_call.parameters.len() != 1 {
+                    return false;
+                }
+
+                let sway::Expression::BinaryExpression(binary_expr) = &function_call.parameters[0] else {
+                    return false;
+                };
+
+                if binary_expr.operator != "==" {
+                    return false;
+                }
+
+                if binary_expr.rhs
+                    != sway::Expression::create_function_call("msg_sender", None, vec![]).with_unwrap_call()
+                {
+                    return false;
+                }
+
+                true
+            }) {
+                *expr = sway::Expression::create_function_call(
+                    format!("{}_only_owner", contract_name.to_case(Case::Snake)).as_str(),
+                    None,
+                    vec![sway::Expression::create_identifier("storage_struct")],
+                );
+                continue;
             }
 
             if let Some(expr) = body.find_expression_mut(|expr| {
