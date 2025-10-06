@@ -549,6 +549,7 @@ pub fn resolve_abi_function_call(
                     parameters: parameters.clone(),
                     storage_struct_parameter: storage_struct_parameter.as_ref().map(|x| x.as_ref().clone()),
                     return_type: return_type.as_ref().map(|x| x.as_ref().clone()),
+                    modifier_calls: vec![],
                     body: None,
                 }
             })
@@ -1324,14 +1325,18 @@ pub fn resolve_modifier(
                 unreachable!()
             };
 
-            check_parameters(
+            if !check_parameters(
                 modifier.implementation.clone().unwrap(),
                 if storage_struct_parameter.is_some() {
                     storage_struct_parameter.as_deref()
                 } else {
                     None
                 },
-            )
+            ) {
+                return false;
+            }
+
+            true
         })
     {
         modifier = Some(f.clone());

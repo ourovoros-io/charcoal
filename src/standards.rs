@@ -239,6 +239,7 @@ pub fn implement_src20_for_contract(
                 parameters: sway::ParameterList { entries: vec![] },
                 storage_struct_parameter: None,
                 return_type: Some(sway::TypeName::create_identifier("u64")),
+                modifier_calls: vec![],
                 body: Some(sway::Block {
                     statements: vec![],
                     final_expr: Some(sway::Expression::create_dec_int_literal(1_u8.into(), None)),
@@ -273,6 +274,7 @@ pub fn implement_src20_for_contract(
                 },
                 storage_struct_parameter: None,
                 return_type: Some(sway::TypeName::create_identifier("u64").to_option()),
+                modifier_calls: vec![],
                 body: Some(sway::Block {
                     statements: vec![],
                     final_expr: Some(sway::Expression::from(sway::If {
@@ -336,6 +338,7 @@ pub fn implement_src20_for_contract(
                 },
                 storage_struct_parameter: None,
                 return_type: Some(sway::TypeName::create_identifier("String").to_option()),
+                modifier_calls: vec![],
                 body: Some(sway::Block {
                     statements: vec![],
                     final_expr: Some(sway::Expression::from(sway::If {
@@ -392,6 +395,7 @@ pub fn implement_src20_for_contract(
                 },
                 storage_struct_parameter: None,
                 return_type: Some(sway::TypeName::create_identifier("String").to_option()),
+                modifier_calls: vec![],
                 body: Some(sway::Block {
                     statements: vec![],
                     final_expr: Some(sway::Expression::from(sway::If {
@@ -448,6 +452,7 @@ pub fn implement_src20_for_contract(
                 },
                 storage_struct_parameter: None,
                 return_type: Some(sway::TypeName::create_identifier("u8").to_option()),
+                modifier_calls: vec![],
                 body: Some(sway::Block {
                     statements: vec![],
                     final_expr: Some(sway::Expression::from(sway::If {
@@ -1257,6 +1262,7 @@ pub fn implement_withdraw_function_for_src20(
         },
         storage_struct_parameter: None,
         return_type: None,
+        modifier_calls: vec![],
         body: None,
     };
 
@@ -1524,6 +1530,7 @@ pub fn implement_src3_for_contract(
                 },
                 storage_struct_parameter: None,
                 return_type: None,
+                modifier_calls: vec![],
                 body: Some(mint_body),
             }),
             sway::ImplItem::Function(sway::Function {
@@ -1561,6 +1568,7 @@ pub fn implement_src3_for_contract(
                 },
                 storage_struct_parameter: None,
                 return_type: None,
+                modifier_calls: vec![],
                 body: Some(burn_body),
             }),
         ],
@@ -1583,39 +1591,61 @@ pub fn implement_src5_for_contract(module: Rc<RefCell<ir::Module>>, contract: Rc
             continue;
         };
 
-        for statement in inline_body.statements.iter() {
-            let sway::Statement::Expression(sway::Expression::If(if_expr)) = statement else {
-                continue;
+        if let Some(expr) = inline_body.find_expression(|expr| {
+            let sway::Expression::If(if_expr) = expr else {
+                return false;
             };
 
             let Some(sway::Expression::BinaryExpression(binary_expr)) = if_expr.condition.as_ref() else {
-                continue;
+                return false;
             };
 
             if binary_expr.operator != "!=" {
-                continue;
+                return false;
             }
 
             let sway::Expression::FunctionCall(func_call) = &binary_expr.lhs else {
-                continue;
+                return false;
             };
 
             let sway::Expression::MemberAccess(member_access) = &func_call.function else {
-                continue;
+                return false;
             };
 
             let sway::Expression::MemberAccess(member_access) = &member_access.expression else {
-                continue;
+                return false;
             };
 
             if !member_access.member.contains("owner") {
-                continue;
+                return false;
             }
 
             if binary_expr.rhs != sway::Expression::create_function_call("msg_sender", None, vec![]).with_unwrap_call()
             {
-                continue;
+                return false;
             }
+
+            true
+        }) {
+            let sway::Expression::If(if_expr) = expr else {
+                unreachable!();
+            };
+
+            let Some(sway::Expression::BinaryExpression(binary_expr)) = if_expr.condition.as_ref() else {
+                unreachable!();
+            };
+
+            let sway::Expression::FunctionCall(func_call) = &binary_expr.lhs else {
+                unreachable!();
+            };
+
+            let sway::Expression::MemberAccess(member_access) = &func_call.function else {
+                unreachable!();
+            };
+
+            let sway::Expression::MemberAccess(member_access) = &member_access.expression else {
+                unreachable!();
+            };
 
             found_owner_check = true;
             storage_field_name = member_access.member.clone();
@@ -1633,8 +1663,10 @@ pub fn implement_src5_for_contract(module: Rc<RefCell<ir::Module>>, contract: Rc
 
         let contract_name = {
             let contract = contract.borrow();
-            contract.name.to_case(Case::Snake)
+            contract.name.clone()
         };
+
+        let storage_namespace_name = contract_name.to_case(Case::Snake);
 
         contract.borrow_mut().impls.push(sway::Impl {
             generic_parameters: None,
@@ -1654,10 +1686,11 @@ pub fn implement_src5_for_contract(module: Rc<RefCell<ir::Module>>, contract: Rc
                 parameters: sway::ParameterList { entries: vec![] },
                 storage_struct_parameter: None,
                 return_type: Some(sway::TypeName::create_identifier("State")),
+                modifier_calls: vec![],
                 body: Some(sway::Block {
                     statements: vec![],
                     final_expr: Some(
-                        sway::Expression::create_identifier(format!("storage::{}", contract_name).as_str())
+                        sway::Expression::create_identifier(format!("storage::{}", storage_namespace_name).as_str())
                             .with_member(storage_field_name.as_str())
                             .with_read_call(),
                     ),
@@ -1671,7 +1704,7 @@ pub fn implement_src5_for_contract(module: Rc<RefCell<ir::Module>>, contract: Rc
             .borrow_mut()
             .namespaces
             .iter_mut()
-            .find(|ns| ns.borrow().name == contract_name)
+            .find(|ns| ns.borrow().name == storage_namespace_name)
         {
             if let Some(owner_field) = namespace
                 .borrow_mut()
@@ -1775,8 +1808,146 @@ pub fn implement_src5_for_contract(module: Rc<RefCell<ir::Module>>, contract: Rc
                         )),
                 );
             }
+        }
 
-            // TODO: We should check any functions that had the owner check modifier and insert the owner check logic in the top of the function
+        // We need to add the only_owner function to the contract shared code
+
+        module.functions.push(ir::Item {
+            signature: sway::TypeName::Function {
+                old_name: String::new(),
+                new_name: format!("{}_only_owner", contract_name.to_case(Case::Snake)),
+                generic_parameters: None,
+                parameters: sway::ParameterList { entries: vec![] },
+                storage_struct_parameter: None,
+                return_type: None,
+            },
+            implementation: Some(sway::Function {
+                attributes: Some(sway::AttributeList {
+                    attributes: vec![sway::Attribute {
+                        name: "storage".to_string(),
+                        parameters: Some(vec!["read".to_string()]),
+                    }],
+                }),
+                is_public: true,
+                old_name: String::new(),
+                new_name: format!("{}_only_owner", contract_name.to_case(Case::Snake)),
+                generic_parameters: None,
+                parameters: sway::ParameterList {
+                    entries: vec![sway::Parameter {
+                        is_ref: false,
+                        is_mut: false,
+                        name: "storage_struct".to_string(),
+                        type_name: Some(sway::TypeName::create_identifier(
+                            format!("{}Storage", contract_name).as_str(),
+                        )),
+                    }],
+                },
+                storage_struct_parameter: None,
+                return_type: None,
+                modifier_calls: vec![],
+                body: Some(sway::Block {
+                    statements: vec![sway::Statement::from(sway::Expression::create_function_call(
+                        "require",
+                        None,
+                        vec![
+                            sway::Expression::from(sway::BinaryExpression {
+                                operator: "==".to_string(),
+                                lhs: sway::Expression::create_function_call(
+                                    "State::Initialized",
+                                    None,
+                                    vec![
+                                        sway::Expression::create_function_call("msg_sender", None, vec![])
+                                            .with_unwrap_call(),
+                                    ],
+                                ),
+                                rhs: sway::Expression::create_identifier("storage_struct")
+                                    .with_member(storage_field_name.as_str())
+                                    .with_read_call(),
+                            }),
+                            sway::Expression::create_string_literal("Ownable: caller is not the owner"),
+                        ],
+                    ))],
+                    final_expr: None,
+                }),
+            }),
+        });
+
+        // TODO: We should check any functions that had the owner check modifier and insert the owner check logic in the top of the function
+        for function in module.functions.iter_mut() {
+            let Some(implementation) = function.implementation.as_mut() else {
+                unreachable!()
+            };
+
+            let Some(body) = implementation.body.as_mut() else {
+                unreachable!()
+            };
+
+            let mut modifier_new_name = None;
+
+            for modifier_call in implementation.modifier_calls.iter() {
+                if modifier_call.old_name == "onlyOwner" {
+                    modifier_new_name = Some(modifier_call.new_name.clone());
+                    break;
+                }
+            }
+
+            let Some(modifier_new_name) = modifier_new_name else {
+                continue;
+            };
+
+            for i in (0..body.statements.len()).rev() {
+                let sway::Statement::Commented(comment, _) = &body.statements[i] else {
+                    continue;
+                };
+
+                if comment.starts_with(format!("inlined modifier invocation: {}(", modifier_new_name).as_str()) {
+                    body.statements.remove(i);
+                }
+            }
+
+            if let Some(expr) = body.find_expression_mut(|expr| {
+                let sway::Expression::If(if_expr) = expr else {
+                    return false;
+                };
+
+                let Some(sway::Expression::BinaryExpression(binary_expr)) = if_expr.condition.as_ref() else {
+                    return false;
+                };
+
+                if binary_expr.operator != "!=" {
+                    return false;
+                }
+
+                let sway::Expression::FunctionCall(func_call) = &binary_expr.lhs else {
+                    return false;
+                };
+
+                let sway::Expression::MemberAccess(member_access) = &func_call.function else {
+                    return false;
+                };
+
+                let sway::Expression::MemberAccess(member_access) = &member_access.expression else {
+                    return false;
+                };
+
+                if !member_access.member.contains("owner") {
+                    return false;
+                }
+
+                if binary_expr.rhs
+                    != sway::Expression::create_function_call("msg_sender", None, vec![]).with_unwrap_call()
+                {
+                    return false;
+                }
+
+                true
+            }) {
+                *expr = sway::Expression::create_function_call(
+                    format!("{}_only_owner", contract_name.to_case(Case::Snake)).as_str(),
+                    None,
+                    vec![sway::Expression::create_identifier("storage_struct")],
+                );
+            }
         }
     }
 }

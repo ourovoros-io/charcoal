@@ -431,7 +431,7 @@ pub fn translate_function_declaration(
             new_name: function_names.top_level_fn_name,
             generic_parameters: None,
             parameters,
-            storage_struct_parameter,
+            storage_struct_parameter: storage_struct_parameter.clone(),
             return_type: translate_return_type_name(project, module.clone(), scope.clone(), function_definition)
                 .map(Box::new),
         },
@@ -507,6 +507,7 @@ pub fn translate_abi_function(
         parameters,
         storage_struct_parameter,
         return_type: translate_return_type_name(project, module.clone(), scope.clone(), function_definition),
+        modifier_calls: vec![],
         body: None,
     };
 
@@ -630,6 +631,62 @@ pub fn translate_function_definition(
         parameters,
         storage_struct_parameter: storage_struct_parameter.clone(),
         return_type: translate_return_type_name(project, module.clone(), scope.clone(), function_definition),
+        modifier_calls: function_definition
+            .attributes
+            .iter()
+            .filter(|a| matches!(a, solidity::FunctionAttribute::BaseOrModifier(_, _)))
+            .map(|m| {
+                let solidity::FunctionAttribute::BaseOrModifier(_, base) = m else {
+                    unreachable!()
+                };
+                base
+            })
+            .map(|base| {
+                let old_name = base
+                    .name
+                    .identifiers
+                    .iter()
+                    .map(|i| i.name.clone())
+                    .collect::<Vec<_>>()
+                    .join(".");
+
+                let mut new_name = translate_naming_convention(old_name.as_str(), Case::Snake);
+                if let Some(contract_name) = contract_name {
+                    new_name = format!("{}_{}", contract_name.to_case(Case::Snake), new_name);
+                }
+
+                let mut parameters = base
+                    .args
+                    .as_ref()
+                    .map(|args| {
+                        args.iter()
+                            .map(|a| translate_expression(project, module.clone(), scope.clone(), a))
+                            .collect::<Result<Vec<_>, _>>()
+                    })
+                    .unwrap_or_else(|| Ok(vec![]))
+                    .unwrap();
+
+                {
+                    let mut module = module.borrow_mut();
+                    let &mut (storage_read, storage_write) =
+                        module.function_storage_accesses.entry(new_name.clone()).or_default();
+
+                    if storage_read || storage_write {
+                        if let Some(storage_struct_parameter) = storage_struct_parameter.as_ref() {
+                            parameters.push(sway::Expression::create_identifier(
+                                storage_struct_parameter.name.as_str(),
+                            ));
+                        }
+                    }
+                }
+
+                sway::ModifierCall {
+                    old_name,
+                    new_name,
+                    parameters,
+                }
+            })
+            .collect(),
         body: None,
     };
 
@@ -804,9 +861,12 @@ pub fn translate_function_definition(
                 generic_parameters: None,
                 parameters,
             });
+
+            continue;
         }
+
         // Add the base to the modifiers list
-        else if let Some((modifier, parameters, _)) = resolve_modifier(
+        if let Some((modifier, parameters, _)) = resolve_modifier(
             project,
             module.clone(),
             scope.clone(),
@@ -818,6 +878,7 @@ pub fn translate_function_definition(
             let sway::TypeName::Function { new_name, .. } = &modifier.signature else {
                 unreachable!()
             };
+
             modifiers.push(sway::FunctionCall {
                 function: sway::Expression::create_identifier(new_name.as_str()),
                 generic_parameters: None,
@@ -1041,7 +1102,14 @@ pub fn translate_modifier_definition(
         old_name: old_name.clone(),
         new_name: new_name.clone(),
         parameters: sway::ParameterList::default(),
-        storage_struct_parameter: None,
+        storage_struct_parameter: contract_name.map(|contract_name| sway::Parameter {
+            is_ref: false,
+            is_mut: false,
+            name: "storage_struct".to_string(),
+            type_name: Some(sway::TypeName::create_identifier(
+                format!("{}Storage", contract_name).as_str(),
+            )),
+        }),
         attributes: None,
         has_underscore: false,
         inline_body: None,
@@ -1519,6 +1587,7 @@ pub fn ensure_constructor_functions_exist(
         storage_struct_parameter: None,
         parameters: sway::ParameterList::default(),
         return_type: None,
+        modifier_calls: vec![],
         body: None,
     };
 
@@ -1747,6 +1816,7 @@ pub fn ensure_storage_struct_constructor_exists(
         return_type: Some(sway::TypeName::create_identifier(
             format!("{contract_name}Storage").as_str(),
         )),
+        modifier_calls: vec![],
         body: Some(sway::Block {
             statements: vec![],
             final_expr: Some(sway::Expression::from(constructor)),

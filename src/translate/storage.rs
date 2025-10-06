@@ -487,6 +487,7 @@ pub fn generate_state_variable_getter_functions(
         },
         storage_struct_parameter: None,
         return_type: Some(return_type.clone()),
+        modifier_calls: vec![],
         body: None,
     };
 

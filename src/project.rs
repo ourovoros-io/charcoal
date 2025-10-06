@@ -1984,6 +1984,7 @@ impl Project {
                             parameters: sway::ParameterList::default(),
                             storage_struct_parameter: None,
                             return_type: None,
+                            modifier_calls: fallback_function.modifier_calls.clone(),
                             body: Some(sway::Block {
                                 statements,
                                 final_expr: Some(sway::Expression::create_function_call(

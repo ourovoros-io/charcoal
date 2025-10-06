@@ -188,6 +188,7 @@ pub fn get_abi_function_call_type(
                     parameters: parameters.clone(),
                     storage_struct_parameter: storage_struct_parameter.as_ref().map(|x| x.as_ref().clone()),
                     return_type: return_type.as_ref().map(|x| x.as_ref().clone()),
+                    modifier_calls: vec![],
                     body: None,
                 }
             })

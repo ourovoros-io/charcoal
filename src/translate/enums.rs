@@ -384,6 +384,7 @@ pub fn generate_enum_abi_encode_function(
             },
             storage_struct_parameter: None,
             return_type: Some(sway::TypeName::create_identifier("Buffer")),
+            modifier_calls: vec![],
             body: Some(sway::Block {
                 statements: vec![sway::Statement::Let(sway::Let {
                     pattern: sway::LetPattern::Identifier(sway::LetIdentifier {

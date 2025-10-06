@@ -1648,6 +1648,13 @@ impl TabbedDisplay for ConfigurableField {
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct ModifierCall {
+    pub old_name: String,
+    pub new_name: String,
+    pub parameters: Vec<Expression>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct Function {
     pub attributes: Option<AttributeList>,
     pub is_public: bool,
@@ -1657,6 +1664,7 @@ pub struct Function {
     pub parameters: ParameterList,
     pub storage_struct_parameter: Option<Parameter>,
     pub return_type: Option<TypeName>,
+    pub modifier_calls: Vec<ModifierCall>,
     pub body: Option<Block>,
 }
 
@@ -3798,55 +3806,3 @@ impl Display for AsmFinalExpression {
 }
 
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test() {
-        // Create a new contract module
-        let mut module = Module {
-            kind: ModuleKind::Contract,
-            items: vec![],
-        };
-
-        // Add a `use` statement:
-        // use std::storage::storage_vec::*;
-        module.items.push(ModuleItem::Use(Use {
-            is_public: false,
-            tree: UseTree::Path {
-                prefix: "std".into(),
-                suffix: Box::new(UseTree::Path {
-                    prefix: "storage".into(),
-                    suffix: Box::new(UseTree::Path {
-                        prefix: "storage_vec".into(),
-                        suffix: Box::new(UseTree::Glob),
-                    }),
-                }),
-            },
-        }));
-
-        // Add a test function:
-        // fn test() {
-        //     return;
-        // }
-        module.items.push(ModuleItem::Function(Function {
-            attributes: None,
-            is_public: true,
-            old_name: "test".into(),
-            new_name: "test".into(),
-            generic_parameters: None,
-            parameters: ParameterList::default(),
-            storage_struct_parameter: None,
-            return_type: None,
-            body: Some(Block {
-                statements: vec![Statement::Expression(Expression::Return(None))],
-                final_expr: None,
-            }),
-        }));
-
-        // Display the generated contract module
-        println!("{}", TabbedDisplayer(&module));
-    }
-}
