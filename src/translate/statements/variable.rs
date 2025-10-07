@@ -16,17 +16,40 @@ pub fn translate_variable_definition_statement(
     let old_name = variable_declaration.name.as_ref().unwrap().name.clone();
     let new_name = translate_naming_convention(old_name.as_str(), Case::Snake);
 
-    let type_name = translate_type_name(
-        project,
-        module.clone(),
-        scope.clone(),
-        &variable_declaration.ty,
-        variable_declaration.storage.as_ref(),
-    );
-
     let mut value = None;
 
-    if let Some(solidity::Expression::New(_, new_expression)) = initializer.as_ref()
+    let type_name = match &variable_declaration.ty {
+        solidity::Expression::Variable(identifier) if identifier.name == "var" => {
+            let Some(x) = initializer.as_ref() else {
+                panic!("No value supplied for var expression")
+            };
+
+            let mut x = translate_expression(project, module.clone(), scope.clone(), x)?;
+
+            if let Some(container) = x.to_read_call_parts()
+                && get_expression_type(project, module.clone(), scope.clone(), container)?.is_storage_key()
+            {
+                x = container.clone();
+            }
+
+            let type_name = get_expression_type(project, module.clone(), scope.clone(), &x)?;
+
+            value = Some(x);
+
+            type_name
+        }
+
+        _ => translate_type_name(
+            project,
+            module.clone(),
+            scope.clone(),
+            &variable_declaration.ty,
+            variable_declaration.storage.as_ref(),
+        ),
+    };
+
+    if value.is_none()
+        && let Some(solidity::Expression::New(_, new_expression)) = initializer.as_ref()
         && type_name.is_vec()
     {
         let solidity::Expression::FunctionCall(_, ty, args) = new_expression.as_ref() else {

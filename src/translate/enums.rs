@@ -337,22 +337,24 @@ pub fn generate_enum_abi_encode_function(
         );
 
         match_expr.branches.push(sway::MatchBranch {
-            pattern: sway::Expression::create_function_call(
-                format!("{}::{}", sway_enum.borrow().name, variant.name,).as_str(),
-                None,
-                if parameter_count == 0 {
-                    vec![]
-                } else if parameter_count == 1 {
-                    vec![sway::Expression::create_identifier(&parameter_names[0])]
-                } else {
-                    vec![sway::Expression::Tuple(
-                        parameter_names
-                            .iter()
-                            .map(|p| sway::Expression::create_identifier(p))
-                            .collect(),
-                    )]
-                },
-            ),
+            pattern: if parameter_count == 0 {
+                sway::Expression::create_identifier(format!("{}::{}", sway_enum.borrow().name, variant.name,).as_str())
+            } else {
+                sway::Expression::create_function_call(
+                    format!("{}::{}", sway_enum.borrow().name, variant.name,).as_str(),
+                    None,
+                    if parameter_count == 1 {
+                        vec![sway::Expression::create_identifier(&parameter_names[0])]
+                    } else {
+                        vec![sway::Expression::Tuple(
+                            parameter_names
+                                .iter()
+                                .map(|p| sway::Expression::create_identifier(p))
+                                .collect(),
+                        )]
+                    },
+                )
+            },
             value: sway::Expression::from(block),
         });
     }
@@ -385,6 +387,7 @@ pub fn generate_enum_abi_encode_function(
             storage_struct_parameter: None,
             return_type: Some(sway::TypeName::create_identifier("Buffer")),
             modifier_calls: vec![],
+            contract: None,
             body: Some(sway::Block {
                 statements: vec![sway::Statement::Let(sway::Let {
                     pattern: sway::LetPattern::Identifier(sway::LetIdentifier {

@@ -317,6 +317,7 @@ pub enum TypeName {
         parameters: ParameterList,
         storage_struct_parameter: Option<Box<Parameter>>,
         return_type: Option<Box<TypeName>>,
+        contract: Option<String>,
     },
     Abi {
         type_name: Box<TypeName>,
@@ -1665,6 +1666,7 @@ pub struct Function {
     pub storage_struct_parameter: Option<Parameter>,
     pub return_type: Option<TypeName>,
     pub modifier_calls: Vec<ModifierCall>,
+    pub contract: Option<String>,
     pub body: Option<Block>,
 }
 
@@ -1677,6 +1679,7 @@ impl Function {
             parameters,
             storage_struct_parameter,
             return_type,
+            contract,
             ..
         } = self;
 
@@ -1687,6 +1690,7 @@ impl Function {
             parameters: parameters.clone(),
             storage_struct_parameter: storage_struct_parameter.clone().map(Box::new),
             return_type: return_type.clone().map(Box::new),
+            contract: contract.clone(),
         }
     }
 }
@@ -2252,6 +2256,7 @@ pub enum Expression {
     AsmBlock(Box<AsmBlock>),
     Commented(String, Box<Expression>),
     Comment(String),
+    Panic(String),
     // TODO: finish
 }
 
@@ -2301,6 +2306,9 @@ impl TabbedDisplay for Expression {
             Expression::Comment(comment) => {
                 write!(f, "/*{comment}*/")
             }
+            Expression::Panic(msg) => {
+                write!(f, "panic \"{msg}\"")
+            }
         }
     }
 }
@@ -2349,17 +2357,11 @@ impl Expression {
 
     #[inline(always)]
     pub fn create_todo(msg: Option<String>) -> Expression {
-        Expression::create_function_call(
-            "todo!",
-            None,
-            if let Some(msg) = msg {
-                vec![Expression::Literal(Literal::String(
-                    msg.replace('\\', "\\\\").replace('\"', "\\\""),
-                ))]
-            } else {
-                vec![]
-            },
-        )
+        Expression::Panic(if let Some(msg) = msg {
+            format!("TODO: {}", msg.replace('\\', "\\\\").replace('\"', "\\\""))
+        } else {
+            "TODO".to_string()
+        })
     }
 
     #[inline(always)]

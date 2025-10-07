@@ -50,14 +50,14 @@ pub fn translate_naming_convention(name: &str, case: Case) -> String {
 
     match name.as_str() {
         "self" => "this".into(),
-        _ => name,
+        _ => check_for_reserved_keywords(&name),
     }
 }
 
 #[inline(always)]
 pub fn check_for_reserved_keywords(name: &str) -> String {
     if let "lib" | "src" | "main" | "library" | "contract" | "script" | "enum" | "struct" | "trait" | "abi" | "impl"
-    | "fn" | "const" | "pub" | "storage" | "configurable" = name
+    | "fn" | "const" | "pub" | "storage" | "configurable" | "panic" | "str" = name
     {
         return format!("_{name}");
     }
@@ -148,6 +148,7 @@ pub fn get_expression_type(
         sway::Expression::AsmBlock(asm_block) => get_asm_block_type(asm_block),
         sway::Expression::Commented(_, x) => get_expression_type(project, module.clone(), scope.clone(), x),
         sway::Expression::Comment(_) => Ok(sway::TypeName::Tuple { type_names: vec![] }),
+        sway::Expression::Panic(_) => Ok(sway::TypeName::create_identifier("todo!")),
     }
 }
 
@@ -175,6 +176,7 @@ pub fn get_abi_function_call_type(
                     parameters,
                     storage_struct_parameter,
                     return_type,
+                    contract,
                 } = &f.signature
                 else {
                     unreachable!()
@@ -189,6 +191,7 @@ pub fn get_abi_function_call_type(
                     storage_struct_parameter: storage_struct_parameter.as_ref().map(|x| x.as_ref().clone()),
                     return_type: return_type.as_ref().map(|x| x.as_ref().clone()),
                     modifier_calls: vec![],
+                    contract: contract.clone(),
                     body: None,
                 }
             })
@@ -374,6 +377,7 @@ fn get_path_expr_type(
                 parameters,
                 storage_struct_parameter,
                 return_type,
+                contract,
                 ..
             } = &variable.type_name
             {
@@ -384,6 +388,7 @@ fn get_path_expr_type(
                     parameters: parameters.clone(),
                     storage_struct_parameter: storage_struct_parameter.clone(),
                     return_type: return_type.clone(),
+                    contract: contract.clone(),
                 });
             }
 
@@ -1532,6 +1537,7 @@ fn get_path_expr_function_call_type(
                 parameters,
                 storage_struct_parameter,
                 return_type,
+                contract,
                 ..
             } = &v.type_name
             else {
@@ -1545,6 +1551,7 @@ fn get_path_expr_function_call_type(
                 parameters: parameters.clone(),
                 storage_struct_parameter: storage_struct_parameter.clone(),
                 return_type: return_type.clone(),
+                contract: contract.clone(),
             })
         }) {
             let variable = variable.borrow();

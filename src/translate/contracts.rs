@@ -285,6 +285,7 @@ pub fn translate_contract_definition(
             parameters: function.parameters.clone(),
             storage_struct_parameter: function.storage_struct_parameter.clone().map(Box::new),
             return_type: function.return_type.clone().map(Box::new),
+            contract: Some(contract_name.clone()),
         };
 
         let Some(function_entry) = module.functions.iter_mut().find(|f| {

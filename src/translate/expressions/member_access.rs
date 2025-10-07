@@ -346,17 +346,10 @@ pub fn translate_member_access_expression(
     }
 
     if container_type_name_string == "todo!" {
-        let sway::Expression::FunctionCall(f) = &container else {
+        let sway::Expression::Panic(msg) = &container else {
             unreachable!()
         };
-        let Some(ident) = f.function.as_identifier() else {
-            unreachable!()
-        };
-        let "todo!" = ident else { unreachable!() };
-        let sway::Expression::Literal(sway::Literal::String(s)) = &f.parameters[0] else {
-            unreachable!()
-        };
-        return Ok(sway::Expression::create_todo(Some(format!("{s}.{member}"))));
+        return Ok(sway::Expression::create_todo(Some(format!("{msg}.{member}"))));
     }
 
     let mut container = container.clone();

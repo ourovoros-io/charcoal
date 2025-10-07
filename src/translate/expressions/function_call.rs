@@ -2167,7 +2167,11 @@ fn translate_super_member_access_function_call(
             for inherit in abi.inherits.iter() {
                 let contract_name = inherit.to_string();
 
-                if let Some(external_module) = project.find_module_containing_contract(module.clone(), &contract_name) {
+                if let Some((external_module, external_contract)) =
+                    project.find_module_and_contract(module.clone(), &contract_name)
+                {
+                    let external_abi = external_contract.borrow().abi.clone();
+
                     let scope = Rc::new(RefCell::new(ir::Scope::new(
                         Some(external_module.borrow().path.clone()),
                         Some(&contract_name),
@@ -2179,7 +2183,7 @@ fn translate_super_member_access_function_call(
                         project,
                         external_module.clone(),
                         scope.clone(),
-                        &abi,
+                        &external_abi,
                         None,
                         member,
                         named_arguments,

@@ -830,7 +830,7 @@ impl Project {
             .iter()
             .find(|c| c.signature.to_string() == contract_name)
         {
-            return Some((module.clone(), contract.implementation.clone().unwrap()));
+            return Some((module.clone(), contract.implementation.clone()?));
         }
 
         // Check all of the module's `use` statements for crate-local imports,
@@ -1265,6 +1265,7 @@ impl Project {
                         function_definition,
                     )
                     .map(Box::new),
+                    contract: None,
                 },
                 implementation: None,
             })
@@ -1547,6 +1548,7 @@ impl Project {
                             function_definition,
                         )
                         .map(Box::new),
+                        contract: Some(contract_name.to_string()),
                     },
                     implementation: None,
                 })
@@ -1616,6 +1618,7 @@ impl Project {
                 parameters: function.parameters.clone(),
                 storage_struct_parameter: function.storage_struct_parameter.clone().map(Box::new),
                 return_type: function.return_type.clone().map(Box::new),
+                contract: None,
             };
 
             let Some(function_entry) = module.functions.iter_mut().find(|f| {
@@ -1903,6 +1906,7 @@ impl Project {
                                     parameters: s.parameters.clone(),
                                     storage_struct_parameter: s.storage_struct_parameter.clone().map(Box::new),
                                     return_type: s.return_type.clone().map(Box::new),
+                                    contract: None,
                                 },
                                 implementation: Some(s.clone()),
                             }]
@@ -1985,6 +1989,7 @@ impl Project {
                             storage_struct_parameter: None,
                             return_type: None,
                             modifier_calls: fallback_function.modifier_calls.clone(),
+                            contract: None,
                             body: Some(sway::Block {
                                 statements,
                                 final_expr: Some(sway::Expression::create_function_call(

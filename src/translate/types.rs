@@ -372,6 +372,7 @@ pub fn translate_type_name(
                         None => None,
                     }
                 },
+                contract: None,
             },
         },
 

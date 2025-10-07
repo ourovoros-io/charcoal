@@ -103,6 +103,18 @@ pub fn evaluate_expression(
                             });
                         }
 
+                        "Address::zero" => {
+                            return sway::Expression::from(sway::FunctionCall {
+                                function: function_call.function.clone(),
+                                generic_parameters: function_call.generic_parameters.clone(),
+                                parameters: function_call
+                                    .parameters
+                                    .iter()
+                                    .map(|p| evaluate_expression(project, module.clone(), scope.clone(), type_name, p))
+                                    .collect(),
+                            });
+                        }
+
                         "b256::from_be_bytes" => {
                             // TODO: sigh...
                             return expression.clone();
@@ -300,6 +312,7 @@ pub fn evaluate_expression(
         ),
 
         sway::Expression::Comment(comment) => sway::Expression::Comment(comment.clone()),
+        sway::Expression::Panic(msg) => sway::Expression::Panic(msg.clone()),
     }
 }
 

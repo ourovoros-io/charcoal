@@ -756,7 +756,10 @@ pub fn translate_yul_function_call_expression(
 
             Ok(sway::Expression::from(sway::BinaryExpression {
                 operator: "==".into(),
-                lhs: parameters[0].clone(),
+                lhs: match &parameters[0] {
+                    sway::Expression::BinaryExpression(_) => sway::Expression::Tuple(vec![parameters[0].clone()]),
+                    _ => parameters[0].clone(),
+                },
                 rhs: create_value_expression(project, module.clone(), scope.clone(), &type_name, None),
             }))
         }

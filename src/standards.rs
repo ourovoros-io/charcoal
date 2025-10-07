@@ -240,6 +240,7 @@ pub fn implement_src20_for_contract(
                 storage_struct_parameter: None,
                 return_type: Some(sway::TypeName::create_identifier("u64")),
                 modifier_calls: vec![],
+                contract: None,
                 body: Some(sway::Block {
                     statements: vec![],
                     final_expr: Some(sway::Expression::create_dec_int_literal(1_u8.into(), None)),
@@ -275,6 +276,7 @@ pub fn implement_src20_for_contract(
                 storage_struct_parameter: None,
                 return_type: Some(sway::TypeName::create_identifier("u64").to_option()),
                 modifier_calls: vec![],
+                contract: None,
                 body: Some(sway::Block {
                     statements: vec![],
                     final_expr: Some(sway::Expression::from(sway::If {
@@ -339,6 +341,7 @@ pub fn implement_src20_for_contract(
                 storage_struct_parameter: None,
                 return_type: Some(sway::TypeName::create_identifier("String").to_option()),
                 modifier_calls: vec![],
+                contract: None,
                 body: Some(sway::Block {
                     statements: vec![],
                     final_expr: Some(sway::Expression::from(sway::If {
@@ -396,6 +399,7 @@ pub fn implement_src20_for_contract(
                 storage_struct_parameter: None,
                 return_type: Some(sway::TypeName::create_identifier("String").to_option()),
                 modifier_calls: vec![],
+                contract: None,
                 body: Some(sway::Block {
                     statements: vec![],
                     final_expr: Some(sway::Expression::from(sway::If {
@@ -453,6 +457,7 @@ pub fn implement_src20_for_contract(
                 storage_struct_parameter: None,
                 return_type: Some(sway::TypeName::create_identifier("u8").to_option()),
                 modifier_calls: vec![],
+                contract: None,
                 body: Some(sway::Block {
                     statements: vec![],
                     final_expr: Some(sway::Expression::from(sway::If {
@@ -601,10 +606,10 @@ pub fn update_balance_of_usage(module: &mut ir::Module, name: &str) {
 
 #[inline(always)]
 pub fn emplace_src20_events(module: &mut ir::Module, function_bodies: &HashMap<String, sway::Block>) {
-    let name_name;
-    let symbol_name;
-    let decimals_name;
-    let total_supply_name;
+    let mut name_name = None;
+    let mut symbol_name = None;
+    let mut decimals_name = None;
+    let mut total_supply_name = None;
 
     let name_fn_body = function_bodies.get("name").unwrap();
     let symbol_fn_body = function_bodies.get("symbol").unwrap();
@@ -645,35 +650,33 @@ pub fn emplace_src20_events(module: &mut ir::Module, function_bodies: &HashMap<S
         unreachable!();
     };
 
-    let Some(expr) = final_expr.to_unwrap_call_parts() else {
-        unreachable!();
-    };
+    if let Some(expr) = final_expr.to_unwrap_call_parts() {
+        let Some(expr) = expr.to_read_slice_call_parts() else {
+            unreachable!();
+        };
 
-    let Some(expr) = expr.to_read_slice_call_parts() else {
-        unreachable!();
-    };
+        let sway::Expression::MemberAccess(member_access) = expr else {
+            unreachable!()
+        };
 
-    let sway::Expression::MemberAccess(member_access) = expr else {
-        unreachable!()
-    };
+        let Some(storage_struct_parameter) = toplevel_fn
+            .implementation
+            .as_ref()
+            .unwrap()
+            .storage_struct_parameter
+            .as_ref()
+        else {
+            unreachable!();
+        };
 
-    let Some(storage_struct_parameter) = toplevel_fn
-        .implementation
-        .as_ref()
-        .unwrap()
-        .storage_struct_parameter
-        .as_ref()
-    else {
-        unreachable!();
-    };
+        let Some(identifier) = member_access.expression.as_identifier() else {
+            unreachable!();
+        };
 
-    let Some(identifier) = member_access.expression.as_identifier() else {
-        unreachable!();
-    };
+        assert!(identifier == storage_struct_parameter.name);
 
-    assert!(identifier == storage_struct_parameter.name);
-
-    name_name = Some(member_access.member.clone());
+        name_name = Some(member_access.member.clone());
+    }
 
     //
     // Get the name of the `symbol` storage field
@@ -709,35 +712,33 @@ pub fn emplace_src20_events(module: &mut ir::Module, function_bodies: &HashMap<S
         unreachable!();
     };
 
-    let Some(expr) = final_expr.to_unwrap_call_parts() else {
-        unreachable!();
-    };
+    if let Some(expr) = final_expr.to_unwrap_call_parts() {
+        let Some(expr) = expr.to_read_slice_call_parts() else {
+            unreachable!();
+        };
 
-    let Some(expr) = expr.to_read_slice_call_parts() else {
-        unreachable!();
-    };
+        let sway::Expression::MemberAccess(member_access) = expr else {
+            unreachable!()
+        };
 
-    let sway::Expression::MemberAccess(member_access) = expr else {
-        unreachable!()
-    };
+        let Some(storage_struct_parameter) = toplevel_fn
+            .implementation
+            .as_ref()
+            .unwrap()
+            .storage_struct_parameter
+            .as_ref()
+        else {
+            unreachable!();
+        };
 
-    let Some(storage_struct_parameter) = toplevel_fn
-        .implementation
-        .as_ref()
-        .unwrap()
-        .storage_struct_parameter
-        .as_ref()
-    else {
-        unreachable!();
-    };
+        let Some(identifier) = member_access.expression.as_identifier() else {
+            unreachable!();
+        };
 
-    let Some(identifier) = member_access.expression.as_identifier() else {
-        unreachable!();
-    };
+        assert!(identifier == storage_struct_parameter.name);
 
-    assert!(identifier == storage_struct_parameter.name);
-
-    symbol_name = Some(member_access.member.clone());
+        symbol_name = Some(member_access.member.clone());
+    }
 
     //
     // Get the name of the `decimals` storage field
@@ -773,31 +774,29 @@ pub fn emplace_src20_events(module: &mut ir::Module, function_bodies: &HashMap<S
         unreachable!();
     };
 
-    let Some(expr) = final_expr.to_read_call_parts() else {
-        unreachable!();
-    };
+    if let Some(expr) = final_expr.to_read_call_parts() {
+        let sway::Expression::MemberAccess(member_access) = expr else {
+            unreachable!()
+        };
 
-    let sway::Expression::MemberAccess(member_access) = expr else {
-        unreachable!()
-    };
+        let Some(storage_struct_parameter) = toplevel_fn
+            .implementation
+            .as_ref()
+            .unwrap()
+            .storage_struct_parameter
+            .as_ref()
+        else {
+            unreachable!();
+        };
 
-    let Some(storage_struct_parameter) = toplevel_fn
-        .implementation
-        .as_ref()
-        .unwrap()
-        .storage_struct_parameter
-        .as_ref()
-    else {
-        unreachable!();
-    };
+        let Some(identifier) = member_access.expression.as_identifier() else {
+            unreachable!();
+        };
 
-    let Some(identifier) = member_access.expression.as_identifier() else {
-        unreachable!();
-    };
+        assert!(identifier == storage_struct_parameter.name);
 
-    assert!(identifier == storage_struct_parameter.name);
-
-    decimals_name = Some(member_access.member.clone());
+        decimals_name = Some(member_access.member.clone());
+    }
 
     //
     // Get the name of the `total_supply` storage field
@@ -833,40 +832,38 @@ pub fn emplace_src20_events(module: &mut ir::Module, function_bodies: &HashMap<S
         unreachable!();
     };
 
-    let Some(expr) = final_expr.to_read_call_parts() else {
-        unreachable!();
-    };
+    if let Some(expr) = final_expr.to_read_call_parts() {
+        let sway::Expression::MemberAccess(member_access) = expr else {
+            unreachable!()
+        };
 
-    let sway::Expression::MemberAccess(member_access) = expr else {
-        unreachable!()
-    };
+        let Some(storage_struct_parameter) = toplevel_fn
+            .implementation
+            .as_ref()
+            .unwrap()
+            .storage_struct_parameter
+            .as_ref()
+        else {
+            unreachable!();
+        };
 
-    let Some(storage_struct_parameter) = toplevel_fn
-        .implementation
-        .as_ref()
-        .unwrap()
-        .storage_struct_parameter
-        .as_ref()
-    else {
-        unreachable!();
-    };
+        let Some(identifier) = member_access.expression.as_identifier() else {
+            unreachable!();
+        };
 
-    let Some(identifier) = member_access.expression.as_identifier() else {
-        unreachable!();
-    };
+        assert!(identifier == storage_struct_parameter.name);
 
-    assert!(identifier == storage_struct_parameter.name);
-
-    total_supply_name = Some(member_access.member.clone());
+        total_supply_name = Some(member_access.member.clone());
+    }
 
     //
     // Emplace event logs when any storage fields are written to
     //
 
-    let name_name = (name_name.unwrap(), true);
-    let symbol_name = (symbol_name.unwrap(), true);
-    let decimals_name = (decimals_name.unwrap(), false);
-    let total_supply_name = (total_supply_name.unwrap(), false);
+    let name_name = (name_name, true);
+    let symbol_name = (symbol_name, true);
+    let decimals_name = (decimals_name, false);
+    let total_supply_name = (total_supply_name, false);
 
     for function in module.functions.iter_mut() {
         if let Some(implementation) = function.implementation.as_mut() {
@@ -914,61 +911,79 @@ pub fn emplace_src20_events(module: &mut ir::Module, function_bodies: &HashMap<S
                                     unreachable!();
                                 };
 
-                                *expression = sway::Expression::from(sway::Block {
-                                    statements: vec![
-                                        sway::Statement::from(expression.clone()),
-                                        sway::Statement::from(if member_access.member == name_name.0 {
-                                            sway::Expression::create_function_call(
-                                                "src20::SetNameEvent::new",
-                                                None,
-                                                vec![
+                                *expression =
+                                    sway::Expression::from(sway::Block {
+                                        statements: vec![
+                                            sway::Statement::from(expression.clone()),
+                                            sway::Statement::from(
+                                                if name_name
+                                                    .0
+                                                    .as_ref()
+                                                    .map(|n| *n == member_access.member)
+                                                    .unwrap_or(false)
+                                                {
                                                     sway::Expression::create_function_call(
-                                                        "AssetId::default",
+                                                        "src20::SetNameEvent::new",
                                                         None,
-                                                        vec![],
-                                                    ),
-                                                    value.into_some_call(),
-                                                    sway::Expression::create_function_call("msg_sender", None, vec![])
-                                                        .with_unwrap_call(),
-                                                ],
-                                            )
-                                            .with_function_call(
-                                                "log",
-                                                None,
-                                                vec![],
-                                            )
-                                        } else if member_access.member == symbol_name.0 {
-                                            sway::Expression::create_function_call(
-                                                "src20::SetSymbolEvent::new",
-                                                None,
-                                                vec![
+                                                        vec![
+                                                            sway::Expression::create_function_call(
+                                                                "AssetId::default",
+                                                                None,
+                                                                vec![],
+                                                            ),
+                                                            value.into_some_call(),
+                                                            sway::Expression::create_function_call(
+                                                                "msg_sender",
+                                                                None,
+                                                                vec![],
+                                                            )
+                                                            .with_unwrap_call(),
+                                                        ],
+                                                    )
+                                                    .with_function_call("log", None, vec![])
+                                                } else if symbol_name
+                                                    .0
+                                                    .as_ref()
+                                                    .map(|n| *n == member_access.member)
+                                                    .unwrap_or(false)
+                                                {
                                                     sway::Expression::create_function_call(
-                                                        "AssetId::default",
+                                                        "src20::SetSymbolEvent::new",
                                                         None,
-                                                        vec![],
-                                                    ),
-                                                    value.into_some_call(),
-                                                    sway::Expression::create_function_call("msg_sender", None, vec![])
-                                                        .with_unwrap_call(),
-                                                ],
-                                            )
-                                            .with_function_call(
-                                                "log",
-                                                None,
-                                                vec![],
-                                            )
-                                        } else {
-                                            unreachable!()
-                                        }),
-                                    ],
-                                    final_expr: None,
-                                });
+                                                        vec![
+                                                            sway::Expression::create_function_call(
+                                                                "AssetId::default",
+                                                                None,
+                                                                vec![],
+                                                            ),
+                                                            value.into_some_call(),
+                                                            sway::Expression::create_function_call(
+                                                                "msg_sender",
+                                                                None,
+                                                                vec![],
+                                                            )
+                                                            .with_unwrap_call(),
+                                                        ],
+                                                    )
+                                                    .with_function_call("log", None, vec![])
+                                                } else {
+                                                    unreachable!()
+                                                },
+                                            ),
+                                        ],
+                                        final_expr: None,
+                                    });
                             } else if let Some((expr, value)) = expression.to_write_call_parts() {
                                 let sway::Expression::MemberAccess(member_access) = expr else {
                                     unreachable!();
                                 };
 
-                                if member_access.member == decimals_name.0 {
+                                if decimals_name
+                                    .0
+                                    .as_ref()
+                                    .map(|n| *n == member_access.member)
+                                    .unwrap_or(false)
+                                {
                                     *expression =
                                         sway::Expression::from(sway::Block {
                                             statements: vec![
@@ -997,7 +1012,12 @@ pub fn emplace_src20_events(module: &mut ir::Module, function_bodies: &HashMap<S
                                             ],
                                             final_expr: None,
                                         })
-                                } else if member_access.member == total_supply_name.0 {
+                                } else if total_supply_name
+                                    .0
+                                    .as_ref()
+                                    .map(|n| *n == member_access.member)
+                                    .unwrap_or(false)
+                                {
                                     let mut value = value.clone();
 
                                     let is_burn = if let sway::Expression::BinaryExpression(binary_expr) = value.clone()
@@ -1083,10 +1103,18 @@ pub fn emplace_src20_events(module: &mut ir::Module, function_bodies: &HashMap<S
                         }
                     };
 
-                    check_expression(name_name.clone());
-                    check_expression(symbol_name.clone());
-                    check_expression(decimals_name.clone());
-                    check_expression(total_supply_name.clone());
+                    if let Some(x) = name_name.0.as_ref() {
+                        check_expression((x.to_string(), name_name.1))
+                    }
+                    if let Some(x) = symbol_name.0.as_ref() {
+                        check_expression((x.to_string(), symbol_name.1))
+                    }
+                    if let Some(x) = decimals_name.0.as_ref() {
+                        check_expression((x.to_string(), decimals_name.1))
+                    }
+                    if let Some(x) = total_supply_name.0.as_ref() {
+                        check_expression((x.to_string(), total_supply_name.1))
+                    }
                 }
             }
         }
@@ -1263,6 +1291,7 @@ pub fn implement_withdraw_function_for_src20(
         storage_struct_parameter: None,
         return_type: None,
         modifier_calls: vec![],
+        contract: None,
         body: None,
     };
 
@@ -1531,6 +1560,7 @@ pub fn implement_src3_for_contract(
                 storage_struct_parameter: None,
                 return_type: None,
                 modifier_calls: vec![],
+                contract: None,
                 body: Some(mint_body),
             }),
             sway::ImplItem::Function(sway::Function {
@@ -1569,6 +1599,7 @@ pub fn implement_src3_for_contract(
                 storage_struct_parameter: None,
                 return_type: None,
                 modifier_calls: vec![],
+                contract: None,
                 body: Some(burn_body),
             }),
         ],
@@ -1816,6 +1847,7 @@ pub fn implement_src5_for_contract(module: Rc<RefCell<ir::Module>>, contract: Rc
                 storage_struct_parameter: None,
                 return_type: Some(sway::TypeName::create_identifier("State")),
                 modifier_calls: vec![],
+                contract: None,
                 body: Some(sway::Block {
                     statements: vec![],
                     final_expr: Some(
@@ -1948,6 +1980,7 @@ pub fn implement_src5_for_contract(module: Rc<RefCell<ir::Module>>, contract: Rc
                 parameters: sway::ParameterList { entries: vec![] },
                 storage_struct_parameter: None,
                 return_type: None,
+                contract: None,
             },
             implementation: Some(sway::Function {
                 attributes: Some(sway::AttributeList {
@@ -1973,6 +2006,7 @@ pub fn implement_src5_for_contract(module: Rc<RefCell<ir::Module>>, contract: Rc
                 storage_struct_parameter: None,
                 return_type: None,
                 modifier_calls: vec![],
+                contract: None,
                 body: Some(sway::Block {
                     statements: vec![sway::Statement::from(sway::Expression::create_function_call(
                         "require",

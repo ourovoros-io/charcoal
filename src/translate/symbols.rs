@@ -528,6 +528,17 @@ pub fn resolve_abi_function_call(
             .borrow()
             .functions
             .iter()
+            .filter(|f| {
+                let sway::TypeName::Function {
+                    contract: Some(contract),
+                    ..
+                } = &f.signature
+                else {
+                    unreachable!()
+                };
+
+                *contract == abi.name
+            })
             .map(|f| {
                 let sway::TypeName::Function {
                     old_name,
@@ -536,6 +547,7 @@ pub fn resolve_abi_function_call(
                     parameters,
                     storage_struct_parameter,
                     return_type,
+                    contract,
                 } = &f.signature
                 else {
                     unreachable!()
@@ -550,6 +562,7 @@ pub fn resolve_abi_function_call(
                     storage_struct_parameter: storage_struct_parameter.as_ref().map(|x| x.as_ref().clone()),
                     return_type: return_type.as_ref().map(|x| x.as_ref().clone()),
                     modifier_calls: vec![],
+                    contract: contract.clone(),
                     body: None,
                 }
             })
@@ -997,6 +1010,7 @@ pub fn resolve_function_call(
                 parameters,
                 storage_struct_parameter,
                 return_type,
+                contract,
                 ..
             } = variable.borrow().type_name.clone()
             else {
@@ -1010,6 +1024,7 @@ pub fn resolve_function_call(
                 parameters: parameters,
                 storage_struct_parameter: storage_struct_parameter,
                 return_type: return_type,
+                contract: contract.clone(),
             });
         }
     }
@@ -1031,6 +1046,7 @@ pub fn resolve_function_call(
                 parameters,
                 storage_struct_parameter,
                 return_type,
+                contract,
                 ..
             } = variable.borrow().type_name.clone()
             else {
@@ -1044,6 +1060,7 @@ pub fn resolve_function_call(
                 parameters: parameters,
                 storage_struct_parameter: storage_struct_parameter,
                 return_type: return_type,
+                contract: contract.clone(),
             });
         }
     }

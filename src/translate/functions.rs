@@ -434,6 +434,7 @@ pub fn translate_function_declaration(
             storage_struct_parameter: storage_struct_parameter.clone(),
             return_type: translate_return_type_name(project, module.clone(), scope.clone(), function_definition)
                 .map(Box::new),
+            contract: contract_name.map(|c| c.to_string()),
         },
     };
 
@@ -508,6 +509,7 @@ pub fn translate_abi_function(
         storage_struct_parameter,
         return_type: translate_return_type_name(project, module.clone(), scope.clone(), function_definition),
         modifier_calls: vec![],
+        contract: Some(contract_name.to_string()),
         body: None,
     };
 
@@ -595,6 +597,12 @@ pub fn translate_function_definition(
         Some(&function_name.top_level_fn_name),
         None,
     )));
+
+    // Add the function parameters to the scope
+    let scope_parameters =
+        scope
+            .borrow_mut()
+            .add_function_parameters(project, module.clone(), function_definition.clone());
 
     // Create the function's storage struct parameter and add it to the scope if necessary
     let mut storage_struct_parameter = None;
@@ -687,6 +695,7 @@ pub fn translate_function_definition(
                 }
             })
             .collect(),
+        contract: contract_name.map(|c| c.to_string()),
         body: None,
     };
 
@@ -694,11 +703,6 @@ pub fn translate_function_definition(
     let Some(solidity::Statement::Block { statements, .. }) = function_definition.body.as_ref() else {
         return Ok((None, None));
     };
-
-    // Add the function parameters to the scope
-    let parameters = scope
-        .borrow_mut()
-        .add_function_parameters(project, module.clone(), function_definition.clone());
 
     // Add the function's named return parameters to the scope
     let return_parameters =
@@ -721,7 +725,7 @@ pub fn translate_function_definition(
     }
 
     // Check for parameters that were mutated and make them local variables
-    for parameter in parameters.iter().rev() {
+    for parameter in scope_parameters.iter().rev() {
         let Some(variable) = scope.borrow().get_variable_from_new_name(&parameter.new_name) else {
             panic!("error: Variable not found in scope: \"{}\"", parameter.new_name);
         };
@@ -1588,6 +1592,7 @@ pub fn ensure_constructor_functions_exist(
         parameters: sway::ParameterList::default(),
         return_type: None,
         modifier_calls: vec![],
+        contract: None,
         body: None,
     };
 
@@ -1668,6 +1673,7 @@ pub fn ensure_constructor_functions_exist(
                 )),
             })),
             return_type: None,
+            contract: Some(contract_name),
         },
         implementation: Some(toplevel_function),
     });
@@ -1817,6 +1823,7 @@ pub fn ensure_storage_struct_constructor_exists(
             format!("{contract_name}Storage").as_str(),
         )),
         modifier_calls: vec![],
+        contract: None,
         body: Some(sway::Block {
             statements: vec![],
             final_expr: Some(sway::Expression::from(constructor)),
@@ -2010,6 +2017,8 @@ fn resolve_modifier_invocation(
                 }
 
                 sway::Expression::Comment(_) => {}
+
+                sway::Expression::Panic(_) => {}
             }
         }
 

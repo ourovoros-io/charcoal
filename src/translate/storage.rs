@@ -488,6 +488,7 @@ pub fn generate_state_variable_getter_functions(
         storage_struct_parameter: None,
         return_type: Some(return_type.clone()),
         modifier_calls: vec![],
+        contract: None,
         body: None,
     };
 
@@ -495,6 +496,7 @@ pub fn generate_state_variable_getter_functions(
     let mut toplevel_function = abi_function.clone();
     toplevel_function.is_public = true;
     toplevel_function.new_name = function_name.top_level_fn_name;
+    toplevel_function.contract = contract_name.map(|c| c.to_string());
 
     if let Some(contract_name) = contract_name.as_ref()
         && state_variable_info.is_storage
