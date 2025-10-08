@@ -72,30 +72,28 @@ impl Project {
     }
 
     /// Resolve the import path based on the remappings of the [Framework]
-    fn resolve_import_path(&self, source_unit_directory: &Path, filename: &str) -> Result<PathBuf, Error> {
+    fn resolve_import_path(&self, source_unit_directory: &Path, filename: &str) -> PathBuf {
         match &self.framework {
             // Remappings in foundry are handled using the same pattern
             Framework::Foundry { remappings, .. } => {
                 for (k, v) in remappings {
                     if filename.starts_with(k) {
                         let project_full_path = self.options.input.join(v);
-                        return Ok(PathBuf::from(
-                            filename.replace(k, project_full_path.to_string_lossy().as_ref()),
-                        ));
+                        return PathBuf::from(filename.replace(k, project_full_path.to_string_lossy().as_ref()));
                     }
                 }
 
-                Ok(source_unit_directory.join(filename))
+                source_unit_directory.join(filename)
             }
 
             // Remappings in hardhat are done using the @ symbol and the node_modules folder
             Framework::Hardhat => {
                 if filename.starts_with('.') {
-                    Ok(source_unit_directory.join(filename))
+                    source_unit_directory.join(filename)
                 } else if filename.starts_with('@') {
-                    Ok(self.options.input.join("node_modules").join(filename))
+                    self.options.input.join("node_modules").join(filename)
                 } else {
-                    Ok(self.options.input.join(filename))
+                    self.options.input.join(filename)
                 }
             }
         }
@@ -165,7 +163,7 @@ impl Project {
             let ast = project.parse_solidity_source_unit(path).cloned().unwrap();
 
             if !import_paths.contains_key(path) {
-                let paths = project.get_import_paths(&ast, path).unwrap();
+                let paths = project.get_import_paths(&ast, path);
 
                 import_paths.insert(path.into(), paths.clone());
 
@@ -232,7 +230,7 @@ impl Project {
         (!imports.is_empty()).then_some(imports)
     }
 
-    fn get_import_paths(&mut self, ast: &solidity::SourceUnit, source_unit_path: &Path) -> Result<Vec<PathBuf>, Error> {
+    fn get_import_paths(&mut self, ast: &solidity::SourceUnit, source_unit_path: &Path) -> Vec<PathBuf> {
         let mut import_paths = Vec::new();
         if let Some(import_directives) = Self::get_contract_imports(ast) {
             for import_directive in &import_directives {
@@ -252,39 +250,41 @@ impl Project {
 
                 // If we have detected a framework we need to resolve the path based on the remappings if found
                 import_path = self
-                    .resolve_import_path(source_unit_path.parent().unwrap(), &import_path)?
+                    .resolve_import_path(source_unit_path.parent().unwrap(), &import_path)
                     .to_str()
                     .unwrap()
                     .to_string();
 
                 // Normalize the import path
-                let import_path = wrapped_err!(std::fs::canonicalize(import_path))?;
+                let Ok(import_path) = std::fs::canonicalize(&import_path) else {
+                    panic!("Failed to canonicalize import path: {}", import_path)
+                };
 
                 import_paths.push(import_path);
             }
         }
-        Ok(import_paths)
+
+        import_paths
     }
 
-    pub fn canonicalize_import_path(&self, source_unit_directory: &Path, path_string: &str) -> Result<PathBuf, Error> {
+    pub fn canonicalize_import_path(&self, source_unit_directory: &Path, path_string: &str) -> PathBuf {
         let mut import_path = PathBuf::from(path_string);
 
         if !import_path.to_string_lossy().starts_with('.') {
-            import_path = self.resolve_import_path(source_unit_directory, path_string).unwrap();
+            import_path = self.resolve_import_path(source_unit_directory, path_string);
         } else {
             import_path = source_unit_directory.join(import_path);
         }
 
-        import_path = wrapped_err!(import_path.canonicalize()).unwrap();
+        let Ok(import_path) = import_path.canonicalize() else {
+            panic!("failed to canonicalize import path: {}", import_path.display());
+        };
 
         if !import_path.exists() {
-            return Err(Error::Wrapped(Box::new(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                format!("File not found: {}", import_path.to_string_lossy()),
-            ))));
+            panic!("File not found: {}", import_path.to_string_lossy());
         }
 
-        Ok(import_path)
+        import_path
     }
 
     /// Attempts to parse the file from the supplied `path`.

@@ -19,7 +19,7 @@ pub fn translate_import_directives(
                         .canonicalize_import_path(
                             &project.options.input.join(module.borrow().path.parent().unwrap()),
                             &filename.string,
-                        )?
+                        )
                         .to_string_lossy()
                         .to_string()
                         .trim_start_matches(&project.options.input.to_string_lossy().to_string()),

@@ -716,9 +716,9 @@ pub fn create_value_expression(
         sway::TypeName::StringArray { length } => sway::Expression::create_function_call(
             "__to_str_array",
             None,
-            vec![sway::Expression::Literal(sway::Literal::String(
-                (0..*length).map(|_| " ").collect(),
-            ))],
+            vec![sway::Expression::create_string_literal(
+                &(0..*length).map(|_| " ").collect::<String>(),
+            )],
         ),
 
         sway::TypeName::Function { .. } => sway::Expression::create_todo(Some(type_name.to_string())),

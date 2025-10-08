@@ -23,7 +23,7 @@ pub fn translate_literal_expression(
         solidity::Expression::HexNumberLiteral(_, value, _) | solidity::Expression::AddressLiteral(_, value) => {
             Ok(sway::Expression::from(sway::Literal::HexInt(
                 BigUint::from_str_radix(value.trim_start_matches("0x"), 16).unwrap(),
-                None,
+                Some("u256".to_string()),
             )))
         }
 
@@ -41,9 +41,9 @@ pub fn translate_literal_expression(
             None,
         ))),
 
-        solidity::Expression::StringLiteral(value) => Ok(sway::Expression::from(sway::Literal::String(
-            value.iter().map(|s| s.string.clone()).collect::<Vec<_>>().join(""),
-        ))),
+        solidity::Expression::StringLiteral(value) => Ok(sway::Expression::create_string_literal(
+            &value.iter().map(|s| s.string.clone()).collect::<Vec<_>>().join(""),
+        )),
 
         _ => panic!("Expected literal expression, found {expression} - {expression:#?}"),
     }

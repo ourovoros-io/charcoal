@@ -162,9 +162,9 @@ pub fn translate_revert_statement(
                     sway::Statement::from(sway::Expression::create_function_call(
                         "log",
                         None,
-                        vec![sway::Expression::from(sway::Literal::String(
-                            reason.iter().map(|s| s.string.clone()).collect::<String>(),
-                        ))],
+                        vec![sway::Expression::create_string_literal(
+                            &reason.iter().map(|s| s.string.clone()).collect::<String>(),
+                        )],
                     )),
                     // 2. revert(0)
                     sway::Statement::from(sway::Expression::create_function_call(

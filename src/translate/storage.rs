@@ -214,7 +214,7 @@ pub fn translate_state_variable(
         value = Some(sway::Expression::create_function_call(
             "__to_str_array",
             None,
-            vec![sway::Expression::from(sway::Literal::String(string))],
+            vec![sway::Expression::create_string_literal(&string)],
         ));
     }
 

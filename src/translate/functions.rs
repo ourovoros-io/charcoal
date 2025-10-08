@@ -856,9 +856,41 @@ pub fn translate_function_definition(
             .collect::<Result<Vec<_>, _>>()?;
 
         // Check to see if base is a constructor call
-        if project.is_contract_declared(module.clone(), old_name.as_str()) {
+        if let Some(external_module) = project.find_module_containing_contract(module.clone(), old_name.as_str()) {
             let prefix = translate_naming_convention(old_name.as_str(), Case::Snake);
             let name = format!("{prefix}_constructor");
+
+            if let Some(storage_struct_parameter) = function_declaration.storage_struct_parameter.as_ref() {
+                if let Some(function) = external_module.borrow().functions.iter().find(|f| {
+                    let sway::TypeName::Function { new_name, .. } = &f.signature else {
+                        return false;
+                    };
+
+                    *new_name == name
+                }) {
+                    let sway::TypeName::Function {
+                        storage_struct_parameter: external_storage_struct_parameter,
+                        ..
+                    } = &function.signature
+                    else {
+                        unreachable!();
+                    };
+
+                    if let Some(external_storage_struct_parameter) = external_storage_struct_parameter.as_ref() {
+                        parameters.push(
+                            coerce_expression(
+                                project,
+                                module.clone(),
+                                scope.clone(),
+                                &sway::Expression::create_identifier("storage_struct"),
+                                storage_struct_parameter.type_name.as_ref().unwrap(),
+                                external_storage_struct_parameter.type_name.as_ref().unwrap(),
+                            )
+                            .unwrap(),
+                        );
+                    }
+                }
+            }
 
             constructor_calls.push(sway::FunctionCall {
                 function: sway::Expression::create_identifier(name.as_str()),
@@ -1750,12 +1782,15 @@ pub fn update_constructor_function_body(
                         .with_member(constructor_called_field_name.as_str())
                         .with_read_call(),
                 }),
-                sway::Expression::from(sway::Literal::String(format!(
-                    "The {} constructor has already been called",
-                    contract_name
-                        .map(|s| s.to_string())
-                        .unwrap_or_else(|| module.borrow().name.clone()),
-                ))),
+                sway::Expression::create_string_literal(
+                    format!(
+                        "The {} constructor has already been called",
+                        contract_name
+                            .map(|s| s.to_string())
+                            .unwrap_or_else(|| module.borrow().name.clone()),
+                    )
+                    .as_str(),
+                ),
             ],
         )),
     );

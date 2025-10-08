@@ -1065,6 +1065,8 @@ fn get_path_expr_function_call_type(
             }
         }
 
+        "revert_with_log" => return Ok(Some(sway::TypeName::create_identifier("todo!"))),
+
         "Secp256k1::from" if generic_parameters.is_none() => {
             return Ok(Some(sway::TypeName::create_identifier("Secp256k1")));
         }

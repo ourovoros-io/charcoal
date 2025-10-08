@@ -2357,11 +2357,17 @@ impl Expression {
 
     #[inline(always)]
     pub fn create_todo(msg: Option<String>) -> Expression {
-        Expression::Panic(if let Some(msg) = msg {
-            format!("TODO: {}", msg.replace('\\', "\\\\").replace('\"', "\\\""))
-        } else {
-            "TODO".to_string()
-        })
+        Expression::create_function_call(
+            "revert_with_log",
+            None,
+            vec![if let Some(msg) = msg {
+                Expression::create_string_literal(
+                    format!("TODO: {}", msg.replace('\\', "\\\\").replace('\"', "\\\"")).as_str(),
+                )
+            } else {
+                Expression::create_string_literal("TODO")
+            }],
+        )
     }
 
     #[inline(always)]
@@ -2370,7 +2376,7 @@ impl Expression {
             "unimplemented!",
             None,
             if let Some(msg) = msg {
-                vec![Expression::Literal(Literal::String(msg))]
+                vec![Expression::create_string_literal(&msg)]
             } else {
                 vec![]
             },
@@ -2400,7 +2406,13 @@ impl Expression {
 
     #[inline(always)]
     pub fn create_string_literal(value: &str) -> Expression {
-        Expression::from(Literal::String(value.to_string()))
+        Expression::from(Literal::String(
+            value
+                .replace("\\", "\\\\")
+                .replace("\n", "\\n")
+                .replace("\"", "\\\"")
+                .to_string(),
+        ))
     }
 
     #[inline(always)]

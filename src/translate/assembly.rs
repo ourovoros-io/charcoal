@@ -515,8 +515,16 @@ pub fn translate_yul_function_call_expression(
 
             Ok(sway::Expression::from(sway::BinaryExpression {
                 operator: "+".into(),
-                lhs: parameters[0].clone(),
-                rhs: parameters[1].clone(),
+                lhs: if let sway::Expression::BinaryExpression(_) = &parameters[0] {
+                    sway::Expression::Tuple(vec![parameters[0].clone()])
+                } else {
+                    parameters[0].clone()
+                },
+                rhs: if let sway::Expression::BinaryExpression(_) = &parameters[0] {
+                    sway::Expression::Tuple(vec![parameters[1].clone()])
+                } else {
+                    parameters[1].clone()
+                },
             }))
         }
 
@@ -532,8 +540,16 @@ pub fn translate_yul_function_call_expression(
 
             Ok(sway::Expression::from(sway::BinaryExpression {
                 operator: "*".into(),
-                lhs: parameters[0].clone(),
-                rhs: parameters[1].clone(),
+                lhs: if let sway::Expression::BinaryExpression(_) = &parameters[0] {
+                    sway::Expression::Tuple(vec![parameters[0].clone()])
+                } else {
+                    parameters[0].clone()
+                },
+                rhs: if let sway::Expression::BinaryExpression(_) = &parameters[0] {
+                    sway::Expression::Tuple(vec![parameters[1].clone()])
+                } else {
+                    parameters[1].clone()
+                },
             }))
         }
 
@@ -549,8 +565,16 @@ pub fn translate_yul_function_call_expression(
 
             Ok(sway::Expression::from(sway::BinaryExpression {
                 operator: "-".into(),
-                lhs: parameters[0].clone(),
-                rhs: parameters[1].clone(),
+                lhs: if let sway::Expression::BinaryExpression(_) = &parameters[0] {
+                    sway::Expression::Tuple(vec![parameters[0].clone()])
+                } else {
+                    parameters[0].clone()
+                },
+                rhs: if let sway::Expression::BinaryExpression(_) = &parameters[0] {
+                    sway::Expression::Tuple(vec![parameters[1].clone()])
+                } else {
+                    parameters[1].clone()
+                },
             }))
         }
 
@@ -566,8 +590,16 @@ pub fn translate_yul_function_call_expression(
 
             Ok(sway::Expression::from(sway::BinaryExpression {
                 operator: "/".into(),
-                lhs: parameters[0].clone(),
-                rhs: parameters[1].clone(),
+                lhs: if let sway::Expression::BinaryExpression(_) = &parameters[0] {
+                    sway::Expression::Tuple(vec![parameters[0].clone()])
+                } else {
+                    parameters[0].clone()
+                },
+                rhs: if let sway::Expression::BinaryExpression(_) = &parameters[0] {
+                    sway::Expression::Tuple(vec![parameters[1].clone()])
+                } else {
+                    parameters[1].clone()
+                },
             }))
         }
 
@@ -583,8 +615,16 @@ pub fn translate_yul_function_call_expression(
 
             Ok(sway::Expression::from(sway::BinaryExpression {
                 operator: "/".into(),
-                lhs: parameters[0].clone(),
-                rhs: parameters[1].clone(),
+                lhs: if let sway::Expression::BinaryExpression(_) = &parameters[0] {
+                    sway::Expression::Tuple(vec![parameters[0].clone()])
+                } else {
+                    parameters[0].clone()
+                },
+                rhs: if let sway::Expression::BinaryExpression(_) = &parameters[0] {
+                    sway::Expression::Tuple(vec![parameters[1].clone()])
+                } else {
+                    parameters[1].clone()
+                },
             }))
         }
 
@@ -600,8 +640,16 @@ pub fn translate_yul_function_call_expression(
 
             Ok(sway::Expression::from(sway::BinaryExpression {
                 operator: "%".into(),
-                lhs: parameters[0].clone(),
-                rhs: parameters[1].clone(),
+                lhs: if let sway::Expression::BinaryExpression(_) = &parameters[0] {
+                    sway::Expression::Tuple(vec![parameters[0].clone()])
+                } else {
+                    parameters[0].clone()
+                },
+                rhs: if let sway::Expression::BinaryExpression(_) = &parameters[0] {
+                    sway::Expression::Tuple(vec![parameters[1].clone()])
+                } else {
+                    parameters[1].clone()
+                },
             }))
         }
 
@@ -617,8 +665,16 @@ pub fn translate_yul_function_call_expression(
 
             Ok(sway::Expression::from(sway::BinaryExpression {
                 operator: "%".into(),
-                lhs: parameters[0].clone(),
-                rhs: parameters[1].clone(),
+                lhs: if let sway::Expression::BinaryExpression(_) = &parameters[0] {
+                    sway::Expression::Tuple(vec![parameters[0].clone()])
+                } else {
+                    parameters[0].clone()
+                },
+                rhs: if let sway::Expression::BinaryExpression(_) = &parameters[0] {
+                    sway::Expression::Tuple(vec![parameters[1].clone()])
+                } else {
+                    parameters[1].clone()
+                },
             }))
         }
 
@@ -669,8 +725,16 @@ pub fn translate_yul_function_call_expression(
 
             Ok(sway::Expression::from(sway::BinaryExpression {
                 operator: "<".into(),
-                lhs: parameters[0].clone(),
-                rhs: parameters[1].clone(),
+                lhs: if let sway::Expression::BinaryExpression(_) = &parameters[0] {
+                    sway::Expression::Tuple(vec![parameters[0].clone()])
+                } else {
+                    parameters[0].clone()
+                },
+                rhs: if let sway::Expression::BinaryExpression(_) = &parameters[0] {
+                    sway::Expression::Tuple(vec![parameters[1].clone()])
+                } else {
+                    parameters[1].clone()
+                },
             }))
         }
 
@@ -686,8 +750,16 @@ pub fn translate_yul_function_call_expression(
 
             Ok(sway::Expression::from(sway::BinaryExpression {
                 operator: ">".into(),
-                lhs: parameters[0].clone(),
-                rhs: parameters[1].clone(),
+                lhs: if let sway::Expression::BinaryExpression(_) = &parameters[0] {
+                    sway::Expression::Tuple(vec![parameters[0].clone()])
+                } else {
+                    parameters[0].clone()
+                },
+                rhs: if let sway::Expression::BinaryExpression(_) = &parameters[0] {
+                    sway::Expression::Tuple(vec![parameters[1].clone()])
+                } else {
+                    parameters[1].clone()
+                },
             }))
         }
 
@@ -703,8 +775,16 @@ pub fn translate_yul_function_call_expression(
 
             Ok(sway::Expression::from(sway::BinaryExpression {
                 operator: "<".into(),
-                lhs: parameters[0].clone(),
-                rhs: parameters[1].clone(),
+                lhs: if let sway::Expression::BinaryExpression(_) = &parameters[0] {
+                    sway::Expression::Tuple(vec![parameters[0].clone()])
+                } else {
+                    parameters[0].clone()
+                },
+                rhs: if let sway::Expression::BinaryExpression(_) = &parameters[0] {
+                    sway::Expression::Tuple(vec![parameters[1].clone()])
+                } else {
+                    parameters[1].clone()
+                },
             }))
         }
 
@@ -720,8 +800,16 @@ pub fn translate_yul_function_call_expression(
 
             Ok(sway::Expression::from(sway::BinaryExpression {
                 operator: ">".into(),
-                lhs: parameters[0].clone(),
-                rhs: parameters[1].clone(),
+                lhs: if let sway::Expression::BinaryExpression(_) = &parameters[0] {
+                    sway::Expression::Tuple(vec![parameters[0].clone()])
+                } else {
+                    parameters[0].clone()
+                },
+                rhs: if let sway::Expression::BinaryExpression(_) = &parameters[0] {
+                    sway::Expression::Tuple(vec![parameters[1].clone()])
+                } else {
+                    parameters[1].clone()
+                },
             }))
         }
 
@@ -737,8 +825,16 @@ pub fn translate_yul_function_call_expression(
 
             Ok(sway::Expression::from(sway::BinaryExpression {
                 operator: "==".into(),
-                lhs: parameters[0].clone(),
-                rhs: parameters[1].clone(),
+                lhs: if let sway::Expression::BinaryExpression(_) = &parameters[0] {
+                    sway::Expression::Tuple(vec![parameters[0].clone()])
+                } else {
+                    parameters[0].clone()
+                },
+                rhs: if let sway::Expression::BinaryExpression(_) = &parameters[0] {
+                    sway::Expression::Tuple(vec![parameters[1].clone()])
+                } else {
+                    parameters[1].clone()
+                },
             }))
         }
 
@@ -776,8 +872,16 @@ pub fn translate_yul_function_call_expression(
 
             Ok(sway::Expression::from(sway::BinaryExpression {
                 operator: "&".into(),
-                lhs: parameters[0].clone(),
-                rhs: parameters[1].clone(),
+                lhs: if let sway::Expression::BinaryExpression(_) = &parameters[0] {
+                    sway::Expression::Tuple(vec![parameters[0].clone()])
+                } else {
+                    parameters[0].clone()
+                },
+                rhs: if let sway::Expression::BinaryExpression(_) = &parameters[0] {
+                    sway::Expression::Tuple(vec![parameters[1].clone()])
+                } else {
+                    parameters[1].clone()
+                },
             }))
         }
 
@@ -793,8 +897,16 @@ pub fn translate_yul_function_call_expression(
 
             Ok(sway::Expression::from(sway::BinaryExpression {
                 operator: "|".into(),
-                lhs: parameters[0].clone(),
-                rhs: parameters[1].clone(),
+                lhs: if let sway::Expression::BinaryExpression(_) = &parameters[0] {
+                    sway::Expression::Tuple(vec![parameters[0].clone()])
+                } else {
+                    parameters[0].clone()
+                },
+                rhs: if let sway::Expression::BinaryExpression(_) = &parameters[0] {
+                    sway::Expression::Tuple(vec![parameters[1].clone()])
+                } else {
+                    parameters[1].clone()
+                },
             }))
         }
 
@@ -810,8 +922,16 @@ pub fn translate_yul_function_call_expression(
 
             Ok(sway::Expression::from(sway::BinaryExpression {
                 operator: "^".into(),
-                lhs: parameters[0].clone(),
-                rhs: parameters[1].clone(),
+                lhs: if let sway::Expression::BinaryExpression(_) = &parameters[0] {
+                    sway::Expression::Tuple(vec![parameters[0].clone()])
+                } else {
+                    parameters[0].clone()
+                },
+                rhs: if let sway::Expression::BinaryExpression(_) = &parameters[0] {
+                    sway::Expression::Tuple(vec![parameters[1].clone()])
+                } else {
+                    parameters[1].clone()
+                },
             }))
         }
 
@@ -832,8 +952,16 @@ pub fn translate_yul_function_call_expression(
 
             Ok(sway::Expression::from(sway::BinaryExpression {
                 operator: "<<".into(),
-                lhs: parameters[1].clone(),
-                rhs: parameters[0].clone(),
+                lhs: if let sway::Expression::BinaryExpression(_) = &parameters[0] {
+                    sway::Expression::Tuple(vec![parameters[0].clone()])
+                } else {
+                    parameters[0].clone()
+                },
+                rhs: if let sway::Expression::BinaryExpression(_) = &parameters[0] {
+                    sway::Expression::Tuple(vec![parameters[1].clone()])
+                } else {
+                    parameters[1].clone()
+                },
             }))
         }
 
@@ -849,8 +977,16 @@ pub fn translate_yul_function_call_expression(
 
             Ok(sway::Expression::from(sway::BinaryExpression {
                 operator: ">>".into(),
-                lhs: parameters[1].clone(),
-                rhs: parameters[0].clone(),
+                lhs: if let sway::Expression::BinaryExpression(_) = &parameters[0] {
+                    sway::Expression::Tuple(vec![parameters[0].clone()])
+                } else {
+                    parameters[0].clone()
+                },
+                rhs: if let sway::Expression::BinaryExpression(_) = &parameters[0] {
+                    sway::Expression::Tuple(vec![parameters[1].clone()])
+                } else {
+                    parameters[1].clone()
+                },
             }))
         }
 
@@ -866,8 +1002,16 @@ pub fn translate_yul_function_call_expression(
 
             Ok(sway::Expression::from(sway::BinaryExpression {
                 operator: ">>".into(),
-                lhs: parameters[1].clone(),
-                rhs: parameters[0].clone(),
+                lhs: if let sway::Expression::BinaryExpression(_) = &parameters[0] {
+                    sway::Expression::Tuple(vec![parameters[0].clone()])
+                } else {
+                    parameters[0].clone()
+                },
+                rhs: if let sway::Expression::BinaryExpression(_) = &parameters[0] {
+                    sway::Expression::Tuple(vec![parameters[1].clone()])
+                } else {
+                    parameters[1].clone()
+                },
             }))
         }
 
@@ -885,8 +1029,16 @@ pub fn translate_yul_function_call_expression(
                 operator: "%".into(),
                 lhs: sway::Expression::Tuple(vec![sway::Expression::from(sway::BinaryExpression {
                     operator: "+".into(),
-                    lhs: parameters[0].clone(),
-                    rhs: parameters[1].clone(),
+                    lhs: if let sway::Expression::BinaryExpression(_) = &parameters[0] {
+                        sway::Expression::Tuple(vec![parameters[0].clone()])
+                    } else {
+                        parameters[0].clone()
+                    },
+                    rhs: if let sway::Expression::BinaryExpression(_) = &parameters[0] {
+                        sway::Expression::Tuple(vec![parameters[1].clone()])
+                    } else {
+                        parameters[1].clone()
+                    },
                 })]),
                 rhs: parameters[2].clone(),
             }))
@@ -906,8 +1058,16 @@ pub fn translate_yul_function_call_expression(
                 operator: "%".into(),
                 lhs: sway::Expression::Tuple(vec![sway::Expression::from(sway::BinaryExpression {
                     operator: "*".into(),
-                    lhs: parameters[0].clone(),
-                    rhs: parameters[1].clone(),
+                    lhs: if let sway::Expression::BinaryExpression(_) = &parameters[0] {
+                        sway::Expression::Tuple(vec![parameters[0].clone()])
+                    } else {
+                        parameters[0].clone()
+                    },
+                    rhs: if let sway::Expression::BinaryExpression(_) = &parameters[0] {
+                        sway::Expression::Tuple(vec![parameters[1].clone()])
+                    } else {
+                        parameters[1].clone()
+                    },
                 })]),
                 rhs: parameters[2].clone(),
             }))

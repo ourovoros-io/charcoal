@@ -560,10 +560,9 @@ fn translate_builtin_function_call(
             // require(x, "msg") => require(x, "msg")
 
             if parameters.len() == 1 {
-                parameters.push(sway::Expression::from(sway::Literal::String(format!(
-                    "Requirement failed: {}",
-                    sway::TabbedDisplayer(&parameters[0])
-                ))));
+                parameters.push(sway::Expression::create_string_literal(
+                    format!("Requirement failed: {}", sway::TabbedDisplayer(&parameters[0])).as_str(),
+                ));
             }
 
             if parameters.len() != 2 {
