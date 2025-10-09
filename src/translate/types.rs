@@ -303,8 +303,13 @@ pub fn translate_type_name(
                             type_name
                         },
                         {
-                            let mut type_name =
-                                translate_type_name(project, module, scope.clone(), value.as_ref(), storage_location);
+                            let mut type_name = translate_type_name(
+                                project,
+                                module.clone(),
+                                scope.clone(),
+                                value.as_ref(),
+                                storage_location,
+                            );
                             if let Some(storage_key_type) = type_name.storage_key_type() {
                                 type_name = storage_key_type;
                             }
@@ -441,28 +446,33 @@ pub fn translate_type_name(
                         // Ensure that `std::vec::*` is imported
                         module.borrow_mut().ensure_use_declared("std::vec::*");
 
-                        translate_type_name(project, module, scope.clone(), type_name, None).to_vec()
+                        translate_type_name(project, module.clone(), scope.clone(), type_name, None).to_vec()
                     }
 
                     solidity::StorageLocation::Storage(_) => {
                         // Ensure that `std::storage::storage_vec::*` is imported
                         module.borrow_mut().ensure_use_declared("std::storage::storage_vec::*");
 
-                        let mut type_name =
-                            translate_type_name(project, module, scope.clone(), type_name, Some(storage_location));
+                        let mut type_name = translate_type_name(
+                            project,
+                            module.clone(),
+                            scope.clone(),
+                            type_name,
+                            Some(storage_location),
+                        );
 
                         if let Some(storage_key_type) = type_name.storage_key_type() {
                             type_name = storage_key_type;
                         }
 
-                        type_name.to_storage_vec()
+                        type_name.to_storage_vec(module.clone())
                     }
 
                     solidity::StorageLocation::Calldata(_) => {
                         // Ensure that `std::vec::*` is imported
                         module.borrow_mut().ensure_use_declared("std::vec::*");
 
-                        translate_type_name(project, module, scope.clone(), type_name, None).to_vec()
+                        translate_type_name(project, module.clone(), scope.clone(), type_name, None).to_vec()
                     }
                 },
 
@@ -470,7 +480,7 @@ pub fn translate_type_name(
                     // Ensure that `std::vec::*` is imported
                     module.borrow_mut().ensure_use_declared("std::vec::*");
 
-                    translate_type_name(project, module, scope.clone(), type_name, None).to_vec()
+                    translate_type_name(project, module.clone(), scope.clone(), type_name, None).to_vec()
                 }
             },
         },
@@ -514,7 +524,7 @@ pub fn translate_type_name(
 
             solidity::StorageLocation::Storage(_) => {
                 // Wrap storage pointer types in a `StorageKey<T>`
-                type_name = type_name.to_storage_key();
+                type_name = type_name.to_storage_key(module.clone());
             }
 
             solidity::StorageLocation::Calldata(_) => {

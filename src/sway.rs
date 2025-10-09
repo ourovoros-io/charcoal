@@ -1,6 +1,8 @@
 use num_bigint::BigUint;
 use std::{cell::RefCell, fmt::Display, rc::Rc};
 
+use crate::ir;
+
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 pub trait TabbedDisplay {
@@ -763,7 +765,7 @@ impl TypeName {
     }
 
     #[inline(always)]
-    pub fn to_storage_key(&self) -> TypeName {
+    pub fn to_storage_key(&self, module: Rc<RefCell<ir::Module>>) -> TypeName {
         if self.is_storage_key() {
             return self.clone();
         }
@@ -773,11 +775,19 @@ impl TypeName {
             generic_parameters: Some(GenericParameterList {
                 entries: vec![GenericParameter {
                     type_name: if self.is_string_slice() {
+                        module
+                            .borrow_mut()
+                            .ensure_use_declared("std::storage::storage_string::*");
+
                         TypeName::create_identifier("StorageString")
                     } else if self.is_bytes() {
+                        module
+                            .borrow_mut()
+                            .ensure_use_declared("std::storage::storage_bytes::*");
+
                         TypeName::create_identifier("StorageBytes")
                     } else if let Some(vec_type) = self.vec_type() {
-                        vec_type.to_storage_vec()
+                        vec_type.to_storage_vec(module.clone())
                     } else if let Some(storage_key_type) = self.storage_key_type() {
                         storage_key_type
                     } else {
@@ -839,17 +849,25 @@ impl TypeName {
     }
 
     #[inline(always)]
-    pub fn to_storage_vec(&self) -> TypeName {
+    pub fn to_storage_vec(&self, module: Rc<RefCell<ir::Module>>) -> TypeName {
         TypeName::Identifier {
             name: "StorageVec".to_string(),
             generic_parameters: Some(GenericParameterList {
                 entries: vec![GenericParameter {
                     type_name: if self.is_string_slice() {
+                        module
+                            .borrow_mut()
+                            .ensure_use_declared("std::storage::storage_string::*");
+
                         TypeName::create_identifier("StorageString")
                     } else if self.is_bytes() {
+                        module
+                            .borrow_mut()
+                            .ensure_use_declared("std::storage::storage_bytes::*");
+
                         TypeName::create_identifier("StorageBytes")
                     } else if let Some(vec_type) = self.vec_type() {
-                        vec_type.to_storage_vec()
+                        vec_type.to_storage_vec(module.clone())
                     } else if let Some(storage_key_type) = self.storage_key_type() {
                         storage_key_type
                     } else {
@@ -1106,15 +1124,15 @@ impl TypeName {
     }
 
     /// Gets a storage-compatible version of the type name
-    pub fn to_storage_compatible_type(self) -> TypeName {
+    pub fn to_storage_compatible_type(self, module: Rc<RefCell<ir::Module>>) -> TypeName {
         if let Some(mut vec_type) = self.vec_type() {
-            vec_type = vec_type.to_storage_compatible_type();
+            vec_type = vec_type.to_storage_compatible_type(module.clone());
 
             return TypeName::Identifier {
                 name: "StorageKey".to_string(),
                 generic_parameters: Some(GenericParameterList {
                     entries: vec![GenericParameter {
-                        type_name: vec_type.to_storage_vec(),
+                        type_name: vec_type.to_storage_vec(module.clone()),
                         implements: None,
                     }],
                 }),
@@ -1122,6 +1140,9 @@ impl TypeName {
         }
 
         if self.is_bytes() {
+            module
+                .borrow_mut()
+                .ensure_use_declared("std::storage::storage_bytes::*");
             return TypeName::Identifier {
                 name: "StorageKey".to_string(),
                 generic_parameters: Some(GenericParameterList {
@@ -1137,6 +1158,10 @@ impl TypeName {
         }
 
         if self.is_string() {
+            module
+                .borrow_mut()
+                .ensure_use_declared("std::storage::storage_string::*");
+
             return TypeName::Identifier {
                 name: "StorageKey".to_string(),
                 generic_parameters: Some(GenericParameterList {

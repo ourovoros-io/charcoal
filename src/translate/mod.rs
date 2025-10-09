@@ -345,24 +345,12 @@ fn get_path_expr_type(
         path_expr: &sway::PathExpr,
     ) -> Option<sway::TypeName> {
         // Check if the identifier is a translated enum variant
-        if let sway::PathExprRoot::Identifier(path_root) = &path_expr.root
-            && path_expr.segments.len() == 1
-            && path_expr.segments[0].generic_parameters.is_none()
+        if let Some(variant_name) = path_expr.as_identifier()
+            && let Some((enum_name, _)) = variant_name.split_once("__")
+            && let Some(enum_definition) = project.find_enum(module.clone(), &enum_name)
+            && enum_definition.constants.iter().any(|i| i.name == *variant_name)
         {
-            let enum_name = path_root;
-            let variant_name = &path_expr.segments[0].name;
-
-            if let Some(enum_definition) = project.find_enum(module.clone(), &enum_name)
-                && enum_definition.variants_impl.items.iter().any(|i| {
-                    let sway::ImplItem::Constant(variant) = i else {
-                        return false;
-                    };
-
-                    variant.name == *variant_name
-                })
-            {
-                return Some(sway::TypeName::create_identifier(enum_name));
-            }
+            return Some(sway::TypeName::create_identifier(enum_name));
         }
 
         let Some(name) = path_expr.as_identifier() else {
@@ -677,7 +665,7 @@ fn get_member_access_type(
                 storage_namespace_name,
                 member_access.member.as_str(),
             )? {
-                return Ok(type_name.to_storage_key());
+                return Ok(type_name.to_storage_key(module.clone()));
             }
 
             panic!(
@@ -688,21 +676,6 @@ fn get_member_access_type(
     }
 
     let container_type = get_expression_type(project, module.clone(), scope.clone(), &member_access.expression)?;
-
-    // Check if field is a signed integer
-    if let Some(bits) = container_type.int_bits() {
-        if member_access.member.as_str() == "underlying" {
-            return Ok(sway::TypeName::create_identifier(match bits {
-                8 => "u8",
-                16 => "u16",
-                32 => "u32",
-                64 => "u64",
-                128 => "U128",
-                256 => "u256",
-                _ => unimplemented!("I{bits}"),
-            }));
-        }
-    }
 
     // Check if container is a struct
     if let sway::TypeName::Identifier {
@@ -1977,7 +1950,7 @@ fn get_member_access_function_call_type(
 
                             ("StorageMap", Some(generic_parameters)) if generic_parameters.entries.len() == 2 => {
                                 match member_access.member.as_str() {
-                                    "get" => Ok(generic_parameters.entries[1].type_name.to_storage_key()),
+                                    "get" => Ok(generic_parameters.entries[1].type_name.to_storage_key(module.clone())),
 
                                     "insert" => Ok(sway::TypeName::create_tuple(vec![])),
 
@@ -2017,15 +1990,24 @@ fn get_member_access_function_call_type(
                                 match member_access.member.as_str() {
                                     "fill" => Ok(sway::TypeName::create_tuple(vec![])),
 
-                                    "first" => Ok(generic_parameters.entries[0].type_name.to_storage_key().to_option()),
+                                    "first" => Ok(generic_parameters.entries[0]
+                                        .type_name
+                                        .to_storage_key(module.clone())
+                                        .to_option()),
 
-                                    "get" => Ok(generic_parameters.entries[0].type_name.to_storage_key().to_option()),
+                                    "get" => Ok(generic_parameters.entries[0]
+                                        .type_name
+                                        .to_storage_key(module.clone())
+                                        .to_option()),
 
                                     "insert" => Ok(sway::TypeName::create_tuple(vec![])),
 
                                     "is_empty" => Ok(sway::TypeName::create_identifier("bool")),
 
-                                    "last" => Ok(generic_parameters.entries[0].type_name.to_storage_key().to_option()),
+                                    "last" => Ok(generic_parameters.entries[0]
+                                        .type_name
+                                        .to_storage_key(module.clone())
+                                        .to_option()),
 
                                     "len" => Ok(sway::TypeName::create_identifier("u64")),
 
@@ -2073,7 +2055,9 @@ fn get_member_access_function_call_type(
 
             ("StorageMap", Some(generic_parameters)) if generic_parameters.entries.len() == 2 => {
                 match member_access.member.as_str() {
-                    "get" if parameters.len() == 1 => Ok(generic_parameters.entries[1].type_name.to_storage_key()),
+                    "get" if parameters.len() == 1 => {
+                        Ok(generic_parameters.entries[1].type_name.to_storage_key(module.clone()))
+                    }
 
                     _ => todo!(
                         "get type of function call expression: {}",

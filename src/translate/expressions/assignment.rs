@@ -428,6 +428,17 @@ pub fn create_assignment_expression(
                 rhs_type_name,
                 &container_storage_key_type,
             ) {
+                if container_storage_key_type.is_storage_string() || container_storage_key_type.is_storage_bytes() {
+                    return Ok(container.with_write_slice_call(match operator {
+                        "=" => value,
+
+                        _ => sway::Expression::from(sway::BinaryExpression {
+                            operator: operator.trim_end_matches("=").to_string(),
+                            lhs: container.with_read_slice_call(),
+                            rhs: value,
+                        }),
+                    }));
+                }
                 return Ok(container.with_write_call(match operator {
                     "=" => value,
 

@@ -671,7 +671,7 @@ fn coerce_broken_types(context: &mut CoerceContext) -> Option<sway::Expression> 
 
     // HACK: Check for `String` to `StorageString` coercions
     if context.from_type_name.is_string() && context.to_type_name.is_storage_string() {
-        return Some(context.expression.with_as_str_call());
+        return Some(context.expression.clone());
     }
 
     // HACK: Check for `str` to `Option<StorageKey<StorageString>>` coercions
@@ -1025,20 +1025,15 @@ fn coerce_to_integer_types(context: &mut CoerceContext) -> Option<sway::Expressi
             expression = sway::Expression::create_function_call(
                 format!("u{rhs_bits}::try_from").as_str(),
                 None,
-                vec![sway::Expression::from(sway::MemberAccess {
-                    expression: expression.clone(),
-                    member: "underlying".to_string(),
-                })],
+                vec![expression.with_function_call("underlying", None, vec![])],
             )
             .with_unwrap_call();
         } else if lhs_bits < rhs_bits {
-            expression = expression.with_member("underlying").with_function_call(
-                format!("as_u{rhs_bits}").as_str(),
-                None,
-                vec![],
-            );
+            expression = expression
+                .with_function_call("underlying", None, vec![])
+                .with_function_call(format!("as_u{rhs_bits}").as_str(), None, vec![]);
         } else {
-            expression = expression.with_member("underlying");
+            expression = expression.with_function_call("underlying", None, vec![]);
         }
 
         return Some(expression);

@@ -13,7 +13,7 @@ pub struct UsingDirective {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Enum {
     pub type_definition: sway::TypeDefinition,
-    pub variants_impl: sway::Impl,
+    pub constants: Vec<sway::Constant>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -407,7 +407,7 @@ impl Contract {
     pub fn new(name: &str, kind: solidity::ContractTy, inherits: &[sway::TypeName]) -> Self {
         Self {
             name: name.to_string(),
-            kind,
+            kind: kind.clone(),
             abi: sway::Abi {
                 name: name.to_string(),
                 inherits: inherits.to_vec(),
@@ -421,23 +421,29 @@ impl Contract {
             },
             impls: vec![],
             storage: None,
-            storage_struct: Some(Rc::new(RefCell::new(Struct {
-                name: format!("{}Storage", name),
-                memory: sway::Struct {
-                    attributes: None,
-                    is_public: true,
-                    name: String::new(),
-                    generic_parameters: None,
-                    fields: vec![],
-                },
-                storage: sway::Struct {
-                    attributes: None,
-                    is_public: true,
+            storage_struct: match kind {
+                solidity::ContractTy::Abstract(_)
+                | solidity::ContractTy::Contract(_)
+                | solidity::ContractTy::Interface(_) => Some(Rc::new(RefCell::new(Struct {
                     name: format!("{}Storage", name),
-                    generic_parameters: None,
-                    fields: vec![],
-                },
-            }))),
+                    memory: sway::Struct {
+                        attributes: None,
+                        is_public: true,
+                        name: String::new(),
+                        generic_parameters: None,
+                        fields: vec![],
+                    },
+                    storage: sway::Struct {
+                        attributes: None,
+                        is_public: true,
+                        name: format!("{}Storage", name),
+                        generic_parameters: None,
+                        fields: vec![],
+                    },
+                }))),
+
+                solidity::ContractTy::Library(_) => None,
+            },
             storage_struct_constructor_fn: None,
         }
     }
@@ -613,58 +619,6 @@ impl Module {
             .cloned()
     }
 
-    /// Ensure the supplied storage field exists in both the current contract's storage namespace and storage struct.
-    #[inline]
-    pub fn create_storage_field(
-        &mut self,
-        scope: Rc<RefCell<Scope>>,
-        name: &str,
-        type_name: &sway::TypeName,
-        value: &sway::Expression,
-    ) {
-        // Ensure the field exists in the storage namespace
-        let storage = self.get_storage_namespace(scope.clone()).unwrap();
-
-        if let Some(field) = storage.borrow().fields.iter().find(|f| f.name == name) {
-            assert!(field.type_name == *type_name, "{name} field already exists: {field:#?}");
-        } else {
-            storage.borrow_mut().fields.push(sway::StorageField {
-                old_name: String::new(),
-                name: name.to_string(),
-                type_name: type_name.clone(),
-                value: value.clone(),
-            });
-        }
-
-        // Ensure the field exists in the storage struct
-        let storage_struct = self.get_storage_struct(scope.clone());
-
-        if let Some(field) = storage_struct
-            .borrow()
-            .storage
-            .fields
-            .iter()
-            .find(|f| f.new_name == name)
-        {
-            let mut valid = false;
-
-            if let Some(storage_key_type) = field.type_name.storage_key_type()
-                && storage_key_type == *type_name
-            {
-                valid = true;
-            }
-
-            assert!(valid, "{name} field already exists: {field:#?}");
-        } else {
-            storage_struct.borrow_mut().storage.fields.push(sway::StructField {
-                is_public: true,
-                new_name: name.to_string(),
-                old_name: String::new(),
-                type_name: type_name.to_storage_key(),
-            });
-        }
-    }
-
     /// Gets the name of the storage namespace from the translated definition.
     #[inline]
     pub fn get_storage_namespace_name(&self, scope: Rc<RefCell<Scope>>) -> Option<String> {
@@ -755,7 +709,14 @@ impl From<Module> for sway::Module {
                 x.implementation.as_ref().unwrap().type_definition.clone(),
             ));
 
-            items.push(sway::ModuleItem::Impl(x.implementation.unwrap().variants_impl))
+            items.extend(
+                x.implementation
+                    .as_ref()
+                    .unwrap()
+                    .constants
+                    .iter()
+                    .map(|c| sway::ModuleItem::Constant(c.clone())),
+            );
         }
 
         for (events_enum, abi_encode_impl) in module.events_enums {
@@ -790,6 +751,10 @@ impl From<Module> for sway::Module {
             let Some(storage) = contract.storage.as_ref() else {
                 continue;
             };
+
+            if let solidity::ContractTy::Library(_) = &contract.kind {
+                continue;
+            }
 
             let Some(module_storage) = module_storage.as_mut() else {
                 module_storage = Some(storage.clone());
@@ -856,8 +821,16 @@ impl From<Module> for sway::Module {
             items.push(sway::ModuleItem::Storage(x.borrow().clone()));
         }
 
-        for contract_item in module.contracts {
-            let contract = contract_item.implementation.as_ref().unwrap().borrow();
+        for mut contract_item in module.contracts {
+            let mut contract = contract_item.implementation.as_mut().unwrap().borrow_mut();
+
+            if let solidity::ContractTy::Library(_) = &contract.kind {
+                contract.storage = None;
+                contract.storage_struct = None;
+                contract.storage_struct_constructor_fn = None;
+                assert!(contract.abi.functions.is_empty());
+                continue;
+            }
 
             if contract.abi.functions.is_empty() == contract.abi_impl.items.is_empty()
                 || !contract.abi.functions.is_empty()

@@ -121,6 +121,8 @@ pub fn translate_new_expression(
 
                 let length = &args[0];
 
+                let length_type_name = get_expression_type(project, module.clone(), scope.clone(), length).unwrap();
+
                 return Ok(sway::Expression::from(sway::Block {
                     statements: vec![
                         // let mut v = Vec::with_capacity(length);
@@ -133,7 +135,17 @@ pub fn translate_new_expression(
                             value: sway::Expression::create_function_call(
                                 "Bytes::with_capacity",
                                 None,
-                                vec![length.clone()],
+                                vec![
+                                    coerce_expression(
+                                        project,
+                                        module.clone(),
+                                        scope.clone(),
+                                        length,
+                                        &length_type_name,
+                                        &sway::TypeName::create_identifier("u64"),
+                                    )
+                                    .unwrap(),
+                                ],
                             ),
                         }),
                         // let mut i = 0;
@@ -209,6 +221,8 @@ pub fn translate_new_expression(
 
                 let length = &args[0];
 
+                let length_type_name = get_expression_type(project, module.clone(), scope.clone(), length).unwrap();
+
                 return Ok(sway::Expression::from(sway::Block {
                     statements: vec![
                         // let mut v = Vec::with_capacity(length);
@@ -221,7 +235,17 @@ pub fn translate_new_expression(
                             value: sway::Expression::create_function_call(
                                 "Bytes::with_capacity",
                                 None,
-                                vec![length.clone()],
+                                vec![
+                                    coerce_expression(
+                                        project,
+                                        module.clone(),
+                                        scope.clone(),
+                                        length,
+                                        &length_type_name,
+                                        &sway::TypeName::create_identifier("u64"),
+                                    )
+                                    .unwrap(),
+                                ],
                             ),
                         }),
                         // let mut i = 0;

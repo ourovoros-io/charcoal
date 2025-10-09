@@ -1,5 +1,6 @@
 use crate::{error::Error, project::Project, sway, translate::*};
 use num_bigint::BigUint;
+use num_traits::ToPrimitive;
 use num_traits::{Num, Zero};
 use solang_parser::pt as solidity;
 use std::{cell::RefCell, rc::Rc};
@@ -182,6 +183,52 @@ pub fn evaluate_expression(
                             return sway::Expression::from(sway::Literal::DecInt(u64::MIN.into(), None));
                         }
 
+                        "u64::try_from" => {
+                            assert!(function_call.parameters.len() == 1);
+                            let param_type = get_expression_type(
+                                project,
+                                module.clone(),
+                                scope.clone(),
+                                &function_call.parameters[0],
+                            )
+                            .unwrap();
+
+                            if param_type.is_u64() {
+                                return function_call.parameters[0].clone().into_some_call();
+                            }
+
+                            let sway::Expression::Literal(
+                                sway::Literal::DecInt(value, _) | sway::Literal::HexInt(value, _),
+                            ) = &function_call.parameters[0]
+                            else {
+                                todo!()
+                            };
+
+                            if value.bits() <= 64 {
+                                match &function_call.parameters[0] {
+                                    sway::Expression::Literal(sway::Literal::DecInt(value, _)) => {
+                                        return sway::Expression::Literal(sway::Literal::DecInt(
+                                            value.clone(),
+                                            Some("u64".to_string()),
+                                        ))
+                                        .into_some_call();
+                                    }
+
+                                    sway::Expression::Literal(sway::Literal::HexInt(value, _)) => {
+                                        return sway::Expression::Literal(sway::Literal::HexInt(
+                                            value.clone(),
+                                            Some("u64".to_string()),
+                                        ))
+                                        .into_some_call();
+                                    }
+
+                                    _ => todo!(),
+                                }
+                            }
+
+                            todo!()
+                        }
+
                         "u256::from_be_bytes" => {
                             // TODO: sigh...
                             return expression.clone();
@@ -216,13 +263,100 @@ pub fn evaluate_expression(
                 }
             }
 
-            sway::Expression::MemberAccess(member_access) => match &member_access.expression {
-                sway::Expression::Literal(
-                    sway::Literal::DecInt(lhs_value, lhs_suffix) | sway::Literal::HexInt(lhs_value, lhs_suffix),
-                ) => match member_access.member.as_str() {
-                    "as_u256" if function_call.parameters.is_empty() => expression.clone(),
+            sway::Expression::MemberAccess(member_access) => {
+                let container_type_name =
+                    get_expression_type(project, module.clone(), scope.clone(), &member_access.expression).unwrap();
 
-                    "as_b256" if function_call.parameters.is_empty() => expression.clone(),
+                let mut container = evaluate_expression(
+                    project,
+                    module.clone(),
+                    scope.clone(),
+                    &container_type_name,
+                    &member_access.expression,
+                );
+
+                match member_access.member.as_str() {
+                    "as_u256" if function_call.parameters.is_empty() => {
+                        if container_type_name.is_u256() {
+                            return container.clone();
+                        }
+
+                        let mut comment = None;
+
+                        if let sway::Expression::Commented(c, expr) = &container {
+                            comment = Some(c.clone());
+                            container = expr.as_ref().clone();
+                        }
+
+                        let result;
+
+                        if let sway::Expression::Literal(
+                            sway::Literal::DecInt(_, suffix) | sway::Literal::HexInt(_, suffix),
+                        ) = &container
+                        {
+                            if let Some("u256") = suffix.as_ref().map(|s| s.as_str()) {
+                                result = container.clone();
+                            } else {
+                                match &container {
+                                    sway::Expression::Literal(sway::Literal::DecInt(value, _)) => {
+                                        result = sway::Expression::Literal(sway::Literal::DecInt(
+                                            value.clone(),
+                                            Some("u256".to_string()),
+                                        ));
+                                    }
+                                    sway::Expression::Literal(sway::Literal::HexInt(value, _)) => {
+                                        result = sway::Expression::Literal(sway::Literal::HexInt(
+                                            value.clone(),
+                                            Some("u256".to_string()),
+                                        ));
+                                    }
+
+                                    _ => todo!("container: {}", container.display()),
+                                }
+                            }
+                        } else {
+                            todo!()
+                        }
+
+                        return match comment {
+                            Some(c) => sway::Expression::Commented(c, Box::new(result)),
+                            None => result,
+                        };
+                    }
+
+                    "as_b256" if function_call.parameters.is_empty() => {
+                        if container_type_name.is_b256() {
+                            return container.clone();
+                        }
+
+                        if let sway::Expression::Literal(
+                            sway::Literal::DecInt(_, suffix) | sway::Literal::HexInt(_, suffix),
+                        ) = &container
+                        {
+                            if let Some("b256") = suffix.as_ref().map(|s| s.as_str()) {
+                                return container.clone();
+                            }
+
+                            match &container {
+                                sway::Expression::Literal(sway::Literal::DecInt(value, _)) => {
+                                    return sway::Expression::Literal(sway::Literal::DecInt(
+                                        value.clone(),
+                                        Some("b256".to_string()),
+                                    ));
+                                }
+                                sway::Expression::Literal(sway::Literal::HexInt(value, _)) => {
+                                    return sway::Expression::Literal(sway::Literal::HexInt(
+                                        value.clone(),
+                                        Some("b256".to_string()),
+                                    ));
+                                }
+
+                                _ => {}
+                            }
+                        }
+
+                        todo!()
+                    }
 
                     "wrapping_neg" if function_call.parameters.is_empty() => {
                         //
@@ -242,6 +376,13 @@ pub fn evaluate_expression(
                             type_name,
                             &function_call.parameters[0],
                         );
+
+                        let sway::Expression::Literal(
+                            sway::Literal::DecInt(lhs_value, lhs_suffix) | sway::Literal::HexInt(lhs_value, lhs_suffix),
+                        ) = container
+                        else {
+                            todo!("integer pow lhs expression: {container:#?}")
+                        };
 
                         let sway::Expression::Literal(
                             sway::Literal::DecInt(rhs_value, _) | sway::Literal::HexInt(rhs_value, _),
@@ -266,14 +407,21 @@ pub fn evaluate_expression(
                         )
                     }
 
-                    member => todo!("translate {member} member call: {}", sway::TabbedDisplayer(expression)),
-                },
+                    "unwrap" if function_call.parameters.is_empty() => {
+                        let sway::Expression::FunctionCall(f) = container else {
+                            todo!()
+                        };
 
-                _ => {
-                    // todo!("evaluate member access call: {expression:#?}")
-                    expression.clone()
+                        let Some("Some") = f.function.as_identifier() else {
+                            todo!()
+                        };
+
+                        return f.parameters[0].clone();
+                    }
+
+                    member => todo!("translate {member} member call: {}", sway::TabbedDisplayer(expression)),
                 }
-            },
+            }
 
             _ => todo!("evaluate function call: {expression:#?}"),
         },
@@ -282,17 +430,261 @@ pub fn evaluate_expression(
             todo!("evaluate function call block: {expression:#?}")
         }
 
+        sway::Expression::Tuple(exprs) => {
+            let exprs = exprs
+                .iter()
+                .map(|e| {
+                    let expr_type_name = get_expression_type(project, module.clone(), scope.clone(), e).unwrap();
+                    evaluate_expression(project, module.clone(), scope.clone(), &expr_type_name, e)
+                })
+                .collect::<Vec<_>>();
+
+            if exprs.len() == 1 {
+                return exprs[0].clone();
+            }
+
+            sway::Expression::Tuple(exprs)
+        }
+
+        sway::Expression::BinaryExpression(binary_expr) => {
+            let lhs_type = get_expression_type(project, module.clone(), scope.clone(), &binary_expr.lhs).unwrap();
+            let lhs = evaluate_expression(project, module.clone(), scope.clone(), &lhs_type, &binary_expr.lhs);
+
+            let rhs_type = get_expression_type(project, module.clone(), scope.clone(), &binary_expr.rhs).unwrap();
+            let rhs = evaluate_expression(project, module.clone(), scope.clone(), &rhs_type, &binary_expr.rhs);
+
+            assert!(lhs_type == rhs_type);
+
+            match binary_expr.operator.as_str() {
+                "+" => match (lhs, rhs) {
+                    (
+                        sway::Expression::Literal(sway::Literal::DecInt(lhs_value, lhs_suffix)),
+                        sway::Expression::Literal(sway::Literal::DecInt(rhs_value, rhs_suffix)),
+                    ) => sway::Expression::Literal(sway::Literal::DecInt(
+                        lhs_value + rhs_value,
+                        lhs_suffix.or(rhs_suffix),
+                    )),
+
+                    (
+                        sway::Expression::Literal(sway::Literal::HexInt(lhs_value, lhs_suffix)),
+                        sway::Expression::Literal(sway::Literal::HexInt(rhs_value, rhs_suffix)),
+                    ) => sway::Expression::Literal(sway::Literal::HexInt(
+                        lhs_value + rhs_value,
+                        lhs_suffix.or(rhs_suffix),
+                    )),
+
+                    _ => todo!(),
+                },
+
+                "-" => match (lhs, rhs) {
+                    (
+                        sway::Expression::Literal(sway::Literal::DecInt(lhs_value, lhs_suffix)),
+                        sway::Expression::Literal(sway::Literal::DecInt(rhs_value, rhs_suffix)),
+                    ) => sway::Expression::Literal(sway::Literal::DecInt(
+                        lhs_value - rhs_value,
+                        lhs_suffix.or(rhs_suffix),
+                    )),
+
+                    (
+                        sway::Expression::Literal(sway::Literal::HexInt(lhs_value, lhs_suffix)),
+                        sway::Expression::Literal(sway::Literal::HexInt(rhs_value, rhs_suffix)),
+                    ) => sway::Expression::Literal(sway::Literal::HexInt(
+                        lhs_value - rhs_value,
+                        lhs_suffix.or(rhs_suffix),
+                    )),
+
+                    _ => todo!(),
+                },
+
+                "*" => match (lhs, rhs) {
+                    (
+                        sway::Expression::Literal(sway::Literal::DecInt(lhs_value, lhs_suffix)),
+                        sway::Expression::Literal(sway::Literal::DecInt(rhs_value, rhs_suffix)),
+                    ) => sway::Expression::Literal(sway::Literal::DecInt(
+                        lhs_value * rhs_value,
+                        lhs_suffix.or(rhs_suffix),
+                    )),
+
+                    (
+                        sway::Expression::Literal(sway::Literal::HexInt(lhs_value, lhs_suffix)),
+                        sway::Expression::Literal(sway::Literal::HexInt(rhs_value, rhs_suffix)),
+                    ) => sway::Expression::Literal(sway::Literal::HexInt(
+                        lhs_value * rhs_value,
+                        lhs_suffix.or(rhs_suffix),
+                    )),
+
+                    _ => todo!(),
+                },
+
+                "/" => match (lhs, rhs) {
+                    (
+                        sway::Expression::Literal(sway::Literal::DecInt(lhs_value, lhs_suffix)),
+                        sway::Expression::Literal(sway::Literal::DecInt(rhs_value, rhs_suffix)),
+                    ) => sway::Expression::Literal(sway::Literal::DecInt(
+                        lhs_value / rhs_value,
+                        lhs_suffix.or(rhs_suffix),
+                    )),
+
+                    (
+                        sway::Expression::Literal(sway::Literal::HexInt(lhs_value, lhs_suffix)),
+                        sway::Expression::Literal(sway::Literal::HexInt(rhs_value, rhs_suffix)),
+                    ) => sway::Expression::Literal(sway::Literal::HexInt(
+                        lhs_value / rhs_value,
+                        lhs_suffix.or(rhs_suffix),
+                    )),
+
+                    _ => todo!(),
+                },
+
+                "&" => match (lhs, rhs) {
+                    (
+                        sway::Expression::Literal(sway::Literal::DecInt(lhs_value, lhs_suffix)),
+                        sway::Expression::Literal(sway::Literal::DecInt(rhs_value, rhs_suffix)),
+                    ) => sway::Expression::Literal(sway::Literal::DecInt(
+                        lhs_value & rhs_value,
+                        lhs_suffix.or(rhs_suffix),
+                    )),
+
+                    (
+                        sway::Expression::Literal(sway::Literal::HexInt(lhs_value, lhs_suffix)),
+                        sway::Expression::Literal(sway::Literal::HexInt(rhs_value, rhs_suffix)),
+                    ) => sway::Expression::Literal(sway::Literal::HexInt(
+                        lhs_value & rhs_value,
+                        lhs_suffix.or(rhs_suffix),
+                    )),
+
+                    _ => todo!(),
+                },
+
+                "|" => match (lhs, rhs) {
+                    (
+                        sway::Expression::Literal(sway::Literal::DecInt(lhs_value, lhs_suffix)),
+                        sway::Expression::Literal(sway::Literal::DecInt(rhs_value, rhs_suffix)),
+                    ) => sway::Expression::Literal(sway::Literal::DecInt(
+                        lhs_value | rhs_value,
+                        lhs_suffix.or(rhs_suffix),
+                    )),
+
+                    (
+                        sway::Expression::Literal(sway::Literal::HexInt(lhs_value, lhs_suffix)),
+                        sway::Expression::Literal(sway::Literal::HexInt(rhs_value, rhs_suffix)),
+                    ) => sway::Expression::Literal(sway::Literal::HexInt(
+                        lhs_value | rhs_value,
+                        lhs_suffix.or(rhs_suffix),
+                    )),
+
+                    _ => todo!(),
+                },
+
+                "^" => match (lhs, rhs) {
+                    (
+                        sway::Expression::Literal(sway::Literal::DecInt(lhs_value, lhs_suffix)),
+                        sway::Expression::Literal(sway::Literal::DecInt(rhs_value, rhs_suffix)),
+                    ) => sway::Expression::Literal(sway::Literal::DecInt(
+                        lhs_value ^ rhs_value,
+                        lhs_suffix.or(rhs_suffix),
+                    )),
+
+                    (
+                        sway::Expression::Literal(sway::Literal::HexInt(lhs_value, lhs_suffix)),
+                        sway::Expression::Literal(sway::Literal::HexInt(rhs_value, rhs_suffix)),
+                    ) => sway::Expression::Literal(sway::Literal::HexInt(
+                        lhs_value ^ rhs_value,
+                        lhs_suffix.or(rhs_suffix),
+                    )),
+
+                    _ => todo!(),
+                },
+
+                "<<" => match (lhs, rhs) {
+                    (
+                        sway::Expression::Literal(sway::Literal::DecInt(lhs_value, lhs_suffix)),
+                        sway::Expression::Literal(sway::Literal::DecInt(rhs_value, rhs_suffix)),
+                    ) => sway::Expression::Literal(sway::Literal::DecInt(
+                        lhs_value << rhs_value.to_u128().unwrap(),
+                        lhs_suffix.or(rhs_suffix),
+                    )),
+
+                    (
+                        sway::Expression::Literal(sway::Literal::HexInt(lhs_value, lhs_suffix)),
+                        sway::Expression::Literal(sway::Literal::HexInt(rhs_value, rhs_suffix)),
+                    ) => sway::Expression::Literal(sway::Literal::HexInt(
+                        lhs_value << rhs_value.to_u128().unwrap(),
+                        lhs_suffix.or(rhs_suffix),
+                    )),
+
+                    (
+                        sway::Expression::Literal(sway::Literal::DecInt(lhs_value, lhs_suffix)),
+                        sway::Expression::Literal(sway::Literal::HexInt(rhs_value, rhs_suffix)),
+                    ) => sway::Expression::Literal(sway::Literal::HexInt(
+                        lhs_value << rhs_value.to_u128().unwrap(),
+                        lhs_suffix.or(rhs_suffix),
+                    )),
+
+                    (
+                        sway::Expression::Literal(sway::Literal::HexInt(lhs_value, lhs_suffix)),
+                        sway::Expression::Literal(sway::Literal::DecInt(rhs_value, rhs_suffix)),
+                    ) => sway::Expression::Literal(sway::Literal::HexInt(
+                        lhs_value << rhs_value.to_u128().unwrap(),
+                        lhs_suffix.or(rhs_suffix),
+                    )),
+
+                    (lhs, rhs) => todo!("({}, {})", lhs.display(), rhs.display()),
+                },
+
+                ">>" => match (lhs, rhs) {
+                    (
+                        sway::Expression::Literal(sway::Literal::DecInt(lhs_value, lhs_suffix)),
+                        sway::Expression::Literal(sway::Literal::DecInt(rhs_value, rhs_suffix)),
+                    ) => sway::Expression::Literal(sway::Literal::DecInt(
+                        lhs_value >> rhs_value.to_u128().unwrap(),
+                        lhs_suffix.or(rhs_suffix),
+                    )),
+
+                    (
+                        sway::Expression::Literal(sway::Literal::HexInt(lhs_value, lhs_suffix)),
+                        sway::Expression::Literal(sway::Literal::HexInt(rhs_value, rhs_suffix)),
+                    ) => sway::Expression::Literal(sway::Literal::HexInt(
+                        lhs_value >> rhs_value.to_u128().unwrap(),
+                        lhs_suffix.or(rhs_suffix),
+                    )),
+
+                    _ => todo!(),
+                },
+
+                "%" => match (lhs, rhs) {
+                    (
+                        sway::Expression::Literal(sway::Literal::DecInt(lhs_value, lhs_suffix)),
+                        sway::Expression::Literal(sway::Literal::DecInt(rhs_value, rhs_suffix)),
+                    ) => sway::Expression::Literal(sway::Literal::DecInt(
+                        lhs_value % rhs_value,
+                        lhs_suffix.or(rhs_suffix),
+                    )),
+
+                    (
+                        sway::Expression::Literal(sway::Literal::HexInt(lhs_value, lhs_suffix)),
+                        sway::Expression::Literal(sway::Literal::HexInt(rhs_value, rhs_suffix)),
+                    ) => sway::Expression::Literal(sway::Literal::HexInt(
+                        lhs_value % rhs_value,
+                        lhs_suffix.or(rhs_suffix),
+                    )),
+
+                    _ => todo!(),
+                },
+
+                _ => todo!(),
+            }
+        }
+
         sway::Expression::Block(_)
         | sway::Expression::Return(_)
         | sway::Expression::Array(_)
         | sway::Expression::ArrayAccess(_)
         | sway::Expression::MemberAccess(_)
-        | sway::Expression::Tuple(_)
         | sway::Expression::If(_)
         | sway::Expression::Match(_)
         | sway::Expression::While(_)
         | sway::Expression::UnaryExpression(_)
-        | sway::Expression::BinaryExpression(_)
         | sway::Expression::Constructor(_)
         | sway::Expression::Continue
         | sway::Expression::Break
@@ -656,8 +1048,8 @@ pub fn create_value_expression(
                 }
                 // Check to see if the type is a translated enum
                 else if let Some(translated_enum) = project.find_enum(module.clone(), name) {
-                    if let Some(sway::ImplItem::Constant(value)) = translated_enum.variants_impl.items.first() {
-                        return sway::Expression::create_identifier(format!("{}::{}", name, value.name).as_str());
+                    if let Some(value) = translated_enum.constants.first() {
+                        return sway::Expression::create_identifier(&value.name);
                     }
 
                     let underlying_type = get_underlying_type(project, module.clone(), type_name);

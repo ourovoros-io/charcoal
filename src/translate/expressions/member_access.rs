@@ -40,20 +40,10 @@ pub fn translate_member_access_expression(
             }
 
             // Check to see if the variable is an enum
-            if let Some(translated_enum) = project.find_enum(module.clone(), name) {
-                let new_name = translate_naming_convention(member.name.as_str(), Case::Constant);
-
-                // Check to see if member is part of translated enum
-                if let Some(sway::ImplItem::Constant(c)) =
-                    translated_enum.variants_impl.items.iter().find(|i| match i {
-                        sway::ImplItem::Constant(c) => c.name == new_name,
-                        _ => false,
-                    })
-                {
-                    return Ok(sway::Expression::create_identifier(
-                        format!("{}::{}", name, c.name).as_str(),
-                    ));
-                }
+            if let Some(translated_enum) = project.find_enum(module.clone(), name)
+                && let Some(c) = translated_enum.constants.iter().find(|i| i.old_name == member.name)
+            {
+                return Ok(sway::Expression::create_identifier(&c.name));
             }
 
             // Check to see if the variable is an external definition
@@ -184,14 +174,9 @@ pub fn translate_member_access_expression(
                     let variant_name = translate_naming_convention(member.name.as_str(), Case::Constant);
 
                     // Ensure the variant exists
-                    if external_enum.variants_impl.items.iter().any(|i| {
-                        let sway::ImplItem::Constant(c) = i else {
-                            return false;
-                        };
-                        c.name == variant_name
-                    }) {
+                    if external_enum.constants.iter().any(|i| i.old_name == member.name) {
                         return Ok(sway::Expression::create_identifier(
-                            format!("{enum_name}::{variant_name}").as_str(),
+                            format!("{enum_name}__{variant_name}").as_str(),
                         ));
                     }
                 }

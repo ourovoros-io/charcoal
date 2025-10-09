@@ -1046,6 +1046,65 @@ impl Project {
         None
     }
 
+    /// Ensure the supplied storage field exists in both the current contract's storage namespace and storage struct.
+    #[inline]
+    pub fn create_storage_field(
+        &mut self,
+        module: Rc<RefCell<ir::Module>>,
+        scope: Rc<RefCell<ir::Scope>>,
+        name: &str,
+        type_name: &sway::TypeName,
+        value: &sway::Expression,
+    ) {
+        // Ensure the field exists in the storage namespace
+        let storage = {
+            let mut module = module.borrow_mut();
+            module.get_storage_namespace(scope.clone()).unwrap()
+        };
+
+        if let Some(field) = storage.borrow().fields.iter().find(|f| f.name == name) {
+            assert!(field.type_name == *type_name, "{name} field already exists: {field:#?}");
+        } else {
+            storage.borrow_mut().fields.push(sway::StorageField {
+                old_name: String::new(),
+                name: name.to_string(),
+                type_name: type_name.clone(),
+                value: value.clone(),
+            });
+        }
+
+        // Ensure the field exists in the storage struct
+        let storage_struct = {
+            let mut module = module.borrow_mut();
+            module.get_storage_struct(scope.clone())
+        };
+
+        if let Some(field) = storage_struct
+            .borrow()
+            .storage
+            .fields
+            .iter()
+            .find(|f| f.new_name == name)
+        {
+            let mut valid = false;
+
+            if let Some(storage_key_type) = field.type_name.storage_key_type()
+                && storage_key_type == *type_name
+            {
+                valid = true;
+            }
+
+            assert!(valid, "{name} field already exists: {field:#?}");
+        } else {
+            storage_struct.borrow_mut().storage.fields.push(sway::StructField {
+                is_public: true,
+                new_name: name.to_string(),
+                old_name: String::new(),
+                type_name: type_name.to_storage_key(module.clone()),
+            });
+        }
+    }
+
     pub fn translate(&mut self) -> Result<(), Error> {
         for source_unit_path in self.queue.clone() {
             self.translate_file(&source_unit_path)?;
@@ -1299,7 +1358,7 @@ impl Project {
 
         // Translate toplevel variable definitions
         for variable_definition in variable_definitions {
-            let state_variable_info = translate_state_variable(self, module.clone(), None, &variable_definition)?;
+            let state_variable_info = translate_variable_definition(self, module.clone(), None, &variable_definition)?;
             assert!(state_variable_info.deferred_initializations.is_empty());
             assert!(state_variable_info.mapping_names.is_empty());
         }
@@ -1444,7 +1503,7 @@ impl Project {
 
             for variable_definition in variable_definitions.iter() {
                 let state_variable_info =
-                    translate_state_variable(self, module.clone(), Some(contract_name), variable_definition)?;
+                    translate_variable_definition(self, module.clone(), Some(contract_name), variable_definition)?;
 
                 assert!(state_variable_info.deferred_initializations.is_empty());
                 assert!(state_variable_info.mapping_names.is_empty());

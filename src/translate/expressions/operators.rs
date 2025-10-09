@@ -103,13 +103,35 @@ pub fn translate_binary_expression(
         abi_check(&rhs_type, &mut lhs, &mut lhs_type);
     }
 
-    let Some(rhs) = coerce_expression(project, module.clone(), scope.clone(), &rhs, &rhs_type, &lhs_type) else {
-        panic!(
-            "Failed to coerce from `{}` to `{}` : `{}`",
-            rhs_type,
-            lhs_type,
-            rhs.display()
-        );
+    let rhs = if let "<<" | ">>" = operator {
+        let Some(rhs) = coerce_expression(
+            project,
+            module.clone(),
+            scope.clone(),
+            &rhs,
+            &rhs_type,
+            &sway::TypeName::create_identifier("u64"),
+        ) else {
+            panic!(
+                "Failed to coerce from `{}` to `{}` : `{}`",
+                rhs_type,
+                lhs_type,
+                rhs.display()
+            );
+        };
+
+        rhs
+    } else {
+        let Some(rhs) = coerce_expression(project, module.clone(), scope.clone(), &rhs, &rhs_type, &lhs_type) else {
+            panic!(
+                "Failed to coerce from `{}` to `{}` : `{}`",
+                rhs_type,
+                lhs_type,
+                rhs.display()
+            );
+        };
+
+        rhs
     };
 
     Ok(sway::Expression::from(sway::BinaryExpression {

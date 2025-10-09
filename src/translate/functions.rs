@@ -870,11 +870,25 @@ pub fn translate_function_definition(
                 }) {
                     let sway::TypeName::Function {
                         storage_struct_parameter: external_storage_struct_parameter,
+                        parameters: external_parameters,
                         ..
                     } = &function.signature
                     else {
                         unreachable!();
                     };
+
+                    for (expr, parameter) in parameters.iter_mut().zip(external_parameters.entries.iter()) {
+                        let type_name = get_expression_type(project, module.clone(), scope.clone(), expr).unwrap();
+                        *expr = coerce_expression(
+                            project,
+                            module.clone(),
+                            scope.clone(),
+                            expr,
+                            &type_name,
+                            parameter.type_name.as_ref().unwrap(),
+                        )
+                        .unwrap();
+                    }
 
                     if let Some(external_storage_struct_parameter) = external_storage_struct_parameter.as_ref() {
                         parameters.push(
@@ -1719,8 +1733,10 @@ pub fn ensure_constructor_called_fields_exist(
 ) {
     let constructor_called_field_name = "constructor_called".to_string();
 
-    let mut module = module.borrow_mut();
-    let storage_struct = module.get_storage_struct(scope.clone());
+    let storage_struct = {
+        let mut module = module.borrow_mut();
+        module.get_storage_struct(scope.clone())
+    };
 
     if !storage_struct
         .borrow()
@@ -1734,9 +1750,11 @@ pub fn ensure_constructor_called_fields_exist(
             is_public: true,
             new_name: constructor_called_field_name.clone(),
             old_name: String::new(),
-            type_name: sway::TypeName::create_identifier("bool").to_storage_key(),
+            type_name: sway::TypeName::create_identifier("bool").to_storage_key(module.clone()),
         });
     }
+
+    let mut module = module.borrow_mut();
 
     // Add the `constructor_called` field to the storage block
     let storage_namespace = module.get_storage_namespace(scope.clone()).unwrap();

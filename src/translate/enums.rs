@@ -10,35 +10,35 @@ pub fn translate_enum_definition(
     _module: Rc<RefCell<ir::Module>>,
     enum_definition: &solidity::EnumDefinition,
 ) -> Result<ir::Enum, Error> {
+    let enum_name = enum_definition.name.as_ref().unwrap().name.clone();
+
     // Create the enum's type definition
     let type_definition = sway::TypeDefinition {
         is_public: false,
-        name: sway::TypeName::create_identifier(enum_definition.name.as_ref().unwrap().name.as_str()),
+        name: sway::TypeName::create_identifier(&enum_name),
         underlying_type: Some(sway::TypeName::create_identifier("u8")),
     };
 
-    // Create the enum's variants impl block
-    let mut variants_impl = sway::Impl {
-        generic_parameters: None,
-        type_name: type_definition.name.clone(),
-        for_type_name: None,
-        items: vec![],
-    };
+    let mut constants = vec![];
 
     // Add each variant to the variants impl block
     for (i, value) in enum_definition.values.iter().enumerate() {
-        variants_impl.items.push(sway::ImplItem::Constant(sway::Constant {
+        constants.push(sway::Constant {
             is_public: false,
             old_name: value.as_ref().unwrap().name.clone(),
-            name: translate_naming_convention(value.as_ref().unwrap().name.as_str(), Case::Constant),
+            name: format!(
+                "{}__{}",
+                enum_name,
+                translate_naming_convention(value.as_ref().unwrap().name.as_str(), Case::Constant)
+            ),
             type_name: type_definition.name.clone(),
             value: Some(sway::Expression::from(sway::Literal::DecInt(BigUint::from(i), None))),
-        }));
+        });
     }
 
     Ok(ir::Enum {
         type_definition,
-        variants_impl,
+        constants,
     })
 }
 
@@ -243,7 +243,7 @@ pub fn generate_enum_abi_encode_function(
                         }
 
                         "I8" | "I16" | "I32" | "I64" | "I128" | "I256" => sway::Expression::create_identifier(name)
-                            .with_member("underlying")
+                            .with_function_call("underlying", None, vec![])
                             .with_abi_encode_call(sway::Expression::create_identifier("buffer".into())),
 
                         "Identity" => sway::Expression::from(sway::Match {

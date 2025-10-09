@@ -17,7 +17,7 @@ pub struct StateVariableInfo {
 }
 
 #[inline]
-pub fn translate_state_variable(
+pub fn translate_variable_definition(
     project: &mut Project,
     module: Rc<RefCell<ir::Module>>,
     contract_name: Option<&str>,
@@ -404,7 +404,7 @@ pub fn translate_state_variable(
                 is_public: true,
                 new_name: new_name.clone(),
                 old_name: old_name.clone(),
-                type_name: variable_type_name.to_storage_key(),
+                type_name: variable_type_name.to_storage_key(module.clone()),
             });
 
         module
@@ -814,7 +814,8 @@ pub fn generate_storage_struct_variables(
         mapping_names.1.push(field.new_name.clone());
 
         // Ensure the instance count field exists in storage
-        module.borrow_mut().create_storage_field(
+        project.create_storage_field(
+            module.clone(),
             scope.clone(),
             instance_field_name.as_str(),
             &sway::TypeName::create_identifier("u64"),
@@ -824,7 +825,8 @@ pub fn generate_storage_struct_variables(
         // Ensure the instance mapping field exists in storage
         let mapping_field_name = format!("{struct_field_name}_{}_instances", field.new_name,);
 
-        module.borrow_mut().create_storage_field(
+        project.create_storage_field(
+            module.clone(),
             scope.clone(),
             mapping_field_name.as_str(),
             &sway::TypeName::create_generic(

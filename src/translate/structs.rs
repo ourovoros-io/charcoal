@@ -38,7 +38,7 @@ pub fn translate_struct_definition(
             || type_name.is_storage_string()
             || type_name.is_storage_vec()
         {
-            type_name = type_name.to_storage_key();
+            type_name = type_name.to_storage_key(module.clone());
         }
 
         memory_fields.push(sway::StructField {
@@ -61,7 +61,7 @@ pub fn translate_struct_definition(
             || type_name.is_storage_string()
             || type_name.is_storage_vec()
         {
-            type_name = type_name.to_storage_key();
+            type_name = type_name.to_storage_key(module.clone());
         }
 
         // HACK: Wrap `StorageKey<T>` in `Option<T>` so it can be deferred
@@ -73,7 +73,7 @@ pub fn translate_struct_definition(
             is_public: true,
             new_name,
             old_name,
-            type_name: type_name.to_storage_compatible_type(),
+            type_name: type_name.to_storage_compatible_type(module.clone()),
         });
     }
 

@@ -150,7 +150,10 @@ pub fn translate_contract_definition(
             };
 
             let contract = contract.borrow_mut();
-            let mut storage_struct = contract.storage_struct.as_ref().unwrap().borrow_mut();
+            let Some(storage_struct) = contract.storage_struct.as_ref() else {
+                continue;
+            };
+            let mut storage_struct = storage_struct.borrow_mut();
 
             if !storage_struct.storage.fields.contains(&field) {
                 storage_struct.storage.fields.push(field);
@@ -181,7 +184,7 @@ pub fn translate_contract_definition(
 
     for variable_definition in variable_definitions.iter() {
         let state_variable_info =
-            translate_state_variable(project, module.clone(), Some(&contract_name), variable_definition)?;
+            translate_variable_definition(project, module.clone(), Some(&contract_name), variable_definition)?;
 
         deferred_initializations.extend(state_variable_info.deferred_initializations.clone());
         mapping_names.extend(state_variable_info.mapping_names.clone());
