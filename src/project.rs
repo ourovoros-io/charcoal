@@ -1450,16 +1450,9 @@ impl Project {
                             .iter()
                             .any(|x| matches!(x, solidity::VariableAttribute::Constant(_)));
 
-                        let is_immutable = variable_definition
-                            .attrs
-                            .iter()
-                            .any(|x| matches!(x, solidity::VariableAttribute::Immutable(_)));
-
-                        let is_configurable = is_immutable && !is_constant;
-
-                        // Only translate constant and configurable variables ahead of time.
+                        // Only translate constant variables ahead of time.
                         // Regular state variables are translated later.
-                        if is_constant || is_configurable {
+                        if is_constant {
                             variable_definitions.push(variable_definition);
                         }
                     }

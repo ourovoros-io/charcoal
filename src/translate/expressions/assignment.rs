@@ -752,6 +752,9 @@ pub fn create_assignment_expression(
                                 //     x.member = value;
                                 //     expr.set(i, a);
                                 // }
+                                let array_index_type =
+                                    get_expression_type(project, module.clone(), scope.clone(), &array_access.index)
+                                        .unwrap();
 
                                 return Ok(sway::Expression::from(sway::Block {
                                     statements: vec![
@@ -764,7 +767,17 @@ pub fn create_assignment_expression(
                                             type_name: None,
                                             value: array_access
                                                 .expression
-                                                .with_get_call(array_access.index.clone())
+                                                .with_get_call(
+                                                    coerce_expression(
+                                                        project,
+                                                        module.clone(),
+                                                        scope.clone(),
+                                                        &array_access.index,
+                                                        &array_index_type,
+                                                        &sway::TypeName::create_identifier("u64"),
+                                                    )
+                                                    .unwrap(),
+                                                )
                                                 .with_unwrap_call(),
                                         }),
                                         // x.member = value;

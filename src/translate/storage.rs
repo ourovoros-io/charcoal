@@ -8,7 +8,6 @@ pub struct StateVariableInfo {
     pub is_storage: bool,
     pub is_immutable: bool,
     pub is_constant: bool,
-    pub is_configurable: bool,
     pub old_name: String,
     pub new_name: String,
     pub type_name: sway::TypeName,
@@ -56,11 +55,8 @@ pub fn translate_variable_definition(
         .iter()
         .any(|x| matches!(x, solidity::VariableAttribute::Immutable(_)));
 
-    // If the state variable is immutable and not a constant, it is a configurable field
-    let is_configurable = is_immutable && !is_constant;
-
     // If the state variable is not constant or immutable, it is a storage field
-    let storage_namespace = if !is_constant && !is_immutable {
+    let storage_namespace = if !is_constant {
         Some(translate_naming_convention(
             contract_name
                 .map(|s| s.to_string())
@@ -72,12 +68,12 @@ pub fn translate_variable_definition(
         None
     };
 
-    let is_storage = storage_namespace.is_some();
+    let is_storage = storage_namespace.is_some() && !is_immutable;
 
     // Translate the variable's naming convention
     let old_name = variable_definition.name.as_ref().unwrap().name.clone();
 
-    let mut new_name = if is_constant || is_immutable {
+    let mut new_name = if is_constant {
         translate_naming_convention(old_name.as_str(), Case::Constant)
     } else {
         translate_naming_convention(old_name.as_str(), Case::Snake)
@@ -180,7 +176,6 @@ pub fn translate_variable_definition(
                 expression: sway::Expression::create_identifier("storage_struct").with_member(&new_name),
                 is_storage,
                 is_constant,
-                is_configurable,
                 value,
             });
 
@@ -197,7 +192,7 @@ pub fn translate_variable_definition(
         }));
     }
 
-    if value.is_none() && ((is_constant || is_configurable) && variable_type_name.is_string_slice()) {
+    if value.is_none() && ((is_constant || is_immutable) && variable_type_name.is_string_slice()) {
         let initializer = translate_expression(
             project,
             module.clone(),
@@ -313,7 +308,6 @@ pub fn translate_variable_definition(
                     expression: sway::Expression::create_identifier("storage_struct").with_member(&new_name),
                     is_storage,
                     is_constant,
-                    is_configurable,
                     value: sway::Expression::from(sway::Block {
                         statements: field_initializations,
                         final_expr: Some(sway::Expression::create_identifier(&new_name)),
@@ -360,15 +354,26 @@ pub fn translate_variable_definition(
     }
     // Handle immutable variable definitions
     else if is_immutable {
-        //
-        // TODO: we need to check if the value is supplied to the constructor and remove it from there
-        //
+        module
+            .borrow_mut()
+            .get_storage_struct(scope.clone())
+            .borrow_mut()
+            .storage
+            .fields
+            .push(sway::StructField {
+                is_public: true,
+                new_name: new_name.clone(),
+                old_name: old_name.clone(),
+                type_name: variable_type_name.to_storage_key(module.clone()),
+            });
 
         module
             .borrow_mut()
-            .get_configurable()
+            .get_storage_namespace(scope.clone())
+            .unwrap()
+            .borrow_mut()
             .fields
-            .push(sway::ConfigurableField {
+            .push(sway::StorageField {
                 old_name: old_name.clone(),
                 name: new_name.clone(),
                 type_name: variable_type_name.clone(),
@@ -426,7 +431,6 @@ pub fn translate_variable_definition(
         is_storage,
         is_immutable,
         is_constant,
-        is_configurable,
         old_name,
         new_name,
         type_name: variable_type_name.clone(),

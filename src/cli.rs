@@ -48,6 +48,10 @@ impl Args {
             *output_directory = wrapped_err!(output_directory.canonicalize())?;
         }
 
+        if let Some(name) = self.name.as_mut() {
+            *name = format!("{}_lib", name);
+        }
+
         Ok(self)
     }
 }

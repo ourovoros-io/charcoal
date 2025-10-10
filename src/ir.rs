@@ -387,7 +387,6 @@ pub struct DeferredInitialization {
     pub expression: sway::Expression,
     pub is_storage: bool,
     pub is_constant: bool,
-    pub is_configurable: bool,
     pub value: sway::Expression,
 }
 

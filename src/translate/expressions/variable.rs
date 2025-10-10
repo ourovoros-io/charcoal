@@ -114,6 +114,7 @@ pub fn translate_variable_access_expression(
 
         solidity::Expression::ArraySubscript(_, array_expression, Some(index)) => {
             let mut index = translate_expression(project, module.clone(), scope.clone(), index.as_ref())?;
+            let index_type = get_expression_type(project, module.clone(), scope.clone(), &index)?;
 
             let Some(ir::VariableAccess {
                 variable,
@@ -139,15 +140,46 @@ pub fn translate_variable_access_expression(
                         name,
                         generic_parameters,
                     } => match (name.as_str(), generic_parameters.as_ref()) {
-                        ("Bytes", None) => expression.with_get_call(index).with_unwrap_call(),
+                        ("Bytes", None) => {
+                            index = coerce_expression(
+                                project,
+                                module.clone(),
+                                scope.clone(),
+                                &index,
+                                &index_type,
+                                &sway::TypeName::create_identifier("u64"),
+                            )
+                            .unwrap();
+
+                            expression.with_get_call(index).with_unwrap_call()
+                        }
 
                         ("Option", Some(generic_parameters)) if generic_parameters.entries.len() == 1 => {
                             if let Some(storage_key_type) = generic_parameters.entries[0].type_name.storage_key_type() {
                                 if storage_key_type.is_storage_map() {
                                     expression.with_unwrap_call().with_get_call(index)
                                 } else if storage_key_type.is_storage_vec() {
+                                    index = coerce_expression(
+                                        project,
+                                        module.clone(),
+                                        scope.clone(),
+                                        &index,
+                                        &index_type,
+                                        &sway::TypeName::create_identifier("u64"),
+                                    )
+                                    .unwrap();
                                     expression.with_unwrap_call().with_get_call(index).with_unwrap_call()
                                 } else if storage_key_type.is_array() {
+                                    index = coerce_expression(
+                                        project,
+                                        module.clone(),
+                                        scope.clone(),
+                                        &index,
+                                        &index_type,
+                                        &sway::TypeName::create_identifier("u64"),
+                                    )
+                                    .unwrap();
+
                                     sway::Expression::from(sway::ArrayAccess {
                                         expression: expression.with_unwrap_call().with_read_call(),
                                         index,
@@ -248,6 +280,16 @@ pub fn translate_variable_access_expression(
                                     scope
                                         .borrow_mut()
                                         .set_function_storage_accesses(module.clone(), true, false);
+
+                                    index = coerce_expression(
+                                        project,
+                                        module.clone(),
+                                        scope.clone(),
+                                        &index,
+                                        &index_type,
+                                        &sway::TypeName::create_identifier("u64"),
+                                    )
+                                    .unwrap();
 
                                     sway::Expression::from(sway::ArrayAccess {
                                         expression: expression.with_read_call(),

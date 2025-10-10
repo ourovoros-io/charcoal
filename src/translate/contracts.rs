@@ -40,16 +40,9 @@ pub fn translate_contract_definition(
                     .iter()
                     .any(|x| matches!(x, solidity::VariableAttribute::Constant(_)));
 
-                let is_immutable = variable_definition
-                    .attrs
-                    .iter()
-                    .any(|x| matches!(x, solidity::VariableAttribute::Immutable(_)));
-
-                let is_configurable = is_immutable && !is_constant;
-
                 // Only translate regular state variables.
-                // Constants and configurables are translated at toplevel ahead of time.
-                if !is_constant && !is_configurable {
+                // Constants are translated at toplevel ahead of time.
+                if !is_constant {
                     variable_definitions.push(variable_definition);
                 }
             }

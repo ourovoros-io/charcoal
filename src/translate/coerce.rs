@@ -1256,24 +1256,12 @@ fn coerce_to_integer_types(context: &mut CoerceContext) -> Option<sway::Expressi
     if context.from_type_name.is_string_slice() && context.to_type_name.is_u8() {
         context.module.borrow_mut().ensure_use_declared("std::string::*");
 
-        // String::from_ascii_str(input).as_bytes().get(0).unwrap()
+        // String::from_ascii_str(input).as_bytes().get(0).unwrap_or(0)
         return Some(
-            coerce_expression(
-                context.project,
-                context.module.clone(),
-                context.scope.clone(),
-                &sway::Expression::create_function_call(
-                    "String::from_ascii_str",
-                    None,
-                    vec![context.expression.clone()],
-                )
+            sway::Expression::create_function_call("String::from_ascii_str", None, vec![context.expression.clone()])
                 .with_as_bytes_call()
                 .with_get_call(sway::Expression::from(sway::Literal::DecInt(0u8.into(), None)))
                 .with_unwrap_or_call(sway::Expression::from(sway::Literal::DecInt(0u8.into(), None))),
-                &sway::TypeName::create_identifier("Bytes"),
-                &context.to_type_name,
-            )
-            .unwrap(),
         );
     }
 
@@ -1669,21 +1657,13 @@ fn coerce_to_u8_arrays(context: &mut CoerceContext) -> Option<sway::Expression> 
                 .with_to_be_bytes_call(),
             );
         } else if from_byte_count > to_byte_count {
-            if to_byte_count == 1 {
-                return Some(sway::Expression::Array(sway::Array {
-                    elements: vec![
-                        expression
-                            .with_function_call(format!("try_as_u{to_bits}").as_str(), None, vec![])
-                            .with_unwrap_call(),
-                    ],
-                }));
-            }
-
             return Some(
-                expression
-                    .with_function_call(format!("try_as_u{to_bits}").as_str(), None, vec![])
-                    .with_unwrap_call()
-                    .with_to_be_bytes_call(),
+                sway::Expression::create_function_call(
+                    format!("u{to_bits}::try_from").as_str(),
+                    None,
+                    vec![expression.clone()],
+                )
+                .with_unwrap_call(),
             );
         }
     }
@@ -2044,21 +2024,33 @@ fn coerce_to_vec(context: &mut CoerceContext) -> Option<sway::Expression> {
                     rhs: sway::Expression::create_identifier(&variable_name1).with_len_call(),
                 }),
                 body: sway::Block {
-                    statements: vec![sway::Statement::from(
-                        sway::Expression::create_identifier(&variable_name2).with_push_call(
-                            coerce_expression(
-                                context.project,
-                                context.module.clone(),
-                                context.scope.clone(),
-                                &sway::Expression::create_identifier(&variable_name1)
-                                    .with_get_call(sway::Expression::create_identifier(&variable_name3))
-                                    .with_unwrap_call(),
-                                &from_vec_type,
-                                &to_vec_type,
-                            )
-                            .unwrap(),
-                        ),
-                    )],
+                    statements: vec![{
+                        let value = coerce_expression(
+                            context.project,
+                            context.module.clone(),
+                            context.scope.clone(),
+                            &sway::Expression::create_identifier(&variable_name3),
+                            context.to_type_name,
+                            &sway::TypeName::create_identifier("u64"),
+                        )
+                        .unwrap();
+
+                        sway::Statement::from(
+                            sway::Expression::create_identifier(&variable_name2).with_push_call(
+                                coerce_expression(
+                                    context.project,
+                                    context.module.clone(),
+                                    context.scope.clone(),
+                                    &sway::Expression::create_identifier(&variable_name1)
+                                        .with_get_call(value)
+                                        .with_unwrap_call(),
+                                    &from_vec_type,
+                                    &to_vec_type,
+                                )
+                                .unwrap(),
+                            ),
+                        )
+                    }],
                     final_expr: None,
                 },
             })),
