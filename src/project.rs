@@ -1592,7 +1592,14 @@ impl Project {
                         new_name: function_names.top_level_fn_name,
                         generic_parameters: None,
                         parameters,
-                        storage_struct_parameter: None,
+                        storage_struct_parameter: Some(Box::new(sway::Parameter {
+                            is_ref: false,
+                            is_mut: false,
+                            name: "storage_struct".to_string(),
+                            type_name: Some(sway::TypeName::create_identifier(
+                                format!("{}Storage", contract_name).as_str(),
+                            )),
+                        })),
                         return_type: translate_return_type_name(
                             self,
                             module.clone(),
@@ -1612,7 +1619,9 @@ impl Project {
                     continue;
                 }
 
-                if let Some(abi_fn) = translate_abi_function(self, module.clone(), contract_name, &function_definition)
+                if !matches!(contract_definition.ty, solidity::ContractTy::Library(_))
+                    && let Some(abi_fn) =
+                        translate_abi_function(self, module.clone(), contract_name, &function_definition)
                 {
                     contract.borrow_mut().abi.functions.push(abi_fn);
                 }

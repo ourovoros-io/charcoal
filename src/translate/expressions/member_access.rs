@@ -331,9 +331,20 @@ pub fn translate_member_access_expression(
     }
 
     if container_type_name_string == "todo!" {
-        let sway::Expression::Panic(msg) = &container else {
-            unreachable!()
+        let sway::Expression::FunctionCall(f) = &container else {
+            unreachable!();
         };
+
+        let Some("revert_with_log") = f.function.as_identifier() else {
+            unreachable!();
+        };
+
+        assert!(f.parameters.len() == 1);
+
+        let sway::Expression::Literal(sway::Literal::String(msg)) = &f.parameters[0] else {
+            unreachable!();
+        };
+
         return Ok(sway::Expression::create_todo(Some(format!("{msg}.{member}"))));
     }
 

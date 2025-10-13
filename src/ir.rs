@@ -827,7 +827,18 @@ impl From<Module> for sway::Module {
                 contract.storage = None;
                 contract.storage_struct = None;
                 contract.storage_struct_constructor_fn = None;
-                assert!(contract.abi.functions.is_empty());
+                assert!(
+                    contract.abi.functions.is_empty(),
+                    "{:#?} - {}",
+                    contract
+                        .abi
+                        .functions
+                        .iter()
+                        .map(|f| f.new_name.clone())
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                    contract.name
+                );
                 continue;
             }
 

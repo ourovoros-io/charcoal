@@ -534,7 +534,7 @@ pub fn resolve_abi_function_call(
                     ..
                 } = &f.signature
                 else {
-                    unreachable!()
+                    return false;
                 };
 
                 *contract == abi.name
@@ -673,22 +673,58 @@ pub fn resolve_abi_function_call(
                 };
 
                 let external_module = external_module.borrow();
-                let Some(external_function) = external_module.functions.iter().find(|f| {
-                    let sway::TypeName::Function { new_name, .. } = &f.signature else {
-                        unreachable!()
+
+                let mut current_storage_struct_parameter = None;
+                if let Some(external_function) = external_module.functions.iter().find(|f| {
+                    let sway::TypeName::Function {
+                        new_name,
+                        storage_struct_parameter: Some(_),
+                        ..
+                    } = &f.signature
+                    else {
+                        return false;
                     };
 
                     *new_name == function_name
-                }) else {
-                    continue;
-                };
+                }) {
+                    let sway::TypeName::Function {
+                        storage_struct_parameter,
+                        ..
+                    } = &external_function.signature
+                    else {
+                        unreachable!()
+                    };
 
-                let sway::TypeName::Function {
-                    storage_struct_parameter: Some(storage_struct_parameter),
-                    ..
-                } = &external_function.signature
-                else {
-                    unreachable!()
+                    current_storage_struct_parameter = storage_struct_parameter.clone();
+                }
+
+                if current_storage_struct_parameter.is_none()
+                    && let Some(external_function) = external_module.modifiers.iter().find(|f| {
+                        let sway::TypeName::Function {
+                            new_name,
+                            storage_struct_parameter: Some(_),
+                            ..
+                        } = &f.signature
+                        else {
+                            return false;
+                        };
+
+                        *new_name == function_name
+                    })
+                {
+                    let sway::TypeName::Function {
+                        storage_struct_parameter,
+                        ..
+                    } = &external_function.signature
+                    else {
+                        unreachable!()
+                    };
+
+                    current_storage_struct_parameter = storage_struct_parameter.clone();
+                }
+
+                let Some(storage_struct_parameter) = current_storage_struct_parameter else {
+                    continue;
                 };
 
                 let mut storage_struct_expression = sway::Expression::create_identifier("storage_struct");
@@ -906,10 +942,11 @@ pub fn resolve_function_call(
     let check_type_name = |type_name: &sway::TypeName, coerce: bool| -> bool {
         let sway::TypeName::Function {
             parameters: function_parameters,
+            storage_struct_parameter: None,
             ..
         } = type_name
         else {
-            unreachable!()
+            return false;
         };
 
         let mut parameters = parameters_cell.borrow_mut();
@@ -1065,41 +1102,13 @@ pub fn resolve_function_call(
         }
     }
 
-    let Some(function) = function else {
-        let contract_name = scope.borrow().get_current_contract_name();
-        let mut project = project_cell.borrow_mut();
-
-        // If we didn't find a function, check inherited functions
-        if let Some(contract_name) = contract_name
-            && let Some(contract) = project.find_contract(module.clone(), &contract_name)
-        {
-            let abi = contract.borrow().abi.clone();
-
-            if let Some(result) = resolve_abi_function_call(
-                &mut project,
-                module.clone(),
-                scope.clone(),
-                &abi,
-                None,
-                function_name,
-                named_arguments,
-                parameters_cell.borrow().clone(),
-                parameter_types,
-            )? {
-                return Ok(Some(result));
-            }
-        }
-
-        return Ok(None);
-    };
-
-    let sway::TypeName::Function {
+    let Some(sway::TypeName::Function {
         new_name,
-        storage_struct_parameter,
+        storage_struct_parameter: None,
         ..
-    } = &function
+    }) = &function
     else {
-        unreachable!()
+        return Ok(None);
     };
 
     let function_storage_access = module.borrow_mut().function_storage_accesses.get(new_name).cloned();
@@ -1129,31 +1138,6 @@ pub fn resolve_function_call(
     //         Some(new_name.clone()) == current_function_name
     //     })
     //     .map(|f| f.signature.clone());
-
-    if let Some(current_storage_struct_parameter) = storage_struct_parameter
-        && let Some(function_struct_parameter) = {
-            let sway::TypeName::Function {
-                storage_struct_parameter,
-                ..
-            } = &function
-            else {
-                unreachable!()
-            };
-            storage_struct_parameter.clone()
-        }
-    {
-        parameters_cell.borrow_mut().push(
-            coerce_expression(
-                &mut *project_cell.borrow_mut(),
-                module.clone(),
-                scope.clone(),
-                &sway::Expression::create_identifier(current_storage_struct_parameter.name.as_str()),
-                current_storage_struct_parameter.type_name.as_ref().unwrap(),
-                function_struct_parameter.type_name.as_ref().unwrap(),
-            )
-            .unwrap(),
-        );
-    }
 
     let result = sway::Expression::create_function_call(new_name, None, parameters_cell.borrow().clone());
 

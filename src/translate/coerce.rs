@@ -2014,7 +2014,7 @@ fn coerce_to_vec(context: &mut CoerceContext) -> Option<sway::Expression> {
                     is_mutable: true,
                     name: variable_name3.clone(),
                 }),
-                type_name: Some(context.to_type_name.clone()),
+                type_name: None,
                 value: sway::Expression::from(sway::Literal::DecInt(0u8.into(), None)),
             }),
             sway::Statement::from(sway::Expression::from(sway::While {
@@ -2025,16 +2025,6 @@ fn coerce_to_vec(context: &mut CoerceContext) -> Option<sway::Expression> {
                 }),
                 body: sway::Block {
                     statements: vec![{
-                        let value = coerce_expression(
-                            context.project,
-                            context.module.clone(),
-                            context.scope.clone(),
-                            &sway::Expression::create_identifier(&variable_name3),
-                            context.to_type_name,
-                            &sway::TypeName::create_identifier("u64"),
-                        )
-                        .unwrap();
-
                         sway::Statement::from(
                             sway::Expression::create_identifier(&variable_name2).with_push_call(
                                 coerce_expression(
@@ -2042,7 +2032,7 @@ fn coerce_to_vec(context: &mut CoerceContext) -> Option<sway::Expression> {
                                     context.module.clone(),
                                     context.scope.clone(),
                                     &sway::Expression::create_identifier(&variable_name1)
-                                        .with_get_call(value)
+                                        .with_get_call(sway::Expression::create_identifier(&variable_name3))
                                         .with_unwrap_call(),
                                     &from_vec_type,
                                     &to_vec_type,

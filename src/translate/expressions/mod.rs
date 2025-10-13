@@ -3,6 +3,7 @@ use num_bigint::BigUint;
 use num_traits::ToPrimitive;
 use num_traits::{Num, Zero};
 use solang_parser::pt as solidity;
+use std::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Rem, Shl, Shr, Sub};
 use std::{cell::RefCell, rc::Rc};
 
 mod address_call;
@@ -173,6 +174,87 @@ pub fn evaluate_expression(
                             });
                         }
 
+                        "u32::try_from" => {
+                            assert!(function_call.parameters.len() == 1);
+                            let param_type = get_expression_type(
+                                project,
+                                module.clone(),
+                                scope.clone(),
+                                &function_call.parameters[0],
+                            )
+                            .unwrap();
+
+                            if param_type.is_u32() {
+                                return function_call.parameters[0].clone().into_some_call();
+                            }
+
+                            let mut container = evaluate_expression(
+                                project,
+                                module.clone(),
+                                scope.clone(),
+                                &param_type,
+                                &function_call.parameters[0],
+                            );
+
+                            if let sway::Expression::Tuple(tuple) = &container
+                                && tuple.len() == 1
+                            {
+                                let container_type_name =
+                                    get_expression_type(project, module.clone(), scope.clone(), &tuple[0]).unwrap();
+
+                                container = evaluate_expression(
+                                    project,
+                                    module.clone(),
+                                    scope.clone(),
+                                    &container_type_name,
+                                    &tuple[0],
+                                );
+                            }
+
+                            let sway::Expression::Literal(
+                                sway::Literal::DecInt(value, _) | sway::Literal::HexInt(value, _),
+                            ) = &container
+                            else {
+                                todo!("{}", container.display())
+                            };
+
+                            if value.bits() > 32 {
+                                let extra = value >> 32;
+
+                                if format!("{:x}", extra).chars().all(|c| c == 'f') {
+                                    return sway::Expression::Literal(sway::Literal::HexInt(
+                                        value & BigUint::from(u32::MAX),
+                                        Some("u32".to_string()),
+                                    ))
+                                    .into_some_call();
+                                }
+                            }
+
+                            if value.bits() <= 32 {
+                                match &container {
+                                    sway::Expression::Literal(sway::Literal::DecInt(value, _)) => {
+                                        return sway::Expression::Literal(sway::Literal::DecInt(
+                                            value.clone(),
+                                            Some("u32".to_string()),
+                                        ))
+                                        .into_some_call();
+                                    }
+
+                                    sway::Expression::Literal(sway::Literal::HexInt(value, _)) => {
+                                        return sway::Expression::Literal(sway::Literal::HexInt(
+                                            value.clone(),
+                                            Some("u32".to_string()),
+                                        ))
+                                        .into_some_call();
+                                    }
+
+                                    _ => todo!(),
+                                }
+                            }
+
+                            todo!("container: {} - {}", container.display(), value.bits())
+                        }
+
                         "u64::max" => {
                             assert!(function_call.parameters.is_empty());
                             return sway::Expression::from(sway::Literal::DecInt(u64::MAX.into(), None));
@@ -197,29 +279,79 @@ pub fn evaluate_expression(
                                 return function_call.parameters[0].clone().into_some_call();
                             }
 
+                            let mut container = function_call.parameters[0].clone();
+
+                            if let sway::Expression::Tuple(tuple) = &container
+                                && tuple.len() == 1
+                            {
+                                let container_type_name =
+                                    get_expression_type(project, module.clone(), scope.clone(), &tuple[0]).unwrap();
+
+                                container = evaluate_expression(
+                                    project,
+                                    module.clone(),
+                                    scope.clone(),
+                                    &container_type_name,
+                                    &tuple[0],
+                                );
+                            }
+
+                            let mut comment = None;
+
+                            if let sway::Expression::Commented(c, expr) = &container {
+                                comment = Some(c.clone());
+                                container = expr.as_ref().clone();
+                            }
+
                             let sway::Expression::Literal(
                                 sway::Literal::DecInt(value, _) | sway::Literal::HexInt(value, _),
-                            ) = &function_call.parameters[0]
+                            ) = &container
                             else {
-                                todo!()
+                                todo!("{}", container.display())
                             };
 
                             if value.bits() <= 64 {
-                                match &function_call.parameters[0] {
+                                match &container {
                                     sway::Expression::Literal(sway::Literal::DecInt(value, _)) => {
-                                        return sway::Expression::Literal(sway::Literal::DecInt(
-                                            value.clone(),
-                                            Some("u64".to_string()),
-                                        ))
-                                        .into_some_call();
+                                        return if let Some(comment) = comment {
+                                            sway::Expression::Commented(
+                                                comment,
+                                                Box::new(
+                                                    sway::Expression::Literal(sway::Literal::DecInt(
+                                                        value.clone(),
+                                                        Some("u64".to_string()),
+                                                    ))
+                                                    .into_some_call(),
+                                                ),
+                                            )
+                                        } else {
+                                            sway::Expression::Literal(sway::Literal::DecInt(
+                                                value.clone(),
+                                                Some("u64".to_string()),
+                                            ))
+                                            .into_some_call()
+                                        };
                                     }
 
                                     sway::Expression::Literal(sway::Literal::HexInt(value, _)) => {
-                                        return sway::Expression::Literal(sway::Literal::HexInt(
-                                            value.clone(),
-                                            Some("u64".to_string()),
-                                        ))
-                                        .into_some_call();
+                                        return if let Some(comment) = comment {
+                                            sway::Expression::Commented(
+                                                comment,
+                                                Box::new(
+                                                    sway::Expression::Literal(sway::Literal::HexInt(
+                                                        value.clone(),
+                                                        Some("u64".to_string()),
+                                                    ))
+                                                    .into_some_call(),
+                                                ),
+                                            )
+                                        } else {
+                                            sway::Expression::Literal(sway::Literal::HexInt(
+                                                value.clone(),
+                                                Some("u64".to_string()),
+                                            ))
+                                            .into_some_call()
+                                        };
                                     }
 
                                     _ => todo!(),
@@ -329,6 +461,13 @@ pub fn evaluate_expression(
                             return container.clone();
                         }
 
+                        let mut comment = None;
+
+                        if let sway::Expression::Commented(c, expr) = &container {
+                            comment = Some(c.clone());
+                            container = expr.as_ref().clone();
+                        }
+
                         if let sway::Expression::Literal(
                             sway::Literal::DecInt(_, suffix) | sway::Literal::HexInt(_, suffix),
                         ) = &container
@@ -339,33 +478,71 @@ pub fn evaluate_expression(
 
                             match &container {
                                 sway::Expression::Literal(sway::Literal::DecInt(value, _)) => {
-                                    return sway::Expression::Literal(sway::Literal::DecInt(
-                                        value.clone(),
-                                        Some("b256".to_string()),
-                                    ));
+                                    return if let Some(comment) = comment {
+                                        sway::Expression::Commented(
+                                            comment,
+                                            Box::new(sway::Expression::Literal(sway::Literal::DecInt(
+                                                value.clone(),
+                                                Some("b256".to_string()),
+                                            ))),
+                                        )
+                                    } else {
+                                        sway::Expression::Literal(sway::Literal::DecInt(
+                                            value.clone(),
+                                            Some("b256".to_string()),
+                                        ))
+                                    };
                                 }
                                 sway::Expression::Literal(sway::Literal::HexInt(value, _)) => {
-                                    return sway::Expression::Literal(sway::Literal::HexInt(
-                                        value.clone(),
-                                        Some("b256".to_string()),
-                                    ));
+                                    return if let Some(comment) = comment {
+                                        sway::Expression::Commented(
+                                            comment,
+                                            Box::new(sway::Expression::Literal(sway::Literal::HexInt(
+                                                value.clone(),
+                                                Some("b256".to_string()),
+                                            ))),
+                                        )
+                                    } else {
+                                        sway::Expression::Literal(sway::Literal::HexInt(
+                                            value.clone(),
+                                            Some("b256".to_string()),
+                                        ))
+                                    };
                                 }
 
                                 _ => {}
                             }
                         }
 
-                        todo!()
+                        todo!("container: {}", container.display());
                     }
 
                     "wrapping_neg" if function_call.parameters.is_empty() => {
-                        //
-                        // TODO: This won't compile currently...
-                        //       We should probably calculate the underlying unsigned value
-                        //       but for now we're just gonna emit code that fails to compile :shrug:
-                        //
+                        assert!(container_type_name.is_int());
+                        let Some(bits) = container_type_name.int_bits() else {
+                            unreachable!()
+                        };
 
-                        expression.clone()
+                        let sway::Expression::Literal(
+                            sway::Literal::DecInt(value, suffix) | sway::Literal::HexInt(value, suffix),
+                        ) = &container
+                        else {
+                            unreachable!()
+                        };
+
+                        sway::Expression::Literal(sway::Literal::HexInt(
+                            ((BigUint::one() << bits) - BigUint::one()) - (value - BigUint::one()),
+                            suffix.clone(),
+                        ))
+                    }
+
+                    "underlying" if function_call.parameters.is_empty() => {
+                        assert!(container_type_name.is_int());
+                        let sway::Expression::Literal(_) = &container else {
+                            todo!()
+                        };
+
+                        container
                     }
 
                     "pow" if function_call.parameters.len() == 1 => {
@@ -408,15 +585,64 @@ pub fn evaluate_expression(
                     }
 
                     "unwrap" if function_call.parameters.is_empty() => {
+                        let mut comment = None;
+
+                        if let sway::Expression::Commented(c, expr) = &container {
+                            comment = Some(c.clone());
+                            container = expr.as_ref().clone();
+                        }
+
                         let sway::Expression::FunctionCall(f) = container else {
-                            todo!()
+                            todo!("container: {}", container.display())
                         };
 
                         let Some("Some") = f.function.as_identifier() else {
                             todo!()
                         };
 
-                        return f.parameters[0].clone();
+                        return if let Some(comment) = comment {
+                            sway::Expression::Commented(comment, Box::new(f.parameters[0].clone()))
+                        } else {
+                            f.parameters[0].clone()
+                        };
+                    }
+
+                    "bits" if function_call.parameters.is_empty() => {
+                        assert!(container_type_name.is_identity());
+
+                        if let sway::Expression::FunctionCall(f) = &container
+                            && let sway::Expression::PathExpr(path_expr) = &f.function
+                            && let sway::PathExprRoot::Identifier(identifier) = &path_expr.root
+                            && identifier == "Identity"
+                            && path_expr.segments.len() == 1
+                            && path_expr.segments[0].name == "Address"
+                            && path_expr.segments[0].generic_parameters.is_none()
+                            && f.parameters.len() == 1
+                        {
+                            if let sway::Expression::FunctionCall(f) = &f.parameters[0]
+                                && let sway::Expression::PathExpr(path_expr) = &f.function
+                                && let sway::PathExprRoot::Identifier(identifier) = &path_expr.root
+                                && identifier == "Address"
+                                && path_expr.segments.len() == 1
+                                && path_expr.segments[0].name == "from"
+                                && path_expr.segments[0].generic_parameters.is_none()
+                                && f.parameters.len() == 1
+                            {
+                                assert!(matches!(
+                                    &f.parameters[0],
+                                    sway::Expression::Literal(
+                                        sway::Literal::DecInt(_, _) | sway::Literal::HexInt(_, _)
+                                    )
+                                ));
+
+                                return sway::Expression::Commented(
+                                    container.display().to_string(),
+                                    Box::new(f.parameters[0].clone()),
+                                );
+                            }
+                        }
+
+                        todo!("container: {}", container.display())
                     }
 
                     member => todo!("translate {member} member call: {}", sway::TabbedDisplayer(expression)),
@@ -448,231 +674,292 @@ pub fn evaluate_expression(
 
         sway::Expression::BinaryExpression(binary_expr) => {
             let lhs_type = get_expression_type(project, module.clone(), scope.clone(), &binary_expr.lhs).unwrap();
-            let lhs = evaluate_expression(project, module.clone(), scope.clone(), &lhs_type, &binary_expr.lhs);
+            let mut lhs = evaluate_expression(project, module.clone(), scope.clone(), &lhs_type, &binary_expr.lhs);
 
             let rhs_type = get_expression_type(project, module.clone(), scope.clone(), &binary_expr.rhs).unwrap();
-            let rhs = evaluate_expression(project, module.clone(), scope.clone(), &rhs_type, &binary_expr.rhs);
+            let mut rhs = evaluate_expression(project, module.clone(), scope.clone(), &rhs_type, &binary_expr.rhs);
+
+            let mut lhs_comment = None;
+            let mut rhs_comment = None;
+
+            if let sway::Expression::Commented(comment, expr) = lhs.clone() {
+                lhs = expr.as_ref().clone();
+                lhs_comment = Some(comment.clone());
+            }
+
+            if let sway::Expression::Commented(comment, expr) = rhs.clone() {
+                rhs = expr.as_ref().clone();
+                rhs_comment = Some(comment.clone());
+            }
 
             assert!(lhs_type == rhs_type);
 
-            match binary_expr.operator.as_str() {
-                "+" => match (lhs, rhs) {
-                    (
-                        sway::Expression::Literal(sway::Literal::DecInt(lhs_value, lhs_suffix)),
-                        sway::Expression::Literal(sway::Literal::DecInt(rhs_value, rhs_suffix)),
-                    ) => sway::Expression::Literal(sway::Literal::DecInt(
-                        lhs_value + rhs_value,
-                        lhs_suffix.or(rhs_suffix),
-                    )),
+            let op = match binary_expr.operator.as_str() {
+                "+" => BigUint::add,
+                "-" => BigUint::sub,
+                "*" => BigUint::mul,
+                "/" => BigUint::div,
+                "&" => BigUint::bitand,
+                "|" => BigUint::bitor,
+                "^" => BigUint::bitxor,
+                "%" => BigUint::rem,
+                "<<" | ">>" => {
+                    let op = match binary_expr.operator.as_str() {
+                        "<<" => BigUint::shl,
+                        ">>" => BigUint::shr,
+                        _ => unreachable!(),
+                    };
 
-                    (
-                        sway::Expression::Literal(sway::Literal::HexInt(lhs_value, lhs_suffix)),
-                        sway::Expression::Literal(sway::Literal::HexInt(rhs_value, rhs_suffix)),
-                    ) => sway::Expression::Literal(sway::Literal::HexInt(
-                        lhs_value + rhs_value,
-                        lhs_suffix.or(rhs_suffix),
-                    )),
+                    return match (lhs, rhs) {
+                        (
+                            sway::Expression::Literal(sway::Literal::DecInt(lhs_value, lhs_suffix)),
+                            sway::Expression::Literal(sway::Literal::DecInt(rhs_value, rhs_suffix)),
+                        ) => {
+                            if let Some(lhs_comment) = lhs_comment {
+                                if let Some(rhs_comment) = rhs_comment {
+                                    sway::Expression::Commented(
+                                        format!("{} {} {}", lhs_comment, binary_expr.operator, rhs_comment),
+                                        Box::new(sway::Expression::Literal(sway::Literal::DecInt(
+                                            op(lhs_value, rhs_value.to_u128().unwrap()),
+                                            lhs_suffix.or(rhs_suffix),
+                                        ))),
+                                    )
+                                } else {
+                                    sway::Expression::Commented(
+                                        format!("{} {} {}", lhs_comment, binary_expr.operator, rhs_value),
+                                        Box::new(sway::Expression::Literal(sway::Literal::DecInt(
+                                            op(lhs_value, rhs_value.to_u128().unwrap()),
+                                            lhs_suffix.or(rhs_suffix),
+                                        ))),
+                                    )
+                                }
+                            } else {
+                                sway::Expression::Literal(sway::Literal::DecInt(
+                                    op(lhs_value, rhs_value.to_u128().unwrap()),
+                                    lhs_suffix.or(rhs_suffix),
+                                ))
+                            }
+                        }
 
-                    _ => todo!(),
-                },
+                        (
+                            sway::Expression::Literal(sway::Literal::HexInt(lhs_value, lhs_suffix)),
+                            sway::Expression::Literal(sway::Literal::HexInt(rhs_value, rhs_suffix)),
+                        ) => {
+                            if let Some(lhs_comment) = lhs_comment {
+                                if let Some(rhs_comment) = rhs_comment {
+                                    sway::Expression::Commented(
+                                        format!("{} {} {}", lhs_comment, binary_expr.operator, rhs_comment),
+                                        Box::new(sway::Expression::Literal(sway::Literal::HexInt(
+                                            op(lhs_value, rhs_value.to_u128().unwrap()),
+                                            lhs_suffix.or(rhs_suffix),
+                                        ))),
+                                    )
+                                } else {
+                                    sway::Expression::Commented(
+                                        format!("{} {} {}", lhs_comment, binary_expr.operator, rhs_value),
+                                        Box::new(sway::Expression::Literal(sway::Literal::HexInt(
+                                            op(lhs_value, rhs_value.to_u128().unwrap()),
+                                            lhs_suffix.or(rhs_suffix),
+                                        ))),
+                                    )
+                                }
+                            } else {
+                                sway::Expression::Literal(sway::Literal::HexInt(
+                                    op(lhs_value, rhs_value.to_u128().unwrap()),
+                                    lhs_suffix.or(rhs_suffix),
+                                ))
+                            }
+                        }
 
-                "-" => match (lhs, rhs) {
-                    (
-                        sway::Expression::Literal(sway::Literal::DecInt(lhs_value, lhs_suffix)),
-                        sway::Expression::Literal(sway::Literal::DecInt(rhs_value, rhs_suffix)),
-                    ) => sway::Expression::Literal(sway::Literal::DecInt(
-                        lhs_value - rhs_value,
-                        lhs_suffix.or(rhs_suffix),
-                    )),
+                        (
+                            sway::Expression::Literal(sway::Literal::DecInt(lhs_value, lhs_suffix)),
+                            sway::Expression::Literal(sway::Literal::HexInt(rhs_value, rhs_suffix)),
+                        ) => {
+                            if let Some(lhs_comment) = lhs_comment {
+                                if let Some(rhs_comment) = rhs_comment {
+                                    sway::Expression::Commented(
+                                        format!("{} {} {}", lhs_comment, binary_expr.operator, rhs_comment),
+                                        Box::new(sway::Expression::Literal(sway::Literal::DecInt(
+                                            op(lhs_value, rhs_value.to_u128().unwrap()),
+                                            lhs_suffix.or(rhs_suffix),
+                                        ))),
+                                    )
+                                } else {
+                                    sway::Expression::Commented(
+                                        format!("{} {} {}", lhs_comment, binary_expr.operator, rhs_value),
+                                        Box::new(sway::Expression::Literal(sway::Literal::DecInt(
+                                            op(lhs_value, rhs_value.to_u128().unwrap()),
+                                            lhs_suffix.or(rhs_suffix),
+                                        ))),
+                                    )
+                                }
+                            } else {
+                                sway::Expression::Literal(sway::Literal::DecInt(
+                                    op(lhs_value, rhs_value.to_u128().unwrap()),
+                                    lhs_suffix.or(rhs_suffix),
+                                ))
+                            }
+                        }
 
-                    (
-                        sway::Expression::Literal(sway::Literal::HexInt(lhs_value, lhs_suffix)),
-                        sway::Expression::Literal(sway::Literal::HexInt(rhs_value, rhs_suffix)),
-                    ) => sway::Expression::Literal(sway::Literal::HexInt(
-                        lhs_value - rhs_value,
-                        lhs_suffix.or(rhs_suffix),
-                    )),
+                        (
+                            sway::Expression::Literal(sway::Literal::HexInt(lhs_value, lhs_suffix)),
+                            sway::Expression::Literal(sway::Literal::DecInt(rhs_value, rhs_suffix)),
+                        ) => {
+                            if let Some(lhs_comment) = lhs_comment {
+                                if let Some(rhs_comment) = rhs_comment {
+                                    sway::Expression::Commented(
+                                        format!("{} {} {}", lhs_comment, binary_expr.operator, rhs_comment),
+                                        Box::new(sway::Expression::Literal(sway::Literal::HexInt(
+                                            op(lhs_value, rhs_value.to_u128().unwrap()),
+                                            lhs_suffix.or(rhs_suffix),
+                                        ))),
+                                    )
+                                } else {
+                                    sway::Expression::Commented(
+                                        format!("{} {} {}", lhs_comment, binary_expr.operator, rhs_value),
+                                        Box::new(sway::Expression::Literal(sway::Literal::HexInt(
+                                            op(lhs_value, rhs_value.to_u128().unwrap()),
+                                            lhs_suffix.or(rhs_suffix),
+                                        ))),
+                                    )
+                                }
+                            } else {
+                                sway::Expression::Literal(sway::Literal::HexInt(
+                                    op(lhs_value, rhs_value.to_u128().unwrap()),
+                                    lhs_suffix.or(rhs_suffix),
+                                ))
+                            }
+                        }
 
-                    _ => todo!(),
-                },
-
-                "*" => match (lhs, rhs) {
-                    (
-                        sway::Expression::Literal(sway::Literal::DecInt(lhs_value, lhs_suffix)),
-                        sway::Expression::Literal(sway::Literal::DecInt(rhs_value, rhs_suffix)),
-                    ) => sway::Expression::Literal(sway::Literal::DecInt(
-                        lhs_value * rhs_value,
-                        lhs_suffix.or(rhs_suffix),
-                    )),
-
-                    (
-                        sway::Expression::Literal(sway::Literal::HexInt(lhs_value, lhs_suffix)),
-                        sway::Expression::Literal(sway::Literal::HexInt(rhs_value, rhs_suffix)),
-                    ) => sway::Expression::Literal(sway::Literal::HexInt(
-                        lhs_value * rhs_value,
-                        lhs_suffix.or(rhs_suffix),
-                    )),
-
-                    _ => todo!(),
-                },
-
-                "/" => match (lhs, rhs) {
-                    (
-                        sway::Expression::Literal(sway::Literal::DecInt(lhs_value, lhs_suffix)),
-                        sway::Expression::Literal(sway::Literal::DecInt(rhs_value, rhs_suffix)),
-                    ) => sway::Expression::Literal(sway::Literal::DecInt(
-                        lhs_value / rhs_value,
-                        lhs_suffix.or(rhs_suffix),
-                    )),
-
-                    (
-                        sway::Expression::Literal(sway::Literal::HexInt(lhs_value, lhs_suffix)),
-                        sway::Expression::Literal(sway::Literal::HexInt(rhs_value, rhs_suffix)),
-                    ) => sway::Expression::Literal(sway::Literal::HexInt(
-                        lhs_value / rhs_value,
-                        lhs_suffix.or(rhs_suffix),
-                    )),
-
-                    _ => todo!(),
-                },
-
-                "&" => match (lhs, rhs) {
-                    (
-                        sway::Expression::Literal(sway::Literal::DecInt(lhs_value, lhs_suffix)),
-                        sway::Expression::Literal(sway::Literal::DecInt(rhs_value, rhs_suffix)),
-                    ) => sway::Expression::Literal(sway::Literal::DecInt(
-                        lhs_value & rhs_value,
-                        lhs_suffix.or(rhs_suffix),
-                    )),
-
-                    (
-                        sway::Expression::Literal(sway::Literal::HexInt(lhs_value, lhs_suffix)),
-                        sway::Expression::Literal(sway::Literal::HexInt(rhs_value, rhs_suffix)),
-                    ) => sway::Expression::Literal(sway::Literal::HexInt(
-                        lhs_value & rhs_value,
-                        lhs_suffix.or(rhs_suffix),
-                    )),
-
-                    _ => todo!(),
-                },
-
-                "|" => match (lhs, rhs) {
-                    (
-                        sway::Expression::Literal(sway::Literal::DecInt(lhs_value, lhs_suffix)),
-                        sway::Expression::Literal(sway::Literal::DecInt(rhs_value, rhs_suffix)),
-                    ) => sway::Expression::Literal(sway::Literal::DecInt(
-                        lhs_value | rhs_value,
-                        lhs_suffix.or(rhs_suffix),
-                    )),
-
-                    (
-                        sway::Expression::Literal(sway::Literal::HexInt(lhs_value, lhs_suffix)),
-                        sway::Expression::Literal(sway::Literal::HexInt(rhs_value, rhs_suffix)),
-                    ) => sway::Expression::Literal(sway::Literal::HexInt(
-                        lhs_value | rhs_value,
-                        lhs_suffix.or(rhs_suffix),
-                    )),
-
-                    _ => todo!(),
-                },
-
-                "^" => match (lhs, rhs) {
-                    (
-                        sway::Expression::Literal(sway::Literal::DecInt(lhs_value, lhs_suffix)),
-                        sway::Expression::Literal(sway::Literal::DecInt(rhs_value, rhs_suffix)),
-                    ) => sway::Expression::Literal(sway::Literal::DecInt(
-                        lhs_value ^ rhs_value,
-                        lhs_suffix.or(rhs_suffix),
-                    )),
-
-                    (
-                        sway::Expression::Literal(sway::Literal::HexInt(lhs_value, lhs_suffix)),
-                        sway::Expression::Literal(sway::Literal::HexInt(rhs_value, rhs_suffix)),
-                    ) => sway::Expression::Literal(sway::Literal::HexInt(
-                        lhs_value ^ rhs_value,
-                        lhs_suffix.or(rhs_suffix),
-                    )),
-
-                    _ => todo!(),
-                },
-
-                "<<" => match (lhs, rhs) {
-                    (
-                        sway::Expression::Literal(sway::Literal::DecInt(lhs_value, lhs_suffix)),
-                        sway::Expression::Literal(sway::Literal::DecInt(rhs_value, rhs_suffix)),
-                    ) => sway::Expression::Literal(sway::Literal::DecInt(
-                        lhs_value << rhs_value.to_u128().unwrap(),
-                        lhs_suffix.or(rhs_suffix),
-                    )),
-
-                    (
-                        sway::Expression::Literal(sway::Literal::HexInt(lhs_value, lhs_suffix)),
-                        sway::Expression::Literal(sway::Literal::HexInt(rhs_value, rhs_suffix)),
-                    ) => sway::Expression::Literal(sway::Literal::HexInt(
-                        lhs_value << rhs_value.to_u128().unwrap(),
-                        lhs_suffix.or(rhs_suffix),
-                    )),
-
-                    (
-                        sway::Expression::Literal(sway::Literal::DecInt(lhs_value, lhs_suffix)),
-                        sway::Expression::Literal(sway::Literal::HexInt(rhs_value, rhs_suffix)),
-                    ) => sway::Expression::Literal(sway::Literal::HexInt(
-                        lhs_value << rhs_value.to_u128().unwrap(),
-                        lhs_suffix.or(rhs_suffix),
-                    )),
-
-                    (
-                        sway::Expression::Literal(sway::Literal::HexInt(lhs_value, lhs_suffix)),
-                        sway::Expression::Literal(sway::Literal::DecInt(rhs_value, rhs_suffix)),
-                    ) => sway::Expression::Literal(sway::Literal::HexInt(
-                        lhs_value << rhs_value.to_u128().unwrap(),
-                        lhs_suffix.or(rhs_suffix),
-                    )),
-
-                    (lhs, rhs) => todo!("({}, {})", lhs.display(), rhs.display()),
-                },
-
-                ">>" => match (lhs, rhs) {
-                    (
-                        sway::Expression::Literal(sway::Literal::DecInt(lhs_value, lhs_suffix)),
-                        sway::Expression::Literal(sway::Literal::DecInt(rhs_value, rhs_suffix)),
-                    ) => sway::Expression::Literal(sway::Literal::DecInt(
-                        lhs_value >> rhs_value.to_u128().unwrap(),
-                        lhs_suffix.or(rhs_suffix),
-                    )),
-
-                    (
-                        sway::Expression::Literal(sway::Literal::HexInt(lhs_value, lhs_suffix)),
-                        sway::Expression::Literal(sway::Literal::HexInt(rhs_value, rhs_suffix)),
-                    ) => sway::Expression::Literal(sway::Literal::HexInt(
-                        lhs_value >> rhs_value.to_u128().unwrap(),
-                        lhs_suffix.or(rhs_suffix),
-                    )),
-
-                    _ => todo!(),
-                },
-
-                "%" => match (lhs, rhs) {
-                    (
-                        sway::Expression::Literal(sway::Literal::DecInt(lhs_value, lhs_suffix)),
-                        sway::Expression::Literal(sway::Literal::DecInt(rhs_value, rhs_suffix)),
-                    ) => sway::Expression::Literal(sway::Literal::DecInt(
-                        lhs_value % rhs_value,
-                        lhs_suffix.or(rhs_suffix),
-                    )),
-
-                    (
-                        sway::Expression::Literal(sway::Literal::HexInt(lhs_value, lhs_suffix)),
-                        sway::Expression::Literal(sway::Literal::HexInt(rhs_value, rhs_suffix)),
-                    ) => sway::Expression::Literal(sway::Literal::HexInt(
-                        lhs_value % rhs_value,
-                        lhs_suffix.or(rhs_suffix),
-                    )),
-
-                    _ => todo!(),
-                },
+                        _ => todo!(),
+                    };
+                }
 
                 _ => todo!(),
+            };
+
+            match (lhs, rhs) {
+                (
+                    sway::Expression::Literal(sway::Literal::DecInt(lhs_value, lhs_suffix)),
+                    sway::Expression::Literal(sway::Literal::DecInt(rhs_value, rhs_suffix)),
+                ) => {
+                    if let Some(lhs_comment) = lhs_comment {
+                        if let Some(rhs_comment) = rhs_comment {
+                            sway::Expression::Commented(
+                                format!("{} {} {}", lhs_comment, binary_expr.operator, rhs_comment),
+                                Box::new(sway::Expression::Literal(sway::Literal::DecInt(
+                                    op(lhs_value, rhs_value),
+                                    lhs_suffix.or(rhs_suffix),
+                                ))),
+                            )
+                        } else {
+                            sway::Expression::Commented(
+                                format!("{} {} {}", lhs_comment, binary_expr.operator, rhs_value),
+                                Box::new(sway::Expression::Literal(sway::Literal::DecInt(
+                                    op(lhs_value, rhs_value),
+                                    lhs_suffix.or(rhs_suffix),
+                                ))),
+                            )
+                        }
+                    } else {
+                        sway::Expression::Literal(sway::Literal::DecInt(
+                            op(lhs_value, rhs_value),
+                            lhs_suffix.or(rhs_suffix),
+                        ))
+                    }
+                }
+
+                (
+                    sway::Expression::Literal(sway::Literal::HexInt(lhs_value, lhs_suffix)),
+                    sway::Expression::Literal(sway::Literal::HexInt(rhs_value, rhs_suffix)),
+                ) => {
+                    if let Some(lhs_comment) = lhs_comment {
+                        if let Some(rhs_comment) = rhs_comment {
+                            sway::Expression::Commented(
+                                format!("{} {} {}", lhs_comment, binary_expr.operator, rhs_comment),
+                                Box::new(sway::Expression::Literal(sway::Literal::HexInt(
+                                    op(lhs_value, rhs_value),
+                                    lhs_suffix.or(rhs_suffix),
+                                ))),
+                            )
+                        } else {
+                            sway::Expression::Commented(
+                                format!("{} {} {}", lhs_comment, binary_expr.operator, rhs_value),
+                                Box::new(sway::Expression::Literal(sway::Literal::HexInt(
+                                    op(lhs_value, rhs_value),
+                                    lhs_suffix.or(rhs_suffix),
+                                ))),
+                            )
+                        }
+                    } else {
+                        sway::Expression::Literal(sway::Literal::HexInt(
+                            op(lhs_value, rhs_value),
+                            lhs_suffix.or(rhs_suffix),
+                        ))
+                    }
+                }
+
+                (
+                    sway::Expression::Literal(sway::Literal::DecInt(lhs_value, lhs_suffix)),
+                    sway::Expression::Literal(sway::Literal::HexInt(rhs_value, rhs_suffix)),
+                ) => {
+                    if let Some(lhs_comment) = lhs_comment {
+                        if let Some(rhs_comment) = rhs_comment {
+                            sway::Expression::Commented(
+                                format!("{} {} {}", lhs_comment, binary_expr.operator, rhs_comment),
+                                Box::new(sway::Expression::Literal(sway::Literal::DecInt(
+                                    op(lhs_value, rhs_value),
+                                    lhs_suffix.or(rhs_suffix),
+                                ))),
+                            )
+                        } else {
+                            sway::Expression::Commented(
+                                format!("{} {} {}", lhs_comment, binary_expr.operator, rhs_value),
+                                Box::new(sway::Expression::Literal(sway::Literal::DecInt(
+                                    op(lhs_value, rhs_value),
+                                    lhs_suffix.or(rhs_suffix),
+                                ))),
+                            )
+                        }
+                    } else {
+                        sway::Expression::Literal(sway::Literal::DecInt(
+                            op(lhs_value, rhs_value),
+                            lhs_suffix.or(rhs_suffix),
+                        ))
+                    }
+                }
+
+                (
+                    sway::Expression::Literal(sway::Literal::HexInt(lhs_value, lhs_suffix)),
+                    sway::Expression::Literal(sway::Literal::DecInt(rhs_value, rhs_suffix)),
+                ) => {
+                    if let Some(lhs_comment) = lhs_comment {
+                        if let Some(rhs_comment) = rhs_comment {
+                            sway::Expression::Commented(
+                                format!("{} {} {}", lhs_comment, binary_expr.operator, rhs_comment),
+                                Box::new(sway::Expression::Literal(sway::Literal::HexInt(
+                                    op(lhs_value, rhs_value),
+                                    lhs_suffix.or(rhs_suffix),
+                                ))),
+                            )
+                        } else {
+                            sway::Expression::Commented(
+                                format!("{} {} {}", lhs_comment, binary_expr.operator, rhs_value),
+                                Box::new(sway::Expression::Literal(sway::Literal::HexInt(
+                                    op(lhs_value, rhs_value),
+                                    lhs_suffix.or(rhs_suffix),
+                                ))),
+                            )
+                        }
+                    } else {
+                        sway::Expression::Literal(sway::Literal::HexInt(
+                            op(lhs_value, rhs_value),
+                            lhs_suffix.or(rhs_suffix),
+                        ))
+                    }
+                }
+
+                (lhs, rhs) => todo!("{} {} {}", lhs.display(), binary_expr.operator, rhs.display()),
             }
         }
 

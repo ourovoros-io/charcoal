@@ -861,13 +861,22 @@ pub fn translate_function_definition(
             let name = format!("{prefix}_constructor");
 
             if let Some(storage_struct_parameter) = function_declaration.storage_struct_parameter.as_ref() {
-                if let Some(function) = external_module.borrow().functions.iter().find(|f| {
-                    let sway::TypeName::Function { new_name, .. } = &f.signature else {
-                        return false;
-                    };
+                let function = {
+                    let external_module = external_module.borrow();
+                    external_module
+                        .functions
+                        .iter()
+                        .find(|f| {
+                            let sway::TypeName::Function { new_name, .. } = &f.signature else {
+                                return false;
+                            };
 
-                    *new_name == name
-                }) {
+                            *new_name == name
+                        })
+                        .cloned()
+                };
+
+                if let Some(function) = function {
                     let sway::TypeName::Function {
                         storage_struct_parameter: external_storage_struct_parameter,
                         parameters: external_parameters,
