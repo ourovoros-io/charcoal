@@ -246,7 +246,12 @@ pub fn is_symbol_declared(
                     project,
                     module.clone(),
                     scope.clone(),
-                    storage_struct_name.trim_end_matches("Storage").to_string().as_str(),
+                    storage_struct_name
+                        .rsplit_once("Storage")
+                        .unwrap()
+                        .0
+                        .to_string()
+                        .as_str(),
                     name,
                     sway::Expression::create_identifier(parameter_name.as_str()),
                 )
@@ -442,7 +447,12 @@ pub fn resolve_symbol(
                     project,
                     module.clone(),
                     scope.clone(),
-                    storage_struct_name.trim_end_matches("Storage").to_string().as_str(),
+                    storage_struct_name
+                        .rsplit_once("Storage")
+                        .unwrap()
+                        .0
+                        .to_string()
+                        .as_str(),
                     name,
                     sway::Expression::create_identifier(parameter_name.as_str()),
                 ) {
@@ -519,7 +529,7 @@ pub fn resolve_abi_function_call(
     contract_id: Option<&sway::Expression>,
     function_name: &str,
     named_arguments: Option<&[solidity::NamedArgument]>,
-    mut parameters: Vec<sway::Expression>,
+    parameters: Vec<sway::Expression>,
     mut parameter_types: Vec<sway::TypeName>,
 ) -> Result<Option<sway::Expression>, Error> {
     let functions = match contract_id {
@@ -569,99 +579,16 @@ pub fn resolve_abi_function_call(
             .collect(),
     };
 
-    let mut function = None;
-
-    if let Some(named_arguments) = named_arguments {
-        let mut named_parameters = vec![];
-
-        for arg in named_arguments {
-            named_parameters.push((
-                translate_naming_convention(&arg.name.name, Case::Snake),
-                translate_expression(project, module.clone(), scope.clone(), &arg.expr)?,
-            ));
-        }
-
-        if let Some(abi_function) = functions.iter().find(|f| {
-            if f.old_name != function_name {
-                return false;
-            }
-
-            if f.parameters.entries.len() != named_parameters.len() {
-                return false;
-            }
-
-            f.parameters
-                .entries
-                .iter()
-                .all(|p| named_parameters.iter().any(|(name, _)| p.name == *name))
-        }) {
-            let function_parameters = &abi_function.parameters;
-
-            parameters.clear();
-            parameter_types.clear();
-
-            for parameter in function_parameters.entries.iter() {
-                let arg = named_arguments
-                    .iter()
-                    .find(|a| {
-                        let new_name = translate_naming_convention(&a.name.name, Case::Snake);
-                        new_name == parameter.name
-                    })
-                    .unwrap();
-
-                let parameter = translate_expression(project, module.clone(), scope.clone(), &arg.expr)?;
-                let parameter_type = get_expression_type(project, module.clone(), scope.clone(), &parameter)?;
-
-                parameters.push(parameter);
-                parameter_types.push(parameter_type);
-            }
-
-            function = Some(abi_function);
-        }
-    }
-
+    let project_cell = Rc::new(RefCell::new(project));
     let parameters_cell = Rc::new(RefCell::new(parameters));
 
-    let mut check_function = |function: &sway::Function, coerce: bool| -> bool {
-        if function.old_name != function_name {
-            return false;
-        }
-
-        let function_parameters = &function.parameters;
-        let storage_struct_parameter = function.storage_struct_parameter.as_ref();
-
-        let mut parameters = parameters_cell.borrow_mut();
-
-        // Ensure the supplied function call args match the function's parameters
-        if parameters.len() != function_parameters.entries.len() {
-            return false;
-        }
-
-        for (i, value_type_name) in parameter_types.iter().enumerate() {
-            let Some(parameter_type_name) = function_parameters.entries[i].type_name.as_ref() else {
-                continue;
-            };
-
-            if coerce {
-                let Some(expr) = coerce_expression(
-                    project,
-                    module.clone(),
-                    scope.clone(),
-                    &parameters[i],
-                    value_type_name,
-                    parameter_type_name,
-                ) else {
-                    return false;
-                };
-
-                parameters[i] = expr;
-            } else if !value_type_name.is_compatible_with(parameter_type_name) {
-                return false;
-            }
-        }
-
+    let check_storage_parameter = |project: &mut Project,
+                                   parameters: &mut Vec<sway::Expression>,
+                                   storage_struct_parameter: Option<&sway::Parameter>,
+                                   coerce: bool|
+     -> bool {
         if contract_id.is_none()
-            && let Some(storage_struct_parameter) = storage_struct_parameter.as_ref()
+            && let Some(storage_struct_parameter) = storage_struct_parameter
             && let Some(function_storage_struct_type) = storage_struct_parameter.type_name.clone()
         {
             let function_name = scope.borrow_mut().get_current_function_name().unwrap();
@@ -757,6 +684,124 @@ pub fn resolve_abi_function_call(
         true
     };
 
+    let mut function = None;
+
+    if let Some(named_arguments) = named_arguments {
+        let mut named_parameters = vec![];
+        let mut project = project_cell.borrow_mut();
+
+        for arg in named_arguments {
+            named_parameters.push((
+                translate_naming_convention(&arg.name.name, Case::Snake),
+                translate_expression(&mut project, module.clone(), scope.clone(), &arg.expr)?,
+            ));
+        }
+
+        if let Some(abi_function) = functions.iter().find(|f| {
+            if f.old_name != function_name {
+                return false;
+            }
+
+            if f.parameters.entries.len() != named_parameters.len() {
+                return false;
+            }
+
+            f.parameters
+                .entries
+                .iter()
+                .all(|p| named_parameters.iter().any(|(name, _)| p.name == *name))
+        }) {
+            let function_parameters = &abi_function.parameters;
+
+            let mut parameters = parameters_cell.borrow_mut();
+
+            parameters.clear();
+            parameter_types.clear();
+
+            for parameter in function_parameters.entries.iter() {
+                let arg = named_arguments
+                    .iter()
+                    .find(|a| {
+                        let new_name = translate_naming_convention(&a.name.name, Case::Snake);
+                        new_name == parameter.name
+                    })
+                    .unwrap();
+
+                let parameter = translate_expression(&mut project, module.clone(), scope.clone(), &arg.expr)?;
+                let parameter_type = get_expression_type(&mut project, module.clone(), scope.clone(), &parameter)?;
+
+                parameters.push(parameter);
+                parameter_types.push(parameter_type);
+            }
+
+            if check_storage_parameter(
+                &mut project,
+                &mut parameters,
+                abi_function.storage_struct_parameter.as_ref(),
+                false,
+            ) {
+                function = Some(abi_function);
+            }
+
+            if function.is_none()
+                && check_storage_parameter(
+                    &mut project,
+                    &mut parameters,
+                    abi_function.storage_struct_parameter.as_ref(),
+                    true,
+                )
+            {
+                function = Some(abi_function);
+            }
+        }
+    }
+
+    let check_function = |function: &sway::Function, coerce: bool| -> bool {
+        if function.old_name != function_name {
+            return false;
+        }
+
+        let function_parameters = &function.parameters;
+        let storage_struct_parameter = function.storage_struct_parameter.as_ref();
+
+        let mut project = project_cell.borrow_mut();
+        let mut parameters = parameters_cell.borrow_mut();
+
+        // Ensure the supplied function call args match the function's parameters
+        if parameters.len() != function_parameters.entries.len() {
+            return false;
+        }
+
+        for (i, value_type_name) in parameter_types.iter().enumerate() {
+            let Some(parameter_type_name) = function_parameters.entries[i].type_name.as_ref() else {
+                continue;
+            };
+
+            if coerce {
+                let Some(expr) = coerce_expression(
+                    &mut project,
+                    module.clone(),
+                    scope.clone(),
+                    &parameters[i],
+                    value_type_name,
+                    parameter_type_name,
+                ) else {
+                    return false;
+                };
+
+                parameters[i] = expr;
+            } else if !value_type_name.is_compatible_with(parameter_type_name) {
+                return false;
+            }
+        }
+
+        if !check_storage_parameter(&mut project, &mut parameters, storage_struct_parameter, coerce) {
+            return false;
+        }
+
+        true
+    };
+
     // Try to find the function without coercing first
     if function.is_none()
         && let Some(f) = functions.iter().find(|f| check_function(&f, false))
@@ -772,6 +817,8 @@ pub fn resolve_abi_function_call(
     }
 
     let Some(function) = function else {
+        let mut project = project_cell.borrow_mut();
+
         // If we didn't find a function, check inherited functions
         for inherit in abi.inherits.iter() {
             if let Some((module, contract)) =
@@ -780,7 +827,7 @@ pub fn resolve_abi_function_call(
                 let abi = contract.borrow().abi.clone();
 
                 if let Some(result) = resolve_abi_function_call(
-                    project,
+                    &mut project,
                     module.clone(),
                     scope.clone(),
                     &abi,

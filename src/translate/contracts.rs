@@ -9,11 +9,13 @@ pub fn translate_contract_definition(
     contract_definition: &solidity::ContractDefinition,
     contract: Rc<RefCell<ir::Contract>>,
 ) -> Result<(), Error> {
-    // println!(
-    //     "Translating contract `{}` at {}",
-    //     contract_definition.name.as_ref().map(|x| x.name.as_str()).unwrap(),
-    //     project.loc_to_file_location_string(module.clone(), &contract_definition.loc),
-    // );
+    if project.options.verbose {
+        println!(
+            "Translating contract `{}` at {}",
+            contract_definition.name.as_ref().map(|x| x.name.as_str()).unwrap(),
+            project.loc_to_file_location_string(module.clone(), &contract_definition.loc),
+        );
+    }
 
     // Collect each contract part into separate collections
     let mut using_directives = vec![];

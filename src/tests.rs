@@ -107,6 +107,7 @@ impl Test {
                 input: path.as_ref().into(),
                 output_directory: Some(format!("./output/{}", name.as_ref()).into()),
                 name: Some(name.as_ref().into()),
+                verbose: false,
             },
             repo_url: None,
             repo_dir: None,

@@ -433,6 +433,89 @@ fn translate_builtin_function_call_member_access_expression(
 
             let type_name = translate_type_name(project, module.clone(), scope.clone(), &parameters[0], None);
 
+            // Check if the type name is a enum type
+            if let Some(enum_definition) = project.find_enum(module.clone(), type_name.to_string().as_str()) {
+                match member {
+                    "max" => {
+                        let mut max = None;
+
+                        for constant in enum_definition.constants.iter() {
+                            if max.is_none() {
+                                max = Some(constant.clone());
+                                continue;
+                            }
+
+                            let Some(max_constant) = &max else { unreachable!() };
+
+                            let Some(sway::Expression::Literal(
+                                sway::Literal::DecInt(max_value, _) | sway::Literal::HexInt(max_value, _),
+                            )) = max_constant.value.as_ref()
+                            else {
+                                unreachable!()
+                            };
+
+                            let Some(sway::Expression::Literal(
+                                sway::Literal::DecInt(value, _) | sway::Literal::HexInt(value, _),
+                            )) = constant.value.as_ref()
+                            else {
+                                unreachable!()
+                            };
+
+                            if value > max_value {
+                                max = Some(constant.clone());
+                            }
+                        }
+
+                        let Some(max) = max else { unreachable!() };
+
+                        return Ok(Some(sway::Expression::Commented(
+                            format!("type({}).max", enum_definition.type_definition.name),
+                            Box::new(sway::Expression::create_identifier(max.name.as_str())),
+                        )));
+                    }
+
+                    "min" => {
+                        let mut min = None;
+
+                        for constant in enum_definition.constants.iter() {
+                            if min.is_none() {
+                                min = Some(constant.clone());
+                                continue;
+                            }
+
+                            let Some(min_constant) = &min else { unreachable!() };
+
+                            let Some(sway::Expression::Literal(
+                                sway::Literal::DecInt(min_value, _) | sway::Literal::HexInt(min_value, _),
+                            )) = min_constant.value.as_ref()
+                            else {
+                                unreachable!()
+                            };
+
+                            let Some(sway::Expression::Literal(
+                                sway::Literal::DecInt(value, _) | sway::Literal::HexInt(value, _),
+                            )) = constant.value.as_ref()
+                            else {
+                                unreachable!()
+                            };
+
+                            if value < min_value {
+                                min = Some(constant.clone());
+                            }
+                        }
+
+                        let Some(min) = min else { unreachable!() };
+
+                        return Ok(Some(sway::Expression::Commented(
+                            format!("type({}).min", enum_definition.type_definition.name),
+                            Box::new(sway::Expression::create_identifier(min.name.as_str())),
+                        )));
+                    }
+
+                    _ => {}
+                }
+            }
+
             let type_name = get_underlying_type(project, module.clone(), &type_name);
 
             if let sway::TypeName::Identifier { name, .. } = &type_name {

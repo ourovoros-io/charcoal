@@ -9,11 +9,13 @@ pub fn translate_type_definition(
     contract_name: Option<&str>,
     type_definition: &solidity::TypeDefinition,
 ) -> Result<sway::TypeDefinition, Error> {
-    // println!(
-    //     "Translating type definition `{}` at {}",
-    //     type_definition.name,
-    //     project.loc_to_file_location_string(module.clone(), &type_definition.loc),
-    // );
+    if project.options.verbose {
+        println!(
+            "Translating type definition `{}` at {}",
+            type_definition.name,
+            project.loc_to_file_location_string(module.clone(), &type_definition.loc),
+        );
+    }
 
     let scope = Rc::new(RefCell::new(ir::Scope::new(
         Some(module.borrow().path.clone()),

@@ -22,11 +22,13 @@ pub fn translate_variable_definition(
     contract_name: Option<&str>,
     variable_definition: &solidity::VariableDefinition,
 ) -> Result<StateVariableInfo, Error> {
-    // println!(
-    //     "Translating state variable {} at: {}",
-    //     variable_definition,
-    //     project.loc_to_file_location_string(module.clone(), &variable_definition.loc)
-    // );
+    if project.options.verbose {
+        println!(
+            "Translating state variable {} at: {}",
+            variable_definition,
+            project.loc_to_file_location_string(module.clone(), &variable_definition.loc)
+        );
+    }
 
     let scope = Rc::new(RefCell::new(ir::Scope::new(
         Some(module.borrow().path.clone()),

@@ -28,6 +28,7 @@ The tool requires that the input directory is a valid solidity project. Currentl
 | `-i`, `--input <input directory>` | The input directory for the project to be translated. The input must be a valid project root. |
 | `-o`, `--output-directory <output-directory>` | The path to save the translated Forc project to. (Optional; Must be a directory). |
 | `-n`, `--name <target>` | The name of the generated Sway project. |
+| `-v`, `--verbose <bool>` | Whether to print verbose information about what is being translated. |
 
 > [!warning]
 >

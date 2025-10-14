@@ -549,29 +549,31 @@ pub fn translate_function_definition(
     contract_name: Option<&str>,
     function_definition: &solidity::FunctionDefinition,
 ) -> Result<(Option<sway::Function>, Option<sway::ImplItem>), Error> {
-    // println!(
-    //     "Translating function `{}` at {}",
-    //     match contract_name {
-    //         Some(contract_name) => format!(
-    //             "{}.{}",
-    //             contract_name,
-    //             function_definition
-    //                 .name
-    //                 .as_ref()
-    //                 .map(|s| s.name.as_str())
-    //                 .unwrap_or_else(|| "<unnamed>")
-    //         ),
-    //         None => format!(
-    //             "{}",
-    //             function_definition
-    //                 .name
-    //                 .as_ref()
-    //                 .map(|s| s.name.as_str())
-    //                 .unwrap_or_else(|| "<unnamed>")
-    //         ),
-    //     },
-    //     project.loc_to_file_location_string(module.clone(), &function_definition.loc),
-    // );
+    if project.options.verbose {
+        println!(
+            "Translating function `{}` at {}",
+            match contract_name {
+                Some(contract_name) => format!(
+                    "{}.{}",
+                    contract_name,
+                    function_definition
+                        .name
+                        .as_ref()
+                        .map(|s| s.name.as_str())
+                        .unwrap_or_else(|| "<unnamed>")
+                ),
+                None => format!(
+                    "{}",
+                    function_definition
+                        .name
+                        .as_ref()
+                        .map(|s| s.name.as_str())
+                        .unwrap_or_else(|| "<unnamed>")
+                ),
+            },
+            project.loc_to_file_location_string(module.clone(), &function_definition.loc),
+        );
+    }
 
     // We should not translate modifier functions here.
     // Use translate_modifier_definition instead.
@@ -1146,16 +1148,18 @@ pub fn translate_modifier_definition(
         new_name = format!("{}_{}", contract_name.to_case(Case::Snake), new_name);
     }
 
-    // println!(
-    //     "Translating modifier {}.{} at {}",
-    //     module.borrow().name,
-    //     function_definition
-    //         .name
-    //         .as_ref()
-    //         .map(|n| n.name.as_str())
-    //         .unwrap_or_else(|| new_name.as_str()),
-    //     project.loc_to_file_location_string(module.clone(), &function_definition.loc),
-    // );
+    if project.options.verbose {
+        println!(
+            "Translating modifier {}.{} at {}",
+            module.borrow().name,
+            function_definition
+                .name
+                .as_ref()
+                .map(|n| n.name.as_str())
+                .unwrap_or_else(|| new_name.as_str()),
+            project.loc_to_file_location_string(module.clone(), &function_definition.loc),
+        );
+    }
 
     let mut modifier = ir::Modifier {
         old_name: old_name.clone(),

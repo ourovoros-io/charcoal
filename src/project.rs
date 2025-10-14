@@ -1131,7 +1131,9 @@ impl Project {
     }
 
     fn translate_file(&mut self, source_unit_path: &Path) -> Result<(), Error> {
-        // println!("Translating \"{}\"", source_unit_path.display());
+        if self.options.verbose {
+            println!("Translating \"{}\"", source_unit_path.display());
+        }
 
         // Parse the source unit
         let source_unit = self.parse_solidity_source_unit(source_unit_path)?;

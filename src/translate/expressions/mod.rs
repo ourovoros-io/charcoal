@@ -81,10 +81,32 @@ pub fn evaluate_expression(
                 return field.value.clone();
             }
 
-            let variable = scope
-                .borrow()
-                .find_variable(|v| v.borrow().new_name == *identifier)
-                .unwrap();
+            if identifier.contains("__") {
+                let parts = identifier.split("__").collect::<Vec<_>>();
+                if parts.len() == 2 && !parts[0].is_empty() {
+                    if let Some(enum_item) = project.find_enum(module.clone(), parts[0]) {
+                        let enum_type_name =
+                            get_underlying_type(project, module.clone(), &enum_item.type_definition.name);
+
+                        let type_name = get_underlying_type(project, module.clone(), type_name);
+
+                        assert!(
+                            type_name.is_compatible_with(&enum_type_name),
+                            "{} vs {}",
+                            type_name,
+                            enum_type_name
+                        );
+
+                        if let Some(constant) = enum_item.constants.iter().find(|c| c.name == identifier) {
+                            return constant.value.as_ref().unwrap().clone();
+                        }
+                    }
+                }
+            }
+
+            let Some(variable) = scope.borrow().find_variable(|v| v.borrow().new_name == *identifier) else {
+                panic!("Failed to find variable: {} in scope", identifier);
+            };
 
             todo!("evaluate path expression: {expression:#?} - {variable:#?}")
         }
@@ -172,6 +194,36 @@ pub fn evaluate_expression(
                                     .map(|p| evaluate_expression(project, module.clone(), scope.clone(), type_name, p))
                                     .collect(),
                             });
+                        }
+
+                        "u8::max" => {
+                            assert!(function_call.parameters.is_empty());
+                            return sway::Expression::from(sway::Literal::DecInt(u8::MAX.into(), None));
+                        }
+
+                        "u8::min" => {
+                            assert!(function_call.parameters.is_empty());
+                            return sway::Expression::from(sway::Literal::DecInt(u8::MIN.into(), None));
+                        }
+
+                        "u16::max" => {
+                            assert!(function_call.parameters.is_empty());
+                            return sway::Expression::from(sway::Literal::DecInt(u16::MAX.into(), None));
+                        }
+
+                        "u16::min" => {
+                            assert!(function_call.parameters.is_empty());
+                            return sway::Expression::from(sway::Literal::DecInt(u16::MIN.into(), None));
+                        }
+
+                        "u32::max" => {
+                            assert!(function_call.parameters.is_empty());
+                            return sway::Expression::from(sway::Literal::DecInt(u32::MAX.into(), None));
+                        }
+
+                        "u32::min" => {
+                            assert!(function_call.parameters.is_empty());
+                            return sway::Expression::from(sway::Literal::DecInt(u32::MIN.into(), None));
                         }
 
                         "u32::try_from" => {
@@ -408,6 +460,54 @@ pub fn evaluate_expression(
                 );
 
                 match member_access.member.as_str() {
+                    "as_u32" if function_call.parameters.is_empty() => {
+                        if container_type_name.is_u32() {
+                            return container.clone();
+                        }
+
+                        let mut comment = None;
+
+                        if let sway::Expression::Commented(c, expr) = &container {
+                            comment = Some(c.clone());
+                            container = expr.as_ref().clone();
+                        }
+
+                        let result;
+
+                        if let sway::Expression::Literal(
+                            sway::Literal::DecInt(_, suffix) | sway::Literal::HexInt(_, suffix),
+                        ) = &container
+                        {
+                            if let Some("u32") = suffix.as_ref().map(|s| s.as_str()) {
+                                result = container.clone();
+                            } else {
+                                match &container {
+                                    sway::Expression::Literal(sway::Literal::DecInt(value, _)) => {
+                                        result = sway::Expression::Literal(sway::Literal::DecInt(
+                                            value.clone(),
+                                            Some("u32".to_string()),
+                                        ));
+                                    }
+                                    sway::Expression::Literal(sway::Literal::HexInt(value, _)) => {
+                                        result = sway::Expression::Literal(sway::Literal::HexInt(
+                                            value.clone(),
+                                            Some("u32".to_string()),
+                                        ));
+                                    }
+
+                                    _ => todo!("container: {}", container.display()),
+                                }
+                            }
+                        } else {
+                            todo!()
+                        }
+
+                        return match comment {
+                            Some(c) => sway::Expression::Commented(c, Box::new(result)),
+                            None => result,
+                        };
+                    }
+
                     "as_u256" if function_call.parameters.is_empty() => {
                         if container_type_name.is_u256() {
                             return container.clone();
@@ -546,7 +646,7 @@ pub fn evaluate_expression(
                     }
 
                     "pow" if function_call.parameters.len() == 1 => {
-                        let rhs = evaluate_expression(
+                        let mut rhs = evaluate_expression(
                             project,
                             module,
                             scope.clone(),
@@ -554,12 +654,26 @@ pub fn evaluate_expression(
                             &function_call.parameters[0],
                         );
 
+                        let mut comment = None;
+
+                        if let sway::Expression::Commented(c, expr) = &container {
+                            comment = Some(c.clone());
+                            container = expr.as_ref().clone();
+                        }
+
                         let sway::Expression::Literal(
                             sway::Literal::DecInt(lhs_value, lhs_suffix) | sway::Literal::HexInt(lhs_value, lhs_suffix),
-                        ) = container
+                        ) = &container
                         else {
                             todo!("integer pow lhs expression: {container:#?}")
                         };
+
+                        let mut rhs_comment = None;
+
+                        if let sway::Expression::Commented(c, expr) = &rhs {
+                            rhs_comment = Some(c.clone());
+                            rhs = expr.as_ref().clone();
+                        }
 
                         let sway::Expression::Literal(
                             sway::Literal::DecInt(rhs_value, _) | sway::Literal::HexInt(rhs_value, _),
@@ -571,7 +685,11 @@ pub fn evaluate_expression(
                         let rhs_value: u32 = rhs_value.to_string().parse().unwrap();
 
                         sway::Expression::Commented(
-                            format!("{}", sway::TabbedDisplayer(expression)),
+                            if let (Some(lhs_comment), Some(rhs_comment)) = (comment, rhs_comment) {
+                                format!("{} ** {}", lhs_comment, rhs_comment)
+                            } else {
+                                format!("{}", sway::TabbedDisplayer(expression))
+                            },
                             Box::new(sway::Expression::from(sway::Literal::DecInt(
                                 lhs_value.pow(rhs_value),
                                 if type_name.is_uint() {
@@ -645,7 +763,10 @@ pub fn evaluate_expression(
                         todo!("container: {}", container.display())
                     }
 
-                    member => todo!("translate {member} member call: {}", sway::TabbedDisplayer(expression)),
+                    member => todo!(
+                        "translate {container_type_name}::{member} member call: {}",
+                        sway::TabbedDisplayer(expression)
+                    ),
                 }
             }
 
@@ -674,9 +795,11 @@ pub fn evaluate_expression(
 
         sway::Expression::BinaryExpression(binary_expr) => {
             let lhs_type = get_expression_type(project, module.clone(), scope.clone(), &binary_expr.lhs).unwrap();
+            let lhs_type = get_underlying_type(project, module.clone(), &lhs_type);
             let mut lhs = evaluate_expression(project, module.clone(), scope.clone(), &lhs_type, &binary_expr.lhs);
 
             let rhs_type = get_expression_type(project, module.clone(), scope.clone(), &binary_expr.rhs).unwrap();
+            let rhs_type = get_underlying_type(project, module.clone(), &rhs_type);
             let mut rhs = evaluate_expression(project, module.clone(), scope.clone(), &rhs_type, &binary_expr.rhs);
 
             let mut lhs_comment = None;
@@ -692,7 +815,7 @@ pub fn evaluate_expression(
                 rhs_comment = Some(comment.clone());
             }
 
-            assert!(lhs_type == rhs_type);
+            assert!(lhs_type.is_compatible_with(&rhs_type), "{} vs {}", lhs_type, rhs_type);
 
             let op = match binary_expr.operator.as_str() {
                 "+" => BigUint::add,

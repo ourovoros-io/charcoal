@@ -17,6 +17,10 @@ pub struct Args {
     #[arg(short, long)]
     /// The name of the generated Sway project.
     pub name: Option<String>,
+
+    #[arg(short, long)]
+    /// Whether to print verbose information about what is being translated.
+    pub verbose: bool,
 }
 
 impl Args {

@@ -1641,31 +1641,70 @@ fn coerce_to_u8_arrays(context: &mut CoerceContext) -> Option<sway::Expression> 
             }));
         }
 
-        if from_byte_count == to_byte_count {
-            return Some(expression.with_to_be_bytes_call());
-        } else if from_byte_count < to_byte_count {
-            return Some(
-                coerce_expression(
-                    context.project,
-                    context.module.clone(),
-                    context.scope.clone(),
-                    &expression,
-                    &from_type_name,
-                    &sway::TypeName::create_identifier(format!("u{to_bits}").as_str()),
-                )
-                .unwrap()
-                .with_to_be_bytes_call(),
-            );
+        if from_byte_count < to_byte_count {
+            expression = coerce_expression(
+                context.project,
+                context.module.clone(),
+                context.scope.clone(),
+                &expression,
+                &from_type_name,
+                &sway::TypeName::create_identifier(format!("u{to_bits}").as_str()),
+            )
+            .unwrap();
         } else if from_byte_count > to_byte_count {
-            return Some(
+            expression = sway::Expression::create_function_call(
+                format!("u{to_bits}::try_from").as_str(),
+                None,
+                vec![expression.clone()],
+            )
+            .with_unwrap_call();
+        }
+
+        // if from_byte_count < to_byte_count -> insert extra zeros to array
+        // then bit shift to get all the bytes out of the uint value
+
+        let mut elements = vec![];
+
+        if from_byte_count < to_byte_count {
+            (0..to_byte_count - from_byte_count).for_each(|_| {
+                elements.push(sway::Expression::Literal(sway::Literal::DecInt(
+                    BigUint::zero(),
+                    Some("u8".to_string()),
+                )))
+            });
+        }
+
+        let mut byte_count = to_byte_count;
+
+        if from_byte_count < byte_count {
+            byte_count = from_byte_count;
+        }
+
+        for i in 0..byte_count {
+            // ((x >> (i * 8)) & 0xFF).as_u8();
+            elements.push(
                 sway::Expression::create_function_call(
-                    format!("u{to_bits}::try_from").as_str(),
+                    "u8::try_from",
                     None,
-                    vec![expression.clone()],
+                    vec![sway::Expression::create_binary(
+                        "&",
+                        sway::Expression::Tuple(vec![sway::Expression::create_binary(
+                            ">>",
+                            expression.clone(),
+                            sway::Expression::Tuple(vec![sway::Expression::create_binary(
+                                "*",
+                                sway::Expression::Literal(sway::Literal::DecInt(i.into(), None)),
+                                sway::Expression::Literal(sway::Literal::DecInt(8u8.into(), None)),
+                            )]),
+                        )]),
+                        sway::Expression::Literal(sway::Literal::HexInt(0xFFu8.into(), None)),
+                    )],
                 )
                 .with_unwrap_call(),
-            );
+            )
         }
+
+        return Some(sway::Expression::from(sway::Array { elements }));
     }
 
     // Check for `Identity` to `[u8; N]` coercions
@@ -2231,7 +2270,13 @@ fn coerce_contract_storage_struct_types(context: &mut CoerceContext) -> Option<s
         return None;
     };
 
-    let to_contract_name = context.to_type_name.to_string().trim_end_matches("Storage").to_string();
+    let to_contract_name = context
+        .to_type_name
+        .to_string()
+        .rsplit_once("Storage")
+        .unwrap()
+        .0
+        .to_string();
 
     let Some(external_module) = context
         .project
@@ -2251,10 +2296,18 @@ fn coerce_contract_storage_struct_types(context: &mut CoerceContext) -> Option<s
     let from_contract_name = from_storage_struct
         .borrow()
         .name
-        .trim_end_matches("Storage")
+        .rsplit_once("Storage")
+        .unwrap()
+        .0
         .to_string();
 
-    let to_contract_name = to_storage_struct.borrow().name.trim_end_matches("Storage").to_string();
+    let to_contract_name = to_storage_struct
+        .borrow()
+        .name
+        .rsplit_once("Storage")
+        .unwrap()
+        .0
+        .to_string();
 
     if let Some(result) = get_inheritance_storage_struct_field(
         context.project,
